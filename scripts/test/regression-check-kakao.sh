@@ -3540,8 +3540,8 @@ PYEOF'
   # 2026-11-22 (#766): mounted TLS certificate must reach the running listener without resealing.
   check R390 "OpenBao TLS validity, bootstrap parity, in-container hash-change SIGHUP watcher, 180s served/Secret verifier; shell behavioral fixtures and mutations" \
     python3 scripts/test/lib/check-openbao-tls.py --mutation-verify
-  # 2026-11-23: portal Settings > OSS Updates truthful running version, sibling isolation, and explicit unknown reasons
-  check R391 "Portal Settings > OSS Updates resolves Kubernetes (/version), Cilium/APISIX/Falco/Velero/Gitea/metrics-server/kube-vip from exact workloads without widening RBAC, isolates sibling/init images (cilium-envoy, apisix-ingress-controller, falcosidekick, velero-plugin-for-aws) into companion sub-rows instead of drift, marks Helm as N/A (CLI), fixes Istio Trivy CVE repo match (registry.istio.io/release/pilot), normalizes tags strictly (unparseable=unknown), and displays ko/en reasons for every unknown/no-scan state (incl. 403 Gateway API CRD); 12 mutations caught" \
+  # 2026-11-23: portal Settings > OSS Updates truthful running-pod version, rollout/suffix/CVE/sibling invariants
+  check R392 "Portal Settings > OSS Updates resolves Running pod images selected by workload without widening RBAC, never yields in-sync from chart alone or Trivy fallback, flags mixed rollouts as drift, enforces per-component suffix allow-lists, attributes CVEs strictly by running repo+tag/digest (incl. siblings), keeps unreadable/digest-only siblings visible, marks Helm N/A, and renders ko/en reasons; 15 mutations caught" \
     python3 scripts/test/lib/check-portal-oss-updates-truth.py --mutation-verify
 }
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { WorkloadVulnRow } from "@/types/security"
-import type { OssClusterInventory, OssWorkloadSpecItem } from "../k8s-client"
+import type { OssClusterInventory, OssPodSpecItem, OssWorkloadSpecItem } from "../k8s-client"
 import type { UpstreamRelease } from "./upstream"
 
 vi.mock("server-only", () => ({}))
@@ -16,26 +16,43 @@ vi.mock("./upstream", () => ({
   getUpstreamReleases: (r: string) => getUpstreamReleases(r),
 }))
 
-const { computeDrift, getOssUpdateStatus, summarizeImages, summarizeUpstream } = await import("./status")
+const { computeDrift, getOssUpdateStatus, summarizeCvesForArtifacts, summarizeUpstream } = await import("./status")
 
 const NOW = Date.parse("2026-11-23T00:00:00Z")
 const rel = (tag: string, ageDaysAgo: number): UpstreamRelease => ({
   tag, publishedAt: new Date(NOW - ageDaysAgo * 86_400_000).toISOString(), url: `https://example.test/${tag}`,
 })
 const sev = (critical = 0, high = 0) => ({ Critical: critical, High: high, Medium: 0, Low: 0, Unknown: 0 })
-const vuln = (image: string, critical = 0, high = 0, namespace = "n"): WorkloadVulnRow => ({
-  namespace, kind: "Deployment", name: "w", image, summary: sev(critical, high),
+const vuln = (image: string, critical = 0, high = 0, namespace = "n", digest?: string): WorkloadVulnRow => ({
+  namespace, kind: "Deployment", name: "w", image, ...(digest ? { digest } : {}), summary: sev(critical, high),
 })
 const wl = (
   namespace: string,
   name: string,
   containers: Array<[string, string]>,
   initContainers: Array<[string, string]> = [],
+  selector: Record<string, string> = { app: name },
 ): OssWorkloadSpecItem => ({
   namespace,
   name,
+  selector: { matchLabels: selector },
   containers: containers.map(([cname, image]) => ({ name: cname, image })),
   initContainers: initContainers.map(([cname, image]) => ({ name: cname, image })),
+})
+const pod = (
+  namespace: string,
+  name: string,
+  labels: Record<string, string>,
+  containers: Array<[string, string, string?]>,
+  initContainers: Array<[string, string, string?]> = [],
+  phase = "Running",
+): OssPodSpecItem => ({
+  namespace,
+  name,
+  labels,
+  phase,
+  containers: containers.map(([cname, image, digest]) => ({ name: cname, image, ...(digest ? { digest } : {}) })),
+  initContainers: initContainers.map(([cname, image, digest]) => ({ name: cname, image, ...(digest ? { digest } : {}) })),
 })
 
 function emptyUnavailableInventory(): OssClusterInventory {
@@ -44,72 +61,74 @@ function emptyUnavailableInventory(): OssClusterInventory {
     deployments: { status: "error" },
     daemonsets: { status: "error" },
     statefulsets: { status: "error" },
-    kubeSystemPods: { status: "error" },
+    pods: { status: "error" },
     gatewayApiCrdAnnotations: { status: "error" },
   }
 }
 
 function liveClusterInventoryFixture(): OssClusterInventory {
+  const deployments: OssWorkloadSpecItem[] = [
+    wl("kube-system", "cilium-operator", [["cilium-operator", "quay.io/cilium/operator-generic:v1.19.4"]]),
+    wl("kube-system", "csi-nfs-controller", [
+      ["csi-provisioner", "registry.k8s.io/sig-storage/csi-provisioner:v6.1.0"],
+      ["csi-resizer", "registry.k8s.io/sig-storage/csi-resizer:v2.0.0"],
+      ["csi-snapshotter", "registry.k8s.io/sig-storage/csi-snapshotter:v8.4.0"],
+      ["liveness-probe", "registry.k8s.io/sig-storage/livenessprobe:v2.17.0"],
+      ["nfs", "registry.k8s.io/sig-storage/nfsplugin:v4.13.2"],
+    ]),
+    wl("kube-system", "metrics-server", [["metrics-server", "registry.k8s.io/metrics-server/metrics-server:v0.8.1"]]),
+    wl("platform-system", "apisix", [["apisix", "apache/apisix:3.15.0-ubuntu"]], [["init-conf", "apache/apisix:3.15.0-ubuntu"]]),
+    wl("platform-system", "apisix-ingress-controller", [["apisix-ingress-controller", "apache/apisix-ingress-controller:1.8.0"]], [["wait-apisix-admin", "busybox:1.28"]]),
+    wl("platform-system", "metallb-controller", [["controller", "quay.io/metallb/controller:v0.16.1"]]),
+    wl("istio-system", "istiod", [["discovery", "registry.istio.io/release/pilot:1.30.1-distroless"]]),
+    wl("platform-system", "cnpg-cloudnative-pg", [["manager", "ghcr.io/cloudnative-pg/cloudnative-pg:1.29.1"]]),
+    wl("iam", "keycloak-operator", [["keycloak-operator", "quay.io/keycloak/keycloak-operator:26.5.7"]]),
+    wl("platform-system", "cert-manager", [["cert-manager-controller", "quay.io/jetstack/cert-manager-controller:v1.20.2"]]),
+    wl("platform-system", "cert-manager-cainjector", [["cert-manager-cainjector", "quay.io/jetstack/cert-manager-cainjector:v1.20.2"]]),
+    wl("platform-system", "cert-manager-webhook", [["cert-manager-webhook", "quay.io/jetstack/cert-manager-webhook:v1.20.2"]]),
+    wl("platform-system", "kyverno-admission-controller", [["kyverno", "reg.kyverno.io/kyverno/kyverno:v1.18.1"]], [["kyverno-pre", "reg.kyverno.io/kyverno/kyvernopre:v1.18.1"]]),
+    wl("security-system", "falco-falcosidekick", [["falcosidekick", "docker.io/falcosecurity/falcosidekick:2.35.0"]]),
+    wl("storage", "velero", [["velero", "docker.io/velero/velero:v1.18.1"]], [["velero-plugin-for-aws", "velero/velero-plugin-for-aws:v1.14.1"]]),
+    wl("storage", "velero-ui", [["velero-ui", "docker.io/otwld/velero-ui:0.10.1"]]),
+    wl("devtools", "gitea", [["gitea", "docker.gitea.com/gitea:1.26.2-rootless"]], [["configure-gitea", "docker.gitea.com/gitea:1.26.2-rootless"]]),
+    wl("devtools", "argocd-server", [["argocd-server", "quay.io/argoproj/argocd:v3.4.4"]]),
+    wl("devtools", "harbor-core", [["core", "ghcr.io/dasomel/goharbor/harbor-core:v2.15.1"]]),
+    wl("devtools", "headlamp", [["headlamp", "ghcr.io/headlamp-k8s/headlamp:v0.46.0"]], [["ca-bundle", "ghcr.io/headlamp-k8s/headlamp:v0.46.0"]]),
+  ]
+  const daemonsets: OssWorkloadSpecItem[] = [
+    wl("kube-system", "cilium", [["cilium-agent", "quay.io/cilium/cilium:v1.19.4"]]),
+    wl("kube-system", "cilium-envoy", [["cilium-envoy", "quay.io/cilium/cilium-envoy:v1.36.6-1778235340-b87d1e32f522b33bd51701c6476d199326f01496"]]),
+    wl("platform-system", "metallb-speaker", [["speaker", "quay.io/metallb/speaker:v0.16.1"]]),
+    wl("istio-system", "istio-cni-node", [["install-cni", "registry.istio.io/release/install-cni:1.30.1-distroless"]]),
+    wl("istio-system", "ztunnel", [["istio-proxy", "registry.istio.io/release/ztunnel:1.30.1"]]),
+    wl("security-system", "falco", [["falco", "docker.io/falcosecurity/falco:0.45.1"]]),
+  ]
+  const statefulsets: OssWorkloadSpecItem[] = [
+    wl("storage", "seaweedfs-master", [["seaweedfs", "chrislusf/seaweedfs:4.34"]]),
+    wl("iam", "keycloak", [["keycloak", "quay.io/keycloak/keycloak:26.5.7"]]),
+    wl("storage", "openbao", [["openbao", "quay.io/openbao/openbao:2.5.4"]]),
+    wl("monitoring", "loki", [["loki", "docker.io/grafana/loki:3.7.3"], ["loki-sc-rules", "docker.io/kiwigrid/k8s-sidecar:2.8.1"]]),
+    wl("monitoring", "tempo", [["tempo", "docker.io/grafana/tempo:2.9.0"]]),
+  ]
+  const pods: OssPodSpecItem[] = [
+    ...[...deployments, ...daemonsets, ...statefulsets].map((w) =>
+      pod(
+        w.namespace,
+        `${w.name}-pod-1`,
+        w.selector?.matchLabels ?? { app: w.name },
+        w.containers.map((c) => [c.name, c.image]),
+        w.initContainers.map((c) => [c.name, c.image]),
+      ),
+    ),
+    pod("kube-system", "kube-vip-narwhal-master-1", { "k8s-app": "kube-vip" }, [["kube-vip", "ghcr.io/kube-vip/kube-vip:v1.1.2"]]),
+  ]
+
   return {
     serverVersion: { status: "ok", data: "v1.35.7" },
-    deployments: {
-      status: "ok",
-      data: [
-        wl("kube-system", "cilium-operator", [["cilium-operator", "quay.io/cilium/operator-generic:v1.19.4"]]),
-        wl("kube-system", "csi-nfs-controller", [
-          ["csi-provisioner", "registry.k8s.io/sig-storage/csi-provisioner:v6.1.0"],
-          ["csi-resizer", "registry.k8s.io/sig-storage/csi-resizer:v2.0.0"],
-          ["csi-snapshotter", "registry.k8s.io/sig-storage/csi-snapshotter:v8.4.0"],
-          ["liveness-probe", "registry.k8s.io/sig-storage/livenessprobe:v2.17.0"],
-          ["nfs", "registry.k8s.io/sig-storage/nfsplugin:v4.13.2"],
-        ]),
-        wl("kube-system", "metrics-server", [["metrics-server", "registry.k8s.io/metrics-server/metrics-server:v0.8.1"]]),
-        wl("platform-system", "apisix", [["apisix", "apache/apisix:3.15.0-ubuntu"]], [["init-conf", "apache/apisix:3.15.0-ubuntu"]]),
-        wl("platform-system", "apisix-ingress-controller", [["apisix-ingress-controller", "apache/apisix-ingress-controller:1.8.0"]], [["wait-apisix-admin", "busybox:1.28"]]),
-        wl("platform-system", "metallb-controller", [["controller", "quay.io/metallb/controller:v0.16.1"]]),
-        wl("istio-system", "istiod", [["discovery", "registry.istio.io/release/pilot:1.30.1-distroless"]]),
-        wl("platform-system", "cnpg-cloudnative-pg", [["manager", "ghcr.io/cloudnative-pg/cloudnative-pg:1.29.1"]]),
-        wl("iam", "keycloak-operator", [["keycloak-operator", "quay.io/keycloak/keycloak-operator:26.5.7"]]),
-        wl("platform-system", "cert-manager", [["cert-manager-controller", "quay.io/jetstack/cert-manager-controller:v1.20.2"]]),
-        wl("platform-system", "cert-manager-cainjector", [["cert-manager-cainjector", "quay.io/jetstack/cert-manager-cainjector:v1.20.2"]]),
-        wl("platform-system", "cert-manager-webhook", [["cert-manager-webhook", "quay.io/jetstack/cert-manager-webhook:v1.20.2"]]),
-        wl("platform-system", "kyverno-admission-controller", [["kyverno", "reg.kyverno.io/kyverno/kyverno:v1.18.1"]], [["kyverno-pre", "reg.kyverno.io/kyverno/kyvernopre:v1.18.1"]]),
-        wl("security-system", "falco-falcosidekick", [["falcosidekick", "docker.io/falcosecurity/falcosidekick:2.35.0"]]),
-        wl("storage", "velero", [["velero", "docker.io/velero/velero:v1.18.1"]], [["velero-plugin-for-aws", "velero/velero-plugin-for-aws:v1.14.1"]]),
-        wl("storage", "velero-ui", [["velero-ui", "docker.io/otwld/velero-ui:0.10.1"]]),
-        wl("devtools", "gitea", [["gitea", "docker.gitea.com/gitea:1.26.2-rootless"]], [["configure-gitea", "docker.gitea.com/gitea:1.26.2-rootless"]]),
-        wl("devtools", "argocd-server", [["argocd-server", "quay.io/argoproj/argocd:v3.4.4"]]),
-        wl("devtools", "harbor-core", [["core", "ghcr.io/dasomel/goharbor/harbor-core:v2.15.1"]]),
-        wl("devtools", "headlamp", [["headlamp", "ghcr.io/headlamp-k8s/headlamp:v0.46.0"]], [["ca-bundle", "ghcr.io/headlamp-k8s/headlamp:v0.46.0"]]),
-      ],
-    },
-    daemonsets: {
-      status: "ok",
-      data: [
-        wl("kube-system", "cilium", [["cilium-agent", "quay.io/cilium/cilium:v1.19.4"]]),
-        wl("kube-system", "cilium-envoy", [["cilium-envoy", "quay.io/cilium/cilium-envoy:v1.36.6-1778235340-b87d1e32f522b33bd51701c6476d199326f01496"]]),
-        wl("platform-system", "metallb-speaker", [["speaker", "quay.io/metallb/speaker:v0.16.1"]]),
-        wl("istio-system", "istio-cni-node", [["install-cni", "registry.istio.io/release/install-cni:1.30.1-distroless"]]),
-        wl("istio-system", "ztunnel", [["istio-proxy", "registry.istio.io/release/ztunnel:1.30.1"]]),
-        wl("security-system", "falco", [["falco", "docker.io/falcosecurity/falco:0.45.1"]]),
-      ],
-    },
-    statefulsets: {
-      status: "ok",
-      data: [
-        wl("storage", "seaweedfs-master", [["seaweedfs", "chrislusf/seaweedfs:4.34"]]),
-        wl("iam", "keycloak", [["keycloak", "quay.io/keycloak/keycloak:26.5.7"]]),
-        wl("storage", "openbao", [["openbao", "quay.io/openbao/openbao:2.5.4"]]),
-        wl("monitoring", "loki", [["loki", "docker.io/grafana/loki:3.7.3"], ["loki-sc-rules", "docker.io/kiwigrid/k8s-sidecar:2.8.1"]]),
-        wl("monitoring", "tempo", [["tempo", "docker.io/grafana/tempo:2.9.0"]]),
-      ],
-    },
-    kubeSystemPods: {
-      status: "ok",
-      data: [
-        wl("kube-system", "kube-vip-narwhal-master-1", [["kube-vip", "ghcr.io/kube-vip/kube-vip:v1.1.2"]]),
-      ],
-    },
+    deployments: { status: "ok", data: deployments },
+    daemonsets: { status: "ok", data: daemonsets },
+    statefulsets: { status: "ok", data: statefulsets },
+    pods: { status: "ok", data: pods },
     gatewayApiCrdAnnotations: { status: "no-permission", resource: "customresourcedefinitions.apiextensions.k8s.io" },
   }
 }
@@ -188,23 +207,43 @@ describe("summarizeUpstream", () => {
   })
 })
 
-describe("summarizeImages / computeDrift", () => {
-  it("extracts tags (digest-stripped), de-duplicates images and excludes sibling repos", () => {
-    const out = summarizeImages(
-      [
-        vuln("docker.io/falcosecurity/falco:0.45.1@sha256:" + "a".repeat(64), 1, 2),
-        vuln("docker.io/falcosecurity/falco:0.45.1@sha256:" + "a".repeat(64), 1, 2),
-        vuln("index.docker.io/falcosecurity/falcosidekick:2.35.0", 9, 9),
-        vuln("x/other:1.0.0", 9, 9),
-      ],
-      "falcosecurity/falco",
-    )
-    expect(out).toEqual({ tags: ["0.45.1"], rawTags: ["0.45.1"], cves: { critical: 1, high: 2 } })
-    expect(summarizeImages([vuln("x/y:1.0.0")], "nomatch")).toEqual({ tags: [], rawTags: [], cves: null })
-    expect(summarizeImages([vuln("x/y:1.0.0")], undefined)).toEqual({ tags: [], rawTags: [], cves: null })
+describe("summarizeCvesForArtifacts / computeDrift", () => {
+  it("attributes CVEs strictly by exact repo + tag (or digest), never counting older tags", () => {
+    const rows = [
+      vuln("index.docker.io/falcosecurity/falco:0.45.0", 9, 9, "security-system"),
+      vuln("index.docker.io/falcosecurity/falco:0.45.1", 1, 2, "security-system"),
+      vuln("index.docker.io/falcosecurity/falco:0.45.1", 1, 2, "security-system"),
+      vuln("index.docker.io/falcosecurity/falcosidekick:2.35.0", 5, 5, "security-system"),
+    ]
+    expect(
+      summarizeCvesForArtifacts(
+        rows,
+        [{ repo: "docker.io/falcosecurity/falco", rawTag: "0.45.1", pinnedDigest: null, effectiveDigest: null }],
+        "security-system",
+      ),
+    ).toEqual({ critical: 1, high: 2 })
+
+    // Running 0.45.2 which has no report: older 0.45.0 / 0.45.1 reports must NOT match!
+    expect(
+      summarizeCvesForArtifacts(
+        rows,
+        [{ repo: "docker.io/falcosecurity/falco", rawTag: "0.45.2", pinnedDigest: null, effectiveDigest: null }],
+        "security-system",
+      ),
+    ).toBeNull()
+
+    // Digest-only image matches strictly by digest
+    const dig = "sha256:" + "d".repeat(64)
+    expect(
+      summarizeCvesForArtifacts(
+        [vuln("quay.io/cilium/cilium:latest", 2, 4, "kube-system", dig)],
+        [{ repo: "quay.io/cilium/cilium", rawTag: null, pinnedDigest: dig, effectiveDigest: dig }],
+        "kube-system",
+      ),
+    ).toEqual({ critical: 2, high: 4 })
   })
 
-  it("drift: in-sync / drift / unknown; unparseable tag is unknown, never in-sync", () => {
+  it("drift: never returns in-sync from chart alone, mixed rollout, or disallowed suffix", () => {
     const d = { version: "0.45.1", chartVersion: "9.2.1" }
     expect(computeDrift(d, "9.2.1", ["0.45.1"])).toBe("in-sync")
     expect(computeDrift(d, "9.2.0", ["0.45.1"])).toBe("drift")
@@ -212,12 +251,22 @@ describe("summarizeImages / computeDrift", () => {
     expect(computeDrift(d, "HEAD", [])).toBe("unknown")
     expect(computeDrift(d, "9.2.1", ["latest"])).toBe("unknown")
     expect(computeDrift({ version: "latest", chartVersion: null }, null, ["latest"])).toBe("unknown")
-    expect(computeDrift({ version: "1.20.2", chartVersion: null }, "v1.20.2", [])).toBe("in-sync")
+    // K1: chart alone must NEVER yield in-sync when running tags are empty
+    expect(computeDrift({ version: "1.20.2", chartVersion: null }, "v1.20.2", [])).toBe("unknown")
+    expect(computeDrift(d, "9.2.1", [])).toBe("unknown")
+    // K2: mixed rollout is always drift
+    expect(computeDrift(d, "9.2.1", ["0.45.1", "0.45.0"], undefined, true)).toBe("drift")
+    // K3: component suffix allow-list
+    const apisix = { version: "3.15.0", chartVersion: "2.13.0" }
+    expect(computeDrift(apisix, "2.13.0", ["3.15.0-ubuntu"], ["-ubuntu"])).toBe("in-sync")
+    expect(computeDrift(apisix, "2.13.0", ["3.15.0-rc1"], ["-ubuntu"])).toBe("unknown")
+    expect(computeDrift(apisix, "2.13.0", ["3.15.0-preview1"], ["-ubuntu"])).toBe("unknown")
+    expect(computeDrift(apisix, "2.13.0", ["3.15.0-custom"], ["-ubuntu"])).toBe("unknown")
   })
 })
 
-describe("getOssUpdateStatus — live cluster symptoms & sibling isolation", () => {
-  it("reproduces all live facts truthfully: no false drift, real running versions, explicit unknown reasons", async () => {
+describe("getOssUpdateStatus — live cluster facts & reviewer reproductions", () => {
+  it("reproduces all live facts truthfully: no false drift, real running versions, sibling CVEs, explicit reasons", async () => {
     getArgoAppsOrThrow.mockResolvedValue(liveArgoApps())
     getWorkloadVulnerabilitiesWithMeta.mockResolvedValue({ rows: liveTrivyRows(), partial: false })
     getOssClusterInventory.mockResolvedValue(liveClusterInventoryFixture())
@@ -227,12 +276,11 @@ describe("getOssUpdateStatus — live cluster symptoms & sibling isolation", () 
 
     const byName = new Map(res.rows.map((r) => [r.component, r]))
 
-    // Previously unknown -> now truth
     expect(byName.get("Kubernetes")).toMatchObject({
       running: { version: "1.35.7", rawTag: "v1.35.7", source: "/version", reason: null },
       drift: "in-sync",
       cves: null,
-      cveReason: "no-scan",
+      cveReason: "no-scan-for-running",
       upstreamReason: "upstream-off",
     })
     expect(byName.get("Gitea")).toMatchObject({
@@ -244,15 +292,14 @@ describe("getOssUpdateStatus — live cluster symptoms & sibling isolation", () 
       running: { version: "0.8.1", rawTag: "v0.8.1", source: "deploy/kube-system/metrics-server (metrics-server)", reason: null },
       drift: "in-sync",
       cves: null,
-      cveReason: "no-scan",
+      cveReason: "no-scan-for-running",
     })
     expect(byName.get("kube-vip")).toMatchObject({
       running: { version: "1.1.2", rawTag: "v1.1.2", source: "pod/kube-system/kube-vip-narwhal-master-1 (kube-vip)", reason: null },
       drift: "in-sync",
-      cveReason: "no-scan",
+      cveReason: "no-scan-for-running",
     })
 
-    // Helm -> explicit CLI not-applicable
     expect(byName.get("Helm")).toMatchObject({
       running: { version: null, reason: "not-applicable" },
       drift: "not-applicable",
@@ -261,7 +308,6 @@ describe("getOssUpdateStatus — live cluster symptoms & sibling isolation", () 
       cveReason: "not-applicable",
     })
 
-    // Gateway API CRDs -> honest RBAC no-permission (not widened)
     expect(byName.get("Gateway API CRDs")).toMatchObject({
       running: { version: null, reason: "no-permission", reasonDetail: "customresourcedefinitions.apiextensions.k8s.io" },
       drift: "unknown",
@@ -270,25 +316,34 @@ describe("getOssUpdateStatus — live cluster symptoms & sibling isolation", () 
       cveReason: "not-applicable",
     })
 
-    // Previously false drift -> now in-sync with separate sibling sub-rows & isolated CVEs
     expect(byName.get("Cilium")).toMatchObject({
       running: { version: "1.19.4", rawTag: "v1.19.4", source: "ds/kube-system/cilium (cilium-agent)" },
       drift: "in-sync",
       cves: null,
-      cveReason: "no-scan",
+      cveReason: "no-scan-for-running",
     })
     expect(byName.get("Cilium")!.running.siblings).toEqual([
       {
         label: "cilium-envoy",
         source: "ds/kube-system/cilium-envoy (cilium-envoy)",
         rawTag: "v1.36.6-1778235340-b87d1e32f522b33bd51701c6476d199326f01496",
-        version: "1.36.6",
+        version: null,
+        imageTags: ["v1.36.6-1778235340-b87d1e32f522b33bd51701c6476d199326f01496"],
+        reason: "tag-unparseable",
+        reasonDetail: "v1.36.6-1778235340-b87d1e32f522b33bd51701c6476d199326f01496",
+        cves: { critical: 0, high: 6 },
+        cveReason: null,
       },
       {
         label: "cilium-operator",
         source: "deploy/kube-system/cilium-operator (cilium-operator)",
         rawTag: "v1.19.4",
         version: "1.19.4",
+        imageTags: ["1.19.4"],
+        reason: null,
+        reasonDetail: null,
+        cves: null,
+        cveReason: "no-scan-for-running",
       },
     ])
 
@@ -303,6 +358,11 @@ describe("getOssUpdateStatus — live cluster symptoms & sibling isolation", () 
         source: "deploy/platform-system/apisix-ingress-controller (apisix-ingress-controller)",
         rawTag: "1.8.0",
         version: "1.8.0",
+        imageTags: ["1.8.0"],
+        reason: null,
+        reasonDetail: null,
+        cves: { critical: 3, high: 56 },
+        cveReason: null,
       },
     ])
 
@@ -311,71 +371,255 @@ describe("getOssUpdateStatus — live cluster symptoms & sibling isolation", () 
       drift: "in-sync",
       cves: { critical: 1, high: 1 },
     })
-    expect(byName.get("Falco")!.running.siblings).toEqual([
-      {
-        label: "falcosidekick",
-        source: "deploy/security-system/falco-falcosidekick (falcosidekick)",
-        rawTag: "2.35.0",
-        version: "2.35.0",
-      },
-    ])
+    expect(byName.get("Falco")!.running.siblings[0]).toMatchObject({
+      label: "falcosidekick",
+      rawTag: "2.35.0",
+      version: "2.35.0",
+      cves: { critical: 3, high: 25 },
+      cveReason: null,
+    })
 
     expect(byName.get("Velero")).toMatchObject({
       running: { version: "1.18.1", rawTag: "v1.18.1", chartVersion: "12.0.3", source: "deploy/storage/velero (velero)" },
       drift: "in-sync",
       cves: { critical: 0, high: 109 },
     })
-    expect(byName.get("Velero")!.running.siblings.map((s) => [s.label, s.rawTag])).toEqual([
-      ["velero-plugin-for-aws", "v1.14.1"],
-      ["velero-ui", "0.10.1"],
+    expect(byName.get("Velero")!.running.siblings.map((s) => [s.label, s.rawTag, s.cves])).toEqual([
+      ["velero-plugin-for-aws", "v1.14.1", { critical: 0, high: 40 }],
+      ["velero-ui", "0.10.1", { critical: 11, high: 126 }],
     ])
 
-    // Istio CVE join finds registry.istio.io/release/pilot
     expect(byName.get("Istio")).toMatchObject({
       running: { version: "1.30.1", rawTag: "1.30.1-distroless", chartVersion: "1.30.1", source: "deploy/istio-system/istiod (discovery)" },
       drift: "in-sync",
       cves: { critical: 0, high: 42 },
     })
 
-    // CSI sidecars do not cause drift
     expect(byName.get("csi-driver-nfs")).toMatchObject({
       running: { version: "4.13.2", rawTag: "v4.13.2", source: "deploy/kube-system/csi-nfs-controller (nfs)" },
       drift: "in-sync",
     })
 
-    // Zero false drifts across the live fixture
     expect(res.rows.filter((r) => r.drift === "drift")).toEqual([])
+  })
+
+  it("K1 reproduction 1: Falco workload absent with matching chart 9.2.1 is unknown, never in-sync", async () => {
+    getArgoAppsOrThrow.mockResolvedValue([{ metadata: { name: "falco" }, spec: { source: { targetRevision: "9.2.1" } } }])
+    const inv = liveClusterInventoryFixture()
+    if (inv.daemonsets.status === "ok") {
+      inv.daemonsets.data = inv.daemonsets.data.filter((w) => w.name !== "falco")
+    }
+    getOssClusterInventory.mockResolvedValue(inv)
+
+    const res = await getOssUpdateStatus(NOW)
+    const falco = res.rows.find((r) => r.component === "Falco")!
+    expect(falco).toMatchObject({
+      running: { version: null, chartVersion: "9.2.1", reason: "workload-not-found" },
+      drift: "unknown",
+      driftReason: "workload-not-found",
+      cves: null,
+      cveReason: "trivy-unavailable",
+    })
+  })
+
+  it("K1 reproduction 2: container renamed/absent with matching chart is unknown (container-not-found)", async () => {
+    getArgoAppsOrThrow.mockResolvedValue([{ metadata: { name: "falco" }, spec: { source: { targetRevision: "9.2.1" } } }])
+    const inv = liveClusterInventoryFixture()
+    if (inv.pods.status === "ok") {
+      inv.pods.data = inv.pods.data.map((p) =>
+        p.namespace === "security-system" && p.labels.app === "falco"
+          ? { ...p, containers: [{ name: "renamed-falco", image: "docker.io/falcosecurity/falco:0.45.1" }] }
+          : p,
+      )
+    }
+    getOssClusterInventory.mockResolvedValue(inv)
+
+    const res = await getOssUpdateStatus(NOW)
+    expect(res.rows.find((r) => r.component === "Falco")).toMatchObject({
+      running: { version: null, reason: "container-not-found", reasonDetail: "falco" },
+      drift: "unknown",
+      driftReason: "container-not-found",
+    })
+  })
+
+  it("K1 reproduction 3: K8s list failure with Trivy tag present stays unknown (never substitutes Trivy for in-sync)", async () => {
+    getArgoAppsOrThrow.mockResolvedValue([{ metadata: { name: "falco" }, spec: { source: { targetRevision: "9.2.1" } } }])
+    getWorkloadVulnerabilitiesWithMeta.mockResolvedValue({
+      rows: [vuln("docker.io/falcosecurity/falco:0.45.1", 0, 3, "security-system")],
+      partial: false,
+    })
+    // emptyUnavailableInventory() -> all K8s reads fail
+    const res = await getOssUpdateStatus(NOW)
+    const falco = res.rows.find((r) => r.component === "Falco")!
+    expect(falco).toMatchObject({
+      running: { version: null, rawTag: null, reason: "k8s-unavailable", trivyHint: "0.45.1" },
+      drift: "unknown",
+      driftReason: "k8s-unavailable",
+      cves: null,
+      cveReason: "no-running-image",
+    })
+  })
+
+  it("K2 reproduction: mixed-image rollout across Running pods -> drift (rollout-mixed); zero running pods -> unknown (no-running-pod)", async () => {
+    const inv = liveClusterInventoryFixture()
+    if (inv.pods.status === "ok") {
+      inv.pods.data.push(
+        pod("security-system", "falco-pod-2", { app: "falco" }, [["falco", "docker.io/falcosecurity/falco:0.45.2"]]),
+      )
+      inv.pods.data = inv.pods.data.filter((p) => !(p.namespace === "monitoring" && p.labels.app === "tempo"))
+    }
+    getOssClusterInventory.mockResolvedValue(inv)
+
+    const res = await getOssUpdateStatus(NOW)
+    expect(res.rows.find((r) => r.component === "Falco")).toMatchObject({
+      running: {
+        version: null,
+        imageTags: ["0.45.1", "0.45.2"],
+        reason: "rollout-mixed",
+        reasonDetail: "0.45.1, 0.45.2",
+      },
+      drift: "drift",
+      driftReason: "rollout-mixed",
+    })
+    expect(res.rows.find((r) => r.component === "Tempo")).toMatchObject({
+      running: { version: null, reason: "no-running-pod" },
+      drift: "unknown",
+      driftReason: "no-running-pod",
+    })
+  })
+
+  it("K2 reproduction: kube-vip checks ALL static pods, flagging mixed pods as drift", async () => {
+    const inv = liveClusterInventoryFixture()
+    if (inv.pods.status === "ok") {
+      inv.pods.data.push(
+        pod("kube-system", "kube-vip-narwhal-master-2", { "k8s-app": "kube-vip" }, [["kube-vip", "ghcr.io/kube-vip/kube-vip:v1.1.1"]]),
+      )
+    }
+    getOssClusterInventory.mockResolvedValue(inv)
+
+    const res = await getOssUpdateStatus(NOW)
+    expect(res.rows.find((r) => r.component === "kube-vip")).toMatchObject({
+      running: {
+        version: null,
+        imageTags: ["1.1.2", "1.1.1"],
+        reason: "rollout-mixed",
+        reasonDetail: "1.1.2, 1.1.1",
+      },
+      drift: "drift",
+      driftReason: "rollout-mixed",
+    })
+  })
+
+  it("K3 reproduction: unrecognized suffixes (-rc1, -preview1, -custom) are shown verbatim and never match", async () => {
+    getArgoAppsOrThrow.mockResolvedValue([{ metadata: { name: "apisix" }, spec: { source: { targetRevision: "2.13.0" } } }])
+    for (const badTag of ["3.15.0-rc1", "3.15.0-preview1", "3.15.0-custom"]) {
+      const inv = liveClusterInventoryFixture()
+      if (inv.pods.status === "ok") {
+        inv.pods.data = inv.pods.data.map((p) =>
+          p.namespace === "platform-system" && p.labels.app === "apisix"
+            ? { ...p, containers: [{ name: "apisix", image: `apache/apisix:${badTag}` }] }
+            : p,
+        )
+      }
+      getOssClusterInventory.mockResolvedValue(inv)
+      const res = await getOssUpdateStatus(NOW)
+      const apisix = res.rows.find((r) => r.component === "APISIX")!
+      expect(apisix.running).toMatchObject({
+        version: null,
+        rawTag: badTag,
+        imageTags: [badTag],
+        reason: "tag-unparseable",
+        reasonDetail: badTag,
+      })
+      expect(apisix.drift).toBe("unknown")
+    }
+  })
+
+  it("K4 reproduction: reports for older tag only must NOT attribute CVEs to the running image", async () => {
+    const inv = liveClusterInventoryFixture()
+    getOssClusterInventory.mockResolvedValue(inv)
+    getWorkloadVulnerabilitiesWithMeta.mockResolvedValue({
+      rows: [
+        // Only an OLDER tag of falco & falcosidekick exists in Trivy
+        vuln("index.docker.io/falcosecurity/falco:0.45.0", 9, 99, "security-system"),
+        vuln("index.docker.io/falcosecurity/falcosidekick:2.34.0", 4, 40, "security-system"),
+      ],
+      partial: false,
+    })
+
+    const res = await getOssUpdateStatus(NOW)
+    const falco = res.rows.find((r) => r.component === "Falco")!
+    expect(falco.cves).toBeNull()
+    expect(falco.cveReason).toBe("no-scan-for-running")
+    expect(falco.running.siblings[0]).toMatchObject({
+      label: "falcosidekick",
+      cves: null,
+      cveReason: "no-scan-for-running",
+    })
+  })
+
+  it("K5 reproduction: digest-only sibling shows shortened digest + reason; unreadable sibling stays visible with reason", async () => {
+    const dig = "sha256:0123456789abcdef" + "0".repeat(48)
+    const inv = liveClusterInventoryFixture()
+    if (inv.daemonsets.status === "ok") {
+      inv.daemonsets.data = inv.daemonsets.data.filter((w) => w.name !== "istio-cni-node")
+    }
+    if (inv.pods.status === "ok") {
+      inv.pods.data = inv.pods.data.map((p) =>
+        p.namespace === "kube-system" && p.labels.app === "cilium-envoy"
+          ? { ...p, containers: [{ name: "cilium-envoy", image: `quay.io/cilium/cilium-envoy@${dig}` }] }
+          : p,
+      )
+    }
+    getOssClusterInventory.mockResolvedValue(inv)
+    getWorkloadVulnerabilitiesWithMeta.mockResolvedValue({
+      rows: [vuln("quay.io/cilium/cilium-envoy:latest", 1, 3, "kube-system", dig)],
+      partial: false,
+    })
+
+    const res = await getOssUpdateStatus(NOW)
+    const cilium = res.rows.find((r) => r.component === "Cilium")!
+    expect(cilium.running.siblings[0]).toMatchObject({
+      label: "cilium-envoy",
+      rawTag: null,
+      version: null,
+      imageTags: ["sha256:0123456789ab"],
+      reason: "digest-only",
+      reasonDetail: "sha256:0123456789ab",
+      cves: { critical: 1, high: 3 },
+      cveReason: null,
+    })
+
+    const istio = res.rows.find((r) => r.component === "Istio")!
+    expect(istio.running.siblings[0]).toMatchObject({
+      label: "istio-cni-node",
+      rawTag: null,
+      version: null,
+      reason: "workload-not-found",
+      cveReason: "no-running-image",
+    })
   })
 
   it("never produces drift from sibling/init images even when sibling tag differs wildly", async () => {
     const inv = liveClusterInventoryFixture()
-    inv.daemonsets = {
-      status: "ok",
-      data: [
-        wl("kube-system", "cilium", [["cilium-agent", "quay.io/cilium/cilium:v1.19.4"]]),
-        wl("kube-system", "cilium-envoy", [["cilium-envoy", "quay.io/cilium/cilium-envoy:v99.0.0-custom"]]),
-        wl("security-system", "falco", [["falco", "docker.io/falcosecurity/falco:0.45.1"]]),
-      ],
-    }
-    inv.deployments = {
-      status: "ok",
-      data: [
-        wl("platform-system", "apisix", [["apisix", "apache/apisix:3.15.0-ubuntu"]]),
-        wl("platform-system", "apisix-ingress-controller", [["apisix-ingress-controller", "apache/apisix-ingress-controller:9.9.9"]]),
-        wl("security-system", "falco-falcosidekick", [["falcosidekick", "docker.io/falcosecurity/falcosidekick:8.8.8"]]),
-        wl("storage", "velero", [["velero", "docker.io/velero/velero:v1.18.1"]], [["velero-plugin-for-aws", "velero/velero-plugin-for-aws:v0.0.1"]]),
-      ],
+    if (inv.pods.status === "ok") {
+      inv.pods.data = inv.pods.data.map((p) => {
+        if (p.namespace === "kube-system" && p.labels.app === "cilium-envoy") {
+          return { ...p, containers: [{ name: "cilium-envoy", image: "quay.io/cilium/cilium-envoy:v99.0.0-custom" }] }
+        }
+        if (p.namespace === "platform-system" && p.labels.app === "apisix-ingress-controller") {
+          return { ...p, containers: [{ name: "apisix-ingress-controller", image: "apache/apisix-ingress-controller:9.9.9" }] }
+        }
+        if (p.namespace === "security-system" && p.labels.app === "falco-falcosidekick") {
+          return { ...p, containers: [{ name: "falcosidekick", image: "docker.io/falcosecurity/falcosidekick:8.8.8" }] }
+        }
+        if (p.namespace === "storage" && p.labels.app === "velero") {
+          return { ...p, initContainers: [{ name: "velero-plugin-for-aws", image: "velero/velero-plugin-for-aws:v0.0.1" }] }
+        }
+        return p
+      })
     }
     getOssClusterInventory.mockResolvedValue(inv)
-    getWorkloadVulnerabilitiesWithMeta.mockResolvedValue({
-      rows: [
-        vuln("quay.io/cilium/cilium-envoy:v99.0.0-custom", 5, 5, "kube-system"),
-        vuln("index.docker.io/apache/apisix-ingress-controller:9.9.9", 5, 5, "platform-system"),
-        vuln("index.docker.io/falcosecurity/falcosidekick:8.8.8", 5, 5, "security-system"),
-        vuln("index.docker.io/velero/velero-plugin-for-aws:v0.0.1", 5, 5, "storage"),
-      ],
-      partial: false,
-    })
 
     const res = await getOssUpdateStatus(NOW)
     for (const name of ["Cilium", "APISIX", "Falco", "Velero"]) {
@@ -387,10 +631,8 @@ describe("getOssUpdateStatus — live cluster symptoms & sibling isolation", () 
 
   it("marks unparseable container tag as unknown (tag-unparseable), never in-sync", async () => {
     const inv = emptyUnavailableInventory()
-    inv.deployments = {
-      status: "ok",
-      data: [wl("devtools", "gitea", [["gitea", "docker.gitea.com/gitea:latest"]])],
-    }
+    inv.deployments = { status: "ok", data: [wl("devtools", "gitea", [["gitea", "docker.gitea.com/gitea:latest"]])] }
+    inv.pods = { status: "ok", data: [pod("devtools", "gitea-0", { app: "gitea" }, [["gitea", "docker.gitea.com/gitea:latest"]])] }
     getOssClusterInventory.mockResolvedValue(inv)
     const res = await getOssUpdateStatus(NOW)
     const gitea = res.rows.find((r) => r.component === "Gitea")!
@@ -414,16 +656,6 @@ describe("getOssUpdateStatus — live cluster symptoms & sibling isolation", () 
       drift: "in-sync",
       cveReason: "not-applicable",
     })
-  })
-
-  it("air-gap default: no upstream calls, Trivy fallback still works when K8s unreachable", async () => {
-    getArgoAppsOrThrow.mockResolvedValue([{ metadata: { name: "falco" }, spec: { source: { targetRevision: "9.2.1" } } }])
-    getWorkloadVulnerabilitiesWithMeta.mockResolvedValue({ rows: [vuln("docker.io/falcosecurity/falco:0.45.1", 0, 3)], partial: false })
-    const res = await getOssUpdateStatus(NOW)
-    expect(getUpstreamReleases).not.toHaveBeenCalled()
-    expect(res).toMatchObject({ upstreamLookup: "disabled", argocd: "ok", trivy: "ok", k8s: "unavailable", requestMode: "copy", coolingDays: 7 })
-    const falco = res.rows.find((r) => r.component === "Falco")!
-    expect(falco).toMatchObject({ upstreamState: "disabled", upstreamReason: "upstream-off", upstream: null, drift: "in-sync", cves: { critical: 0, high: 3 } })
   })
 
   it("survives Argo CD, Trivy, and K8s all being unavailable", async () => {

@@ -20,6 +20,8 @@ export interface OssSiblingSpec {
   name: string
   container: string
   init?: boolean
+  /** Exact tag suffixes accepted for this sibling (optional leading `v` is always allowed). */
+  allowedTagSuffixes?: readonly string[]
 }
 
 export interface OssComponent {
@@ -31,6 +33,8 @@ export interface OssComponent {
   argoApp?: string
   /** Authoritative source for the running version in the cluster. */
   runningSource: OssRunningSource
+  /** Exact tag suffixes accepted for this component (optional leading `v` is always allowed). */
+  allowedTagSuffixes?: readonly string[]
   /** Companion containers/workloads in the same release: rendered separately, never mixed into drift. */
   siblings?: readonly OssSiblingSpec[]
   /** Exact repository (or `org/repo`) in Trivy VulnerabilityReports for the primary image. */
@@ -71,6 +75,7 @@ export const OSS_COMPONENTS: readonly OssComponent[] = [
     repo: "apache/apisix",
     argoApp: "apisix",
     runningSource: { kind: "workload", resource: "Deployment", namespace: "platform-system", name: "apisix", container: "apisix" },
+    allowedTagSuffixes: ["-ubuntu"],
     siblings: [
       { label: "apisix-ingress-controller", resource: "Deployment", namespace: "platform-system", name: "apisix-ingress-controller", container: "apisix-ingress-controller" },
     ],
@@ -110,8 +115,9 @@ export const OSS_COMPONENTS: readonly OssComponent[] = [
     repo: "istio/istio",
     argoApp: "istiod",
     runningSource: { kind: "workload", resource: "Deployment", namespace: "istio-system", name: "istiod", container: "discovery" },
+    allowedTagSuffixes: ["-distroless"],
     siblings: [
-      { label: "istio-cni-node", resource: "DaemonSet", namespace: "istio-system", name: "istio-cni-node", container: "install-cni" },
+      { label: "istio-cni-node", resource: "DaemonSet", namespace: "istio-system", name: "istio-cni-node", container: "install-cni", allowedTagSuffixes: ["-distroless"] },
       { label: "ztunnel", resource: "DaemonSet", namespace: "istio-system", name: "ztunnel", container: "istio-proxy" },
     ],
     imageMatch: "registry.istio.io/release/pilot",
@@ -237,6 +243,7 @@ export const OSS_COMPONENTS: readonly OssComponent[] = [
     name: "Gitea",
     repo: "go-gitea/gitea",
     runningSource: { kind: "workload", resource: "Deployment", namespace: "devtools", name: "gitea", container: "gitea" },
+    allowedTagSuffixes: ["-rootless"],
     imageMatch: "docker.gitea.com/gitea",
     cveNamespace: "devtools",
   },

@@ -1,7 +1,13 @@
 import "server-only"
 import declaredJson from "@/data/oss-versions.generated.json"
 import { getArgoAppsOrThrow } from "../argocd"
-import { getOssClusterInventory, type OssClusterInventory, type OssWorkloadSpecItem } from "../k8s-client"
+import {
+  getOssClusterInventory,
+  type OssClusterInventory,
+  type OssLabelSelector,
+  type OssPodSpecItem,
+  type OssWorkloadSpecItem,
+} from "../k8s-client"
 import { getWorkloadVulnerabilitiesWithMeta } from "../trivy"
 import type { WorkloadVulnRow } from "@/types/security"
 import type {
@@ -23,10 +29,12 @@ import {
   extractImageRef,
   gapKind,
   isCooling,
+  normalizeImageRepo,
   normalizeTag,
   parseSemver,
   repoMatches,
   sameVersion,
+  shortenDigest,
 } from "./version"
 
 interface DeclaredRow {
@@ -79,47 +87,88 @@ export function summarizeUpstream(
   }
 }
 
-/** Pure: Trivy rows -> distinct exact-repo matching images, their normalized tags and Critical/High totals.
- * Uses exact repository boundaries (`repoMatches`), never substring `.includes()`, so sibling images
- * such as `cilium-envoy`, `apisix-ingress-controller`, `falcosidekick`, or `velero-plugin-for-aws`
- * are never mixed into the primary component. */
-export function summarizeImages(
-  rows: WorkloadVulnRow[],
-  imageMatch: string | undefined,
-  preferredNamespace?: string,
-) {
-  if (!imageMatch) return { tags: [] as string[], rawTags: [] as string[], cves: null }
-  const repoRows = rows.filter((r) => repoMatches(r.image, imageMatch))
-  if (repoRows.length === 0) return { tags: [] as string[], rawTags: [] as string[], cves: null }
-  const nsRows = preferredNamespace ? repoRows.filter((r) => r.namespace === preferredNamespace) : []
-  const scoped = nsRows.length > 0 ? nsRows : repoRows
+export interface RunningArtifactRef {
+  repo: string
+  /** True when `repo` is an exact-boundary pattern (e.g. `kube-apiserver` from server-version) rather than a container image repo. */
+  patternMatch?: boolean
+  rawTag: string | null
+  /** Explicit `@sha256:...` digest pinned on the image spec, if any. */
+  pinnedDigest: string | null
+  /** Best known digest (spec `@sha256:...` or containerStatus `imageID` digest). */
+  effectiveDigest: string | null
+}
 
-  const byImage = new Map<string, WorkloadVulnRow["summary"]>()
-  for (const r of scoped) byImage.set(r.image, r.summary)
-  const tags = new Set<string>()
-  const rawTags = new Set<string>()
+/** Pure: sums Critical/High CVEs strictly for Trivy reports whose artifact (repository AND tag,
+ * or repository AND digest when digest-only) equals one of `runningArtifacts`. Reports for older
+ * or other tags of the same repository are never attributed to the running row. */
+export function summarizeCvesForArtifacts(
+  rows: WorkloadVulnRow[],
+  runningArtifacts: readonly RunningArtifactRef[],
+  preferredNamespace?: string,
+): { critical: number; high: number } | null {
+  if (runningArtifacts.length === 0) return null
+  const scoped = preferredNamespace ? rows.filter((r) => r.namespace === preferredNamespace) : rows
+  if (scoped.length === 0) return null
+
+  const matchedByReport = new Map<string, WorkloadVulnRow["summary"]>()
+  for (const r of scoped) {
+    const ref = extractImageRef(r.image)
+    const rRepo = normalizeImageRepo(ref.repo)
+    const rDigest = r.digest ?? ref.digest
+
+    const hits = runningArtifacts.some((art) => {
+      const repoOk = art.patternMatch
+        ? repoMatches(r.image, art.repo)
+        : rRepo === normalizeImageRepo(art.repo)
+      if (!repoOk) return false
+      if (art.rawTag !== null) {
+        if (ref.rawTag !== art.rawTag) return false
+        if (art.pinnedDigest && rDigest && rDigest !== art.pinnedDigest) return false
+        return true
+      }
+      // Digest-only running image: match strictly by digest, never by repo alone or :latest.
+      return Boolean(art.effectiveDigest && rDigest && rDigest === art.effectiveDigest)
+    })
+    if (!hits) continue
+    matchedByReport.set(`${rRepo}|${ref.rawTag ?? ""}|${rDigest ?? ""}`, r.summary)
+  }
+
+  if (matchedByReport.size === 0) return null
   let critical = 0
   let high = 0
-  for (const [image, s] of byImage) {
-    const { rawTag } = extractImageRef(image)
-    if (rawTag) rawTags.add(rawTag)
-    const norm = normalizeTag(rawTag)
-    if (norm) tags.add(norm)
+  for (const s of matchedByReport.values()) {
     critical += s.Critical
     high += s.High
   }
-  return { tags: [...tags].sort(), rawTags: [...rawTags].sort(), cves: { critical, high } }
+  return { critical, high }
 }
 
-/** Pure: declared vs running. Unparseable tags are always "unknown" (never "in-sync"),
- * while chart mismatch still flags "drift". */
+/** Pure: non-authoritative hint of raw tags seen in Trivy for `imageMatch` (never drives drift). */
+function findTrivyHint(rows: WorkloadVulnRow[], imageMatch: string | undefined, preferredNamespace?: string): string | null {
+  if (!imageMatch) return null
+  const repoRows = rows.filter((r) => repoMatches(r.image, imageMatch))
+  if (repoRows.length === 0) return null
+  const nsRows = preferredNamespace ? repoRows.filter((r) => r.namespace === preferredNamespace) : []
+  const scoped = nsRows.length > 0 ? nsRows : repoRows
+  const tags = [...new Set(scoped.map((r) => extractImageRef(r.image).rawTag).filter((t): t is string => Boolean(t)))].sort()
+  return tags[0] ?? null
+}
+
+/** Pure: declared vs running. Match (`in-sync`) requires at least one verified running tag from
+ * the authoritative workload/API source and a non-mixed rollout. Chart version alone never yields
+ * `in-sync`; unparseable or disallowed-suffix tags are always `unknown` (or `drift` on chart mismatch). */
 export function computeDrift(
   declared: { version: string; chartVersion: string | null },
   chartVersion: string | null,
   imageTags: string[],
+  allowedSuffixes?: readonly string[],
+  rolloutMixed = false,
 ): OssDrift {
-  const hasUnparseableTag = imageTags.some((t) => normalizeTag(t) === null)
-  const chartKnown = Boolean(chartVersion && parseSemver(chartVersion))
+  if (rolloutMixed) return "drift"
+  if (imageTags.length === 0) return "unknown"
+
+  const hasUnparseableTag = imageTags.some((t) => normalizeTag(t, allowedSuffixes) === null)
+  const chartKnown = Boolean(chartVersion && normalizeTag(chartVersion) !== null)
   const chartOk = chartKnown ? sameVersion(chartVersion, declared.chartVersion ?? declared.version) : null
 
   if (hasUnparseableTag) {
@@ -128,8 +177,7 @@ export function computeDrift(
 
   const signals: boolean[] = []
   if (chartOk !== null) signals.push(chartOk)
-  for (const t of imageTags) signals.push(sameVersion(t, declared.version))
-  if (signals.length === 0) return "unknown"
+  for (const t of imageTags) signals.push(sameVersion(t, declared.version, allowedSuffixes))
   return signals.every(Boolean) ? "in-sync" : "drift"
 }
 
@@ -145,155 +193,382 @@ function workloadListFor(k8s: OssClusterInventory, resource: WorkloadKind) {
   return k8s.statefulsets
 }
 
-function findContainerImage(
-  items: OssWorkloadSpecItem[],
+function matchesSelector(labels: Record<string, string>, selector: OssLabelSelector | undefined): boolean {
+  if (!selector) return false
+  const matchLabels = selector.matchLabels ?? {}
+  const matchExpressions = selector.matchExpressions ?? []
+  const labelEntries = Object.entries(matchLabels)
+  if (labelEntries.length === 0 && matchExpressions.length === 0) return false
+
+  for (const [k, v] of labelEntries) {
+    if (labels[k] !== v) return false
+  }
+  for (const expr of matchExpressions) {
+    const hasKey = Object.hasOwn(labels, expr.key)
+    const val = hasKey ? labels[expr.key] : undefined
+    const vals = expr.values ?? []
+    switch (expr.operator) {
+      case "In":
+        if (val === undefined || !vals.includes(val)) return false
+        break
+      case "NotIn":
+        if (val !== undefined && vals.includes(val)) return false
+        break
+      case "Exists":
+        if (!hasKey) return false
+        break
+      case "DoesNotExist":
+        if (hasKey) return false
+        break
+      default:
+        return false
+    }
+  }
+  return true
+}
+
+interface ContainerInspection {
+  version: string | null
+  rawTag: string | null
+  imageTags: string[]
+  reason: OssRunningReason | null
+  reasonDetail: string | null
+  runningArtifacts: RunningArtifactRef[]
+}
+
+function inspectContainerAcrossRunningPods(
+  runningPods: OssPodSpecItem[],
+  container: string,
+  init: boolean,
+  allowedSuffixes?: readonly string[],
+): ContainerInspection {
+  interface ObservedImage {
+    image: string
+    repo: string
+    rawTag: string | null
+    pinnedDigest: string | null
+    effectiveDigest: string | null
+  }
+
+  const distinct = new Map<string, ObservedImage>()
+  let podsWithContainer = 0
+
+  for (const pod of runningPods) {
+    const list = init ? pod.initContainers : pod.containers
+    const c = list.find((item) => item.name === container)
+    if (!c) continue
+    podsWithContainer++
+    const parsed = extractImageRef(c.image)
+    const normRepo = normalizeImageRepo(parsed.repo)
+    const key = `${normRepo}|${parsed.rawTag ?? ""}|${parsed.digest ?? ""}`
+    if (!distinct.has(key)) {
+      distinct.set(key, {
+        image: c.image,
+        repo: parsed.repo,
+        rawTag: parsed.rawTag,
+        pinnedDigest: parsed.digest,
+        effectiveDigest: parsed.digest ?? c.digest ?? null,
+      })
+    }
+  }
+
+  if (podsWithContainer === 0 || podsWithContainer < runningPods.length) {
+    return {
+      version: null,
+      rawTag: null,
+      imageTags: [],
+      reason: "container-not-found",
+      reasonDetail: container,
+      runningArtifacts: [],
+    }
+  }
+
+  const observed = [...distinct.values()]
+  const runningArtifacts: RunningArtifactRef[] = observed.map((o) => ({
+    repo: o.repo,
+    rawTag: o.rawTag,
+    pinnedDigest: o.pinnedDigest,
+    effectiveDigest: o.effectiveDigest,
+  }))
+
+  if (observed.length > 1) {
+    const displayTags = observed.map((o) => {
+      if (o.rawTag) {
+        return normalizeTag(o.rawTag, allowedSuffixes) ?? o.rawTag
+      }
+      return o.effectiveDigest ? shortenDigest(o.effectiveDigest) : o.image
+    })
+    return {
+      version: null,
+      rawTag: null,
+      imageTags: displayTags,
+      reason: "rollout-mixed",
+      reasonDetail: displayTags.join(", "),
+      runningArtifacts,
+    }
+  }
+
+  const only = observed[0]
+  if (only.rawTag === null) {
+    if (only.effectiveDigest) {
+      const short = shortenDigest(only.effectiveDigest)
+      return {
+        version: null,
+        rawTag: null,
+        imageTags: [short],
+        reason: "digest-only",
+        reasonDetail: short,
+        runningArtifacts,
+      }
+    }
+    return {
+      version: null,
+      rawTag: null,
+      imageTags: [],
+      reason: "tag-unparseable",
+      reasonDetail: only.image,
+      runningArtifacts,
+    }
+  }
+
+  const norm = normalizeTag(only.rawTag, allowedSuffixes)
+  if (!norm) {
+    return {
+      version: null,
+      rawTag: only.rawTag,
+      imageTags: [only.rawTag],
+      reason: "tag-unparseable",
+      reasonDetail: only.rawTag,
+      runningArtifacts,
+    }
+  }
+
+  return {
+    version: norm,
+    rawTag: only.rawTag,
+    imageTags: [norm],
+    reason: null,
+    reasonDetail: null,
+    runningArtifacts,
+  }
+}
+
+function resolveWorkloadTarget(
+  resource: WorkloadKind,
   namespace: string,
   name: string,
   container: string,
-  init = false,
-): string | null {
-  const item = items.find((w) => w.namespace === namespace && w.name === name)
-  if (!item) return null
-  const list = init ? item.initContainers : item.containers
-  return list.find((c) => c.name === container)?.image ?? null
+  init: boolean,
+  allowedSuffixes: readonly string[] | undefined,
+  k8s: OssClusterInventory,
+): ContainerInspection & { source: string } {
+  const prefix = WORKLOAD_PREFIX[resource]
+  const source = `${prefix}/${namespace}/${name} (${container})`
+  const fetch = workloadListFor(k8s, resource)
+
+  if (fetch.status === "no-permission") {
+    return { source, version: null, rawTag: null, imageTags: [], reason: "no-permission", reasonDetail: fetch.resource, runningArtifacts: [] }
+  }
+  if (fetch.status !== "ok") {
+    return { source, version: null, rawTag: null, imageTags: [], reason: "k8s-unavailable", reasonDetail: null, runningArtifacts: [] }
+  }
+
+  const workload: OssWorkloadSpecItem | undefined = fetch.data.find((w) => w.namespace === namespace && w.name === name)
+  if (!workload) {
+    return { source, version: null, rawTag: null, imageTags: [], reason: "workload-not-found", reasonDetail: `${prefix}/${namespace}/${name}`, runningArtifacts: [] }
+  }
+
+  const templateContainers = init ? workload.initContainers : workload.containers
+  const templateHasContainer = templateContainers.some((c) => c.name === container)
+
+  if (k8s.pods.status === "no-permission") {
+    return { source, version: null, rawTag: null, imageTags: [], reason: "no-permission", reasonDetail: k8s.pods.resource, runningArtifacts: [] }
+  }
+  if (k8s.pods.status !== "ok") {
+    return { source, version: null, rawTag: null, imageTags: [], reason: "k8s-unavailable", reasonDetail: null, runningArtifacts: [] }
+  }
+
+  const selectedPods = k8s.pods.data.filter(
+    (p) => p.namespace === namespace && matchesSelector(p.labels, workload.selector),
+  )
+  const runningPods = selectedPods.filter((p) => p.phase === "Running")
+
+  if (runningPods.length === 0) {
+    if (!templateHasContainer) {
+      return { source, version: null, rawTag: null, imageTags: [], reason: "container-not-found", reasonDetail: container, runningArtifacts: [] }
+    }
+    return { source, version: null, rawTag: null, imageTags: [], reason: "no-running-pod", reasonDetail: `${prefix}/${namespace}/${name}`, runningArtifacts: [] }
+  }
+
+  const inspected = inspectContainerAcrossRunningPods(runningPods, container, init, allowedSuffixes)
+  return { source, ...inspected }
 }
 
-function resolveSiblings(specs: readonly OssSiblingSpec[] | undefined, k8s: OssClusterInventory): OssRunningSibling[] {
-  if (!specs?.length) return []
-  const out: OssRunningSibling[] = []
-  for (const s of specs) {
-    const fetch = workloadListFor(k8s, s.resource)
-    if (fetch.status !== "ok") continue
-    const image = findContainerImage(fetch.data, s.namespace, s.name, s.container, s.init === true)
-    if (!image) continue
-    const { rawTag } = extractImageRef(image)
-    out.push({
-      label: s.label,
-      source: `${WORKLOAD_PREFIX[s.resource]}/${s.namespace}/${s.name} (${s.container})`,
-      rawTag,
-      version: normalizeTag(rawTag),
-    })
+function cveForArtifacts(
+  rows: WorkloadVulnRow[],
+  artifacts: readonly RunningArtifactRef[],
+  namespace: string | undefined,
+  trivyState: OssUpdatesResponse["trivy"],
+): { cves: { critical: number; high: number } | null; cveReason: OssCveReason | null } {
+  if (artifacts.length === 0) {
+    return { cves: null, cveReason: trivyState === "unavailable" ? "trivy-unavailable" : "no-running-image" }
   }
-  return out
+  const cves = summarizeCvesForArtifacts(rows, artifacts, namespace)
+  if (cves !== null) return { cves, cveReason: null }
+  return { cves: null, cveReason: trivyState === "unavailable" ? "trivy-unavailable" : "no-scan-for-running" }
+}
+
+function resolveSiblings(
+  specs: readonly OssSiblingSpec[] | undefined,
+  k8s: OssClusterInventory,
+  trivyRows: WorkloadVulnRow[],
+  trivyState: OssUpdatesResponse["trivy"],
+): OssRunningSibling[] {
+  if (!specs?.length) return []
+  return specs.map((s) => {
+    const res = resolveWorkloadTarget(s.resource, s.namespace, s.name, s.container, s.init === true, s.allowedTagSuffixes, k8s)
+    const { cves, cveReason } = cveForArtifacts(trivyRows, res.runningArtifacts, s.namespace, trivyState)
+    return {
+      label: s.label,
+      source: res.source,
+      rawTag: res.rawTag,
+      version: res.version,
+      imageTags: res.imageTags,
+      reason: res.reason,
+      reasonDetail: res.reasonDetail,
+      cves,
+      cveReason,
+    }
+  })
 }
 
 interface ResolvedRunning {
   version: string | null
   rawTag: string | null
+  imageTags: string[]
   source: string | null
-  primaryImageRepo: string | null
   reason: OssRunningReason | null
   reasonDetail: string | null
+  trivyHint: string | null
+  runningArtifacts: RunningArtifactRef[]
   siblings: OssRunningSibling[]
 }
 
 function resolveRunning(
   c: OssComponent,
   k8s: OssClusterInventory,
-  trivyImgs: ReturnType<typeof summarizeImages>,
+  trivyRows: WorkloadVulnRow[],
+  trivyState: OssUpdatesResponse["trivy"],
 ): ResolvedRunning {
   const src = c.runningSource
-  const siblings = resolveSiblings(c.siblings, k8s)
+  const siblings = resolveSiblings(c.siblings, k8s, trivyRows, trivyState)
+  const trivyHint = findTrivyHint(trivyRows, c.imageMatch, c.cveNamespace)
 
   if (src.kind === "cli") {
-    return { version: null, rawTag: null, source: null, primaryImageRepo: null, reason: "not-applicable", reasonDetail: null, siblings }
+    return {
+      version: null,
+      rawTag: null,
+      imageTags: [],
+      source: null,
+      reason: "not-applicable",
+      reasonDetail: null,
+      trivyHint: null,
+      runningArtifacts: [],
+      siblings,
+    }
   }
 
   if (src.kind === "server-version") {
     if (k8s.serverVersion.status === "no-permission") {
-      return { version: null, rawTag: null, source: "/version", primaryImageRepo: null, reason: "no-permission", reasonDetail: k8s.serverVersion.resource, siblings }
+      return { version: null, rawTag: null, imageTags: [], source: "/version", reason: "no-permission", reasonDetail: k8s.serverVersion.resource, trivyHint, runningArtifacts: [], siblings }
     }
-    if (k8s.serverVersion.status !== "ok") {
-      return { version: null, rawTag: null, source: "/version", primaryImageRepo: null, reason: "k8s-unavailable", reasonDetail: null, siblings }
+    if (k8s.serverVersion.status !== "ok" || !k8s.serverVersion.data) {
+      return { version: null, rawTag: null, imageTags: [], source: "/version", reason: "k8s-unavailable", reasonDetail: null, trivyHint, runningArtifacts: [], siblings }
     }
     const rawTag = k8s.serverVersion.data
-    const version = normalizeTag(rawTag)
+    const version = normalizeTag(rawTag, c.allowedTagSuffixes)
+    const artifacts: RunningArtifactRef[] = c.imageMatch
+      ? [{ repo: c.imageMatch, patternMatch: true, rawTag, pinnedDigest: null, effectiveDigest: null }]
+      : []
     if (!version) {
-      return { version: null, rawTag, source: "/version", primaryImageRepo: null, reason: "tag-unparseable", reasonDetail: rawTag, siblings }
+      return { version: null, rawTag, imageTags: [rawTag], source: "/version", reason: "tag-unparseable", reasonDetail: rawTag, trivyHint: null, runningArtifacts: artifacts, siblings }
     }
-    return { version, rawTag, source: "/version", primaryImageRepo: null, reason: null, reasonDetail: null, siblings }
+    return { version, rawTag, imageTags: [version], source: "/version", reason: null, reasonDetail: null, trivyHint: null, runningArtifacts: artifacts, siblings }
   }
 
   if (src.kind === "crd-annotation") {
     const label = `crd/${src.crdName}`
     if (k8s.gatewayApiCrdAnnotations.status === "no-permission") {
-      return { version: null, rawTag: null, source: label, primaryImageRepo: null, reason: "no-permission", reasonDetail: k8s.gatewayApiCrdAnnotations.resource, siblings }
+      return { version: null, rawTag: null, imageTags: [], source: label, reason: "no-permission", reasonDetail: k8s.gatewayApiCrdAnnotations.resource, trivyHint: null, runningArtifacts: [], siblings }
     }
     if (k8s.gatewayApiCrdAnnotations.status === "not-found") {
-      return { version: null, rawTag: null, source: label, primaryImageRepo: null, reason: "workload-not-found", reasonDetail: src.crdName, siblings }
+      return { version: null, rawTag: null, imageTags: [], source: label, reason: "workload-not-found", reasonDetail: src.crdName, trivyHint: null, runningArtifacts: [], siblings }
     }
     if (k8s.gatewayApiCrdAnnotations.status !== "ok") {
-      return { version: null, rawTag: null, source: label, primaryImageRepo: null, reason: "k8s-unavailable", reasonDetail: null, siblings }
+      return { version: null, rawTag: null, imageTags: [], source: label, reason: "k8s-unavailable", reasonDetail: null, trivyHint: null, runningArtifacts: [], siblings }
     }
     const rawTag = k8s.gatewayApiCrdAnnotations.data[src.annotation] ?? null
     if (!rawTag) {
-      return { version: null, rawTag: null, source: label, primaryImageRepo: null, reason: "workload-not-found", reasonDetail: src.annotation, siblings }
+      return { version: null, rawTag: null, imageTags: [], source: label, reason: "workload-not-found", reasonDetail: src.annotation, trivyHint: null, runningArtifacts: [], siblings }
     }
-    const version = normalizeTag(rawTag)
+    const version = normalizeTag(rawTag, c.allowedTagSuffixes)
     if (!version) {
-      return { version: null, rawTag, source: label, primaryImageRepo: null, reason: "tag-unparseable", reasonDetail: rawTag, siblings }
+      return { version: null, rawTag, imageTags: [rawTag], source: label, reason: "tag-unparseable", reasonDetail: rawTag, trivyHint: null, runningArtifacts: [], siblings }
     }
-    return { version, rawTag, source: `${label} (${src.annotation})`, primaryImageRepo: null, reason: null, reasonDetail: null, siblings }
+    return { version, rawTag, imageTags: [version], source: `${label} (${src.annotation})`, reason: null, reasonDetail: null, trivyHint: null, runningArtifacts: [], siblings }
   }
 
   if (src.kind === "static-pod") {
     const label = `pod/${src.namespace}/${src.namePrefix}* (${src.container})`
-    const fetch = k8s.kubeSystemPods
+    const fetch = k8s.pods
     if (fetch.status === "no-permission") {
-      return { version: null, rawTag: null, source: label, primaryImageRepo: null, reason: "no-permission", reasonDetail: fetch.resource, siblings }
+      return { version: null, rawTag: null, imageTags: [], source: label, reason: "no-permission", reasonDetail: fetch.resource, trivyHint, runningArtifacts: [], siblings }
     }
-    if (fetch.status === "ok") {
-      const pod = fetch.data.find((p) => p.namespace === src.namespace && p.name.startsWith(src.namePrefix))
-      const image = pod?.containers.find((x) => x.name === src.container)?.image ?? null
-      if (!image) {
-        return { version: null, rawTag: null, source: label, primaryImageRepo: null, reason: "workload-not-found", reasonDetail: `${src.namespace}/${src.namePrefix}*`, siblings }
-      }
-      const { repo, rawTag } = extractImageRef(image)
-      const version = normalizeTag(rawTag)
-      if (!version) {
-        return { version: null, rawTag, source: `pod/${pod!.namespace}/${pod!.name} (${src.container})`, primaryImageRepo: repo, reason: "tag-unparseable", reasonDetail: rawTag ?? image, siblings }
-      }
-      return { version, rawTag, source: `pod/${pod!.namespace}/${pod!.name} (${src.container})`, primaryImageRepo: repo, reason: null, reasonDetail: null, siblings }
+    if (fetch.status !== "ok") {
+      return { version: null, rawTag: null, imageTags: [], source: label, reason: "k8s-unavailable", reasonDetail: null, trivyHint, runningArtifacts: [], siblings }
     }
-    // K8s unreachable: allow strict exact-repo Trivy fallback if available.
-    if (trivyImgs.tags.length > 0) {
-      return { version: trivyImgs.tags[0], rawTag: trivyImgs.rawTags[0] ?? trivyImgs.tags[0], source: "trivy", primaryImageRepo: null, reason: null, reasonDetail: null, siblings }
+    const matchingPods = fetch.data.filter((p) => p.namespace === src.namespace && p.name.startsWith(src.namePrefix))
+    if (matchingPods.length === 0) {
+      return { version: null, rawTag: null, imageTags: [], source: label, reason: "workload-not-found", reasonDetail: `${src.namespace}/${src.namePrefix}*`, trivyHint, runningArtifacts: [], siblings }
     }
-    return { version: null, rawTag: null, source: label, primaryImageRepo: null, reason: "k8s-unavailable", reasonDetail: null, siblings }
+    const runningPods = matchingPods.filter((p) => p.phase === "Running")
+    if (runningPods.length === 0) {
+      return { version: null, rawTag: null, imageTags: [], source: label, reason: "no-running-pod", reasonDetail: `${src.namespace}/${src.namePrefix}*`, trivyHint, runningArtifacts: [], siblings }
+    }
+    const inspected = inspectContainerAcrossRunningPods(runningPods, src.container, false, c.allowedTagSuffixes)
+    const exactSource = runningPods.length === 1
+      ? `pod/${runningPods[0].namespace}/${runningPods[0].name} (${src.container})`
+      : `pod/${src.namespace}/${src.namePrefix}* (${runningPods.length} pods, ${src.container})`
+    return {
+      version: inspected.version,
+      rawTag: inspected.rawTag,
+      imageTags: inspected.imageTags,
+      source: exactSource,
+      reason: inspected.reason,
+      reasonDetail: inspected.reasonDetail,
+      trivyHint: null,
+      runningArtifacts: inspected.runningArtifacts,
+      siblings,
+    }
   }
 
   // src.kind === "workload"
-  const prefix = WORKLOAD_PREFIX[src.resource]
-  const label = `${prefix}/${src.namespace}/${src.name} (${src.container})`
-  const fetch = workloadListFor(k8s, src.resource)
-  if (fetch.status === "no-permission") {
-    return { version: null, rawTag: null, source: label, primaryImageRepo: null, reason: "no-permission", reasonDetail: fetch.resource, siblings }
+  const res = resolveWorkloadTarget(src.resource, src.namespace, src.name, src.container, false, c.allowedTagSuffixes, k8s)
+  return {
+    version: res.version,
+    rawTag: res.rawTag,
+    imageTags: res.imageTags,
+    source: res.source,
+    reason: res.reason,
+    reasonDetail: res.reasonDetail,
+    trivyHint: res.reason === "k8s-unavailable" || res.reason === "no-permission" ? trivyHint : null,
+    runningArtifacts: res.runningArtifacts,
+    siblings,
   }
-  if (fetch.status === "ok") {
-    const image = findContainerImage(fetch.data, src.namespace, src.name, src.container)
-    if (!image) {
-      return { version: null, rawTag: null, source: label, primaryImageRepo: null, reason: "workload-not-found", reasonDetail: `${prefix}/${src.namespace}/${src.name}`, siblings }
-    }
-    const { repo, rawTag } = extractImageRef(image)
-    const version = normalizeTag(rawTag)
-    if (!version) {
-      return { version: null, rawTag, source: label, primaryImageRepo: repo, reason: "tag-unparseable", reasonDetail: rawTag ?? image, siblings }
-    }
-    return { version, rawTag, source: label, primaryImageRepo: repo, reason: null, reasonDetail: null, siblings }
-  }
-
-  // K8s unreachable: allow strict exact-repo Trivy fallback if available.
-  if (trivyImgs.tags.length > 0) {
-    return { version: trivyImgs.tags[0], rawTag: trivyImgs.rawTags[0] ?? trivyImgs.tags[0], source: "trivy", primaryImageRepo: null, reason: null, reasonDetail: null, siblings }
-  }
-  if (trivyImgs.rawTags.length > 0) {
-    return { version: null, rawTag: trivyImgs.rawTags[0], source: "trivy", primaryImageRepo: null, reason: "tag-unparseable", reasonDetail: trivyImgs.rawTags[0], siblings }
-  }
-  return { version: null, rawTag: null, source: label, primaryImageRepo: null, reason: "k8s-unavailable", reasonDetail: null, siblings }
 }
 
 function summarizeK8sState(k8s: OssClusterInventory): OssUpdatesResponse["k8s"] {
-  const core = [k8s.serverVersion, k8s.deployments, k8s.daemonsets, k8s.statefulsets, k8s.kubeSystemPods]
+  const core = [k8s.serverVersion, k8s.deployments, k8s.daemonsets, k8s.statefulsets, k8s.pods]
   const okCount = core.filter((r) => r.status === "ok").length
   if (okCount === core.length) return "ok"
   if (okCount === 0) return "unavailable"
@@ -330,42 +605,37 @@ export async function getOssUpdateStatus(now: number = Date.now()): Promise<OssU
       if (!declared) return null // catalog entry whose VERSIONS.md row was renamed: skipped, the sync test flags it
 
       const chart = c.argoApp ? chartByApp.get(c.argoApp) ?? null : null
-      const validChart = chart && parseSemver(chart) ? chart : null
-      const preliminaryTrivy = summarizeImages(trivy.rows, c.imageMatch, c.cveNamespace)
-      const resolved = resolveRunning(c, k8s, preliminaryTrivy)
-      // When the live primary container repo is known, also match Trivy by that exact repo
-      // (covers mirror/registry rewrites such as registry.istio.io/release/pilot).
-      const cveSummary = resolved.primaryImageRepo
-        ? summarizeImages(trivy.rows, resolved.primaryImageRepo, c.cveNamespace)
-        : preliminaryTrivy
-      const cves = c.runningSource.kind === "cli" || c.runningSource.kind === "crd-annotation" ? null : cveSummary.cves
-      const cveReason: OssCveReason | null = cves !== null
-        ? null
-        : c.runningSource.kind === "cli" || c.runningSource.kind === "crd-annotation"
-          ? "not-applicable"
-          : trivyState === "unavailable"
-            ? "trivy-unavailable"
-            : "no-scan"
+      const validChart = chart && normalizeTag(chart) !== null ? chart : null
+      const resolved = resolveRunning(c, k8s, trivy.rows, trivyState)
+
+      let cves: { critical: number; high: number } | null = null
+      let cveReason: OssCveReason | null = null
+      if (c.runningSource.kind === "cli" || c.runningSource.kind === "crd-annotation") {
+        cveReason = "not-applicable"
+      } else {
+        const cveRes = cveForArtifacts(trivy.rows, resolved.runningArtifacts, c.cveNamespace, trivyState)
+        cves = cveRes.cves
+        cveReason = cveRes.cveReason
+      }
 
       let drift: OssDrift
       let driftReason: OssRunningReason | null = null
       if (c.runningSource.kind === "cli") {
         drift = "not-applicable"
         driftReason = "not-applicable"
-      } else if (resolved.reason === "tag-unparseable") {
-        drift = computeDrift(declared, validChart, [resolved.rawTag ?? "__unparseable__"])
-        driftReason = drift === "unknown" ? "tag-unparseable" : null
+      } else if (resolved.reason === "rollout-mixed") {
+        drift = computeDrift(declared, validChart, resolved.imageTags, c.allowedTagSuffixes, true)
+        driftReason = "rollout-mixed"
+      } else if (resolved.reason === "tag-unparseable" || resolved.reason === "digest-only") {
+        drift = computeDrift(declared, validChart, resolved.imageTags.length > 0 ? resolved.imageTags : ["__unparseable__"], c.allowedTagSuffixes)
+        driftReason = drift === "unknown" ? resolved.reason : null
+      } else if (resolved.version !== null) {
+        drift = computeDrift(declared, validChart, [resolved.version], c.allowedTagSuffixes)
       } else {
-        const runningTags = resolved.version ? [resolved.version] : []
-        drift = computeDrift(declared, validChart, runningTags)
-        if (drift === "unknown") driftReason = resolved.reason ?? "workload-not-found"
+        // K1: Workload/container/pods not read -> never match on chart alone.
+        drift = computeDrift(declared, validChart, [], c.allowedTagSuffixes)
+        driftReason = resolved.reason ?? "workload-not-found"
       }
-
-      const imageTags = resolved.version
-        ? [resolved.version]
-        : resolved.rawTag
-          ? [resolved.rawTag]
-          : []
 
       const releases = lookupOn ? await getUpstreamReleases(c.repo) : null
       const upstream = releases ? summarizeUpstream(releases, declared.version, c.trackMinor === true, now) : null
@@ -387,10 +657,11 @@ export async function getOssUpdateStatus(now: number = Date.now()): Promise<OssU
           rawTag: resolved.rawTag,
           source: resolved.source,
           chartVersion: validChart,
-          imageTags,
+          imageTags: resolved.imageTags,
           siblings: resolved.siblings,
           reason: resolved.reason,
           reasonDetail: resolved.reasonDetail,
+          ...(resolved.trivyHint ? { trivyHint: resolved.trivyHint } : {}),
         },
         drift,
         driftReason,

@@ -2430,13 +2430,41 @@ export async function patchNotificationConfig(resourceVersion: string, spec: unk
 }
 
 // D-OSS-UPDATES-READ: read-only, bounded inventory fetchers for Settings > OSS updates.
-// Uses only existing portal RBAC (plus an explicit 403 -> "no-permission" probe on the
-// Gateway API CRD so the UI explains missing RBAC instead of pretending unknown).
+// Uses only existing portal RBAC (ClusterRole narwhal-portal already grants get/list on
+// deployments, daemonsets, statefulsets, and pods; plus an explicit 403 -> "no-permission"
+// probe on the Gateway API CRD so the UI explains missing RBAC instead of pretending unknown).
+export interface OssLabelSelectorRequirement {
+  key: string
+  operator: "In" | "NotIn" | "Exists" | "DoesNotExist" | string
+  values?: string[]
+}
+
+export interface OssLabelSelector {
+  matchLabels?: Record<string, string>
+  matchExpressions?: OssLabelSelectorRequirement[]
+}
+
 export interface OssWorkloadSpecItem {
   namespace: string
   name: string
+  selector?: OssLabelSelector
   containers: Array<{ name: string; image: string }>
   initContainers: Array<{ name: string; image: string }>
+}
+
+export interface OssPodContainerSpec {
+  name: string
+  image: string
+  digest?: string | null
+}
+
+export interface OssPodSpecItem {
+  namespace: string
+  name: string
+  labels: Record<string, string>
+  phase: string
+  containers: OssPodContainerSpec[]
+  initContainers: OssPodContainerSpec[]
 }
 
 export type OssResourceFetch<T> =
@@ -2450,13 +2478,17 @@ export interface OssClusterInventory {
   deployments: OssResourceFetch<OssWorkloadSpecItem[]>
   daemonsets: OssResourceFetch<OssWorkloadSpecItem[]>
   statefulsets: OssResourceFetch<OssWorkloadSpecItem[]>
-  kubeSystemPods: OssResourceFetch<OssWorkloadSpecItem[]>
+  pods: OssResourceFetch<OssPodSpecItem[]>
   gatewayApiCrdAnnotations: OssResourceFetch<Record<string, string>>
 }
 
 interface RawOssWorkload {
   metadata?: { name?: string; namespace?: string }
   spec?: {
+    selector?: {
+      matchLabels?: Record<string, string>
+      matchExpressions?: Array<{ key?: string; operator?: string; values?: string[] }>
+    }
     containers?: Array<{ name?: string; image?: string }>
     initContainers?: Array<{ name?: string; image?: string }>
     template?: {
@@ -2468,17 +2500,81 @@ interface RawOssWorkload {
   }
 }
 
+interface RawOssPodStatusEntry {
+  name?: string
+  imageID?: string
+}
+
+interface RawOssPod {
+  metadata?: { name?: string; namespace?: string; labels?: Record<string, string> }
+  spec?: {
+    containers?: Array<{ name?: string; image?: string }>
+    initContainers?: Array<{ name?: string; image?: string }>
+  }
+  status?: {
+    phase?: string
+    containerStatuses?: RawOssPodStatusEntry[]
+    initContainerStatuses?: RawOssPodStatusEntry[]
+  }
+}
+
+const IMAGE_DIGEST_RE = /@(sha256:[0-9a-fA-F]+)/
+
 function mapRawWorkload(item: RawOssWorkload): OssWorkloadSpecItem {
   const podSpec = item.spec?.template?.spec ?? item.spec
   const toContainers = (list: Array<{ name?: string; image?: string }> | undefined) =>
     (list ?? [])
       .filter((c): c is { name: string; image: string } => typeof c.name === "string" && typeof c.image === "string")
       .map((c) => ({ name: c.name, image: c.image }))
+  const rawSel = item.spec?.selector
+  const selector: OssLabelSelector | undefined = rawSel
+    ? {
+        ...(rawSel.matchLabels ? { matchLabels: rawSel.matchLabels } : {}),
+        ...(rawSel.matchExpressions
+          ? {
+              matchExpressions: rawSel.matchExpressions
+                .filter((e): e is { key: string; operator: string; values?: string[] } =>
+                  typeof e.key === "string" && typeof e.operator === "string",
+                )
+                .map((e) => ({ key: e.key, operator: e.operator, ...(e.values ? { values: e.values } : {}) })),
+            }
+          : {}),
+      }
+    : undefined
   return {
     namespace: item.metadata?.namespace ?? "",
     name: item.metadata?.name ?? "",
+    ...(selector ? { selector } : {}),
     containers: toContainers(podSpec?.containers),
     initContainers: toContainers(podSpec?.initContainers),
+  }
+}
+
+function mapRawPod(item: RawOssPod): OssPodSpecItem {
+  const extractStatusDigest = (statuses: RawOssPodStatusEntry[] | undefined, name: string): string | null => {
+    const entry = statuses?.find((s) => s.name === name)
+    const m = entry?.imageID ? IMAGE_DIGEST_RE.exec(entry.imageID) : null
+    return m ? m[1] : null
+  }
+  const toContainers = (
+    list: Array<{ name?: string; image?: string }> | undefined,
+    statuses: RawOssPodStatusEntry[] | undefined,
+  ): OssPodContainerSpec[] =>
+    (list ?? [])
+      .filter((c): c is { name: string; image: string } => typeof c.name === "string" && typeof c.image === "string")
+      .map((c) => {
+        const inlineDigest = IMAGE_DIGEST_RE.exec(c.image)?.[1] ?? null
+        const statusDigest = extractStatusDigest(statuses, c.name)
+        const digest = inlineDigest ?? statusDigest
+        return { name: c.name, image: c.image, ...(digest ? { digest } : {}) }
+      })
+  return {
+    namespace: item.metadata?.namespace ?? "",
+    name: item.metadata?.name ?? "",
+    labels: item.metadata?.labels ?? {},
+    phase: item.status?.phase ?? "",
+    containers: toContainers(item.spec?.containers, item.status?.containerStatuses),
+    initContainers: toContainers(item.spec?.initContainers, item.status?.initContainerStatuses),
   }
 }
 
@@ -2499,7 +2595,7 @@ export async function getOssClusterInventory(): Promise<OssClusterInventory> {
     deployments,
     daemonsets,
     statefulsets,
-    kubeSystemPods,
+    pods,
     gatewayApiCrdAnnotations,
   ] = await Promise.all([
     fetchOssResource("/version", async () => {
@@ -2516,7 +2612,7 @@ export async function getOssClusterInventory(): Promise<OssClusterInventory> {
       (await listBounded<RawOssWorkload>("/apis/apps/v1/statefulsets")).items.map(mapRawWorkload),
     ),
     fetchOssResource("pods", async () =>
-      (await listBounded<RawOssWorkload>("/api/v1/namespaces/kube-system/pods")).items.map(mapRawWorkload),
+      (await listBounded<RawOssPod>("/api/v1/pods")).items.map(mapRawPod),
     ),
     fetchOssResource("customresourcedefinitions.apiextensions.k8s.io", async () => {
       const crd = await k8sFetch<{ metadata?: { annotations?: Record<string, string> } }>(
@@ -2531,7 +2627,7 @@ export async function getOssClusterInventory(): Promise<OssClusterInventory> {
     deployments,
     daemonsets,
     statefulsets,
-    kubeSystemPods,
+    pods,
     gatewayApiCrdAnnotations,
   }
 }

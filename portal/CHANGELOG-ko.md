@@ -11,10 +11,10 @@
 
 ### 수정
 
-- **OSS 업데이트 실행 버전 실측·동반 이미지 분리·알 수 없음 사유 명시 (`src/lib/oss-updates/catalog.ts`, `src/lib/oss-updates/status.ts`, `src/lib/oss-updates/version.ts`, `src/lib/k8s-client.ts`, `src/types/oss-updates.ts`, `src/components/settings/oss-updates-table.tsx`, `src/lib/i18n.ts`):**
-  - Trivy 리포트에만 의존하던 실행 버전 탐지를 기존 포털 RBAC 범위 내 직접 Kubernetes 조회(`getOssClusterInventory()`: `/version`, bounded `deployments`·`daemonsets`·`statefulsets`, `kube-system` 정적 `pods`, `gateways.gateway.networking.k8s.io` CRD 권한 확인)로 전환해 Kubernetes(`v1.35.7`)·Cilium(`cilium-agent` `v1.19.4`)·Gitea(`1.26.2-rootless`)·metrics-server(`v0.8.1`)·kube-vip(`v1.1.2`)를 실측하고, `Helm`은 `해당 없음 (CLI)`로 구분했습니다.
-  - 부분 문자열 `imageMatch`(`r.image.includes(...)`)를 정확한 리포지토리 경계 매칭(`repoMatches`)과 워크로드+컨테이너 지정으로 교체해 동반·초기화·사이드카 이미지(`cilium-envoy`, `apisix-ingress-controller`, `falcosidekick`, `velero-plugin-for-aws`, `keycloak-operator`, CSI 사이드카)가 드리프트 오탐이나 CVE 혼입을 일으키지 않고 별도 하위 라벨로 표시되도록 했으며, Istio의 Trivy CVE 매칭(`registry.istio.io/release/pilot`)을 수정했습니다.
-  - 태그 정규화(`normalizeTag`: 선행 `v`, `-rootless`/`-ubuntu`/`-distroless` 접미사, `@sha256:...` 다이제스트 처리, 프리릴리스·`latest` 등 비-SemVer 태그는 `null`로 두고 일치 처리 금지)를 명시하고, 남은 모든 미확인/스캔 없음 셀에 사유(`권한 없음: <리소스>`, `워크로드 없음`, `태그 해석 불가`, `클러스터 조회 불가`, `업스트림 조회 꺼짐/실패`, `스캔 리포트 없음`/`Trivy 조회 불가`)를 표시합니다.
+- **OSS 업데이트 실행 Pod 실측·접미사 허용목록·실행 이미지 CVE 귀속·사유 명시 (`src/lib/oss-updates/catalog.ts`, `src/lib/oss-updates/status.ts`, `src/lib/oss-updates/version.ts`, `src/lib/k8s-client.ts`, `src/lib/trivy.ts`, `src/types/oss-updates.ts`, `src/components/settings/oss-updates-table.tsx`, `src/lib/i18n.ts`):**
+  - 기존 포털 RBAC 범위 내 직접 Kubernetes 조회(`getOssClusterInventory()`: `/version`, selector 포함 bounded `deployments`·`daemonsets`·`statefulsets`, 실제 `Running` Pod 이미지 및 `imageID` digest 조회용 `/api/v1/pods`, `gateways.gateway.networking.k8s.io` CRD 403 확인)로 전환했습니다. 워크로드·컨테이너 부재나 K8s 조회 실패 시 차트 버전·Trivy 태그만으로 `일치`를 내지 않으며, 롤아웃 중 이미지 혼재(모든 `kube-vip` 정적 Pod 포함)는 `롤아웃 중 (혼재)` 드리프트로, 실행 Pod 0개는 `실행 중인 Pod 없음`으로 표시하고 `Helm`은 `해당 없음 (CLI)`로 구분합니다.
+  - 부분 문자열 `imageMatch` 대신 실행 중인 이미지의 정확한 `repo+tag`(또는 `digest`)만 매칭(`summarizeCvesForArtifacts`)해 이전 태그 리포트가 현재 실행 이미지 CVE로 합산되지 않도록 했으며(미일치 시 `스캔 없음 (이 실행 이미지의 리포트 없음)`), 동반·초기화·사이드카 이미지도 개별 CVE 수치와 조회 실패·digest-only(`태그 없음 (digest 고정)` 및 축약 digest) 사유를 생략 없이 표시합니다.
+  - 컴포넌트별 허용 접미사 목록(`allowedTagSuffixes`: Gitea `-rootless`, APISIX `-ubuntu`, Istio `-distroless`) 외의 접미사(`-rc1`, `-preview1`, `-custom`)와 비-SemVer 태그는 원문 그대로 `태그 해석 불가`로 두고 `일치` 처리하지 않습니다(`R392`).
 
 ### 변경
 

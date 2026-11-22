@@ -61,6 +61,14 @@ function runningReasonText(t: T, reason: OssRunningReason | null, detail?: strin
       return detail ? t("ossUpdates.reasonNoPermission", { detail }) : t("ossUpdates.reasonNoPermissionShort")
     case "workload-not-found":
       return detail ? t("ossUpdates.reasonWorkloadNotFound", { detail }) : t("ossUpdates.reasonWorkloadNotFoundShort")
+    case "container-not-found":
+      return detail ? t("ossUpdates.reasonContainerNotFound", { detail }) : t("ossUpdates.reasonContainerNotFoundShort")
+    case "no-running-pod":
+      return t("ossUpdates.reasonNoRunningPod")
+    case "rollout-mixed":
+      return detail ? t("ossUpdates.reasonRolloutMixed", { detail }) : t("ossUpdates.reasonRolloutMixedShort")
+    case "digest-only":
+      return t("ossUpdates.reasonDigestOnly")
     case "tag-unparseable":
       return detail ? t("ossUpdates.reasonTagUnparseable", { detail }) : t("ossUpdates.reasonTagUnparseableShort")
     case "k8s-unavailable":
@@ -75,6 +83,14 @@ function shortDriftReasonText(t: T, reason: OssRunningReason | null): string | n
       return t("ossUpdates.reasonNoPermissionShort")
     case "workload-not-found":
       return t("ossUpdates.reasonWorkloadNotFoundShort")
+    case "container-not-found":
+      return t("ossUpdates.reasonContainerNotFoundShort")
+    case "no-running-pod":
+      return t("ossUpdates.reasonNoRunningPod")
+    case "rollout-mixed":
+      return t("ossUpdates.reasonRolloutMixedShort")
+    case "digest-only":
+      return t("ossUpdates.reasonDigestOnly")
     case "tag-unparseable":
       return t("ossUpdates.reasonTagUnparseableShort")
     case "k8s-unavailable":
@@ -100,8 +116,10 @@ function cveReasonText(t: T, reason: OssCveReason | null): string | null {
       return t("ossUpdates.notApplicable")
     case "trivy-unavailable":
       return t("ossUpdates.reasonTrivyUnavailable")
-    case "no-scan":
-      return t("ossUpdates.reasonNoScanReport")
+    case "no-running-image":
+      return t("ossUpdates.reasonNoRunningImage")
+    case "no-scan-for-running":
+      return t("ossUpdates.reasonNoScanForRunning")
     default:
       return null
   }
@@ -269,24 +287,40 @@ function Row({ row, coolingDays, onRequest }: { row: OssUpdateRow; coolingDays: 
             {!primaryDisplay && (
               <div className="font-sans text-muted-foreground">
                 <span>{t("ossUpdates.unknown")}</span>
-                {runningReason && <span className="block text-[11px]">{runningReason}</span>}
+              </div>
+            )}
+            {runningReason && (
+              <div className="font-sans text-[11px] text-muted-foreground">{runningReason}</div>
+            )}
+            {row.running.trivyHint && (
+              <div className="font-sans text-[11px] text-muted-foreground">
+                {t("ossUpdates.trivyHint", { tag: row.running.trivyHint })}
               </div>
             )}
             {row.running.source && (
               <div className="text-[11px] text-muted-foreground">{row.running.source}</div>
             )}
-            {row.running.siblings.map((s) => (
-              <div key={`${s.label}:${s.source}`} className="text-[11px] text-muted-foreground">
-                {t("ossUpdates.companionLabel", { label: s.label, tag: s.rawTag ?? s.version ?? t("ossUpdates.unknown") })}
-              </div>
-            ))}
+            {row.running.siblings.map((s) => {
+              const sibDisplay = s.rawTag
+                ?? s.version
+                ?? (s.imageTags.length > 0 ? s.imageTags.join(", ") : null)
+              const sibReason = runningReasonText(t, s.reason, s.reasonDetail)
+              const sibTagText = sibDisplay
+                ? (sibReason ? `${sibDisplay} (${sibReason})` : sibDisplay)
+                : (sibReason ?? t("ossUpdates.unknown"))
+              return (
+                <div key={`${s.label}:${s.source}`} className="text-[11px] text-muted-foreground">
+                  {t("ossUpdates.companionLabel", { label: s.label, tag: sibTagText })}
+                </div>
+              )
+            })}
           </div>
         )}
       </td>
       <td className="py-2.5 pr-2">
         <div className="space-y-0.5">
           <Badge className={`${driftClass[row.drift]} text-xs`}>{drift[row.drift]}</Badge>
-          {row.drift === "unknown" && driftReason && (
+          {(row.drift === "unknown" || row.drift === "drift") && driftReason && (
             <div className="text-[11px] text-muted-foreground">{driftReason}</div>
           )}
         </div>
@@ -319,16 +353,27 @@ function Row({ row, coolingDays, onRequest }: { row: OssUpdateRow; coolingDays: 
         )}
       </td>
       <td className="py-2.5 pr-2 text-xs">
-        {row.cves ? (
-          t("ossUpdates.cveCounts", { critical: row.cves.critical, high: row.cves.high })
-        ) : row.cveReason === "not-applicable" ? (
-          <span className="text-muted-foreground">{t("ossUpdates.notApplicable")}</span>
-        ) : (
-          <div className="text-muted-foreground">
-            <span>{t("ossUpdates.noScan")}</span>
-            {cveReason && <div className="text-[11px]">{cveReason}</div>}
-          </div>
-        )}
+        <div className="space-y-0.5">
+          {row.cves ? (
+            <div>{t("ossUpdates.cveCounts", { critical: row.cves.critical, high: row.cves.high })}</div>
+          ) : row.cveReason === "not-applicable" ? (
+            <span className="text-muted-foreground">{t("ossUpdates.notApplicable")}</span>
+          ) : (
+            <div className="text-muted-foreground">
+              {cveReason ? <div>{cveReason}</div> : <span>{t("ossUpdates.noScan")}</span>}
+            </div>
+          )}
+          {row.running.siblings.map((s) => {
+            const sibCve = s.cves
+              ? t("ossUpdates.cveCounts", { critical: s.cves.critical, high: s.cves.high })
+              : (cveReasonText(t, s.cveReason) ?? t("ossUpdates.noScan"))
+            return (
+              <div key={`${s.label}:${s.source}:cve`} className="text-[11px] text-muted-foreground">
+                {t("ossUpdates.companionLabel", { label: s.label, tag: sibCve })}
+              </div>
+            )
+          })}
+        </div>
       </td>
       <td className="py-2.5">
         <Button type="button" size="sm" variant="outline" onClick={() => onRequest(row)} aria-label={t("ossUpdates.requestFor", { component: row.component })}>

@@ -6,6 +6,10 @@ export type OssRunningReason =
   | "not-applicable"
   | "no-permission"
   | "workload-not-found"
+  | "container-not-found"
+  | "no-running-pod"
+  | "rollout-mixed"
+  | "digest-only"
   | "tag-unparseable"
   | "k8s-unavailable"
 
@@ -17,17 +21,28 @@ export type OssUpstreamReason =
 export type OssCveReason =
   | "not-applicable"
   | "trivy-unavailable"
-  | "no-scan"
+  | "no-running-image"
+  | "no-scan-for-running"
 
 export interface OssRunningSibling {
   /** Companion label (e.g. "cilium-envoy", "apisix-ingress-controller", "falcosidekick", "velero-plugin-for-aws"). */
   label: string
   /** Exact workload/container source (e.g. "ds/kube-system/cilium-envoy (cilium-envoy)"). */
   source: string
-  /** Raw image tag (digest-stripped), null when untagged. */
+  /** Raw image tag (digest-stripped), null when untagged or unreadable. */
   rawTag: string | null
-  /** Normalized semver when parseable, null otherwise. */
+  /** Normalized semver when parseable under the sibling's allowed suffixes, null otherwise. */
   version: string | null
+  /** Running tag(s) or shortened digest(s) observed across Running pods. */
+  imageTags: string[]
+  /** Explicit reason when unreadable, digest-only, rollout-mixed, or tag-unparseable. */
+  reason: OssRunningReason | null
+  /** Extra context for `reason` (e.g. shortened digest, mixed tags, missing resource/container). */
+  reasonDetail?: string | null
+  /** Trivy counts strictly for this sibling's running image(s); null when no report or unreadable. */
+  cves: { critical: number; high: number } | null
+  /** Explicit reason when sibling `cves` is null. */
+  cveReason: OssCveReason | null
 }
 
 export interface OssUpstreamInfo {
@@ -51,7 +66,7 @@ export interface OssUpdateRow {
   section: string
   declared: { version: string; chartVersion: string | null }
   running: {
-    /** Normalized running application version from the authoritative workload/endpoint/CRD; null when unknown or CLI. */
+    /** Normalized running application version from the authoritative workload/endpoint/CRD; null when unknown, mixed, or CLI. */
     version: string | null
     /** Raw tag of the authoritative running container/endpoint before normalization (e.g. "1.26.2-rootless", "latest"). */
     rawTag: string | null
@@ -59,24 +74,26 @@ export interface OssUpdateRow {
     source: string | null
     /** Argo CD Application source.targetRevision (chart version), null when not an Argo chart app. */
     chartVersion: string | null
-    /** Authoritative running image tag(s) for this component (never includes sibling/init/sidecar images). */
+    /** Authoritative running image tag(s) or shortened digest(s) for this component (never includes sibling/init/sidecar images). */
     imageTags: string[]
     /** Non-authoritative companion containers/workloads in the same release, shown separately and never mixed into drift. */
     siblings: OssRunningSibling[]
     /** Explicit reason when `version` is null (or "not-applicable" for CLI tools). */
     reason: OssRunningReason | null
-    /** Extra context for `reason` (e.g. missing RBAC resource, missing workload, unparseable tag). */
+    /** Extra context for `reason` (e.g. missing RBAC resource, missing workload, unparseable tag, mixed tags, digest). */
     reasonDetail?: string | null
+    /** Optional non-authoritative hint from Trivy when K8s workload cannot be read; never drives drift. */
+    trivyHint?: string | null
   }
   drift: OssDrift
-  /** Explicit reason when `drift` is "unknown" or "not-applicable". */
+  /** Explicit reason when `drift` is "unknown", "not-applicable", or rollout-mixed drift. */
   driftReason: OssRunningReason | null
   /** "ok" = looked up; "disabled" = flag off (air-gap default); "unavailable" = lookup failed. */
   upstreamState: "ok" | "disabled" | "unavailable"
   /** Explicit reason when `upstream` is null. */
   upstreamReason: OssUpstreamReason | null
   upstream: OssUpstreamInfo | null
-  /** Trivy counts for the running primary image of this component; null = no scan data or not applicable. */
+  /** Trivy counts strictly for the running primary image of this component; null = no scan data or not applicable. */
   cves: { critical: number; high: number } | null
   /** Explicit reason when `cves` is null. */
   cveReason: OssCveReason | null

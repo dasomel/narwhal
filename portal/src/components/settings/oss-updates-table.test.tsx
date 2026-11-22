@@ -34,7 +34,7 @@ const row = (over: Partial<OssUpdateRow>): OssUpdateRow => ({
   upstreamReason: "upstream-off",
   upstream: null,
   cves: null,
-  cveReason: "no-scan",
+  cveReason: "no-scan-for-running",
   heldMinor: false,
   highRisk: false,
   ...over,
@@ -58,11 +58,11 @@ describe("OssUpdatesTable", () => {
     expect(html).toContain("ossUpdates.unknown")
     expect(html).toContain("ossUpdates.reasonUpstreamOff")
     expect(html).toContain("ossUpdates.reasonWorkloadNotFoundShort")
-    expect(html).toContain("ossUpdates.reasonNoScanReport")
+    expect(html).toContain("ossUpdates.reasonNoScanForRunning")
     expect(html).not.toContain("ossUpdates.cooling")
   })
 
-  it("renders CLI not-applicable, RBAC no-permission, and companion sibling sub-rows", () => {
+  it("renders CLI N/A, RBAC no-permission, digest-only & unreadable siblings, rollout-mixed, and sibling CVEs", () => {
     const html = render({
       rows: [
         row({
@@ -107,19 +107,65 @@ describe("OssUpdatesTable", () => {
             source: "ds/kube-system/cilium (cilium-agent)",
             chartVersion: null,
             imageTags: ["1.19.4"],
-            siblings: [{ label: "cilium-envoy", source: "ds/kube-system/cilium-envoy (cilium-envoy)", rawTag: "v1.36.6", version: "1.36.6" }],
+            siblings: [
+              {
+                label: "cilium-envoy",
+                source: "ds/kube-system/cilium-envoy (cilium-envoy)",
+                rawTag: null,
+                version: null,
+                imageTags: ["sha256:0123456789ab"],
+                reason: "digest-only",
+                reasonDetail: "sha256:0123456789ab",
+                cves: { critical: 1, high: 2 },
+                cveReason: null,
+              },
+              {
+                label: "cilium-operator",
+                source: "deploy/kube-system/cilium-operator (cilium-operator)",
+                rawTag: null,
+                version: null,
+                imageTags: [],
+                reason: "workload-not-found",
+                reasonDetail: "deploy/kube-system/cilium-operator",
+                cves: null,
+                cveReason: "no-running-image",
+              },
+            ],
             reason: null,
           },
           drift: "in-sync",
           driftReason: null,
-          cveReason: "no-scan",
+          cveReason: "no-scan-for-running",
+        }),
+        row({
+          component: "kube-vip",
+          declared: { version: "1.1.2", chartVersion: null },
+          running: {
+            version: null,
+            rawTag: null,
+            source: "pod/kube-system/kube-vip-* (2 pods, kube-vip)",
+            chartVersion: null,
+            imageTags: ["1.1.2", "1.1.1"],
+            siblings: [],
+            reason: "rollout-mixed",
+            reasonDetail: "1.1.2, 1.1.1",
+          },
+          drift: "drift",
+          driftReason: "rollout-mixed",
+          cveReason: "no-scan-for-running",
         }),
       ],
     })
     expect(html).toContain("ossUpdates.notApplicableCli")
     expect(html).toContain("ossUpdates.driftNotApplicable")
     expect(html).toContain('ossUpdates.reasonNoPermission {&quot;detail&quot;:&quot;customresourcedefinitions.apiextensions.k8s.io&quot;}')
-    expect(html).toContain('ossUpdates.companionLabel {&quot;label&quot;:&quot;cilium-envoy&quot;,&quot;tag&quot;:&quot;v1.36.6&quot;}')
+    expect(html).toContain("sha256:0123456789ab (ossUpdates.reasonDigestOnly)")
+    expect(html).toContain("ossUpdates.reasonWorkloadNotFound")
+    expect(html).toContain("deploy/kube-system/cilium-operator")
+    expect(html).toContain("ossUpdates.cveCounts")
+    expect(html).toContain("ossUpdates.reasonNoRunningImage")
+    expect(html).toContain('ossUpdates.reasonRolloutMixed {&quot;detail&quot;:&quot;1.1.2, 1.1.1&quot;}')
+    expect(html).toContain("ossUpdates.reasonRolloutMixedShort")
   })
 
   it("is an accessible table: labelled, column + row headers, named request button", () => {

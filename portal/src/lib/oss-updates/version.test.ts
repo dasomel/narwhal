@@ -11,6 +11,7 @@ import {
   parseSemver,
   repoMatches,
   sameVersion,
+  shortenDigest,
 } from "./version"
 
 const NOW = Date.parse("2026-11-04T00:00:00Z")
@@ -32,39 +33,74 @@ describe("parseSemver", () => {
 })
 
 describe("extractImageRef / normalizeImageRepo / repoMatches / normalizeTag", () => {
-  it("extracts repo and rawTag while stripping digests and keeping registry ports", () => {
+  it("extracts repo, rawTag, and digest while keeping registry ports", () => {
     expect(extractImageRef("docker.gitea.com/gitea:1.26.2-rootless")).toEqual({
       repo: "docker.gitea.com/gitea",
       rawTag: "1.26.2-rootless",
+      digest: null,
     })
-    expect(extractImageRef("quay.io/cilium/cilium:v1.19.4@sha256:" + "a".repeat(64))).toEqual({
+    const digA = "sha256:" + "a".repeat(64)
+    expect(extractImageRef(`quay.io/cilium/cilium:v1.19.4@${digA}`)).toEqual({
       repo: "quay.io/cilium/cilium",
       rawTag: "v1.19.4",
+      digest: digA,
     })
     expect(extractImageRef("192.168.56.1:5001/gitea/gitea:1.26.2-rootless")).toEqual({
       repo: "192.168.56.1:5001/gitea/gitea",
       rawTag: "1.26.2-rootless",
+      digest: null,
     })
-    expect(extractImageRef("quay.io/cilium/cilium@sha256:" + "b".repeat(64))).toEqual({
+    const digB = "sha256:" + "b".repeat(64)
+    expect(extractImageRef(`quay.io/cilium/cilium@${digB}`)).toEqual({
       repo: "quay.io/cilium/cilium",
       rawTag: null,
+      digest: digB,
     })
     expect(extractImageRef("apache/apisix")).toEqual({
       repo: "apache/apisix",
       rawTag: null,
+      digest: null,
     })
+    expect(shortenDigest("sha256:0123456789abcdef0123456789abcdef")).toBe("sha256:0123456789ab")
   })
 
-  it("normalizes leading v, -rootless/-ubuntu/-distroless suffixes, and digests; unparseable -> null", () => {
-    expect(normalizeTag("v1.35.7")).toBe("1.35.7")
-    expect(normalizeTag("v0.8.1")).toBe("0.8.1")
-    expect(normalizeTag("1.26.2-rootless")).toBe("1.26.2")
-    expect(normalizeTag("3.15.0-ubuntu")).toBe("3.15.0")
-    expect(normalizeTag("1.30.1-distroless")).toBe("1.30.1")
-    expect(normalizeTag("v1.19.4@sha256:" + "c".repeat(64))).toBe("1.19.4")
-    expect(normalizeTag("4.34")).toBe("4.34")
-    for (const unparseable of ["latest", "HEAD", "8-alpine", "sha256:abcd", "1.2.3-rc.1", "1.2.3-alpha", "1.2.3.4", "", null, undefined]) {
-      expect(normalizeTag(unparseable)).toBeNull()
+  it("table-driven: enforces explicit per-component suffix allow-list (never blanket-strips)", () => {
+    const cases: Array<[string | null | undefined, readonly string[] | undefined, string | null]> = [
+      ["v1.35.7", undefined, "1.35.7"],
+      ["v0.8.1", undefined, "0.8.1"],
+      ["4.34", undefined, "4.34"],
+      ["v1.19.4@sha256:" + "c".repeat(64), undefined, "1.19.4"],
+      // Explicit allow-list suffixes
+      ["1.26.2-rootless", ["-rootless"], "1.26.2"],
+      ["1.26.20-rootless", ["-rootless"], "1.26.20"],
+      ["1.26.2-rootless", undefined, null],
+      ["3.15.0-ubuntu", ["-ubuntu"], "3.15.0"],
+      ["3.15.0", ["-ubuntu"], "3.15.0"],
+      ["3.15.0-ubuntu", undefined, null],
+      ["1.30.1-distroless", ["-distroless"], "1.30.1"],
+      ["1.30.1-distroless", undefined, null],
+      // Rejected suffixes: prereleases, custom, unknown
+      ["3.15.0-rc1", ["-ubuntu"], null],
+      ["3.15.0-preview1", ["-ubuntu"], null],
+      ["3.15.0-custom", ["-ubuntu"], null],
+      ["3.15.0-ubuntu-custom", ["-ubuntu"], null],
+      ["3.15.0-rc1", undefined, null],
+      ["3.15.0-preview1", undefined, null],
+      ["3.15.0-custom", undefined, null],
+      ["1.2.3-rc.1", undefined, null],
+      ["1.2.3-alpha", undefined, null],
+      ["1.2.3-0", undefined, null],
+      ["latest", undefined, null],
+      ["HEAD", undefined, null],
+      ["8-alpine", undefined, null],
+      ["sha256:abcd", undefined, null],
+      ["1.2.3.4", undefined, null],
+      ["", undefined, null],
+      [null, undefined, null],
+      [undefined, undefined, null],
+    ]
+    for (const [raw, allowed, expected] of cases) {
+      expect(normalizeTag(raw, allowed), `normalizeTag(${String(raw)}, ${JSON.stringify(allowed)})`).toBe(expected)
     }
   })
 
@@ -123,10 +159,16 @@ describe("cooling (7-day rule)", () => {
 })
 
 describe("sameVersion / normalizeVersion", () => {
-  it("ignores v prefix and .0 padding", () => {
+  it("ignores v prefix and .0 padding, and rejects mismatched versions/suffixes", () => {
     expect(sameVersion("v1.20.2", "1.20.2")).toBe(true)
     expect(sameVersion("4.34", "4.34.0")).toBe(true)
     expect(sameVersion("1.20.2", "1.20.3")).toBe(false)
+    expect(sameVersion("1.26.2", "1.26.20")).toBe(false)
+    expect(sameVersion("1.26.2-rootless", "1.26.20-rootless", ["-rootless"])).toBe(false)
+    expect(sameVersion("3.15.0-ubuntu", "3.15.0", ["-ubuntu"])).toBe(true)
+    expect(sameVersion("3.15.0-rc1", "3.15.0", ["-ubuntu"])).toBe(false)
+    expect(sameVersion("3.15.0-preview1", "3.15.0", ["-ubuntu"])).toBe(false)
+    expect(sameVersion("3.15.0-custom", "3.15.0", ["-ubuntu"])).toBe(false)
   })
   it("falls back to string equality for non-semver", () => {
     expect(sameVersion("HEAD", "HEAD")).toBe(true)

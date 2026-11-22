@@ -23,17 +23,36 @@ describe("getOssClusterInventory", () => {
     global.fetch = originalFetch
   })
 
-  it("maps /version, workloads, and maps CRD 403 to no-permission without failing", async () => {
+  it("maps /version, workloads with selectors, cluster-wide pods with imageID digests, and CRD 403 -> no-permission", async () => {
     mockFetch.mockImplementation(async (url: string) => {
       if (url.endsWith("/version")) return Response.json({ gitVersion: "v1.35.7" })
       if (url.includes("/deployments")) {
         return Response.json({
           metadata: {},
-          items: [{ metadata: { namespace: "devtools", name: "gitea" }, spec: { template: { spec: { containers: [{ name: "gitea", image: "docker.gitea.com/gitea:1.26.2-rootless" }] } } } }],
+          items: [{
+            metadata: { namespace: "devtools", name: "gitea" },
+            spec: {
+              selector: { matchLabels: { app: "gitea" } },
+              template: { spec: { containers: [{ name: "gitea", image: "docker.gitea.com/gitea:1.26.2-rootless" }] } },
+            },
+          }],
         })
       }
-      if (url.includes("/daemonsets") || url.includes("/statefulsets") || url.includes("/pods")) {
+      if (url.includes("/daemonsets") || url.includes("/statefulsets")) {
         return Response.json({ metadata: {}, items: [] })
+      }
+      if (url.includes("/api/v1/pods")) {
+        return Response.json({
+          metadata: {},
+          items: [{
+            metadata: { namespace: "devtools", name: "gitea-abc", labels: { app: "gitea" } },
+            spec: { containers: [{ name: "gitea", image: "docker.gitea.com/gitea:1.26.2-rootless" }] },
+            status: {
+              phase: "Running",
+              containerStatuses: [{ name: "gitea", imageID: "docker.gitea.com/gitea@sha256:" + "a".repeat(64) }],
+            },
+          }],
+        })
       }
       if (url.includes("customresourcedefinitions")) {
         return new Response("Forbidden", { status: 403 })
@@ -48,7 +67,23 @@ describe("getOssClusterInventory", () => {
       data: [{
         namespace: "devtools",
         name: "gitea",
+        selector: { matchLabels: { app: "gitea" } },
         containers: [{ name: "gitea", image: "docker.gitea.com/gitea:1.26.2-rootless" }],
+        initContainers: [],
+      }],
+    })
+    expect(inv.pods).toEqual({
+      status: "ok",
+      data: [{
+        namespace: "devtools",
+        name: "gitea-abc",
+        labels: { app: "gitea" },
+        phase: "Running",
+        containers: [{
+          name: "gitea",
+          image: "docker.gitea.com/gitea:1.26.2-rootless",
+          digest: "sha256:" + "a".repeat(64),
+        }],
         initContainers: [],
       }],
     })

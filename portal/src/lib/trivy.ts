@@ -123,11 +123,13 @@ function reportToWorkloadRow(item: TrivyVulnerabilityReport): WorkloadVulnRow {
   const name =
     labels["trivy-operator.resource.name"] ??
     (ownerRefs.length > 0 ? ownerRefs[0].name : item.metadata.name)
+  const digest = item.report.artifact.digest
   return {
     namespace: item.metadata.namespace,
     kind,
     name,
     image: buildImageString(item),
+    ...(digest ? { digest } : {}),
     summary: buildSummary(item.report.summary),
   }
 }

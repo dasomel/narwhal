@@ -790,8 +790,8 @@ export const ko = {
   // security extra
   "security.detail.severity": "심각도",
   "security.runtime.eventCount": "{count}개 이벤트",
-  "compliance.check.allPassed": "모든 검사 통과",
-  "compliance.check.allPassedHint": "Trivy는 실패한 항목만 기록합니다. 평가된 전체 정책 목록은 Frameworks 탭에서 확인하세요.",
+  "compliance.check.allPassed": "실패 기록 없음",
+  "compliance.check.allPassedHint": "Trivy는 실패한 항목만 기록하므로 실패 기록 없음이 개별 통과를 증명하지 않습니다. 정책별 적용 범위는 Frameworks 탭에서 확인하세요.",
   "security.vuln.noFindings": "보고된 취약점 없음",
   "security.vuln.noFindingsHint": "현재 이미지에 대한 Trivy 스캔에서 발견된 CVE가 없습니다.",
 
@@ -936,7 +936,7 @@ export const ko = {
   "compliance.framework.evaluatedPassRate": "실패 기록 없음 비율 (스캐너는 실패만 기록)",
   "compliance.framework.noFailureRecordedLabel": "실패 기록 없음 (스캐너는 실패만 기록)",
   "compliance.framework.noFailureRecordedShort": "실패 기록 없음",
-  "compliance.framework.failureOnlyNote": "이 배포의 Trivy Operator는 실패한 검사만 기록하므로, '실패 기록 없음'은 카탈로그에 등록된 검사 ID가 스캔 범위 내 리포트에서 실패를 기록하지 않았음을 뜻하며 개별 통과 증명이 아닙니다.",
+  "compliance.framework.failureOnlyNote": "이 배포의 Trivy Operator는 실패한 검사만 기록하므로, '실패 기록 없음'은 카탈로그에 등록된 Config Audit·RBAC 검사 ID가 스캔 범위 내 리포트에서 실패를 기록하지 않았음을 뜻하며 개별 통과 증명이 아닙니다. 노드·컨트롤플레인(인프라) 검사는 스캐너가 항목별 평가 증거를 남기지 않아 미평가로 표시되며, 실제 검증은 노드 검증 스크립트(scripts/test/verify-cluster.sh)에서 수행합니다.",
   "compliance.framework.rawPassRate": "원본 통과율",
   "compliance.framework.effectivePassRate": "예외 반영 비율",
   "compliance.framework.controls": "{count}개 컨트롤",
@@ -954,6 +954,7 @@ export const ko = {
   "compliance.framework.notEvaluatedReason.unlinked_check_id": "미연결 스펙 검사 ID (소문자 avd-ksv-* 등)",
   "compliance.framework.notEvaluatedReason.not_in_catalogue": "스캐너 카탈로그에 없는 검사 ID (배포된 내장 정책에 미포함)",
   "compliance.framework.notEvaluatedReason.no_report_for_family": "해당 리포트 계열·종류의 범위 내 리포트 부재 (스캐너 실행 미확인)",
+  "compliance.framework.notEvaluatedReason.infra_no_per_check_evidence": "노드/컨트롤플레인 검사: 스캐너가 항목별 평가 증거를 남기지 않음",
   "compliance.framework.notEvaluatedReason.scanner_disabled": "해당 Trivy 스캐너 비활성화",
   "compliance.framework.notEvaluatedReason.summary_only": "요약 전용 리포트 (컨트롤별 결과 없음)",
   "compliance.framework.notEvaluatedReason.empty_checks": "점검 결과 비어 있음",
@@ -990,7 +991,7 @@ export const ko = {
   "compliance.table.acceptedRbacHint": "K8s 빌트인 역할(system:*, cluster-admin 등), 업스트림 컨트롤러/차트 역할, 또는 검토된 예외 역할 — 조치 대상 아님",
   "compliance.table.rbacActionableSummary": "조치가능 {actionable}건 · 수용 {accepted}건(빌트인/업스트림/예외)",
   "compliance.table.infraActionableSummary": "조치가능 {actionable}건 · 수용 {accepted}건(예외)",
-  "compliance.infra.emptyChecksCaveat": "참고: Trivy는 recordFailedChecksOnly=true로 실패만 기록합니다. 실패 0건(checks: [])은 수집기 명령의 빈 출력을 구분해 증명하지 않습니다.",
+  "compliance.infra.emptyChecksCaveat": "노드/컨트롤플레인 검사: 스캐너가 항목별 평가 증거를 남기지 않으므로 실패 기록이 없더라도 통과를 증명하지 않습니다. 실제 검증은 노드 검증 스크립트(scripts/test/verify-cluster.sh)에서 수행합니다.",
   "compliance.forbidden": "cluster-admin 권한이 필요합니다",
   "compliance.filter.severity": "심각도 필터",
   "compliance.filter.namespace": "네임스페이스 필터",
@@ -2317,8 +2318,8 @@ export const en: Record<keyof typeof ko, string> = {
   // security extra
   "security.detail.severity": "Severity",
   "security.runtime.eventCount": "{count} events",
-  "compliance.check.allPassed": "All checks passed",
-  "compliance.check.allPassedHint": "Trivy only records failed checks. See the Frameworks tab for the full policy list that was evaluated.",
+  "compliance.check.allPassed": "No failure recorded",
+  "compliance.check.allPassedHint": "Trivy records failed checks only, so no failure recorded is not an individual pass record. See the Frameworks tab for policy scope.",
   "security.vuln.noFindings": "No reported vulnerabilities",
   "security.vuln.noFindingsHint": "Trivy scan of this image found no CVEs.",
 
@@ -2463,7 +2464,7 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.framework.evaluatedPassRate": "No failure recorded rate (scanner records failures only)",
   "compliance.framework.noFailureRecordedLabel": "No failure recorded (scanner records failures only)",
   "compliance.framework.noFailureRecordedShort": "no failure recorded",
-  "compliance.framework.failureOnlyNote": "Trivy Operator in this deployment records failed checks only, so 'no failure recorded' means the catalogued check IDs recorded no failures on in-scope reports rather than verified individual pass records.",
+  "compliance.framework.failureOnlyNote": "Trivy Operator in this deployment records failed checks only, so 'no failure recorded' applies only to catalogued Config Audit and RBAC checks on in-scope reports rather than verified individual pass records. Node and control-plane (infra) checks leave no per-check scanner evidence and remain not evaluated; verify them on-node with scripts/test/verify-cluster.sh.",
   "compliance.framework.rawPassRate": "Raw pass rate",
   "compliance.framework.effectivePassRate": "Exception-adjusted rate",
   "compliance.framework.controls": "{count} controls",
@@ -2481,6 +2482,7 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.framework.notEvaluatedReason.unlinked_check_id": "Unlinked spec check ID (e.g. lower-case avd-ksv-*)",
   "compliance.framework.notEvaluatedReason.not_in_catalogue": "Check ID not in scanner catalogue (absent from deployed embedded policies)",
   "compliance.framework.notEvaluatedReason.no_report_for_family": "No in-scope report of required report family/kind (scanner execution not observed)",
+  "compliance.framework.notEvaluatedReason.infra_no_per_check_evidence": "Node/control-plane check: the scanner leaves no per-check evidence",
   "compliance.framework.notEvaluatedReason.scanner_disabled": "Scanner disabled in trivy-operator config",
   "compliance.framework.notEvaluatedReason.summary_only": "Summary-only report (no per-control results)",
   "compliance.framework.notEvaluatedReason.empty_checks": "Control checks array is empty",
@@ -2517,7 +2519,7 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.table.acceptedRbacHint": "Kubernetes built-in role (system:*, cluster-admin, etc.), upstream controller/chart role, or reviewed exception role — not actionable",
   "compliance.table.rbacActionableSummary": "{actionable} actionable · {accepted} accepted (built-in/upstream/exception)",
   "compliance.table.infraActionableSummary": "{actionable} actionable · {accepted} accepted (exception)",
-  "compliance.infra.emptyChecksCaveat": "Note: Trivy runs with recordFailedChecksOnly=true; 0 failures (checks: []) does not prove every collector command produced non-empty output.",
+  "compliance.infra.emptyChecksCaveat": "Node/control-plane check: the scanner leaves no per-check evidence, so zero recorded failures does not prove controls passed; verify them on-node with scripts/test/verify-cluster.sh.",
   "compliance.forbidden": "cluster-admin role required",
   "compliance.filter.severity": "Severity filter",
   "compliance.filter.namespace": "Namespace filter",
@@ -3095,6 +3097,8 @@ export function translateNotEvaluatedReason(locale: Locale, reason?: string): st
       return t(locale, "compliance.framework.notEvaluatedReason.not_in_catalogue")
     case "no_report_for_family":
       return t(locale, "compliance.framework.notEvaluatedReason.no_report_for_family")
+    case "infra_no_per_check_evidence":
+      return t(locale, "compliance.framework.notEvaluatedReason.infra_no_per_check_evidence")
     case "scanner_disabled":
       return t(locale, "compliance.framework.notEvaluatedReason.scanner_disabled")
     case "summary_only":

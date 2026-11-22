@@ -165,7 +165,10 @@
       ],
       "severity": "Low",
       "title": "Ensure that the admission control plugin AlwaysPullImages is set",
-      "legacyId": "KSV0012"
+      "legacyId": "KSV0012",
+      "aliases": [
+        "KSV0012"
+      ]
     },
     "KCV0013": {
       "id": "KCV0013",
@@ -426,7 +429,10 @@
       ],
       "severity": "Low",
       "title": "Ensure that the --use-service-account-credentials argument is set to true",
-      "legacyId": "KCV0135"
+      "legacyId": "KCV0135",
+      "aliases": [
+        "KCV0135"
+      ]
     },
     "KCV0036": {
       "id": "KCV0036",
@@ -1679,7 +1685,10 @@
         "ClusterRoleBinding"
       ],
       "severity": "Critical",
-      "title": "system:authenticate group access binding"
+      "title": "system:authenticate group access binding",
+      "aliases": [
+        "KSV01011"
+      ]
     },
     "KSV102": {
       "id": "KSV102",
@@ -1897,7 +1906,10 @@
         "ClusterRoleBinding"
       ],
       "severity": "Critical",
-      "title": "system:masters group access binding"
+      "title": "system:masters group access binding",
+      "aliases": [
+        "KSV0123"
+      ]
     },
     "KSV124": {
       "id": "KSV124",
@@ -1908,7 +1920,10 @@
       ],
       "severity": "High",
       "title": "Gatekeeper repo reference is ambiguously open-ended",
-      "legacyId": "KSV-0124"
+      "legacyId": "KSV-0124",
+      "aliases": [
+        "KSV-0124"
+      ]
     }
   }
 }

@@ -9,12 +9,17 @@
 // Source-of-truth pins verified by `--check` (offline, no network):
 //   - gitops/charts/narwhal-apps/templates/trivy-operator.yaml (chart targetRevision + useBuiltinRegoPolicies)
 //   - scripts/airgap/images.txt (trivy-operator image tag)
+//   - portal/src/data/trivy-check-catalogue.generated.sha256.json (canonical SHA-256 + pinned source versions)
+//
+// Changing the catalogue requires regenerating from the upstream trivy-checks source (network
+// or `--from-zip`) with the pinned versions bumped consciously — never hand-edit the JSON.
 //
 // Usage:
 //   node portal/scripts/gen-trivy-check-catalogue.mjs --check
 //   node portal/scripts/gen-trivy-check-catalogue.mjs [--from-zip /path/to/trivy-checks-v1.7.1.zip]
 
 import { execFileSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
@@ -23,8 +28,41 @@ import { fileURLToPath } from "node:url"
 const here = dirname(fileURLToPath(import.meta.url))
 export const REPO_ROOT = resolve(here, "../..")
 export const OUT_JSON = resolve(here, "../src/data/trivy-check-catalogue.generated.json")
+export const OUT_DIGEST_JSON = resolve(here, "../src/data/trivy-check-catalogue.generated.sha256.json")
 export const OPERATOR_APP_YAML = resolve(REPO_ROOT, "gitops/charts/narwhal-apps/templates/trivy-operator.yaml")
 export const AIRGAP_IMAGES_TXT = resolve(REPO_ROOT, "scripts/airgap/images.txt")
+
+/** Deterministic JSON serialization matching Python `json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`. */
+export function canonicalJson(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value)
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`
+  }
+  const keys = Object.keys(value).sort()
+  const parts = []
+  for (const k of keys) {
+    if (value[k] === undefined) continue
+    parts.push(`${JSON.stringify(k)}:${canonicalJson(value[k])}`)
+  }
+  return `{${parts.join(",")}}`
+}
+
+export function computeCanonicalCatalogueDigest(catalogue) {
+  return createHash("sha256").update(canonicalJson(catalogue), "utf8").digest("hex")
+}
+
+export function buildDigestManifest(catalogue) {
+  return {
+    algorithm: "sha256",
+    canonicalDigest: computeCanonicalCatalogueDigest(catalogue),
+    source: { ...catalogue.source },
+    checkCount: Object.keys(catalogue.checks ?? {}).length,
+    regenerationNote:
+      "Generated from upstream trivy-checks source; do not hand-edit. Changing the catalogue requires regenerating from source (network) via `node portal/scripts/gen-trivy-check-catalogue.mjs` with pinned versions bumped consciously.",
+  }
+}
 
 // Embedded module version pinned in github.com/aquasecurity/trivy-operator@v0.25.0 go.mod
 // (verified against live /usr/local/bin/trivy-operator buildinfo).
@@ -109,6 +147,27 @@ export function parseKubernetesRegoCheck(relPath, text) {
   const severity = mapSeverity(sevMatch ? sevMatch[1] : "Unknown")
   const legacyId = idMatch ? idMatch[1].trim() : undefined
 
+  // D-CHECK-ALIASES: capture every distinct non-canonical ID emitted by the Rego metadata
+  // (`id:` and any `aliases:` list items) so failure joins match legacy/mismatched check IDs
+  // (e.g. KSV0012 -> KCV0012, KCV0135 -> KCV0035, KSV-0124 -> KSV124) without normalizing
+  // distinct checks into each other.
+  const aliasSet = new Set()
+  const addAlias = (candidate) => {
+    const trimmed = String(candidate ?? "").trim().toUpperCase()
+    if (!trimmed) return
+    if (trimmed === id || trimmed === avdId.toUpperCase()) return
+    aliasSet.add(trimmed)
+  }
+  if (legacyId) addAlias(legacyId)
+  const aliasesBlockMatch = /^\s*aliases:\s*\r?\n((?:\s+-\s+.+\r?\n?)+)/m.exec(metaLines.join("\n"))
+  if (aliasesBlockMatch) {
+    for (const line of aliasesBlockMatch[1].split(/\r?\n/)) {
+      const itemMatch = /^\s+-\s+["']?([^"'\s]+)["']?/.exec(line)
+      if (itemMatch) addAlias(itemMatch[1])
+    }
+  }
+  const aliases = [...aliasSet].sort()
+
   const pkgIdx = text.indexOf("\npackage ")
   const body = pkgIdx >= 0 ? text.slice(pkgIdx) : text
   const bodyNoComments = body
@@ -184,6 +243,7 @@ export function parseKubernetesRegoCheck(relPath, text) {
     severity,
     title,
     ...(legacyId && normalizeCheckId(legacyId) !== id ? { legacyId } : {}),
+    ...(aliases.length > 0 ? { aliases } : {}),
   }
   return entry
 }
@@ -225,7 +285,7 @@ function generateFromZip(zipPath, pins) {
   }
 }
 
-export function validateCatalogue(catalogue, pins) {
+export function validateCatalogue(catalogue, pins, digestManifest = null) {
   const errors = []
   if (!catalogue || typeof catalogue !== "object") {
     return ["catalogue must be a JSON object"]
@@ -303,6 +363,50 @@ export function validateCatalogue(catalogue, pins) {
         errors.push(`${key}: Node check missing nodeTypes`)
       }
     }
+    if (entry.aliases !== undefined) {
+      if (!Array.isArray(entry.aliases) || entry.aliases.some((a) => typeof a !== "string" || a.trim().length === 0)) {
+        errors.push(`${key}: aliases must be an array of non-empty strings`)
+      }
+    }
+    if (typeof entry.legacyId === "string" && entry.legacyId.trim().length > 0) {
+      if (!Array.isArray(entry.aliases) || !entry.aliases.includes(entry.legacyId.trim().toUpperCase())) {
+        errors.push(`${key}: legacyId=${entry.legacyId} must be included in aliases[]`)
+      }
+    }
+  }
+
+  if (digestManifest !== null) {
+    if (!digestManifest || typeof digestManifest !== "object") {
+      errors.push("catalogue digest manifest must be a JSON object")
+    } else {
+      if (digestManifest.algorithm !== "sha256") {
+        errors.push(`digest manifest algorithm=${digestManifest.algorithm} must be "sha256"`)
+      }
+      const actualDigest = computeCanonicalCatalogueDigest(catalogue)
+      if (typeof digestManifest.canonicalDigest !== "string" || !/^[0-9a-f]{64}$/.test(digestManifest.canonicalDigest)) {
+        errors.push("digest manifest canonicalDigest must be a 64-hex sha256 string")
+      } else if (digestManifest.canonicalDigest !== actualDigest) {
+        errors.push(
+          `catalogue canonical SHA-256 mismatch (expected ${digestManifest.canonicalDigest}, got ${actualDigest}) — do not hand-edit trivy-check-catalogue.generated.json; regenerate from upstream source`,
+        )
+      }
+      if (digestManifest.checkCount !== keys.length) {
+        errors.push(`digest manifest checkCount=${digestManifest.checkCount} != catalogue checks count ${keys.length}`)
+      }
+      const dSrc = digestManifest.source
+      if (!dSrc || typeof dSrc !== "object") {
+        errors.push("digest manifest source is missing")
+      } else {
+        for (const field of ["trivyOperatorVersion", "trivyOperatorChartVersion", "trivyChecksModule", "trivyChecksVersion", "policyMode"]) {
+          if (dSrc[field] !== src?.[field]) {
+            errors.push(`digest manifest source.${field}=${dSrc[field]} != catalogue source.${field}=${src?.[field]}`)
+          }
+        }
+        if (canonicalJson(dSrc.excludedPaths ?? []) !== canonicalJson(src?.excludedPaths ?? [])) {
+          errors.push("digest manifest source.excludedPaths != catalogue source.excludedPaths")
+        }
+      }
+    }
   }
   return errors
 }
@@ -318,15 +422,22 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       console.error(`Failed to read ${OUT_JSON}: ${err instanceof Error ? err.message : err}`)
       process.exit(1)
     }
-    const errors = validateCatalogue(parsed, pins)
+    let digestManifest
+    try {
+      digestManifest = JSON.parse(readFileSync(OUT_DIGEST_JSON, "utf8"))
+    } catch (err) {
+      console.error(`Failed to read ${OUT_DIGEST_JSON}: ${err instanceof Error ? err.message : err}`)
+      process.exit(1)
+    }
+    const errors = validateCatalogue(parsed, pins, digestManifest)
     if (errors.length > 0) {
-      console.error("portal/src/data/trivy-check-catalogue.generated.json is out of sync with pinned trivy-operator versions:")
+      console.error("portal/src/data/trivy-check-catalogue.generated.json failed integrity or pin verification:")
       for (const e of errors) console.error(`  - ${e}`)
-      console.error("Run: node portal/scripts/gen-trivy-check-catalogue.mjs   (from the repo root) and commit the result.")
+      console.error("Regenerate from upstream source (network): node portal/scripts/gen-trivy-check-catalogue.mjs")
       process.exit(1)
     }
     console.log(
-      `trivy-check-catalogue.generated.json is in sync (trivy-operator ${pins.trivyOperatorVersion}, chart ${pins.trivyOperatorChartVersion}, trivy-checks ${pins.trivyChecksVersion}, ${Object.keys(parsed.checks).length} checks)`,
+      `trivy-check-catalogue.generated.json is in sync (trivy-operator ${pins.trivyOperatorVersion}, chart ${pins.trivyOperatorChartVersion}, trivy-checks ${pins.trivyChecksVersion}, ${Object.keys(parsed.checks).length} checks, sha256 ${digestManifest.canonicalDigest.slice(0, 12)}…)`,
     )
     process.exit(0)
   }
@@ -349,14 +460,18 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       execFileSync("curl", ["-sfL", url, "-o", zipPath], { stdio: "inherit" })
     }
     const catalogue = generateFromZip(zipPath, pins)
-    const errors = validateCatalogue(catalogue, pins)
+    const digestManifest = buildDigestManifest(catalogue)
+    const errors = validateCatalogue(catalogue, pins, digestManifest)
     if (errors.length > 0) {
       console.error("Generated catalogue failed validation:")
       for (const e of errors) console.error(`  - ${e}`)
       process.exit(1)
     }
     writeFileSync(OUT_JSON, JSON.stringify(catalogue, null, 2) + "\n")
-    console.log(`wrote ${OUT_JSON} (${Object.keys(catalogue.checks).length} checks)`)
+    writeFileSync(OUT_DIGEST_JSON, JSON.stringify(digestManifest, null, 2) + "\n")
+    console.log(
+      `wrote ${OUT_JSON} and ${OUT_DIGEST_JSON} (${Object.keys(catalogue.checks).length} checks, sha256 ${digestManifest.canonicalDigest})`,
+    )
   } finally {
     if (tempDir) rmSync(tempDir, { recursive: true, force: true })
   }

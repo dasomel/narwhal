@@ -12,9 +12,8 @@ import {
   matchConfigAuditException,
   matchInfraException,
   matchRbacException,
-  normalizeCheckId,
 } from "./compliance-accepted"
-import { getCatalogueCheck } from "./trivy-check-catalogue"
+import { getCatalogueCheck, resolveCanonicalCheckId } from "./trivy-check-catalogue"
 import {
   sumCheckSummary,
   type AcceptedClass,
@@ -1090,10 +1089,15 @@ const COMPLIANCE_TARGET_KINDS: Readonly<Record<string, string>> = {
   job: "Job",
   role: "Role",
   clusterrole: "ClusterRole",
+  rolebinding: "RoleBinding",
+  clusterrolebinding: "ClusterRoleBinding",
+  networkpolicy: "NetworkPolicy",
+  service: "Service",
+  configmap: "ConfigMap",
   node: "Node",
 }
 
-const CLUSTER_SCOPED_TARGET_KINDS = new Set(["ClusterRole", "Node"])
+const CLUSTER_SCOPED_TARGET_KINDS = new Set(["ClusterRole", "ClusterRoleBinding", "Node"])
 const WORKLOAD_TARGET_KINDS = new Set([
   "ReplicaSet",
   "DaemonSet",
@@ -1137,6 +1141,7 @@ export function parseComplianceTarget(target: unknown): ParsedComplianceTarget |
 // target parsing whenever the report list is unavailable or lacks explicit kind/name labels.
 function buildReportTargetMap(
   configItems: readonly RawAuditReport[],
+  configClusterItems: readonly RawAuditReport[],
   rbacNsItems: readonly RawAuditReport[],
   rbacClusterItems: readonly RawAuditReport[],
 ): Map<string, ParsedComplianceTarget> {
@@ -1150,6 +1155,17 @@ function buildReportTargetMap(
     const name = labels["trivy-operator.resource.name"]
     if (!kind || !WORKLOAD_TARGET_KINDS.has(kind) || !name) continue
     map.set(`${ns}/${reportName}`, { namespace: ns, kind, name })
+  }
+  for (const item of configClusterItems) {
+    const ns = item.metadata.namespace ?? ""
+    const reportName = item.metadata.name
+    if (ns !== "" || !reportName) continue
+    const labels = item.metadata.labels ?? {}
+    const ownerRefs = item.metadata.ownerReferences ?? []
+    const kind = labels["trivy-operator.resource.kind"] ?? ownerRefs[0]?.kind
+    const name = ownerRefs[0]?.name ?? labels["trivy-operator.resource.name"]
+    if (!kind || !name) continue
+    map.set(`/${reportName}`, { namespace: "", kind, name })
   }
   for (const item of rbacNsItems) {
     const ns = item.metadata.namespace ?? ""
@@ -1243,15 +1259,6 @@ function classifyFrameworkCheck(
   return { status: "actionable" }
 }
 
-const CONTROL_PLANE_CHECK_IDS = new Set(["KSV037"])
-const BINDING_CONFIG_AUDIT_CHECK_IDS = new Set(["KSV111"])
-const RBAC_ASSESSMENT_CHECK_IDS = new Set([
-  ...Array.from({ length: 16 }, (_, i) => `KSV${String(i + 41).padStart(3, "0")}`),
-  "KSV112",
-  "KSV113",
-  "KSV114",
-  "KSV115",
-])
 const WORKLOAD_KINDS_LOWER = new Set([
   "pod",
   "replicaset",
@@ -1337,44 +1344,36 @@ function isNodeInfraReport(r: RawAuditReport): boolean {
   return !r.metadata.namespace && r.metadata.name.startsWith("node-")
 }
 
-// D1: Use the v0.25 report family from the embedded check catalogue, falling back to KCV->infra
-// and observed RBAC reports for uncatalogued IDs.
-// Cost: linear report lookup; escape hatch: regenerate catalogue when trivy-operator bumps.
-function controlEvidenceReports(id: string, spec: RawSpecControl | undefined, ctx: FrameworkEvalContext): readonly RawAuditReport[] {
-  const catEntry = getCatalogueCheck(id)
-  const family = catEntry
-    ? (catEntry.reportFamily === "configAudit" ? "config" : catEntry.reportFamily)
-    : /^KCV\d+$/.test(id) ? "infra"
-      : RBAC_ASSESSMENT_CHECK_IDS.has(id) || ctx.evidenceReports.rbac.some((r) =>
-        r.report?.checks?.some((c) => normalizeCheckId(c.checkID) === id)) ? "rbac" : "config"
-  const nodeTypes = new Set([spec?.nodeType, ...(spec?.commands ?? []).map((c) => c.nodeType)]
-    .map(normalizeNodeType).filter(Boolean))
-  return ctx.evidenceReports[family].filter((r) => {
-    if (family === "infra" && nodeTypes.size === 1) {
-      const name = r.metadata.labels?.["trivy-operator.resource.name"] ?? ""
-      return ctx.nodeRoles.get(name) === nodeTypes.values().next().value
-    }
-    if (family === "config" && CONTROL_PLANE_CHECK_IDS.has(id)) return r.metadata.namespace === "kube-system"
-    if (family === "config" && BINDING_CONFIG_AUDIT_CHECK_IDS.has(id)) {
-      return ["RoleBinding", "ClusterRoleBinding"].includes(r.metadata.labels?.["trivy-operator.resource.kind"] ?? "")
-    }
-    return true
-  })
-}
-
+// D-FAILURE-FIRST-JOIN: join failures across all report families (namespaced and cluster-scoped
+// ConfigAudit, RBAC, and Infra) and across catalogued aliases/legacy IDs via resolveCanonicalCheckId
+// BEFORE deciding any non-failing state, independent of nodeRoles (so a failed /api/v1/nodes read
+// never filters out or hides an existing failing record).
+// Cost: linear scan over loaded reports; escape hatch: index failures by canonical check ID.
 function controlEvidenceFailures(spec: RawSpecControl | undefined, ctx: FrameworkEvalContext) {
-  return (spec?.checks ?? []).flatMap(({ id }) => {
-    const normalized = normalizeCheckId(id ?? "")
-    return controlEvidenceReports(normalized, spec, ctx).flatMap((r) =>
-      (r.report?.checks ?? []).filter((c) => c.success === false && normalizeCheckId(c.checkID) === normalized)
-        .map((c) => {
-          const labels = r.metadata.labels ?? {}
-          const owner = r.metadata.ownerReferences?.[0]
-          const kind = labels["trivy-operator.resource.kind"] ?? owner?.kind ?? "Unknown"
-          const name = owner?.name ?? labels["trivy-operator.resource.name"] ?? ""
-          return { ...c, target: `${r.metadata.namespace ?? ""}/${kind.toLowerCase()}-${name}` }
-        }))
-  })
+  const allReports = [
+    ...ctx.evidenceReports.config,
+    ...ctx.evidenceReports.rbac,
+    ...ctx.evidenceReports.infra,
+  ]
+  const seenCanonicalIds = new Set<string>()
+  const failures: Array<RawCheck & { target: string }> = []
+  for (const { id } of spec?.checks ?? []) {
+    const canonical = resolveCanonicalCheckId(id ?? "")
+    if (!canonical || seenCanonicalIds.has(canonical)) continue
+    seenCanonicalIds.add(canonical)
+    for (const r of allReports) {
+      for (const c of r.report?.checks ?? []) {
+        if (c.success !== false) continue
+        if (resolveCanonicalCheckId(c.checkID ?? "") !== canonical) continue
+        const labels = r.metadata.labels ?? {}
+        const owner = r.metadata.ownerReferences?.[0]
+        const kind = labels["trivy-operator.resource.kind"] ?? owner?.kind ?? "Unknown"
+        const name = owner?.name ?? labels["trivy-operator.resource.name"] ?? r.metadata.name
+        failures.push({ ...c, target: `${r.metadata.namespace ?? ""}/${kind.toLowerCase()}-${name}` })
+      }
+    }
+  }
+  return failures
 }
 
 function normalizeNodeType(raw: string | undefined): "master" | "worker" | null {
@@ -1387,6 +1386,7 @@ function normalizeNodeType(raw: string | undefined): "master" | "worker" | null 
 
 function buildFrameworkEvalContext(opts: {
   configRes: TryFetchResult<RawAuditList>
+  configClusterRes: TryFetchResult<RawAuditList>
   rbacNsRes: TryFetchResult<RawAuditList>
   rbacClusterRes: TryFetchResult<RawAuditList>
   infraNsRes: TryFetchResult<RawAuditList>
@@ -1398,6 +1398,7 @@ function buildFrameworkEvalContext(opts: {
 }): FrameworkEvalContext {
   const {
     configRes,
+    configClusterRes,
     rbacNsRes,
     rbacClusterRes,
     infraNsRes,
@@ -1411,6 +1412,7 @@ function buildFrameworkEvalContext(opts: {
   const failedAuxSources: string[] = []
   if (!rsOk) failedAuxSources.push("replicasets")
   if (!configRes.ok) failedAuxSources.push("configauditreports")
+  if (!configClusterRes.ok) failedAuxSources.push("clusterconfigauditreports")
   if (!rbacNsRes.ok) failedAuxSources.push("rbacassessmentreports")
   if (!rbacClusterRes.ok) failedAuxSources.push("clusterrbacassessmentreports")
   if (!infraNsRes.ok) failedAuxSources.push("infraassessmentreports")
@@ -1422,7 +1424,10 @@ function buildFrameworkEvalContext(opts: {
   const operatorConfigError = !operatorDeployRes.ok || !trivyConfigRes.ok
   const hasHttpError = failedAuxSources.length > 0
 
-  const configItems = configRes.ok ? configRes.data.items ?? [] : []
+  const configItems = [
+    ...(configRes.ok ? configRes.data.items ?? [] : []),
+    ...(configClusterRes.ok ? configClusterRes.data.items ?? [] : []),
+  ]
   const rbacItems = [
     ...(rbacNsRes.ok ? rbacNsRes.data.items ?? [] : []),
     ...(rbacClusterRes.ok ? rbacClusterRes.data.items ?? [] : []),
@@ -1510,7 +1515,7 @@ function buildFrameworkEvalContext(opts: {
     infraScannerEnabled: parseScannerFlag("OPERATOR_INFRA_ASSESSMENT_SCANNER_ENABLED"),
     hasMasterNodes,
     hasWorkerNodes,
-    hasConfigAuditReports: configRes.ok ? configItems.length > 0 : "unknown",
+    hasConfigAuditReports: configRes.ok && configClusterRes.ok ? configItems.length > 0 : "unknown",
     hasRbacReports: rbacNsRes.ok && rbacClusterRes.ok ? rbacItems.length > 0 : "unknown",
     hasInfraReports: infraNsRes.ok && infraClusterRes.ok ? infraItems.length > 0 : "unknown",
     operatorConfigError,
@@ -1623,7 +1628,17 @@ function evaluateCheckAgainstCatalogue(
           notEvaluatedDetail: `no ClusterInfraAssessmentReport for ${presentNodeTypes.join("/")} node (${normId})`,
         }
       }
-      return { evaluationState: "passed" }
+      // D-INFRA-NO-PER-CHECK-EVIDENCE: node-collector commands that return empty output leave no
+      // trace in ClusterInfraAssessmentReport. Infra checks therefore NEVER get the positive state
+      // from report existence — failed when a failing record exists, else not_evaluated.
+      // Cost: most CIS node-level controls display as not evaluated by the scanner (verified on-node
+      // via scripts/test/verify-cluster.sh). Escape hatch: re-enable positive state only when an
+      // upstream scanner records explicit per-check evaluated/passed results.
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "infra_no_per_check_evidence",
+        notEvaluatedDetail: `node/control-plane check (${normId}): the scanner leaves no per-check evidence`,
+      }
     }
 
     // Pod-level InfraAssessment checks (control-plane static pods in kube-system).
@@ -1683,7 +1698,14 @@ function evaluateCheckAgainstCatalogue(
         notEvaluatedDetail: `no in-scope ${auditedKinds.join("/")} InfraAssessmentReport for ${normId}`,
       }
     }
-    return { evaluationState: "passed" }
+    // D-INFRA-NO-PER-CHECK-EVIDENCE: control-plane components without their own report leave no
+    // trace in Pod InfraAssessmentReports, so existence of any kube-system Pod infra report cannot
+    // prove a specific component's check ran. Never mark infra checks positive from report existence.
+    return {
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "infra_no_per_check_evidence",
+      notEvaluatedDetail: `node/control-plane check (${normId}): the scanner leaves no per-check evidence`,
+    }
   }
 
   if (entry.reportFamily === "rbac") {
@@ -1879,7 +1901,7 @@ function classifyNonFailingControl(
     }
   }
 
-  const normIds = rawIds.map(normalizeCheckId)
+  const normIds = rawIds.map(resolveCanonicalCheckId)
   for (const id of normIds) {
     const outcome = evaluateCheckAgainstCatalogue(id, specControl, evalCtx)
     if (outcome.evaluationState !== "passed") {
@@ -1924,9 +1946,13 @@ function buildComplianceFrameworkData(
       for (const failure of controlEvidenceFailures(evidenceSpec, evalCtx)) {
         const target = parseComplianceTarget(failure.target)
         const alreadyReported = checks.some((k) => {
+          if (k.success !== false) return false
+          if (resolveCanonicalCheckId(k.checkID ?? "") !== resolveCanonicalCheckId(failure.checkID)) return false
           const resolved = reportTargetMap.get(k.target ?? "") ?? parseComplianceTarget(k.target)
-          return k.success === false && normalizeCheckId(k.checkID ?? "") === normalizeCheckId(failure.checkID)
-            && resolved?.namespace === target?.namespace && resolved?.kind === target?.kind && resolved?.name === target?.name
+          if (resolved && target) {
+            return resolved.namespace === target.namespace && resolved.kind === target.kind && resolved.name === target.name
+          }
+          return (k.target ?? "") === failure.target
         })
         if (!alreadyReported) checks.push(failure)
       }
@@ -2125,6 +2151,7 @@ async function fetchFrameworkContext(): Promise<{
   const [
     rsMap,
     configRes,
+    configClusterRes,
     rbacNsRes,
     rbacClusterRes,
     infraNsRes,
@@ -2135,6 +2162,7 @@ async function fetchFrameworkContext(): Promise<{
   ] = await Promise.all([
     fetchReplicaSetMap(),
     tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
+    tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"),
     tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports"),
     tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports"),
     tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports"),
@@ -2146,6 +2174,7 @@ async function fetchFrameworkContext(): Promise<{
 
   const evalCtx = buildFrameworkEvalContext({
     configRes,
+    configClusterRes,
     rbacNsRes,
     rbacClusterRes,
     infraNsRes,
@@ -2161,6 +2190,7 @@ async function fetchFrameworkContext(): Promise<{
     rsMap,
     reportTargetMap: buildReportTargetMap(
       configRes.ok ? configRes.data.items ?? [] : [],
+      configClusterRes.ok ? configClusterRes.data.items ?? [] : [],
       rbacNsRes.ok ? rbacNsRes.data.items ?? [] : [],
       rbacClusterRes.ok ? rbacClusterRes.data.items ?? [] : [],
     ),

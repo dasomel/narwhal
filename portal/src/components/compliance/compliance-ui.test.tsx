@@ -1036,3 +1036,88 @@ it("G5 old-shape object renders unknown in grid, summary SSR and framework detai
   expect(pageWithEvidence).toContain("Verified pass stays visible")
   expect(pageWithEvidence).toContain("Old failure stays visible")
 })
+
+it("H5/H1: empty failure lists never say All checks passed or 모든 검사 통과 and infra surfaces point to verify-cluster.sh", async () => {
+  const zero = { Critical: 0, High: 0, Medium: 0, Low: 0 }
+  const cleanInfraRow: InfraAuditRow = { node: "narwhal-master-1", summary: zero, actionableSummary: zero, acceptedSummary: zero, accepted: false }
+  const cleanInfraDetail: InfraAuditDetail = { ...cleanInfraRow, checks: [] }
+  const cleanConfigDetail: ConfigAuditDetail = { namespace: "dev", kind: "Deployment", name: "app", summary: zero, accepted: false, checks: [] }
+  const cleanRbacDetail: RbacAuditDetail = { namespace: "dev", kind: "Role", name: "reader", summary: zero, accepted: false, checks: [] }
+
+  for (const locale of ["ko", "en"] as const) {
+    const expectedNoFail = locale === "ko" ? "실패 기록 없음" : "No failure recorded"
+    const forbidden = locale === "ko" ? "모든 검사 통과" : "All checks passed"
+
+    vi.mocked(useQuery).mockReturnValue({ data: [cleanInfraRow], isLoading: false, isError: false, refetch: vi.fn() } as never)
+    const infraListHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><InfraAuditList /></LocaleProvider>)
+    expect(infraListHtml).not.toContain(forbidden)
+    expect(infraListHtml).not.toContain("Clean")
+    expect(infraListHtml).toContain("scripts/test/verify-cluster.sh")
+
+    vi.mocked(useQuery).mockReturnValue({ data: cleanInfraDetail, isLoading: false, isError: false, refetch: vi.fn() } as never)
+    const infraPanelHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><ExpandedInfraPanel node="narwhal-master-1" /></LocaleProvider>)
+    expect(infraPanelHtml).toContain(expectedNoFail)
+    expect(infraPanelHtml).toContain("scripts/test/verify-cluster.sh")
+    expect(infraPanelHtml).not.toContain(forbidden)
+
+    vi.mocked(useQuery).mockReturnValue({ data: cleanConfigDetail, isLoading: false, isError: false, refetch: vi.fn() } as never)
+    const cfgPanelHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><ExpandedConfigPanel namespace="dev" name="app" /></LocaleProvider>)
+    expect(cfgPanelHtml).toContain(expectedNoFail)
+    expect(cfgPanelHtml).not.toContain(forbidden)
+
+    vi.mocked(useQuery).mockReturnValue({ data: cleanRbacDetail, isLoading: false, isError: false, refetch: vi.fn() } as never)
+    const rbacPanelHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><ExpandedRbacPanel namespace="dev" name="reader" /></LocaleProvider>)
+    expect(rbacPanelHtml).toContain(expectedNoFail)
+    expect(rbacPanelHtml).not.toContain(forbidden)
+
+    mockGetLocale.mockResolvedValue(locale)
+    mockGetInfraAuditDetail.mockResolvedValue(cleanInfraDetail)
+    mockGetConfigAuditDetail.mockResolvedValue(cleanConfigDetail)
+    mockGetRbacAuditDetail.mockResolvedValue(cleanRbacDetail)
+
+    const infraPageHtml = renderToStaticMarkup(await InfraAuditDetailPage({ params: Promise.resolve({ node: "narwhal-master-1" }) }))
+    expect(infraPageHtml).toContain(expectedNoFail)
+    expect(infraPageHtml).toContain("scripts/test/verify-cluster.sh")
+    expect(infraPageHtml).not.toContain(forbidden)
+
+    const cfgPageHtml = renderToStaticMarkup(await ConfigAuditDetailPage({ params: Promise.resolve({ ns: "dev", name: "app" }) }))
+    expect(cfgPageHtml).toContain(expectedNoFail)
+    expect(cfgPageHtml).not.toContain(forbidden)
+
+    const rbacPageHtml = renderToStaticMarkup(await RbacAuditDetailPage({ params: Promise.resolve({ ns: "dev", name: "reader" }) }))
+    expect(rbacPageHtml).toContain(expectedNoFail)
+    expect(rbacPageHtml).not.toContain(forbidden)
+
+    // Framework detail page renders infra_no_per_check_evidence reason + verify-cluster.sh page note
+    mockGetComplianceFrameworkDetail.mockResolvedValue({
+      id: "k8s-cis-1.23",
+      title: "CIS",
+      totalControls: 1,
+      passCount: 1,
+      evaluatedPassCount: 0,
+      notEvaluatedCount: 1,
+      failCount: 0,
+      actionableFailCount: 0,
+      acceptedFailCount: 0,
+      passRate: 1,
+      evaluatedPassRate: 0,
+      effectivePassRate: 0,
+      controls: [{
+        id: "1.1.19",
+        name: "PKI ownership",
+        severity: "Critical",
+        passCount: 0,
+        failCount: 0,
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "infra_no_per_check_evidence",
+      }],
+    })
+    const fwDetailHtml = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-cis-1.23" }) }))
+    expect(fwDetailHtml).toContain("scripts/test/verify-cluster.sh")
+    expect(fwDetailHtml).toContain(
+      locale === "ko"
+        ? "노드/컨트롤플레인 검사: 스캐너가 항목별 평가 증거를 남기지 않음"
+        : "Node/control-plane check: the scanner leaves no per-check evidence",
+    )
+  }
+})

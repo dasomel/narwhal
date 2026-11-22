@@ -250,7 +250,7 @@ def check(texts: dict[str, str]) -> list[str]:
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("force classifyNonFailingControl to passed", "compliance", "const checks = resultControl.checks ?? []", 'if (true) return { evaluationState: "passed" }\n  const checks = resultControl.checks ?? []'),
     ("bypass evaluateCheckAgainstCatalogue in classifyNonFailingControl", "compliance", "const outcome = evaluateCheckAgainstCatalogue(id, specControl, evalCtx)", 'const outcome = { evaluationState: "passed" as const }'),
-    ("reintroduce hardcoded WORKER_COMMAND_RE over-correction", "compliance", "const CONTROL_PLANE_CHECK_IDS", "const WORKER_COMMAND_RE = /^CMD-0022$/\nconst CONTROL_PLANE_CHECK_IDS"),
+    ("reintroduce hardcoded WORKER_COMMAND_RE over-correction", "compliance", "const WORKLOAD_KINDS_LOWER", "const WORKER_COMMAND_RE = /^CMD-0022$/\nconst WORKLOAD_KINDS_LOWER"),
     ("drop missing-spec absent_from_report materialisation", "compliance", 'notEvaluatedReason: "absent_from_report"', 'notEvaluatedReason: "removed" as never'),
     ("swallow configAudit error instead of throwing unavailable", "compliance", 'throw new ComplianceDataUnavailableError("configAudit", msg)', "return []"),
     ("cache partial response on auxiliary failure", "compliance", "if (!meta.partial)", "if (true)"),

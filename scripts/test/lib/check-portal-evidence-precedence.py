@@ -22,9 +22,10 @@ def check(texts):
     required = {
         "comp": [
             "for (const failure of controlEvidenceFailures(evidenceSpec, evalCtx))",
-            'catEntry.reportFamily === "configAudit" ? "config" : catEntry.reportFamily',
-            ': /^KCV\\d+$/.test(id) ? "infra"',
-            "ctx.evidenceReports.rbac.some",
+            "...ctx.evidenceReports.config,",
+            "...ctx.evidenceReports.rbac,",
+            "...ctx.evidenceReports.infra,",
+            'resolveCanonicalCheckId(c.checkID ?? "") !== canonical',
             "evaluateCheckAgainstCatalogue(id, specControl, evalCtx)",
             'entry.reportFamily === "infra"',
         ],
@@ -58,10 +59,10 @@ def check(texts):
 
 
 MUTATIONS = [
-    ("bypass catalogue family mapping", "comp", 'catEntry.reportFamily === "configAudit" ? "config" : catEntry.reportFamily', '"config"'),
     ("ignore underlying failures", "comp", "controlEvidenceFailures(evidenceSpec, evalCtx)", "[]"),
-    ("KCV fallback in config", "comp", ': /^KCV\\d+$/.test(id) ? "infra"', ': /^KCV\\d+$/.test(id) ? "config"'),
-    ("guess RBAC family", "comp", "ctx.evidenceReports.rbac.some", "ctx.evidenceReports.config.some"),
+    ("drop rbac family from failure join", "comp", "...ctx.evidenceReports.rbac,", ""),
+    ("drop infra family from failure join", "comp", "...ctx.evidenceReports.infra,", ""),
+    ("bypass canonical alias match in failure join", "comp", 'resolveCanonicalCheckId(c.checkID ?? "") !== canonical', 'c.checkID !== canonical'),
     ("miss auxiliary errors", "comp", "if (evalCtx.hasHttpError)", "if (evalCtx.operatorConfigError)"),
     ("ignore audit-only failures", "kisa", " || actionableFailures > 0 || auditFailures > 0", ""),
     ("old framework cache", "keys", "compliance:v2:frameworks:list", "compliance:frameworks:list"),

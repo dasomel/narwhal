@@ -2205,14 +2205,14 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     expect(byId.get("WORKER-ABS")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type" })
     expect(byId.get("LOWER-CASE")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "unlinked_check_id" })
     expect(byId.get("MANUAL-OMIT")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "manual" })
-    expect(byId.get("MASTER-OK")).toMatchObject({ evaluationState: "passed" })
+    expect(byId.get("MASTER-OK")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "infra_no_per_check_evidence" })
     expect(byId.get("WORKLOAD-OK")).toMatchObject({ evaluationState: "passed" })
 
     expect(detail!.rawPassCount).toBe(7)
-    expect(detail!.evaluatedPassCount).toBe(2)
-    expect(detail!.notEvaluatedCount).toBe(5)
-    expect(detail!.evaluatedPassRate).toBeCloseTo(2 / 7)
-    expect(detail!.effectivePassRate).toBeCloseTo(2 / 7)
+    expect(detail!.evaluatedPassCount).toBe(1)
+    expect(detail!.notEvaluatedCount).toBe(6)
+    expect(detail!.evaluatedPassRate).toBeCloseTo(1 / 7)
+    expect(detail!.effectivePassRate).toBeCloseTo(1 / 7)
     expect(detail!.lastUpdated).toBe("2026-11-22T06:00:00Z")
   })
 
@@ -2333,29 +2333,29 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     const frameworks = await getComplianceFrameworks()
     const byId = new Map(frameworks.map((f) => [f.id, f]))
 
-    // Hand-derived expectations under the check-catalogue rule (failed-only reports):
+    // Hand-derived expectations under the narrowed check-catalogue rule (H1: infra never passes from report existence):
     // k8s-cis-1.23 (8 controls):
-    //   1.1.1 (KCV0048, master Node) -> no failure recorded (ClusterInfraAssessmentReport on master-1 exists)
+    //   1.1.1 (KCV0048, master Node) -> not_evaluated (infra_no_per_check_evidence)
     //   1.1.9 (KCV0056) -> failed (actionable: 1)
     //   1.2.1 (KCV0001, kube-system Pod) -> not_evaluated (excluded_namespace: kube-system excluded)
     //   3.1.1 (Manual) -> not_evaluated (manual)
-    //   4.1.5 (KCV0073, master/worker Node) -> no failure recorded (ClusterInfraAssessmentReport on master-1 exists)
+    //   4.1.5 (KCV0073, master/worker Node) -> not_evaluated (infra_no_per_check_evidence)
     //   5.1.1 (KSV111, RoleBinding/ClusterRoleBinding) -> not_evaluated (unsupported_kind)
     //   5.2.2 (KSV017) -> failed (accepted: falco)
     //   5.7.3 (KSV020/KSV021) -> failed (accepted: harbor-core + argocd-dex-server; droppedCheckCount: 2)
     expect(byId.get("k8s-cis-1.23")).toMatchObject({
       totalControls: 8,
       passCount: 5,
-      evaluatedPassCount: 2,
-      notEvaluatedCount: 3,
+      evaluatedPassCount: 0,
+      notEvaluatedCount: 5,
       failCount: 3,
       actionableFailCount: 1,
       acceptedFailCount: 2,
       droppedFailCount: 0,
       droppedCheckCount: 2,
     })
-    expect(byId.get("k8s-cis-1.23")!.evaluatedPassRate).toBeCloseTo(2 / 8)
-    expect(byId.get("k8s-cis-1.23")!.effectivePassRate).toBeCloseTo(4 / 8)
+    expect(byId.get("k8s-cis-1.23")!.evaluatedPassRate).toBeCloseTo(0)
+    expect(byId.get("k8s-cis-1.23")!.effectivePassRate).toBeCloseTo(2 / 8)
 
     // k8s-pss-restricted-0.1 (3 controls):
     //   1 (AVD-KSV-0103, Workload) -> no failure recorded (in-scope Workload ConfigAuditReports exist)
@@ -2378,6 +2378,7 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
       }, {})
     expect(reasonCounts((await getComplianceFrameworkDetail("k8s-cis-1.23"))!)).toEqual({
       excluded_namespace: 1,
+      infra_no_per_check_evidence: 2,
       manual: 1,
       unsupported_kind: 1,
     })
@@ -2393,7 +2394,7 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
       actionable: acc.actionable + (f.actionableFailCount ?? 0),
       accepted: acc.accepted + (f.acceptedFailCount ?? 0),
     }), { controls: 0, raw: 0, evaluated: 0, notEvaluated: 0, actionable: 0, accepted: 0 })
-    expect(totals).toEqual({ controls: 11, raw: 7, evaluated: 3, notEvaluated: 4, actionable: 1, accepted: 3 })
+    expect(totals).toEqual({ controls: 11, raw: 7, evaluated: 1, notEvaluated: 6, actionable: 1, accepted: 3 })
     console.info("trimmed snapshot replay:", JSON.stringify(totals))
 
     // Pin the measured 2026-11-22 full-snapshot pooled aggregate expectations carried in the trimmed fixture.
@@ -2485,11 +2486,11 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     expect(detail).not.toBeNull()
     const byId = new Map(detail!.controls.map((c) => [c.id, c]))
     expect(byId.get("UNKNOWN-ID")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "not_in_catalogue" })
-    expect(byId.get("CLEAN-INFRA")).toMatchObject({ evaluationState: "passed" })
+    expect(byId.get("CLEAN-INFRA")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "infra_no_per_check_evidence" })
     expect(byId.get("PARTIAL-MULTI")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "not_in_catalogue" })
     expect(byId.get("WORKLOAD-CLEAN")).toMatchObject({ evaluationState: "passed" })
-    expect(detail!.evaluatedPassCount).toBe(2)
-    expect(detail!.notEvaluatedCount).toBe(2)
+    expect(detail!.evaluatedPassCount).toBe(1)
+    expect(detail!.notEvaluatedCount).toBe(3)
   })
 
   it("fails closed to coverage_unknown and surfaces partial without caching when auxiliary Deployment/ConfigMap read returns 403", async () => {
@@ -2641,9 +2642,10 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     const detail = await getComplianceFrameworkDetail("cis-node-applicability")
     expect(detail).not.toBeNull()
     const byId = new Map(detail!.controls.map((c) => [c.id, c]))
-    // 4.1.5 (KCV0073) & 4.1.6 (KCV0074) apply to ["master", "worker"] in catalogue and master-1 has a ClusterInfraAssessmentReport -> no failure recorded ("passed")
-    expect(byId.get("4.1.5")).toMatchObject({ evaluationState: "passed" })
-    expect(byId.get("4.1.6")).toMatchObject({ evaluationState: "passed" })
+    // 4.1.5 (KCV0073) & 4.1.6 (KCV0074) apply to ["master", "worker"] in catalogue — NOT worker-only over-corrected
+    // to missing_node_type — and under H1 stay not_evaluated (infra_no_per_check_evidence) without a failing record.
+    expect(byId.get("4.1.5")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "infra_no_per_check_evidence" })
+    expect(byId.get("4.1.6")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "infra_no_per_check_evidence" })
     // Explicit spec/collector nodeType: "worker" on master-only cluster -> missing_node_type by data, not by CIS section number
     expect(byId.get("4.W")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type" })
   })
@@ -2797,10 +2799,10 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     expect(branches!.notEvaluatedCount).toBe(9)
 
     // 2. Live-like failed-only fixture (ZERO success:true records anywhere):
-    // Hand-derived expectations across 11 controls:
-    //   L-1 (KCV0048, master Node) -> passed (no failure recorded; master-1 ClusterInfraAssessmentReport exists)
-    //   L-2 (KCV0073, master/worker Node) -> passed (no failure recorded; master-1 ClusterInfraAssessmentReport exists)
-    //   L-3 (KCV0002, kube-system Pod infra) -> passed (no failure recorded; kube-system Pod InfraAssessmentReport exists)
+    // Hand-derived expectations across 11 controls (H1: infra checks never pass from report existence):
+    //   L-1 (KCV0048, master Node) -> not_evaluated (infra_no_per_check_evidence)
+    //   L-2 (KCV0073, master/worker Node) -> not_evaluated (infra_no_per_check_evidence)
+    //   L-3 (KCV0002, kube-system Pod infra) -> not_evaluated (infra_no_per_check_evidence)
     //   L-4 (KCV0001, kube-system Pod infra) -> failed (accepted: 1 [system namespace]; underlying kube-apiserver InfraAssessmentReport failed KCV0001)
     //   L-5 (KSV103, Workload) -> passed (no failure recorded; dev Deployment ConfigAuditReport exists)
     //   L-6 (KSV038, NetworkPolicy) -> passed (no failure recorded; dev NetworkPolicy ConfigAuditReport exists)
@@ -2809,7 +2811,7 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     //   L-9 (KSV029, not in catalogue) -> not_evaluated (not_in_catalogue)
     //   L-10 (KCV0069 with explicit worker nodeType on master-only cluster) -> not_evaluated (missing_node_type)
     //   L-11 (KSV014, Workload) -> failed (actionable: 1; underlying dev Deployment ConfigAuditReport failed KSV014)
-    // Totals: 11 controls = 7 no-failure-recorded + 1 actionable fail + 1 accepted fail + 2 not_evaluated.
+    // Totals: 11 controls = 4 no-failure-recorded + 1 actionable fail + 1 accepted fail + 5 not_evaluated.
     mockCache.clear()
     installK8sMock({
       "/api/v1/nodes": {
@@ -2917,18 +2919,21 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     const liveLike = await getComplianceFrameworkDetail("live-failed-only")
     expect(liveLike).not.toBeNull()
     expect(liveLike!.totalControls).toBe(11)
-    expect(liveLike!.evaluatedPassCount).toBe(7)
+    expect(liveLike!.evaluatedPassCount).toBe(4)
     expect(liveLike!.actionableFailCount).toBe(1)
     expect(liveLike!.acceptedFailCount).toBe(1)
-    expect(liveLike!.notEvaluatedCount).toBe(2)
-    expect(liveLike!.evaluatedPassRate).toBeCloseTo(7 / 11)
-    expect(liveLike!.effectivePassRate).toBeCloseTo(8 / 11)
+    expect(liveLike!.notEvaluatedCount).toBe(5)
+    expect(liveLike!.evaluatedPassRate).toBeCloseTo(4 / 11)
+    expect(liveLike!.effectivePassRate).toBeCloseTo(5 / 11)
     const lMap = new Map(liveLike!.controls.map((c) => [c.id, c]))
     expect(lMap.get("L-4")).toMatchObject({ evaluationState: "failed", accepted: true, acceptedFailCount: 1 })
     expect(lMap.get("L-11")).toMatchObject({ evaluationState: "failed", actionableFailCount: 1, accepted: false })
     expect(lMap.get("L-9")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "not_in_catalogue" })
     expect(lMap.get("L-10")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type" })
-    for (const id of ["L-1", "L-2", "L-3", "L-5", "L-6", "L-7", "L-8"]) {
+    for (const id of ["L-1", "L-2", "L-3"]) {
+      expect(lMap.get(id)).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "infra_no_per_check_evidence" })
+    }
+    for (const id of ["L-5", "L-6", "L-7", "L-8"]) {
       expect(lMap.get(id)).toMatchObject({ evaluationState: "passed" })
     }
   })

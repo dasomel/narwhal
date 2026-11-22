@@ -52,9 +52,9 @@ export function ExpandedInfraPanel({ node }: { node: string }) {
       ) : detail ? (
         <>
           {top5Failed.length === 0 ? (
-            <div className="rounded-md border border-green-200 bg-green-50/60 dark:bg-green-950/10 dark:border-green-900 p-3 text-xs">
-              <p className="font-medium text-green-700 dark:text-green-400">✓ {t("compliance.check.allPassed")}</p>
-              <p className="text-muted-foreground mt-1">{t("compliance.check.allPassedHint")}</p>
+            <div className="rounded-md border border-slate-200 bg-slate-50/60 dark:bg-slate-900/20 dark:border-slate-800 p-3 text-xs">
+              <p className="font-medium text-foreground">{t("compliance.check.allPassed")}</p>
+              <p className="text-muted-foreground mt-1">{t("compliance.infra.emptyChecksCaveat")}</p>
             </div>
           ) : (
             <>
@@ -214,7 +214,7 @@ export function InfraAuditList() {
                         ? `${actionableFailures} issues`
                         : isAcceptedOnly
                           ? `${rawFailures} ${t("compliance.framework.acceptedShort")}`
-                          : "Clean"}
+                          : t("compliance.framework.noFailureRecordedShort")}
                     </span>
                     <span
                       className="text-muted-foreground text-sm inline-block transition-transform duration-200"

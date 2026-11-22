@@ -32,7 +32,7 @@
       "evidence": [
         "orchestrator: portal/v1.1.24 -> commit 07a91b92; release content = PRs #770 #771 #772 #773; publish workflow run 45075384999 succeeded (build arm64+amd64, manifest, CycloneDX SBOM, sign)",
         "orchestrator: image ghcr.io/dasomel/narwhal-portal:1.1.24; digest sha256:4fa470724cfcdb50df2d1f05a79e54aea05b708d470bbd148575982cb98ad326",
-        "orchestrator, measured 2026-11-22T22:07:46Z: crane digest returned the digest above; cosign verify v3.1.4 with the repository public key and transparency log passed on 2026-11-22",
+        "orchestrator, measured 2026-11-22T22:07:46Z: crane digest returned the digest above; cosign v3.1.4 'cosign verify --key scripts/airgap/keys/cosign.pub' on that digest passed (claims validated, transparency-log entry verified offline, signature verified against the key)",
         "orchestrator: image published for amd64 and arm64; manifest, CycloneDX SBOM and signature exist"
       ]
     },
@@ -46,9 +46,9 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "Local static pin consistency, YAML validation and regression suite; no runtime rollout.",
-      "summary": "make test passed 503 checks with 1 failure (R210 due to pre-existing check-compliance-scan-coverage.py retaining 1.1.23 outside the 12 pinned files) and 3 warnings. make validate, version consistency, generated versions, changed-line markdown lint and portal vitest passed. make lint recorded truthfully: shellcheck passed; yamllint exited non-zero on pre-existing line-length errors in untouched files. Live rollout and SSO verification happen after merge and are not yet done; in-cluster Kyverno verification is known to fail for Portal images (narwhal#684).",
+      "summary": "make test passed 504 checks with 0 failures and 3 warnings after the stale 1.1.23 pin in scripts/test/lib/check-compliance-scan-coverage.py (found by R210 and the independent reviewer) was bumped to 1.1.24. make validate, version consistency, generated versions, changed-line markdown lint and portal vitest passed. make lint recorded truthfully: shellcheck passed; yamllint exited non-zero on pre-existing line-length errors in untouched files. Live rollout and SSO verification happen after merge and are not yet done; in-cluster Kyverno verification is known to fail for Portal images (narwhal#684).",
       "evidence": [
-        "test:make test -> passed 503 failed 1 warnings 3; exit 1 (R210 failed: check-compliance-scan-coverage.py retains 1.1.23 outside the 12 pinned files)",
+        "test:make test -> passed 504 failed 0 warnings 3 (first run: passed 503 failed 1, R210, fixed by bumping the pin in scripts/test/lib/check-compliance-scan-coverage.py)",
         "test:make validate -> exit 0",
         "test:bash scripts/ci/check-version-consistency.sh -> exit 0",
         "test:node portal/scripts/gen-oss-versions.mjs --check -> in sync",
@@ -66,7 +66,7 @@
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Static pin change; make test (503 passed, 1 failed on R210 due to check-compliance-scan-coverage.py retaining 1.1.23), make validate, version consistency, generated versions, portal vitest and changed-line markdown lint passed; make lint recorded truthfully (shellcheck passed, yamllint exited non-zero on pre-existing line-length errors in untouched files). Live rollout and SSO verification happen after merge and are not yet done; in-cluster Kyverno verification is known to fail for Portal images (narwhal#684)."
+      "summary": "Static pin change; make test (504 passed, 0 failed), make validate, version consistency, generated versions, portal vitest and changed-line markdown lint passed; make lint recorded truthfully (shellcheck passed, yamllint exited non-zero on pre-existing line-length errors in untouched files). Live rollout and SSO verification happen after merge and are not yet done; in-cluster Kyverno verification is known to fail for Portal images (narwhal#684)."
     }
   ]
 }

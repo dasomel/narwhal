@@ -228,11 +228,15 @@ spec:
             - name: etc-kubernetes
               mountPath: /etc/kubernetes
               readOnly: true
-            # D-NODE-COLLECTOR-CNI-MOUNT: trivy-checks CMD-0009/CMD-0010 run `stat -c ... /*/cni/*`.
-            # Chart default mountPath `/etc/cni/net.d/` matches the directory (700) instead of files
-            # inside it; mounting host `/etc/cni/net.d/` at `/etc/cni` lets `/*/cni/*` glob the real
-            # CNI files (e.g. 05-cilium.conflist 600 root:root) so KCV0056/KCV0057 pass/fail truthfully.
-            # Cost: non-net.d entries under host `/etc/cni` are omitted (unused by any collector command).
+            # D-NODE-COLLECTOR-CNI-MOUNT: trivy-checks CMD-0009/CMD-0010 (nodeType: master only)
+            # run `stat -c ... /*/cni/*`. Chart default mountPath `/etc/cni/net.d/` matches the
+            # directory (700) instead of files inside it; mounting host `/etc/cni/net.d/` at
+            # `/etc/cni` lets `/*/cni/*` glob the real CNI files (e.g. 05-cilium.conflist 600
+            # root:root) so KCV0056/KCV0057 pass/fail truthfully on control-plane nodes.
+            # Cost: non-net.d entries under host `/etc/cni` are omitted (unused by any collector
+            # command); workers are not evaluated by CMD-0009/KCV0056 (sp.type == "master") and
+            # empty `values: []` passes the upstream Rego, so workers and missing-CNI-file states
+            # remain covered by harden-node-files.sh and verify_node_file_hardening where run.
             # Escape hatch: restore mountPath `/etc/cni/net.d/` and update checksum/node-collector-mounts.
             - name: etc-cni-netd
               mountPath: /etc/cni

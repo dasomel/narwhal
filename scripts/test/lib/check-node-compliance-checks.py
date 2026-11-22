@@ -130,22 +130,36 @@ want_pass="${{2:-2}}"
             *,
             etcd_manifest: bool = False,
             cni_dir_mode: int = 0o700,
+            create_cni_dir: bool = True,
+            cni_subdir: bool = False,
+            cni_dotfile_mode: int | None = None,
             symlink_target_mode: int | None = None,
         ) -> Path:
             r = tmp_path / name
             cni_dir = r / "etc/cni/net.d"
-            cni_dir.mkdir(parents=True)
-            if cni_mode is not None:
-                f = cni_dir / "05-cilium.conflist"
-                f.write_text("{}\n", encoding="utf-8")
-                os.chmod(f, cni_mode)
-            if symlink_target_mode is not None:
-                target = r / "opt/custom-cni.conf"
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text("{}\n", encoding="utf-8")
-                os.chmod(target, symlink_target_mode)
-                (cni_dir / "10-symlink.conflist").symlink_to(target)
-            os.chmod(cni_dir, cni_dir_mode)
+            if create_cni_dir:
+                cni_dir.mkdir(parents=True)
+                if cni_mode is not None:
+                    f = cni_dir / "05-cilium.conflist"
+                    f.write_text("{}\n", encoding="utf-8")
+                    os.chmod(f, cni_mode)
+                if cni_dotfile_mode is not None:
+                    df = cni_dir / ".kubernetes-cni-keep"
+                    df.write_text("", encoding="utf-8")
+                    os.chmod(df, cni_dotfile_mode)
+                if cni_subdir:
+                    sd = cni_dir / "nested"
+                    sd.mkdir()
+                    os.chmod(sd, 0o700)
+                if symlink_target_mode is not None:
+                    target = r / "opt/custom-cni.conf"
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text("{}\n", encoding="utf-8")
+                    os.chmod(target, symlink_target_mode)
+                    (cni_dir / "10-symlink.conflist").symlink_to(target)
+                os.chmod(cni_dir, cni_dir_mode)
+            else:
+                (r / "etc/cni").mkdir(parents=True)
             if etcd_mode is not None:
                 etcd_dir = r / "var/lib/etcd"
                 etcd_dir.mkdir(parents=True)
@@ -156,28 +170,38 @@ want_pass="${{2:-2}}"
                 manifest.write_text("kind: Pod\n", encoding="utf-8")
             return r
 
-        good = make_root("good", 0o600, 0o700)
+        good = make_root("good", 0o600, 0o700, cni_dotfile_mode=0o600)
         worker = make_root("worker", 0o600, None, etcd_manifest=False)
         etcd_missing = make_root("etcd_missing", 0o600, None, etcd_manifest=True)
+        bad_cni_444 = make_root("bad_cni_444", 0o444, 0o700)
         bad_cni_644 = make_root("bad_cni_644", 0o644, 0o700)
         bad_cni_700 = make_root("bad_cni_700", 0o700, 0o700)
         bad_cni_suid = make_root("bad_cni_suid", 0o4600, 0o700)
         bad_cni_symlink = make_root("bad_cni_symlink", 0o600, 0o700, symlink_target_mode=0o644)
+        missing_cni_dir = make_root("missing_cni_dir", None, 0o700, create_cni_dir=False)
         empty_cni = make_root("empty_cni", None, 0o700)
+        subdir_only_cni = make_root("subdir_only_cni", None, 0o700, cni_subdir=True)
+        dotfile_only_cni = make_root("dotfile_only_cni", None, 0o700, cni_dotfile_mode=0o600)
+        bad_dotfile_cni = make_root("bad_dotfile_cni", 0o600, 0o700, cni_dotfile_mode=0o644)
         unreadable_cni = make_root("unreadable_cni", 0o600, 0o700, cni_dir_mode=0o000)
         bad_etcd_755 = make_root("bad_etcd_755", 0o600, 0o755)
         bad_etcd_suid = make_root("bad_etcd_suid", 0o600, 0o4700)
         bad_etcd_sgid = make_root("bad_etcd_sgid", 0o600, 0o2700)
 
         cases: list[tuple[str, Path, str, str, bool, str, str | None]] = [
-            ("compliant master fixture", good, "2", owner, True, "CIS 1.1.9 CNI file perms: 1 file(s) <=600", None),
+            ("compliant master fixture", good, "2", owner, True, "CIS 1.1.9 CNI file perms: 2 file(s) <=600", None),
             ("compliant worker fixture", worker, "1", owner, True, "SUMMARY pass=1 fail=0", None),
             ("missing etcd dir when etcd.yaml exists", etcd_missing, "2", owner, False, "FAIL: CIS 1.1.12 etcd data dir missing or symlink", None),
+            ("444 CNI file", bad_cni_444, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
             ("644 CNI file", bad_cni_644, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
             ("0700 CNI file", bad_cni_700, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
             ("4600 CNI file", bad_cni_suid, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
             ("symlink->644 CNI file", bad_cni_symlink, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
-            ("empty CNI dir", empty_cni, "2", owner, False, "none found", None),
+            ("missing CNI dir", missing_cni_dir, "2", owner, False, "FAIL: CIS 1.1.9 CNI config dir missing or symlink", None),
+            ("empty CNI dir", empty_cni, "2", owner, False, "FAIL: CIS 1.1.9 CNI config files: none found", None),
+            ("subdir-only CNI dir", subdir_only_cni, "2", owner, False, "FAIL: CIS 1.1.9 CNI config files: none found", None),
+            ("dotfile-only CNI dir", dotfile_only_cni, "2", owner, False, "FAIL: CIS 1.1.9 CNI config files: none found", None),
+            ("644 dotfile with 600 conflist", bad_dotfile_cni, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
             ("755 etcd dir", bad_etcd_755, "2", owner, False, "FAIL: CIS 1.1.12 etcd data dir", None),
             ("4700 etcd dir", bad_etcd_suid, "2", owner, False, "FAIL: CIS 1.1.12 etcd data dir", None),
             ("2700 etcd dir", bad_etcd_sgid, "2", owner, False, "FAIL: CIS 1.1.12 etcd data dir", None),
@@ -322,6 +346,9 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
         "D-NODE-COLLECTOR-PASSWD-ROLLOUT",
         "D-NODE-COLLECTOR-CNI-MOUNT",
         "rollout restart deploy/trivy-operator",
+        "nodeType: master",
+        "does **not** report a worker node's `644` CNI file",
+        "values: []",
     ):
         if needle not in doc:
             errors.append(f"docs/common/compliance-hardening.md missing {needle!r}")
@@ -329,6 +356,7 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
         "| cluster | Node/* | KCV0056 |",
         "CNI dir 0700 not traversable by the scanner",
         "cannot pass for a compliant control-plane node by design",
+        "real regressions on any node remain visible and actionable",
     ):
         if forbidden in doc:
             errors.append(f"docs/common/compliance-hardening.md still contains debunked/removed text {forbidden!r}")
@@ -344,7 +372,7 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
         fn_src = "\n\n".join((priv_fn, stat_fn, hard_fn))
         if '${priv[@]+"${priv[@]}"}' not in priv_fn:
             errors.append("_node_priv must guard priv expansion with ${priv[@]+\"${priv[@]}\"} for bash 3.2 set -u")
-        for token in ("_node_priv", "8#7177", "8#7077", "find -L", "stat -L", "CNI config dir unreadable"):
+        for token in ("_node_priv", "8#7177", "8#7077", "find -L", "stat -L", "CNI config dir unreadable", "*.conf|*.conflist|*.json", 'if [ "${cni_conf_count}" -eq 0 ]'):
             if token not in fn_src:
                 errors.append(f"verify_node_file_hardening missing hardening check token {token!r}")
         if "_node_priv" not in stat_fn or "_node_priv" not in hard_fn:
@@ -379,10 +407,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop i18n infraActionableSummary", "i18n", '"compliance.table.infraActionableSummary"', '"compliance.table.removed"'),
     ("drop Infra allowlist table in docs", "doc", "\n### Infra allowlist\n", "\n### Removed\n"),
     ("drop D-NODE-COLLECTOR-CNI-MOUNT in docs", "doc", "D-NODE-COLLECTOR-CNI-MOUNT", "D-REMOVED"),
+    ("drop master-only KCV0056 scope in docs", "doc", "does **not** report a worker node's `644` CNI file", "reports every node's `644` CNI file"),
     ("drop operator rollout restart note in docs", "doc", "rollout restart deploy/trivy-operator", "noop"),
     ("drop bash 3.2 empty-array guard", "verify", '${priv[@]+"${priv[@]}"}', '"${priv[@]}"'),
     ("weaken CNI special-bit mask", "verify", "8#7177", "8#177"),
     ("weaken etcd special-bit mask", "verify", "8#7077", "8#077"),
+    ("drop CNI config presence check", "verify", 'if [ "${cni_conf_count}" -eq 0 ]', 'if [ "${cni_count}" -eq 0 ]'),
     ("drop symlink follow in find/stat", "verify", "find -L", "find"),
     ("drop verify_node_file_hardening call", "verify", "  if ${IS_CLUSTER_NODE}; then\n    verify_node_file_hardening", "  if ${IS_CLUSTER_NODE}; then\n    true"),
     ("drop R385 wiring", "reg", "check R385 ", "check R9999 "),

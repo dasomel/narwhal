@@ -101,12 +101,16 @@ _node_stat() {
   _node_priv stat -L -f '%Mp%Lp %Su:%Sg' "${target}" 2>/dev/null
 }
 
-# D-NODE-HARDENING-LIVE: verifies CIS 1.1.9 (CNI config files <=600, no suid/sgid/sticky) and
-# CIS 1.1.12 (/var/lib/etcd <=700 etcd:etcd, no suid/sgid/sticky) directly on the node filesystem
-# alongside trivy-operator's nodeCollector mounts (KCV0056 via /etc/cni mount, KCV0059 via
-# /etc/passwd+/etc/group). Cost/coverage limit: verify-cluster.sh runs this only on the single local
-# node when IS_CLUSTER_NODE=true (SKIPs when run remotely); other nodes rely on harden-node-files.sh
-# during provisioning/join and on Trivy cluster-wide node scans. Escape hatch: pass [root_dir] for fixture testing.
+# D-NODE-HARDENING-LIVE: verifies CIS 1.1.9 (CNI config files <=600, no suid/sgid/sticky, and at
+# least one non-hidden *.conf/*.conflist/*.json config present) and CIS 1.1.12 (/var/lib/etcd <=700
+# etcd:etcd, no suid/sgid/sticky) directly on the node filesystem alongside trivy-operator's
+# nodeCollector mounts (KCV0056 via /etc/cni mount, KCV0059 via /etc/passwd+/etc/group).
+# Cost/coverage limit: verify-cluster.sh runs this only on the single local node when
+# IS_CLUSTER_NODE=true (SKIPs when run remotely); Trivy CMD-0009/KCV0056 and CMD-0010/KCV0057
+# evaluate control-plane (nodeType: master) nodes only and treat empty `values: []` as passing,
+# so worker nodes (and missing/dotfile-only CNI dirs) rely on harden-node-files.sh during
+# provisioning/join and on this on-node check where it is run. Escape hatch: pass [root_dir] for
+# fixture testing.
 # Args: [root_dir] [cni_owner] [etcd_owner].
 verify_node_file_hardening() {
   local root_dir="${1:-/}"
@@ -133,7 +137,7 @@ verify_node_file_hardening() {
   elif ! _node_priv test -r "${cni_dir}" || ! _node_priv test -x "${cni_dir}"; then
     fail "CIS 1.1.9 CNI config dir unreadable: ${cni_dir}"
   else
-    local cni_files cni_count=0 cni_bad=""
+    local cni_files cni_count=0 cni_conf_count=0 cni_bad=""
     if ! cni_files=$(_node_priv find -L "${cni_dir}" -mindepth 1 -maxdepth 1 -type f 2>/dev/null); then
       fail "CIS 1.1.9 CNI config dir scan failed (unreadable entry or broken symlink): ${cni_dir}"
     else
@@ -141,6 +145,10 @@ verify_node_file_hardening() {
       while IFS= read -r f; do
         [ -n "${f}" ] || continue
         cni_count=$((cni_count + 1))
+        case "${f##*/}" in
+          .*) ;;
+          *.conf|*.conflist|*.json) cni_conf_count=$((cni_conf_count + 1)) ;;
+        esac
         local info mode owner
         info=$(_node_stat "${f}" || echo "")
         mode="${info%% *}"
@@ -149,7 +157,7 @@ verify_node_file_hardening() {
           cni_bad="${cni_bad} ${f##*/}=${mode:-?}:${owner:-?}"
         fi
       done <<< "${cni_files}"
-      if [ "${cni_count}" -eq 0 ]; then
+      if [ "${cni_conf_count}" -eq 0 ]; then
         fail "CIS 1.1.9 CNI config files: none found in ${cni_dir}"
       elif [ -n "${cni_bad}" ]; then
         fail "CIS 1.1.9 CNI file perms (expected <=600 ${expected_cni_owner}):${cni_bad}"

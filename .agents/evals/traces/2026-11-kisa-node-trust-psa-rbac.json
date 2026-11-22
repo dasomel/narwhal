@@ -36,7 +36,7 @@
       "evidence": [
         "test:python3 scripts/test/lib/check-kisa-node-trust-psa-rbac.py --mutation-verify (default bash, /bin/bash 3.2 first, no helm/promtool PATH) -> PASS (32 mutations rejected)",
         "test:shellcheck --severity=warning on all touched shell scripts -> exited 0",
-        "test:make lint && make validate && make test -> passed",
+        "test:make validate && make test -> passed; make lint: shellcheck passed, yamllint exits non-zero on pre-existing line-length errors in untouched files (ghost-pod-reaper.yaml, prometheus-alerts.yaml, velero-server-rbac.yaml)",
         "policy:python3 .agents/evals/gate.py && python3 scripts/ci/check-agent-trace-evidence.py -> passed"
       ]
     },

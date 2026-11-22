@@ -37,7 +37,6 @@ import {
   getInfraAuditList,
   getRbacAuditDetail,
   getRbacAuditList,
-  isAcceptedRbacRole,
   parseComplianceTarget,
 } from "./compliance"
 
@@ -176,41 +175,12 @@ describe("compliance accepted exceptions", () => {
     mockReadJsonWithPolicy.mockReset()
   })
 
-  it("treats exact chaos-mesh and kubernetes-dashboard chart roles as upstream RBAC roles only for matching (namespace, kind, name) triples", () => {
-    expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-control-plane", "chaos-testing", "Role")).toBe(true)
-    expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-target-namespace", "", "ClusterRole")).toBe(true)
-    expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-target-namespace", undefined, "ClusterRole")).toBe(true)
-    expect(isAcceptedRbacRole("kubernetes-dashboard-api", "devtools", "Role")).toBe(true)
-    expect(isAcceptedRbacRole("kubernetes-dashboard-web", "devtools", "Role")).toBe(true)
-    expect(isAcceptedRbacRole("kubernetes-dashboard-metrics-scraper", "", "ClusterRole")).toBe(true)
-    expect(isAcceptedRbacRole("kubernetes-dashboard-metrics-scraper", undefined, "ClusterRole")).toBe(true)
-
-    // Wrong namespace, wrong kind, or unknown namespace/kind fail closed
-    expect(isAcceptedRbacRole("kubernetes-dashboard-api", "dev", "Role")).toBe(false)
-    expect(isAcceptedRbacRole("kubernetes-dashboard-web", "", "ClusterRole")).toBe(false)
-    expect(isAcceptedRbacRole("kubernetes-dashboard-web", undefined, "ClusterRole")).toBe(false)
-    expect(isAcceptedRbacRole("kubernetes-dashboard-api", "", "Role")).toBe(false)
-    expect(isAcceptedRbacRole("kubernetes-dashboard-api", undefined, undefined)).toBe(false)
-    expect(isAcceptedRbacRole("kubernetes-dashboard-api", "devtools", "Unknown")).toBe(false)
-    expect(isAcceptedRbacRole("kubernetes-dashboard-metrics-scraper", "devtools", "ClusterRole")).toBe(false)
-    expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-control-plane", "dev", "Role")).toBe(false)
-    expect(isAcceptedRbacRole("chaos-mesh-chaos-controller-manager-target-namespace", "chaos-testing", "Role")).toBe(false)
-
-    // Authored roles & pre-existing built-in/substring behaviour
-    expect(isAcceptedRbacRole("platform-admin-chaos-mesh", "", "ClusterRole")).toBe(false)
-    expect(isAcceptedRbacRole("developer-kubernetes-dashboard-admin", "", "ClusterRole")).toBe(false)
-    expect(isAcceptedRbacRole("platform-admin", "", "ClusterRole")).toBe(false)
-    expect(isAcceptedRbacRole("platform-admin-extra", "", "ClusterRole")).toBe(false)
-    expect(isAcceptedRbacRole("velero-ui-custom-role", "storage", "Role")).toBe(false)
-    expect(isAcceptedRbacRole("system:discovery")).toBe(true)
-    expect(isAcceptedRbacRole("cert-manager-cainjector")).toBe(true)
-  })
-
   it("splits Config Audit rows into actionable vs accepted per check and handles ReplicaSet hash suffixes", async () => {
     installK8sMock({
+      "/apis/apps/v1/replicasets": { items: [makeRs({ namespace: "devtools", name: "harbor-core-99b8c7d6f", ownerDeployment: "harbor-core", replicas: 1 }),makeRs({ namespace: "devtools", name: "narwhal-portal-74b459c658", ownerDeployment: "narwhal-portal", replicas: 1 })] },
       "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
         items: [
-          // 1. System namespace: all accepted
+          // 1. An unreviewed system workload stays actionable
           makeCar({
             namespace: "kube-system",
             kind: "DaemonSet",
@@ -276,13 +246,13 @@ describe("compliance accepted exceptions", () => {
     const rows = await getConfigAuditList()
     const byName = new Map(rows.map((r) => [r.name, r]))
 
-    expect(byName.get("cilium")?.accepted).toBe(true)
-    expect(byName.get("cilium")?.acceptedScope).toBe("system")
+    expect(byName.get("cilium")?.accepted).toBe(false)
+    expect(byName.get("cilium")?.acceptedScope).toBeUndefined()
 
     const harborCore = byName.get("harbor-core-99b8c7d6f")!
-    expect(harborCore.accepted).toBe(true)
-    expect(harborCore.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
-    expect(harborCore.acceptedSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 2 })
+    expect(harborCore.accepted).toBe(false)
+    expect(harborCore.actionableSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 1 })
+    expect(harborCore.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 1 })
 
     const portal = byName.get("narwhal-portal-74b459c658")!
     expect(portal.accepted).toBe(false)
@@ -291,8 +261,8 @@ describe("compliance accepted exceptions", () => {
 
     const harborNginx = byName.get("harbor-nginx-67d8f97945")!
     expect(harborNginx.accepted).toBe(false)
-    expect(harborNginx.actionableSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
-    expect(harborNginx.acceptedSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+    expect(harborNginx.actionableSummary).toEqual({ Critical: 0, High: 2, Medium: 0, Low: 0 })
+    expect(harborNginx.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
 
     const customApp = byName.get("custom-app-67d8f97945")!
     expect(customApp.accepted).toBe(false)
@@ -300,8 +270,8 @@ describe("compliance accepted exceptions", () => {
 
     const argocdServer = byName.get("argocd-server-5ff7697d4f")!
     expect(argocdServer.accepted).toBe(false)
-    expect(argocdServer.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
-    expect(argocdServer.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 2 })
+    expect(argocdServer.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 2 })
+    expect(argocdServer.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
 
     // Detail keeps every check and annotates accepted ones with class + reason
     const portalDetail = await getConfigAuditDetail("namespace", "devtools", "ReplicaSet", "narwhal-portal-74b459c658")
@@ -317,6 +287,7 @@ describe("compliance accepted exceptions", () => {
 
   it("splits RBAC findings per check and computes summary without double-counting LOW hygiene", async () => {
     installK8sMock({
+      "/apis/apps/v1/replicasets": { items: [makeRs({ namespace: "devtools", name: "harbor-core-b569bd8dd", ownerDeployment: "harbor-core", replicas: 1 }),makeRs({ namespace: "devtools", name: "narwhal-portal-74b459c658", ownerDeployment: "narwhal-portal", replicas: 1 })] },
       "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
         items: [
           makeCar({
@@ -420,9 +391,9 @@ describe("compliance accepted exceptions", () => {
     const rbacByName = new Map(rbacRows.map((r) => [r.name, r]))
     expect(rbacByName.get("narwhal-portal-jobs")?.accepted).toBe(true)
     expect(rbacByName.get("narwhal-portal-notification-channels")?.accepted).toBe(true)
-    expect(rbacByName.get("kubernetes-dashboard-web")?.accepted).toBe(true)
-    expect(rbacByName.get("chaos-mesh-chaos-controller-manager-target-namespace")?.accepted).toBe(true)
-    expect(rbacByName.get("developer-workload-admin")?.accepted).toBe(true)
+    expect(rbacByName.get("kubernetes-dashboard-web")?.accepted).toBe(false)
+    expect(rbacByName.get("chaos-mesh-chaos-controller-manager-target-namespace")?.accepted).toBe(false)
+    expect(rbacByName.get("developer-workload-admin")?.accepted).toBe(false)
     expect(rbacByName.get("velero-ui-custom-role")?.accepted).toBe(false)
     expect(rbacByName.get("platform-admin-extra")?.accepted).toBe(false)
 
@@ -445,19 +416,20 @@ describe("compliance accepted exceptions", () => {
     // - actionable: narwhal-portal KSV014 (High: 1)
     // - low hygiene: harbor-core (2) + narwhal-portal (2) = 4 (NOT double counted!)
     // - accepted: kube-system (High: 1, Low: 1) + harbor-core KSV014 (High: 1) = High: 2, Low: 1
-    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
-    expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 4 })
-    expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 2, Medium: 0, Low: 1 })
+    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 3, Medium: 0, Low: 0 })
+    expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 3 })
+    expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
 
     // RBAC:
     // - actionable: platform-admin KSV042 (Medium: 1) + platform-admin-extra KSV041 (Critical: 1) + velero-ui-custom-role KSV113 (Medium: 1)
-    expect(summary.totalRbacFailures).toEqual({ Critical: 1, High: 0, Medium: 2, Low: 0 })
+    expect(summary.totalRbacFailures).toEqual({ Critical: 2, High: 2, Medium: 5, Low: 0 })
     // - accepted: jobs (M:1) + notif (M:1) + k8s-dash (M:1) + platform-admin (C:1,H:2,M:2) + dev-workload (H:2,M:2) + chaos-mesh (C:1)
-    expect(summary.acceptedRbacFailures).toEqual({ Critical: 2, High: 4, Medium: 7, Low: 0 })
+    expect(summary.acceptedRbacFailures).toEqual({ Critical: 1, High: 2, Medium: 4, Low: 0 })
   })
 
   it("fails closed when summary counts exceed checks[] (e.g. Critical 1 / High 1 with only one accepted High check)", async () => {
     installK8sMock({
+      "/apis/apps/v1/replicasets": { items: [makeRs({ namespace: "devtools", name: "harbor-core-b569bd8dd", ownerDeployment: "harbor-core", replicas: 1 })] },
       "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
         items: [
           {
@@ -472,7 +444,7 @@ describe("compliance accepted exceptions", () => {
             },
             report: {
               summary: { criticalCount: 1, highCount: 1, mediumCount: 0, lowCount: 0 },
-              checks: [{ checkID: "KSV014", title: "Root FS", severity: "HIGH", success: false }],
+              checks: [{ checkID: "KSV011", title: "Root FS", severity: "HIGH", success: false }],
             },
           },
           // Also verify checks > summary mismatch is not accepted
@@ -489,8 +461,8 @@ describe("compliance accepted exceptions", () => {
             report: {
               summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 },
               checks: [
-                { checkID: "KSV014", title: "Root FS", severity: "HIGH", success: false },
-                { checkID: "KSV014", title: "Root FS", severity: "HIGH", success: false },
+                { checkID: "KSV011", title: "Root FS", severity: "HIGH", success: false },
+                { checkID: "KSV011", title: "Root FS", severity: "HIGH", success: false },
               ],
             },
           },
@@ -499,7 +471,7 @@ describe("compliance accepted exceptions", () => {
             namespace: "devtools",
             kind: "ReplicaSet",
             name: "harbor-core-abc12345",
-            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            checks: [{ checkID: "KSV011", severity: "HIGH", success: false }],
           }),
         ],
       },
@@ -562,7 +534,7 @@ describe("compliance accepted exceptions", () => {
     expect(rbacRows.find((r) => r.name === "developer-kubernetes-dashboard-admin")?.accepted).toBe(false)
 
     const summary = await getComplianceSummary()
-    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 1, High: 1, Medium: 0, Low: 0 })
+    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 1, High: 3, Medium: 0, Low: 0 })
     expect(summary.totalRbacFailures).toEqual({ Critical: 3, High: 0, Medium: 0, Low: 0 })
   })
 
@@ -610,9 +582,9 @@ describe("compliance accepted exceptions", () => {
 
     const rows = await getRbacAuditList()
     const devtoolsApi = rows.find((r) => r.namespace === "devtools" && r.name === "kubernetes-dashboard-api")!
-    expect(devtoolsApi.accepted).toBe(true)
-    expect(devtoolsApi.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
-    expect(devtoolsApi.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 1, Low: 0 })
+    expect(devtoolsApi.accepted).toBe(false)
+    expect(devtoolsApi.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 1, Low: 0 })
+    expect(devtoolsApi.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
 
     const devApi = rows.find((r) => r.namespace === "dev" && r.name === "kubernetes-dashboard-api")!
     expect(devApi.accepted).toBe(false)
@@ -632,8 +604,8 @@ describe("compliance accepted exceptions", () => {
     expect(devApiDetail?.checks.find((c) => c.id === "KSV042")?.accepted).toBe(false)
 
     const summary = await getComplianceSummary()
-    expect(summary.totalRbacFailures).toEqual({ Critical: 3, High: 0, Medium: 0, Low: 0 })
-    expect(summary.acceptedRbacFailures).toEqual({ Critical: 0, High: 0, Medium: 1, Low: 0 })
+    expect(summary.totalRbacFailures).toEqual({ Critical: 3, High: 0, Medium: 1, Low: 0 })
+    expect(summary.acceptedRbacFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
   })
 
   it("fails closed when an authored RBAC report has Unknown or mismatched kind (narwhal#717)", async () => {
@@ -799,21 +771,21 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
             namespace: "dev",
             kind: "ReplicaSet",
             name: "standalone-rs",
-            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            checks: [{ checkID: "KSV011", severity: "HIGH", success: false }],
           }),
           // 2. Non-Deployment-owned ReplicaSet at 0/0 -> kept
           makeCar({
             namespace: "dev",
             kind: "ReplicaSet",
             name: "custom-owned-rs",
-            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            checks: [{ checkID: "KSV011", severity: "HIGH", success: false }],
           }),
           // 3. Deployment scaled to 0: current revision (rev 2) at 0/0 -> kept (and allowlist still works via ownerRef)
           makeCar({
             namespace: "devtools",
             kind: "ReplicaSet",
             name: "harbor-core-b569bd8dd",
-            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            checks: [{ checkID: "KSV011", severity: "HIGH", success: false }],
           }),
           // 3b. Deployment scaled to 0: old revision (rev 1) at 0/0 -> dropped (superseded by rev 2)
           makeCar({
@@ -827,28 +799,28 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
             namespace: "storage",
             kind: "ReplicaSet",
             name: "velero-terminating",
-            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            checks: [{ checkID: "KSV011", severity: "HIGH", success: false }],
           }),
           // 5. Old revision missing status.replicas (unknown) -> kept
           makeCar({
             namespace: "storage",
             kind: "ReplicaSet",
             name: "velero-unknown-status",
-            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            checks: [{ checkID: "KSV011", severity: "HIGH", success: false }],
           }),
           // 6. Old revision missing revision annotation (unknown) -> kept
           makeCar({
             namespace: "storage",
             kind: "ReplicaSet",
             name: "velero-unknown-rev",
-            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            checks: [{ checkID: "KSV011", severity: "HIGH", success: false }],
           }),
           // 7. Cross-namespace Deployment with same name must not mark this RS superseded -> kept
           makeCar({
             namespace: "other-ns",
             kind: "ReplicaSet",
             name: "velero-other-ns",
-            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            checks: [{ checkID: "KSV011", severity: "HIGH", success: false }],
           }),
         ],
       },
@@ -1027,7 +999,7 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
 
     // Rollback happens before any separate RS TTL could expire; simulate report cache expiry
     phase = "rolled_back"
-    mockCache.delete("compliance:v2:config-audit:list")
+    mockCache.delete("compliance:v3:config-audit:list")
 
     // Next computation fetches RS list in the same request path -> web-rs-a is immediately back, web-rs-b is dropped
     const secondRows = await getConfigAuditList()
@@ -1071,8 +1043,8 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
 
       const rows = await getConfigAuditList()
       expect(rows.map((r) => r.name)).toEqual(["velero-6447588f5f", "harbor-core-99b8c7d6f"])
-      // Unknown ownership keeps existing alphabet fallback for harbor-core-99b8c7d6f
-      expect(rows.find((r) => r.name === "harbor-core-99b8c7d6f")?.accepted).toBe(true)
+      // Unknown ownership fails closed despite a hash-like suffix
+      expect(rows.find((r) => r.name === "harbor-core-99b8c7d6f")?.accepted).toBe(false)
 
       expect(warnSpy).toHaveBeenCalledTimes(1)
       expect(warnSpy.mock.calls[0]?.[0]).toContain("failed to list ReplicaSets")
@@ -1081,7 +1053,7 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
 
       const summary = await getComplianceSummary()
       expect(summary.scannedWorkloads).toBe(2)
-      expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+      expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 2, Medium: 0, Low: 0 })
     } finally {
       warnSpy.mockRestore()
     }
@@ -1148,7 +1120,7 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
             kind: "ReplicaSet",
             name: "harbor-core-bcdfg",
             checks: [
-              { checkID: "KSV014", severity: "HIGH", success: false },
+              { checkID: "KSV011", severity: "HIGH", success: false },
               { checkID: "KSV020", severity: "LOW", success: false },
             ],
           }),
@@ -1157,7 +1129,7 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
             namespace: "devtools",
             kind: "ReplicaSet",
             name: "harbor-core-99b8c7d6f",
-            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            checks: [{ checkID: "KSV011", severity: "HIGH", success: false }],
           }),
           // Real Deployment-owned ReplicaSet -> accepted as before
           makeCar({
@@ -1165,7 +1137,7 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
             kind: "ReplicaSet",
             name: "harbor-core-b569bd8dd",
             checks: [
-              { checkID: "KSV014", severity: "HIGH", success: false },
+              { checkID: "KSV011", severity: "HIGH", success: false },
               { checkID: "KSV011", severity: "LOW", success: false },
               { checkID: "KSV020", severity: "LOW", success: false },
             ],
@@ -1175,7 +1147,7 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
             namespace: "devtools",
             kind: "ReplicaSet",
             name: "harbor-core-abc12345",
-            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            checks: [{ checkID: "KSV011", severity: "HIGH", success: false }],
           }),
         ],
       },
@@ -1216,18 +1188,18 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
     expect(byName.get("harbor-core-99b8c7d6f")?.actionableSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
 
     expect(byName.get("harbor-core-b569bd8dd")?.accepted).toBe(true)
-    expect(byName.get("harbor-core-b569bd8dd")?.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
-    expect(byName.get("harbor-core-b569bd8dd")?.acceptedSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 2 })
+    expect(byName.get("harbor-core-b569bd8dd")?.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 1 })
+    expect(byName.get("harbor-core-b569bd8dd")?.acceptedSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 1 })
 
     expect(byName.get("harbor-core-abc12345")?.accepted).toBe(false)
 
     const standaloneDetail = await getConfigAuditDetail("namespace", "devtools", "ReplicaSet", "harbor-core-bcdfg")
     expect(standaloneDetail?.accepted).toBe(false)
-    expect(standaloneDetail?.checks.find((c) => c.id === "KSV014")?.accepted).toBe(false)
+    expect(standaloneDetail?.checks.find((c) => c.id === "KSV011")?.accepted).toBe(false)
 
     const ownedDetail = await getConfigAuditDetail("namespace", "devtools", "ReplicaSet", "harbor-core-b569bd8dd")
     expect(ownedDetail?.accepted).toBe(true)
-    expect(ownedDetail?.checks.find((c) => c.id === "KSV014")?.accepted).toBe(true)
+    expect(ownedDetail?.checks.find((c) => c.id === "KSV011")?.accepted).toBe(true)
 
     const summary = await getComplianceSummary()
     expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 3, Medium: 0, Low: 0 })
@@ -1427,13 +1399,13 @@ describe("compliance framework actionable vs accepted split", () => {
       id: "test-fw",
       passCount: 1,
       failCount: 5,
-      actionableFailCount: 4,
-      acceptedFailCount: 1,
+      actionableFailCount: 5,
+      acceptedFailCount: 0,
       totalControls: 6,
     })
     expect(frameworks[0].passRate).toBeCloseTo(1 / 6)
     // C0 has only a CCR pass without spec linkage or matching report evidence.
-    expect(frameworks[0].effectivePassRate).toBeCloseTo(1 / 6)
+    expect(frameworks[0].effectivePassRate).toBeCloseTo(0)
 
     const detail = await getComplianceFrameworkDetail("test-fw")
     expect(detail).not.toBeNull()
@@ -1442,14 +1414,13 @@ describe("compliance framework actionable vs accepted split", () => {
     expect(byId.get("C0")?.accepted).toBe(false)
     expect(byId.get("C1")).toMatchObject({ failCount: 2, actionableFailCount: 2, acceptedFailCount: 0, accepted: false })
     expect(byId.get("C2")).toMatchObject({ failCount: 2, actionableFailCount: 2, acceptedFailCount: 0, accepted: false })
-    expect(byId.get("C3")).toMatchObject({ failCount: 2, actionableFailCount: 1, acceptedFailCount: 1, accepted: false })
+    expect(byId.get("C3")).toMatchObject({ failCount: 2, actionableFailCount: 2, acceptedFailCount: 0, accepted: false })
     expect(byId.get("C4")).toMatchObject({ failCount: 2, actionableFailCount: 2, acceptedFailCount: 0, accepted: false })
     expect(byId.get("C5")).toMatchObject({
       failCount: 2,
-      actionableFailCount: 0,
-      acceptedFailCount: 2,
-      accepted: true,
-      acceptedScope: "mixed",
+      actionableFailCount: 1,
+      acceptedFailCount: 1,
+      accepted: false,
     })
   })
 
@@ -1468,7 +1439,7 @@ describe("compliance framework actionable vs accepted split", () => {
                 name: "Superseded RS only",
                 severity: "HIGH",
                 checks: [
-                  { checkID: "AVD-KSV-0014", target: "devtools/replicaset-unlisted-old11", success: false },
+                  { checkID: "AVD-KSV-0011", target: "devtools/replicaset-unlisted-old11", success: false },
                 ],
               },
               // Live-revision allowlisted RS with Deployment owner -> accepted
@@ -1477,7 +1448,7 @@ describe("compliance framework actionable vs accepted split", () => {
                 name: "Live Deployment RS",
                 severity: "HIGH",
                 checks: [
-                  { checkID: "AVD-KSV-0014", target: "devtools/replicaset-harbor-core-b569bd8dd", success: false },
+                  { checkID: "AVD-KSV-0011", target: "devtools/replicaset-harbor-core-b569bd8dd", success: false },
                 ],
               },
               // Standalone RS without Deployment owner even with hash-like suffix -> actionable
@@ -1486,7 +1457,7 @@ describe("compliance framework actionable vs accepted split", () => {
                 name: "Standalone RS",
                 severity: "HIGH",
                 checks: [
-                  { checkID: "AVD-KSV-0014", target: "devtools/replicaset-harbor-core-bcdfg", success: false },
+                  { checkID: "AVD-KSV-0011", target: "devtools/replicaset-harbor-core-bcdfg", success: false },
                 ],
               },
             ],
@@ -1547,7 +1518,7 @@ describe("compliance framework actionable vs accepted split", () => {
       actionableFailCount: 0,
       acceptedFailCount: 1,
       accepted: true,
-      acceptedScope: "upstream",
+      acceptedScope: "accept",
     })
     expect(byId.get("RS-STANDALONE")).toMatchObject({
       failCount: 1,
@@ -1619,18 +1590,17 @@ describe("compliance framework actionable vs accepted split", () => {
 
     const detail = await getComplianceFrameworkDetail("rbac-fw")
     expect(detail).not.toBeNull()
-    expect(detail!.actionableFailCount).toBe(2)
-    expect(detail!.acceptedFailCount).toBe(2)
+    expect(detail!.actionableFailCount).toBe(4)
+    expect(detail!.acceptedFailCount).toBe(0)
 
     const byId = new Map(detail!.controls.map((c) => [c.id, c]))
-    expect(byId.get("RBAC-OK")?.accepted).toBe(true)
-    expect(byId.get("RBAC-OK")?.acceptedScope).toBe("mixed")
+    expect(byId.get("RBAC-OK")?.accepted).toBe(false)
+    expect(byId.get("RBAC-OK")?.acceptedScope).toBeUndefined()
     expect(byId.get("RBAC-UNLISTED-CHECK")?.accepted).toBe(false)
     expect(byId.get("RBAC-HASHED-RESOLVED")).toMatchObject({
-      accepted: true,
-      acceptedScope: "builtin",
-      actionableFailCount: 0,
-      acceptedFailCount: 1,
+      accepted: false,
+      actionableFailCount: 1,
+      acceptedFailCount: 0,
     })
     expect(byId.get("RBAC-HASHED-UNRESOLVED")).toMatchObject({
       accepted: false,
@@ -1686,44 +1656,44 @@ describe("compliance framework actionable vs accepted split", () => {
       failCount: 9,
       evaluatedPassCount: 0,
       notEvaluatedCount: 18,
-      actionableFailCount: 0,
-      acceptedFailCount: 9,
+      actionableFailCount: 8,
+      acceptedFailCount: 1,
       coverageUnknown: true,
     })
-    expect(byId.get("k8s-nsa-1.0")!.effectivePassRate).toBeCloseTo(9 / 27)
+    expect(byId.get("k8s-nsa-1.0")!.effectivePassRate).toBeCloseTo(1 / 27)
     expect(byId.get("k8s-pss-baseline-0.1")).toMatchObject({
       passCount: 8,
       failCount: 3,
       evaluatedPassCount: 0,
       notEvaluatedCount: 8,
-      actionableFailCount: 0,
-      acceptedFailCount: 3,
+      actionableFailCount: 2,
+      acceptedFailCount: 1,
     })
-    expect(byId.get("k8s-pss-baseline-0.1")!.effectivePassRate).toBeCloseTo(3 / 11)
+    expect(byId.get("k8s-pss-baseline-0.1")!.effectivePassRate).toBeCloseTo(1 / 11)
     expect(byId.get("k8s-pss-restricted-0.1")).toMatchObject({
       passCount: 14,
       failCount: 3,
       evaluatedPassCount: 0,
       notEvaluatedCount: 14,
-      actionableFailCount: 0,
-      acceptedFailCount: 3,
+      actionableFailCount: 2,
+      acceptedFailCount: 1,
     })
-    expect(byId.get("k8s-pss-restricted-0.1")!.effectivePassRate).toBeCloseTo(3 / 17)
+    expect(byId.get("k8s-pss-restricted-0.1")!.effectivePassRate).toBeCloseTo(1 / 17)
     expect(byId.get("k8s-cis-1.23")).toMatchObject({
       passCount: 101,
       failCount: 15,
       evaluatedPassCount: 0,
       notEvaluatedCount: 101,
-      actionableFailCount: 5,
-      acceptedFailCount: 10,
+      actionableFailCount: 14,
+      acceptedFailCount: 1,
     })
     expect(byId.get("k8s-kisa-1.0")).toMatchObject({
       passCount: 3,
       failCount: 4,
       evaluatedPassCount: 0,
       notEvaluatedCount: 3,
-      actionableFailCount: 2,
-      acceptedFailCount: 2,
+      actionableFailCount: 4,
+      acceptedFailCount: 0,
     })
 
     const cisDetail = await getComplianceFrameworkDetail("k8s-cis-1.23")
@@ -1731,12 +1701,22 @@ describe("compliance framework actionable vs accepted split", () => {
     const cisActionable = cisDetail!.controls
       .filter((c) => (c.actionableFailCount ?? 0) > 0)
       .map((c) => ({ id: c.id, act: c.actionableFailCount, acc: c.acceptedFailCount }))
+    // Independent fixture inventory: only explicit reviewed tuples are accepted.
     expect(cisActionable).toEqual([
       { id: "1.1.9", act: 1, acc: 0 },
       { id: "1.1.12", act: 1, acc: 0 },
-      { id: "5.1.2", act: 5, acc: 27 },
-      { id: "5.1.3", act: 6, acc: 10 },
-      { id: "5.7.3", act: 8, acc: 150 },
+      { id: "5.1.2", act: 29, acc: 3 },
+      { id: "5.1.3", act: 14, acc: 2 },
+      { id: "5.1.6", act: 1, acc: 0 },
+      { id: "5.2.3", act: 1, acc: 1 },
+      { id: "5.2.5", act: 2, acc: 0 },
+      { id: "5.2.6", act: 1, acc: 4 },
+      { id: "5.2.7", act: 3, acc: 5 },
+      { id: "5.2.8", act: 1, acc: 1 },
+      { id: "5.2.10", act: 1, acc: 4 },
+      { id: "5.2.12", act: 2, acc: 5 },
+      { id: "5.7.2", act: 1, acc: 0 },
+      { id: "5.7.3", act: 139, acc: 19 },
     ])
 
     const kisaDetail = await getComplianceFrameworkDetail("k8s-kisa-1.0")
@@ -1745,8 +1725,10 @@ describe("compliance framework actionable vs accepted split", () => {
       .filter((c) => (c.actionableFailCount ?? 0) > 0)
       .map((c) => ({ id: c.id, act: c.actionableFailCount, acc: c.acceptedFailCount }))
     expect(kisaActionable).toEqual([
-      { id: "KISA-RBAC-01", act: 5, acc: 27 },
-      { id: "KISA-RBAC-02", act: 6, acc: 10 },
+      { id: "KISA-RBAC-01", act: 29, acc: 3 },
+      { id: "KISA-POD-01", act: 7, acc: 13 },
+      { id: "KISA-ADM-01", act: 1, acc: 4 },
+      { id: "KISA-RBAC-02", act: 14, acc: 2 },
     ])
   })
 
@@ -1880,7 +1862,7 @@ describe("compliance framework actionable vs accepted split", () => {
                 id: "C-ACCEPTED",
                 name: "Accepted control",
                 severity: "HIGH",
-                checks: [{ checkID: "AVD-KSV-0017", target: "kube-system/daemonset-cilium", success: false }],
+                checks: [{ checkID: "AVD-KSV-0017", target: "security-system/daemonset-falco", success: false }],
               },
               {
                 id: "C-ACTIONABLE",
@@ -1930,7 +1912,7 @@ describe("compliance framework actionable vs accepted split", () => {
                 name: "Hashed StatefulSet resolved via ConfigAuditReport",
                 severity: "LOW",
                 checks: [
-                  { checkID: "AVD-KSV-0020", target: "monitoring/statefulset-78785dbd5c", success: false },
+                  { checkID: "AVD-KSV-0011", target: "monitoring/statefulset-78785dbd5c", success: false },
                 ],
               },
               {
@@ -1938,7 +1920,7 @@ describe("compliance framework actionable vs accepted split", () => {
                 name: "Hashed StatefulSet missing from ConfigAuditReport",
                 severity: "LOW",
                 checks: [
-                  { checkID: "AVD-KSV-0020", target: "monitoring/statefulset-deadbeef00", success: false },
+                  { checkID: "AVD-KSV-0011", target: "monitoring/statefulset-deadbeef00", success: false },
                 ],
               },
             ],
@@ -2320,10 +2302,10 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     expect(summary.scannedWorkloads).toBe(3)
     expect(summary.scannedRbacObjects).toBe(2)
     expect(summary.scannedNodes).toBe(1)
-    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
-    expect(summary.unacceptedLowConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 1 })
-    expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 2 })
-    expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 2, Medium: 1, Low: 0 })
+    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 1, Low: 0 })
+    expect(summary.unacceptedLowConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 3 })
+    expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+    expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
     expect(summary.droppedConfigAuditReports).toBe(1)
     expect(summary.droppedConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 2 })
     expect(summary.totalRbacFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
@@ -2349,13 +2331,13 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
       evaluatedPassCount: 0,
       notEvaluatedCount: 5,
       failCount: 3,
-      actionableFailCount: 1,
-      acceptedFailCount: 2,
+      actionableFailCount: 2,
+      acceptedFailCount: 1,
       droppedFailCount: 0,
       droppedCheckCount: 2,
     })
     expect(byId.get("k8s-cis-1.23")!.evaluatedPassRate).toBeCloseTo(0)
-    expect(byId.get("k8s-cis-1.23")!.effectivePassRate).toBeCloseTo(2 / 8)
+    expect(byId.get("k8s-cis-1.23")!.effectivePassRate).toBeCloseTo(1 / 8)
 
     // k8s-pss-restricted-0.1 (3 controls):
     //   1 (AVD-KSV-0103, Workload) -> no failure recorded (in-scope Workload ConfigAuditReports exist)
@@ -2394,7 +2376,7 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
       actionable: acc.actionable + (f.actionableFailCount ?? 0),
       accepted: acc.accepted + (f.acceptedFailCount ?? 0),
     }), { controls: 0, raw: 0, evaluated: 0, notEvaluated: 0, actionable: 0, accepted: 0 })
-    expect(totals).toEqual({ controls: 11, raw: 7, evaluated: 1, notEvaluated: 6, actionable: 1, accepted: 3 })
+    expect(totals).toEqual({ controls: 11, raw: 7, evaluated: 1, notEvaluated: 6, actionable: 2, accepted: 2 })
     console.info("trimmed snapshot replay:", JSON.stringify(totals))
 
     // Pin the measured 2026-11-22 full-snapshot pooled aggregate expectations carried in the trimmed fixture.
@@ -2920,13 +2902,13 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     expect(liveLike).not.toBeNull()
     expect(liveLike!.totalControls).toBe(11)
     expect(liveLike!.evaluatedPassCount).toBe(4)
-    expect(liveLike!.actionableFailCount).toBe(1)
-    expect(liveLike!.acceptedFailCount).toBe(1)
+    expect(liveLike!.actionableFailCount).toBe(2)
+    expect(liveLike!.acceptedFailCount).toBe(0)
     expect(liveLike!.notEvaluatedCount).toBe(5)
     expect(liveLike!.evaluatedPassRate).toBeCloseTo(4 / 11)
-    expect(liveLike!.effectivePassRate).toBeCloseTo(5 / 11)
+    expect(liveLike!.effectivePassRate).toBeCloseTo(4 / 11)
     const lMap = new Map(liveLike!.controls.map((c) => [c.id, c]))
-    expect(lMap.get("L-4")).toMatchObject({ evaluationState: "failed", accepted: true, acceptedFailCount: 1 })
+    expect(lMap.get("L-4")).toMatchObject({ evaluationState: "failed", accepted: false, actionableFailCount: 1 })
     expect(lMap.get("L-11")).toMatchObject({ evaluationState: "failed", actionableFailCount: 1, accepted: false })
     expect(lMap.get("L-9")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "not_in_catalogue" })
     expect(lMap.get("L-10")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type" })

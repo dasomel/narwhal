@@ -11,6 +11,8 @@
 
 ### 변경
 
+- **Compliance 정확한 예외 수용:** namespace·기본 역할·이름 부분문자열 일괄 수용을 범위·namespace·kind·정확한 이름·검사 ID별 검토 규칙으로 대체했습니다. 근거 미확인 예외를 제거하고 ReplicaSet Deployment 소유 확인, 캐시 버전 갱신, summary API·한영 UI의 미사용 규칙 목록/개수를 추가했습니다(R395).
+
 - **Compliance 정직한 3-상태 판정 및 조회 실패 구분 표시 (`src/lib/compliance.ts`, `src/lib/kisa.ts`, `src/types/compliance.ts`, `src/components/compliance/*`, `src/app/api/compliance/*`, `src/app/(dashboard)/compliance/*`, `src/lib/i18n.ts`):**
   - Trivy가 미실행 컨트롤에 남기는 `{ checkID: "", success: true }` 플레이스홀더를 통과로 집계하던 문제를 수정해 `passed` / `failed` / `not_evaluated` 3-상태로 분리하고, 해당 리포트 종류·범위의 `checks[]` 양성 통과 증거가 모든 검사 ID에 존재할 때만 `passed`를 허용합니다(`no_evidence_in_report`, `absent_from_report`, `coverage_unknown`, `excluded_namespace`, `unsupported_kind`, 스펙 `nodeType` 기반 `missing_node_type`, `unlinked_check_id`, `manual`, `scanner_disabled`, `summary_only`, `empty_checks`).
   - 요약 프레임워크 통과율을 분자/분모 라벨 포함 풀링 비율로 계산하고 모든 `formatPassRatePct` 호출(원본 통과율 포함)에 `hasNotEvaluated`를 전달해 `100%` 누수를 차단했으며, KISA `CFG-01`이 조치가능 실패 시 `fail`, 미평가 잔존 시 `warn`, 전수 평가·조치가능 0건일 때만 `pass`가 되도록 변경했습니다.

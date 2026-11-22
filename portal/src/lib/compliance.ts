@@ -5,10 +5,10 @@ import { fetchWithPolicy, readJsonWithPolicy } from "./http-client"
 import { K8S_POLICY } from "./k8s-client"
 import { cacheGet, cacheSet } from "./valkey"
 import { cacheKeys, cacheTtl } from "./cache-keys"
-import { en } from "./i18n"
 import {
+  ACCEPTED_INFRA_RULES,
   type AcceptedReasonKey,
-  COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
+  findUnusedAcceptanceRules,
   matchConfigAuditException,
   matchInfraException,
   matchRbacException,
@@ -115,95 +115,7 @@ async function tryComplianceK8sFetch<T>(path: string): Promise<TryFetchResult<T>
   }
 }
 
-// System namespaces whose config-audit findings are inherent to K8s static pods / CNI / mesh
-// (hostNetwork, root, hostPath on apiserver/etcd/cilium/istio) and are NOT actionable by the
-// platform team — see docs/common/compliance-hardening.md#risk-accepted-exceptions.
-export const SYSTEM_NAMESPACES = ["kube-system", "kube-public", "kube-node-lease", "istio-system"] as const
-
-function isSystemNamespace(namespace: string): boolean {
-  return (SYSTEM_NAMESPACES as readonly string[]).includes(namespace)
-}
-
-// K8s default ClusterRoles bound cluster-wide by kubeadm/aggregation — inherently broad, not
-// authored by the platform team.
-const K8S_DEFAULT_CLUSTER_ROLES = new Set(["cluster-admin", "admin", "edit", "view"])
-
-// Upstream controller/chart-owned RBAC role name patterns (case-insensitive substring match) —
-// these roles need broad permissions inherent to their function (cert-manager manages secrets,
-// kyverno manages webhooks, etc.) and are NOT actionable by the platform team — see
-// docs/common/compliance-hardening.md#risk-accepted-exceptions.
-const UPSTREAM_RBAC_ROLE_PATTERNS = [
-  "cert-manager", "kyverno", "cilium", "metallb", "prometheus", "kube-prom", "trivy",
-  "velero", "openbao", "seaweedfs", "argocd", "istio", "harbor", "keycloak", "loki",
-  "tempo", "alloy", "k8s-monitoring", "nfs-", "headlamp", "apisix", "cnpg", "narwhal-db",
-  "gitea", "ghost-pod", "coredns", "metrics-server", "csi-", "snapshot", "node-",
-  "gatekeeper", "kubelet",
-] as const
-
 export type RbacRoleKind = "Role" | "ClusterRole"
-
-// Exact upstream (namespace, kind, roleName) triples for charts whose prefix/name could match
-// platform-authored roles (e.g. "platform-admin-chaos-mesh" or "developer-kubernetes-dashboard-admin").
-// Derived from live cluster roles plus narwhal-airgap-bundle-arm64/charts/chaos-mesh-2.8.3.tgz
-// (namespace: chaos-testing for Role, "" for ClusterRole) and
-// gitops/charts/kubernetes-dashboard/templates/rbac/ (namespace: devtools for Role, "" for ClusterRole).
-const UPSTREAM_EXACT_RBAC_ROLES = new Set([
-  "chaos-testing\0Role\0chaos-mesh-chaos-controller-manager-control-plane",
-  "\0ClusterRole\0chaos-mesh-chaos-controller-manager-target-namespace",
-  "\0ClusterRole\0chaos-mesh-chaos-controller-manager-cluster-level",
-  "\0ClusterRole\0chaos-mesh-chaos-dashboard-cluster-level",
-  "\0ClusterRole\0chaos-mesh-chaos-dashboard-target-namespace",
-  "\0ClusterRole\0chaos-mesh-chaos-dns-server-target-namespace",
-  "\0ClusterRole\0chaos-mesh-chaos-dns-server-cluster-level",
-  "chaos-testing\0Role\0chaos-mesh-chaos-dns-server-control-plane",
-  "\0ClusterRole\0chaos-mesh-chaos-daemon-psp",
-  "\0ClusterRole\0chaos-mesh-chaos-prometheus",
-  "devtools\0Role\0kubernetes-dashboard-api",
-  "devtools\0Role\0kubernetes-dashboard-web",
-  "\0ClusterRole\0kubernetes-dashboard-metrics-scraper",
-])
-
-function exactRbacRoleKey(
-  namespace: string | undefined,
-  kind: RbacRoleKind | string | undefined,
-  roleName: string,
-): string | null {
-  if (kind !== "Role" && kind !== "ClusterRole") return null
-  const ns = namespace ?? ""
-  if (kind === "Role" && ns === "") return null
-  if (kind === "ClusterRole" && ns !== "") return null
-  return `${ns}\0${kind}\0${roleName}`
-}
-
-// Our own authored roles whose name happens to contain an upstream pattern as a substring
-// (e.g. "velero-ui-admin" contains "velero") — must be checked BEFORE the upstream patterns so
-// they aren't swept into "accepted".
-const OWN_ROLE_EXCEPTIONS = ["velero-ui"] as const
-
-function isBuiltInRbacRole(roleName: string): boolean {
-  return (
-    roleName.startsWith("system:") ||
-    roleName.startsWith("kubeadm:") ||
-    K8S_DEFAULT_CLUSTER_ROLES.has(roleName)
-  )
-}
-
-// RBAC findings owned by Kubernetes built-in roles (system:*/kubeadm:*, default cluster-admin/
-// admin/edit/view) or upstream controller/chart roles are inherent to what those roles do and are
-// NOT actionable by the platform team. Only our own authored roles (platform-admin, developer,
-// narwhal-portal*, velero-ui-*, etc.) are actionable unless covered by ACCEPTED_RBAC_RULES.
-export function isAcceptedRbacRole(
-  roleName: string,
-  namespace?: string,
-  kind?: RbacRoleKind | string,
-): boolean {
-  if (isBuiltInRbacRole(roleName)) return true
-  const exactKey = exactRbacRoleKey(namespace, kind, roleName)
-  if (exactKey !== null && UPSTREAM_EXACT_RBAC_ROLES.has(exactKey)) return true
-  const lower = roleName.toLowerCase()
-  if (OWN_ROLE_EXCEPTIONS.some((exception) => lower.includes(exception))) return false
-  return UPSTREAM_RBAC_ROLE_PATTERNS.some((pattern) => lower.includes(pattern))
-}
 
 // --- CRD raw types ---
 
@@ -367,9 +279,12 @@ function buildCheckSummaryFromCounts(raw: RawAuditSummary): CheckSummary {
 
 interface AcceptanceAnnotation {
   accepted: boolean
+  acceptedRuleId?: string
   acceptedClass?: AcceptedClass
   acceptedReasonKey?: AcceptedReasonKey
   acceptedReason?: string
+  acceptedOwner?: string
+  acceptedReviewedAt?: string
   acceptedDocAnchor?: string
 }
 
@@ -401,9 +316,12 @@ function mapChecks(rawChecks: RawCheck[], matcher?: AcceptanceMatcher): AuditChe
       const ann = matcher(c.checkID)
       base.accepted = ann.accepted
       if (ann.accepted) {
+        base.acceptedRuleId = ann.acceptedRuleId
         base.acceptedClass = ann.acceptedClass
         base.acceptedReasonKey = ann.acceptedReasonKey
         base.acceptedReason = ann.acceptedReason
+        base.acceptedOwner = ann.acceptedOwner
+        base.acceptedReviewedAt = ann.acceptedReviewedAt
         base.acceptedDocAnchor = ann.acceptedDocAnchor
       }
     }
@@ -432,12 +350,14 @@ function splitSummariesByChecks(
   actionableSummary: CheckSummary
   acceptedSummary: CheckSummary
   matchedClasses: Set<AcceptedClass>
+  matchedRuleIds: Set<string>
   totalsMatchSummary: boolean
 } {
   const summary = buildCheckSummaryFromCounts(rawSummary)
   const actionableSummary: CheckSummary = { ...emptyCheckSummary }
   const acceptedSummary: CheckSummary = { ...emptyCheckSummary }
   const matchedClasses = new Set<AcceptedClass>()
+  const matchedRuleIds = new Set<string>()
 
   if (rawChecks.length === 0) {
     // Fail closed when raw checks are omitted while summary reports failures.
@@ -447,6 +367,7 @@ function splitSummariesByChecks(
       actionableSummary: { ...summary },
       acceptedSummary,
       matchedClasses,
+      matchedRuleIds,
       totalsMatchSummary: !hasAnySummaryFailure,
     }
   }
@@ -466,6 +387,7 @@ function splitSummariesByChecks(
     if (ann.accepted) {
       acceptedCounts[sev]++
       if (ann.acceptedClass) matchedClasses.add(ann.acceptedClass)
+      if (ann.acceptedRuleId) matchedRuleIds.add(ann.acceptedRuleId)
     } else {
       unacceptedCounts[sev]++
     }
@@ -481,7 +403,7 @@ function splitSummariesByChecks(
     actionableSummary[sev] = Math.max(unacceptedCounts[sev], summary[sev] - acceptedSummary[sev])
   }
 
-  return { summary, actionableSummary, acceptedSummary, matchedClasses, totalsMatchSummary }
+  return { summary, actionableSummary, acceptedSummary, matchedClasses, matchedRuleIds, totalsMatchSummary }
 }
 
 function resolveScopeFromClasses(classes: Set<AcceptedClass>): AcceptedScope | undefined {
@@ -490,30 +412,25 @@ function resolveScopeFromClasses(classes: Set<AcceptedClass>): AcceptedScope | u
   return "mixed"
 }
 
+// D-P2-1: Config Audit acceptance matches ONLY exact (scope, namespace, kind, name, checkId)
+// rules in compliance-acceptance-rules.json — never namespace-blanket acceptance.
 function configAuditMatcher(
   namespace: string,
   kind: string,
   name: string,
   deploymentOwners?: readonly string[],
 ): AcceptanceMatcher {
-  if (isSystemNamespace(namespace)) {
-    const reasonKey: AcceptedReasonKey = "compliance.acceptedReason.systemNamespace"
-    return () => ({
-      accepted: true,
-      acceptedClass: "accept",
-      acceptedReasonKey: reasonKey,
-      acceptedReason: en[reasonKey],
-      acceptedDocAnchor: COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
-    })
-  }
   return (checkId: string) => {
     const match = matchConfigAuditException(namespace, kind, name, checkId, deploymentOwners)
     if (!match) return { accepted: false }
     return {
       accepted: true,
+      acceptedRuleId: match.ruleId,
       acceptedClass: match.class,
       acceptedReasonKey: match.reasonKey,
       acceptedReason: match.reason,
+      acceptedOwner: match.owner,
+      acceptedReviewedAt: match.reviewedAt,
       acceptedDocAnchor: match.docAnchor,
     }
   }
@@ -542,6 +459,7 @@ function classifyConfigAuditItem(
 ): {
   row: ConfigAuditRow
   matcher: AcceptanceMatcher
+  matchedRuleIds: Set<string>
 } {
   const kind = resolveConfigAuditResourceKind(item)
   const name = resolveConfigAuditResourceName(item)
@@ -549,31 +467,13 @@ function classifyConfigAuditItem(
   const scopeField = namespace === "" ? { scope: "cluster" as const } : { scope: "namespace" as const }
   const matcher = configAuditMatcher(namespace, kind, name, deploymentOwners)
 
-  if (isSystemNamespace(namespace)) {
-    const summary = buildCheckSummaryFromCounts(item.report.summary)
-    return {
-      row: {
-        namespace,
-        ...scopeField,
-        kind,
-        name,
-        summary,
-        actionableSummary: { ...emptyCheckSummary },
-        acceptedSummary: { ...summary },
-        accepted: true,
-        acceptedScope: "system",
-      },
-      matcher,
-    }
-  }
-
-  const { summary, actionableSummary, acceptedSummary, matchedClasses, totalsMatchSummary } =
+  const { summary, actionableSummary, acceptedSummary, matchedClasses, matchedRuleIds, totalsMatchSummary } =
     splitSummariesByChecks(item.report.checks ?? [], item.report.summary, matcher)
   const nonLowTotal = summary.Critical + summary.High + summary.Medium
   const nonLowActionable =
     actionableSummary.Critical + actionableSummary.High + actionableSummary.Medium
-  // A non-system row is accepted only when every failing check is present (totalsMatchSummary),
-  // it has non-LOW failing checks, and ALL non-LOW checks are covered by reviewed exceptions.
+  // A row is accepted only when every failing check is present (totalsMatchSummary),
+  // it has non-LOW failing checks, and ALL non-LOW checks are covered by exact reviewed rules.
   const accepted = totalsMatchSummary && nonLowTotal > 0 && nonLowActionable === 0
   return {
     row: {
@@ -588,31 +488,24 @@ function classifyConfigAuditItem(
       acceptedScope: accepted ? resolveScopeFromClasses(matchedClasses) : undefined,
     },
     matcher,
+    matchedRuleIds,
   }
 }
 
+// D-P2-1: RBAC acceptance matches ONLY exact (scope, namespace, kind, roleName, checkId)
+// rules in compliance-acceptance-rules.json — never substring, prefix, or check-less role rules.
 function rbacAuditMatcher(namespace: string, kind: string, roleName: string): AcceptanceMatcher {
-  if (isAcceptedRbacRole(roleName, namespace, kind)) {
-    const builtIn = isBuiltInRbacRole(roleName)
-    const reasonKey: AcceptedReasonKey = builtIn
-      ? "compliance.acceptedReason.k8sBuiltinRole"
-      : "compliance.acceptedReason.upstreamRbacRole"
-    return () => ({
-      accepted: true,
-      acceptedClass: builtIn ? "accept" : "upstream",
-      acceptedReasonKey: reasonKey,
-      acceptedReason: en[reasonKey],
-      acceptedDocAnchor: COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
-    })
-  }
   return (checkId: string) => {
     const match = matchRbacException(roleName, checkId, namespace, kind)
     if (!match) return { accepted: false }
     return {
       accepted: true,
+      acceptedRuleId: match.ruleId,
       acceptedClass: match.class,
       acceptedReasonKey: match.reasonKey,
       acceptedReason: match.reason,
+      acceptedOwner: match.owner,
+      acceptedReviewedAt: match.reviewedAt,
       acceptedDocAnchor: match.docAnchor,
     }
   }
@@ -621,6 +514,7 @@ function rbacAuditMatcher(namespace: string, kind: string, roleName: string): Ac
 function classifyRbacAuditItem(item: RawAuditReport): {
   row: RbacAuditRow
   matcher: AcceptanceMatcher
+  matchedRuleIds: Set<string>
 } {
   const labels = item.metadata.labels ?? {}
   const ownerRefs = item.metadata.ownerReferences ?? []
@@ -629,24 +523,7 @@ function classifyRbacAuditItem(item: RawAuditReport): {
   const namespace = item.metadata.namespace ?? ""
   const matcher = rbacAuditMatcher(namespace, kind, name)
 
-  if (isAcceptedRbacRole(name, namespace, kind)) {
-    const summary = buildCheckSummaryFromCounts(item.report.summary)
-    return {
-      row: {
-        namespace,
-        kind,
-        name,
-        summary,
-        actionableSummary: { ...emptyCheckSummary },
-        acceptedSummary: { ...summary },
-        accepted: true,
-        acceptedScope: isBuiltInRbacRole(name) ? "builtin" : "upstream",
-      },
-      matcher,
-    }
-  }
-
-  const { summary, actionableSummary, acceptedSummary, matchedClasses, totalsMatchSummary } =
+  const { summary, actionableSummary, acceptedSummary, matchedClasses, matchedRuleIds, totalsMatchSummary } =
     splitSummariesByChecks(item.report.checks ?? [], item.report.summary, matcher)
   const totalFailures = summary.Critical + summary.High + summary.Medium + summary.Low
   const actionableTotal =
@@ -667,6 +544,7 @@ function classifyRbacAuditItem(item: RawAuditReport): {
       acceptedScope: accepted ? resolveScopeFromClasses(matchedClasses) : undefined,
     },
     matcher,
+    matchedRuleIds,
   }
 }
 
@@ -685,9 +563,12 @@ function infraAuditMatcher(node: string): AcceptanceMatcher {
     if (!match) return { accepted: false }
     return {
       accepted: true,
+      acceptedRuleId: match.ruleId,
       acceptedClass: match.class,
       acceptedReasonKey: match.reasonKey,
       acceptedReason: match.reason,
+      acceptedOwner: match.owner,
+      acceptedReviewedAt: match.reviewedAt,
       acceptedDocAnchor: match.docAnchor,
     }
   }
@@ -696,12 +577,13 @@ function infraAuditMatcher(node: string): AcceptanceMatcher {
 function classifyInfraAuditItem(item: RawAuditReport): {
   row: InfraAuditRow
   matcher: AcceptanceMatcher
+  matchedRuleIds: Set<string>
 } {
   const labels = item.metadata.labels ?? {}
   const node = labels["trivy-operator.resource.name"] ?? item.metadata.name
   const matcher = infraAuditMatcher(node)
 
-  const { summary, actionableSummary, acceptedSummary, matchedClasses, totalsMatchSummary } =
+  const { summary, actionableSummary, acceptedSummary, matchedClasses, matchedRuleIds, totalsMatchSummary } =
     splitSummariesByChecks(item.report.checks ?? [], item.report.summary, matcher)
   const totalFailures = sumCheckSummary(summary)
   const actionableTotal = sumCheckSummary(actionableSummary)
@@ -716,6 +598,7 @@ function classifyInfraAuditItem(item: RawAuditReport): {
       acceptedScope: accepted ? resolveScopeFromClasses(matchedClasses) : undefined,
     },
     matcher,
+    matchedRuleIds,
   }
 }
 
@@ -866,6 +749,7 @@ function extractTimestampRange(
 
 interface ConfigAuditListWithMeta {
   rows: ConfigAuditRow[]
+  matchedRuleIds: Set<string>
   droppedCount: number
   droppedSummary: CheckSummary
   lastUpdated: string | null
@@ -898,6 +782,7 @@ async function fetchConfigAuditListWithMeta(): Promise<ConfigAuditListWithMeta> 
   const rsMap = await fetchReplicaSetMap()
   const missingReplicaSets: string[] = []
   const rows: ConfigAuditRow[] = []
+  const matchedRuleIds = new Set<string>()
   const keptItems: RawAuditReport[] = []
   let droppedCount = 0
   let droppedSummary: CheckSummary = { ...emptyCheckSummary }
@@ -912,7 +797,9 @@ async function fetchConfigAuditListWithMeta(): Promise<ConfigAuditListWithMeta> 
       continue
     }
     keptItems.push(item)
-    rows.push(classifyConfigAuditItem(item, rsState.deploymentOwners).row)
+    const classified = classifyConfigAuditItem(item, rsState.deploymentOwners)
+    rows.push(classified.row)
+    for (const id of classified.matchedRuleIds) matchedRuleIds.add(id)
   }
   if (missingReplicaSets.length > 0) {
     console.warn(
@@ -922,6 +809,7 @@ async function fetchConfigAuditListWithMeta(): Promise<ConfigAuditListWithMeta> 
   const { newest, oldest } = extractTimestampRange(keptItems)
   return {
     rows,
+    matchedRuleIds,
     droppedCount,
     droppedSummary,
     lastUpdated: newest,
@@ -1036,6 +924,7 @@ export async function getConfigAuditDetail(
 
 interface RbacAuditListWithMeta {
   rows: RbacAuditRow[]
+  matchedRuleIds: Set<string>
   lastUpdated: string | null
   oldestUpdated: string | null
 }
@@ -1055,9 +944,15 @@ async function fetchRbacAuditListWithMeta(): Promise<RbacAuditListWithMeta> {
   }
 
   const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
-  const rows: RbacAuditRow[] = allItems.map((item) => classifyRbacAuditItem(item).row)
+  const rows: RbacAuditRow[] = []
+  const matchedRuleIds = new Set<string>()
+  for (const item of allItems) {
+    const classified = classifyRbacAuditItem(item)
+    rows.push(classified.row)
+    for (const id of classified.matchedRuleIds) matchedRuleIds.add(id)
+  }
   const { newest, oldest } = extractTimestampRange(allItems)
-  return { rows, lastUpdated: newest, oldestUpdated: oldest }
+  return { rows, matchedRuleIds, lastUpdated: newest, oldestUpdated: oldest }
 }
 
 export async function getRbacAuditList(): Promise<RbacAuditRow[]> {
@@ -1114,6 +1009,7 @@ export async function getRbacAuditDetail(
 
 interface InfraAuditListWithMeta {
   rows: InfraAuditRow[]
+  matchedRuleIds: Set<string>
   lastUpdated: string | null
   oldestUpdated: string | null
 }
@@ -1133,9 +1029,15 @@ async function fetchInfraAuditListWithMeta(): Promise<InfraAuditListWithMeta> {
   }
 
   const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
-  const rows: InfraAuditRow[] = allItems.map((item) => classifyInfraAuditItem(item).row)
+  const rows: InfraAuditRow[] = []
+  const matchedRuleIds = new Set<string>()
+  for (const item of allItems) {
+    const classified = classifyInfraAuditItem(item)
+    rows.push(classified.row)
+    for (const id of classified.matchedRuleIds) matchedRuleIds.add(id)
+  }
   const { newest, oldest } = extractTimestampRange(allItems)
-  return { rows, lastUpdated: newest, oldestUpdated: oldest }
+  return { rows, matchedRuleIds, lastUpdated: newest, oldestUpdated: oldest }
 }
 
 export async function getInfraAuditList(): Promise<InfraAuditRow[]> {
@@ -1348,9 +1250,6 @@ function classifyFrameworkCheck(
     const matcher = configAuditMatcher(resolved.namespace, resolved.kind, resolved.name, deploymentOwners)
     const ann = matcher(checkId)
     if (!ann.accepted) return { status: "actionable" }
-    if (isSystemNamespace(resolved.namespace)) {
-      return { status: "accepted", scope: "system" }
-    }
     return { status: "accepted", scope: scopeForAcceptedClass(ann.acceptedClass) }
   }
 
@@ -1358,9 +1257,6 @@ function classifyFrameworkCheck(
     const matcher = rbacAuditMatcher(resolved.namespace, resolved.kind, resolved.name)
     const ann = matcher(checkId)
     if (!ann.accepted) return { status: "actionable" }
-    if (isAcceptedRbacRole(resolved.name, resolved.namespace, resolved.kind)) {
-      return { status: "accepted", scope: isBuiltInRbacRole(resolved.name) ? "builtin" : "upstream" }
-    }
     return { status: "accepted", scope: scopeForAcceptedClass(ann.acceptedClass) }
   }
 
@@ -2508,23 +2404,16 @@ export async function getComplianceSummary(): Promise<ComplianceSummary> {
   const infraAuditList = infraRes.status === "fulfilled" ? infraRes.value.rows : []
   const frameworks = fwRes.status === "fulfilled" ? fwRes.value.frameworks : []
 
-  // Headline number reflects ACTIONABLE (unaccepted MEDIUM+) findings only: non-system namespace,
-  // not covered by ACCEPTED_CONFIG_AUDIT_RULES, AND Critical/High/Medium severity.
-  // Non-system LOW checks are split into unacceptedLowConfigAuditFailures (no rule) vs
-  // lowSeverityConfigAuditFailures (accepted hygiene) without double-counting.
+  // Headline number reflects ACTIONABLE (unaccepted MEDIUM+) findings only across ALL namespaces
+  // (including kube-system/istio-system): not covered by ACCEPTED_CONFIG_AUDIT_RULES AND
+  // Critical/High/Medium severity. LOW checks are split into unacceptedLowConfigAuditFailures
+  // (no exact rule) vs lowSeverityConfigAuditFailures (accepted hygiene) without double-counting.
   const totalConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
   const unacceptedLowConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
   const lowSeverityConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
   const acceptedSystemConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
 
   for (const row of configAuditList) {
-    if (isSystemNamespace(row.namespace)) {
-      acceptedSystemConfigAuditFailures.Critical += row.summary.Critical
-      acceptedSystemConfigAuditFailures.High += row.summary.High
-      acceptedSystemConfigAuditFailures.Medium += row.summary.Medium
-      acceptedSystemConfigAuditFailures.Low += row.summary.Low
-      continue
-    }
     const actionable = row.actionableSummary ?? (row.accepted ? emptyCheckSummary : row.summary)
     const accepted = row.acceptedSummary ?? (row.accepted ? row.summary : emptyCheckSummary)
     totalConfigAuditFailures.Critical += actionable.Critical
@@ -2567,6 +2456,28 @@ export async function getComplianceSummary(): Promise<ComplianceSummary> {
     .sort()
   const lastUpdated = sourceTimestamps.length > 0 ? sourceTimestamps[sourceTimestamps.length - 1] : ""
 
+  const matchedRuleIds = new Set<string>()
+  if (carRes.status === "fulfilled") {
+    for (const id of carRes.value.matchedRuleIds) matchedRuleIds.add(id)
+  }
+  if (rbacRes.status === "fulfilled") {
+    for (const id of rbacRes.value.matchedRuleIds) matchedRuleIds.add(id)
+  }
+  if (infraRes.status === "fulfilled") {
+    for (const id of infraRes.value.matchedRuleIds) matchedRuleIds.add(id)
+  }
+  // D-P2-4: Surface exact acceptance rules that matched nothing across fulfilled families.
+  // Unavailable sources are excluded from unused checks so outages never look like stale rules.
+  const unusedAcceptanceRules = findUnusedAcceptanceRules(
+    matchedRuleIds,
+    {
+      configAudit: carRes.status === "fulfilled",
+      rbac: rbacRes.status === "fulfilled",
+      infra: infraRes.status === "fulfilled",
+    },
+    ACCEPTED_INFRA_RULES,
+  )
+
   const dataUnavailable = Object.values(sources).some((s) => s.status === "unavailable")
   const hasPartial = Object.values(sources).some((s) => Boolean(s.partial))
 
@@ -2590,6 +2501,8 @@ export async function getComplianceSummary(): Promise<ComplianceSummary> {
     sources,
     dataUnavailable,
     ...(hasPartial ? { partial: true } : {}),
+    unusedAcceptanceRules,
+    unusedAcceptanceRuleCount: unusedAcceptanceRules.length,
   }
 
   // Never cache failed or partial results as a valid snapshot (cache-keys contract: cachesPartial=false).

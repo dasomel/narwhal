@@ -316,7 +316,7 @@ describe("cacheKeys builders reproduce the pre-existing key strings byte-for-byt
     expect(cacheKeys.falcoEvents("Critical", 60, 100)).toBe("falco:events:Critical:60:100")
     expect(cacheKeys.falcoEvents(undefined, 60, 100)).toBe("falco:events:all:60:100")
     expect(cacheKeys.falcoCritical()).toBe("falco:critical")
-    expect(cacheKeys.kisaComplianceList()).toBe("compliance:v2:kisa:list")
+    expect(cacheKeys.kisaComplianceList()).toBe("compliance:v3:kisa:list")
     expect(cacheKeys.heroSummary("fp")).toBe("hero:summary:fp")
     expect(cacheKeys.costV2("cluster", "fp", "price")).toBe("cost:v2:cluster:fp:price")
     expect(cacheKeys.costServiceV2("fp", "ns", "svc", "price")).toBe("cost:service:v2:fp:ns:svc:price")
@@ -339,20 +339,20 @@ describe("cacheKeys builders reproduce the pre-existing key strings byte-for-byt
     expect(cacheKeys.scorecardAll(3, undefined)).toBe("scorecard:all:3:")
     expect(cacheKeys.openbaoSecrets()).toBe("openbao:secrets")
     expect(cacheKeys.alertmanagerActive()).toBe("alerts:active")
-    expect(cacheKeys.complianceConfigAuditList()).toBe("compliance:v2:config-audit:list")
+    expect(cacheKeys.complianceConfigAuditList()).toBe("compliance:v3:config-audit:list")
     expect(cacheKeys.complianceConfigAuditDetail("namespace", "ns", "Deployment", "name")).toBe(
-      "compliance:v2:config-audit:namespace:ns:Deployment:name",
+      "compliance:v3:config-audit:namespace:ns:Deployment:name",
     )
     expect(cacheKeys.complianceConfigAuditDetail("cluster", "", "ClusterRoleBinding", "custom:cluster-binding")).toBe(
-      "compliance:v2:config-audit:cluster::ClusterRoleBinding:custom%3Acluster-binding",
+      "compliance:v3:config-audit:cluster::ClusterRoleBinding:custom%3Acluster-binding",
     )
-    expect(cacheKeys.complianceRbacAuditList()).toBe("compliance:v2:rbac-audit:list")
-    expect(cacheKeys.complianceRbacAuditDetail("ns", "name")).toBe("compliance:rbac-audit:ns:name")
+    expect(cacheKeys.complianceRbacAuditList()).toBe("compliance:v3:rbac-audit:list")
+    expect(cacheKeys.complianceRbacAuditDetail("ns", "name")).toBe("compliance:v3:rbac-audit:ns:name")
     expect(cacheKeys.complianceInfraAuditList()).toBe("compliance:v2:infra-audit:list")
     expect(cacheKeys.complianceInfraAuditDetail("node1")).toBe("compliance:infra-audit:node1")
-    expect(cacheKeys.complianceFrameworksList()).toBe("compliance:v2:frameworks:list")
-    expect(cacheKeys.complianceFrameworksDetail("id1")).toBe("compliance:v2:frameworks:id1")
-    expect(cacheKeys.complianceSummary()).toBe("compliance:v2:summary")
+    expect(cacheKeys.complianceFrameworksList()).toBe("compliance:v3:frameworks:list")
+    expect(cacheKeys.complianceFrameworksDetail("id1")).toBe("compliance:v3:frameworks:id1")
+    expect(cacheKeys.complianceSummary()).toBe("compliance:v3:summary")
     expect(cacheKeys.serviceGraphCluster("1m", "ns")).toBe("graph:cluster:1m:ns")
     expect(cacheKeys.serviceGraphCluster("1m", undefined)).toBe("graph:cluster:1m:all")
     expect(cacheKeys.serviceGraphSvc("svc", "1m")).toBe("graph:svc:svc:1m")
@@ -381,7 +381,15 @@ describe("cacheKeys builders reproduce the pre-existing key strings byte-for-byt
     const keys = [clusterRole, clusterBinding, nsDeploy, nsService, otherNsDeploy, clusterSpoof]
     expect(new Set(keys).size).toBe(keys.length)
     expect(cacheKeys.complianceConfigAuditList()).not.toBe("compliance:config-audit:list")
+    expect(cacheKeys.complianceConfigAuditList()).not.toBe("compliance:v2:config-audit:list")
     expect(cacheKeys.complianceRbacAuditList()).not.toBe("compliance:rbac-audit:list")
+    expect(cacheKeys.complianceRbacAuditList()).not.toBe("compliance:v2:rbac-audit:list")
+    expect(cacheKeys.complianceRbacAuditDetail("", "platform-admin")).toBe("compliance:v3:rbac-audit::platform-admin")
+    expect(cacheKeys.complianceRbacAuditDetail("devtools", "platform-admin")).not.toBe(
+      cacheKeys.complianceRbacAuditDetail("", "platform-admin"),
+    )
+    expect(cacheKeys.complianceSummary()).not.toBe("compliance:v2:summary")
+    expect(cacheKeys.complianceFrameworksList()).not.toBe("compliance:v2:frameworks:list")
     expect(cacheKeys.complianceInfraAuditList()).not.toBe("compliance:infra-audit:list")
   })
 })

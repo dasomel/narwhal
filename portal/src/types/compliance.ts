@@ -37,6 +37,18 @@ export type AcceptedClass = "accept" | "upstream"
 
 export type AcceptedScope = "system" | "builtin" | "accept" | "upstream" | "mixed"
 
+export interface UnusedAcceptanceRule {
+  id: string
+  domain: "configAudit" | "rbac" | "infra"
+  scope: "cluster" | "namespace"
+  namespace: string
+  kind: string
+  name: string
+  checks: string[]
+  owner: string
+  reviewedAt: string
+}
+
 export interface AuditCheck {
   id: string
   title: string
@@ -46,11 +58,14 @@ export interface AuditCheck {
   success: boolean
   messages?: string[]
   remediation?: string
-  /** Set when a failing check is covered by system/built-in acceptance or a reviewed exception. */
+  /** Set when a failing check is covered by an exact reviewed acceptance rule. */
   accepted?: boolean
+  acceptedRuleId?: string
   acceptedClass?: AcceptedClass
   acceptedReasonKey?: string
   acceptedReason?: string
+  acceptedOwner?: string
+  acceptedReviewedAt?: string
   acceptedDocAnchor?: string
 }
 
@@ -265,4 +280,8 @@ export interface ComplianceSummary {
   dataUnavailable?: boolean
   /** True when at least one source loaded with failed auxiliary metadata reads (never cached). */
   partial?: boolean
+  /** Exact acceptance rules that matched zero active failing checks in fulfilled report families. */
+  unusedAcceptanceRules?: UnusedAcceptanceRule[]
+  /** Count of unused acceptance rules across fulfilled report families. */
+  unusedAcceptanceRuleCount?: number
 }

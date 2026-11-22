@@ -79,7 +79,7 @@ it.each([false, true])("G1 failure evidence wins over mixed positive evidence an
 
 it("G1 underlying failure keeps the existing accepted split and resolves absent CCR controls", async () => {
   const routes = setup(["AVD-KSV-0017"])
-  routes[prefix + "configauditreports"] = { items: [report("KSV017", false, "DaemonSet", "kube-system", "cilium")] }
+  routes[prefix + "configauditreports"] = { items: [report("KSV017", false, "DaemonSet", "security-system", "falco")] }
   const ccr = routes[prefix + "clustercompliancereports"] as { items: Array<{ status: { detailReport: { results: unknown[] } } }> }
   ccr.items[0].status.detailReport.results = []
   expect((await getComplianceFrameworkDetail("experiment"))!.controls[0]).toMatchObject({ evaluationState: "failed", accepted: true, acceptedFailCount: 1 })
@@ -797,4 +797,27 @@ it("R6-M2: injected old-key/old-shape compliance caches are never read for Confi
   const infraList = await getInfraAuditList()
   expect(infraList).toHaveLength(1)
   expect(infraList[0].node).toBe("master-1")
+})
+
+it("D-P2-4 summary exposes unmatched rule targets and excludes failed report families", async () => {
+  const routes = setup()
+  routes[prefix + "clusterrbacassessmentreports"] = { items: [{
+    metadata: { name: "clusterrole-platform-admin", labels: {
+      "trivy-operator.resource.kind": "ClusterRole", "trivy-operator.resource.name": "platform-admin",
+    } },
+    report: { summary: { criticalCount: 1 }, checks: [{ checkID: "KSV041", severity: "CRITICAL", success: false }] },
+  }] }
+  const summary = await getComplianceSummary()
+  expect(summary.unusedAcceptanceRuleCount).toBe(summary.unusedAcceptanceRules!.length)
+  expect(summary.unusedAcceptanceRules).not.toContainEqual(expect.objectContaining({ id: "rbac:cluster:ClusterRole:platform-admin:accept" }))
+  expect(summary.unusedAcceptanceRules).toContainEqual(expect.objectContaining({
+    id: "rbac:devtools:Role:narwhal-portal-jobs:accept", scope: "namespace", namespace: "devtools", kind: "Role", name: "narwhal-portal-jobs", checks: ["KSV048"],
+  }))
+  cache.clear()
+  fetchMock.mockImplementation(async (url: string) => ({
+    ok: new URL(url).pathname !== prefix + "rbacassessmentreports", status: 403, statusText: "Forbidden", path: new URL(url).pathname,
+  }))
+  const unavailable = await getComplianceSummary()
+  expect(unavailable.sources?.rbac.status).toBe("unavailable")
+  expect(unavailable.unusedAcceptanceRules!.some((r) => r.domain === "rbac")).toBe(false)
 })

@@ -6,6 +6,7 @@ import {
   ACCEPTED_CONFIG_AUDIT_RULES,
   ACCEPTED_INFRA_RULES,
   ACCEPTED_RBAC_RULES,
+  findUnusedAcceptanceRules,
   matchConfigAuditException,
   matchInfraException,
   matchRbacException,
@@ -133,141 +134,77 @@ describe("normalizeWorkloadName", () => {
   })
 })
 
-describe("matchConfigAuditException", () => {
-  it("matches an allowlisted workload and check ID (including ReplicaSet hash and AVD prefix)", () => {
-    const m1 = matchConfigAuditException("security-system", "DaemonSet", "falco", "AVD-KSV-0017")
-    expect(m1).not.toBeNull()
-    expect(m1?.class).toBe("accept")
-    expect(m1?.reason).toMatch(/privileged/i)
-
-    const m2 = matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-999888777b", "KSV014")
-    expect(m2).not.toBeNull()
-    expect(m2?.class).toBe("upstream")
-
-    const m3 = matchConfigAuditException("devtools", "ReplicaSet", "narwhal-portal-74b459c658", "KSV020")
-    expect(m3).not.toBeNull()
-    expect(m3?.class).toBe("accept")
+describe("exact acceptance (D-P2-1/2/3)", () => {
+  it("accepts reviewed exact tuples and returns their audit metadata", () => {
+    const match = matchConfigAuditException("devtools", "ReplicaSet", "narwhal-portal-74b459c658", "AVD-KSV-0020", ["narwhal-portal"])
+    expect(match).toMatchObject({ ruleId: "cfg:devtools:ReplicaSet:narwhal-portal:accept", class: "accept", reviewedAt: "2026-11-23" })
+    expect(match?.owner).toContain("portal/Dockerfile")
+    expect(match?.reason).toContain("1001")
+    expect(matchConfigAuditException("security-system", "DaemonSet", "falco", "KSV017")?.reason).toContain("privileged")
   })
 
-  it("does NOT accept a standalone-looking ReplicaSet suffix like abc12345 or unowned hash-like suffix", () => {
-    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-abc12345", "KSV014")).toBeNull()
-    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-b569bd8dd", "KSV014")).not.toBeNull()
-    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-b569bd8dd", "KSV014", ["harbor-core"])).not.toBeNull()
-    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-b569bd8dd", "KSV014", [])).toBeNull()
-    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-b569bd8dd", "KSV014", ["other-deploy"])).toBeNull()
-    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-abc12345", "KSV014", ["harbor-core"])).toBeNull()
+  it("rejects same-name wrong-kind/namespace, lookalikes, unknown checks and missing ownership", () => {
+    for (const [ns, kind, name, check, owners] of [
+      ["devtools", "Pod", "narwhal-portal", "KSV020", []],
+      ["dev", "ReplicaSet", "narwhal-portal-74b459c658", "KSV020", ["narwhal-portal"]],
+      ["devtools", "ReplicaSet", "narwhal-portal-evil-74b459c658", "KSV020", ["narwhal-portal-evil"]],
+      ["devtools", "ReplicaSet", "narwhal-portal-74b459c658", "KSV999", ["narwhal-portal"]],
+      ["devtools", "ReplicaSet", "narwhal-portal-74b459c658", "KSV020", []],
+      ["devtools", "ReplicaSet", "narwhal-portal-74b459c658", "KSV020", undefined],
+      ["kube-system", "DaemonSet", "cilium-evil", "KSV017", []],
+      ["kube-system", "Pod", "unlisted-system-pod", "KSV017", []],
+    ] as const) expect(matchConfigAuditException(ns, kind, name, check, owners)).toBeNull()
   })
 
-  it("keeps removed deferred, out-of-scope, and mismatched-reason checks actionable", () => {
-    expect(matchConfigAuditException("iam", "ReplicaSet", "keycloak-operator-74b459c658", "KSV014")).toBeNull()
-
-    const kc = matchConfigAuditException("iam", "StatefulSet", "keycloak", "KSV014")
-    expect(kc).not.toBeNull()
-    expect(kc?.class).toBe("upstream")
-
-    expect(matchConfigAuditException("storage", "ReplicaSet", "velero-6447588f5f", "KSV014")).toBeNull()
-    expect(matchConfigAuditException("storage", "DaemonSet", "node-agent", "KSV014")).toBeNull()
-
-    for (const id of ["KSV020", "KSV021", "KSV036"]) {
-      const cnpgDb1 = matchConfigAuditException("database", "Pod", "narwhal-db-1", id)
-      expect(cnpgDb1, `narwhal-db-1 ${id}`).not.toBeNull()
-      expect(cnpgDb1?.class).toBe("accept")
-      expect(matchConfigAuditException("database", "Pod", "narwhal-db-2", id)).toBeNull()
-      expect(matchConfigAuditException("database", "ReplicaSet", "narwhal-db-1", id)).toBeNull()
-    }
-    expect(matchConfigAuditException("database", "Pod", "narwhal-db-1", "KSV014")).toBeNull()
-
-    for (const id of ["KSV020", "KSV021"]) {
-      const pooler = matchConfigAuditException("database", "ReplicaSet", "narwhal-db-pooler-rw-5b44f8765f", id, [
-        "narwhal-db-pooler-rw",
-      ])
-      expect(pooler, `narwhal-db-pooler-rw ${id}`).not.toBeNull()
-      expect(pooler?.class).toBe("upstream")
-    }
-    expect(
-      matchConfigAuditException("database", "ReplicaSet", "narwhal-db-pooler-rw-5b44f8765f", "KSV011", [
-        "narwhal-db-pooler-rw",
-      ]),
-    ).toBeNull()
-
-    const alloyLogs = matchConfigAuditException("monitoring", "DaemonSet", "k8s-monitoring-alloy-logs", "KSV012")
-    expect(alloyLogs).not.toBeNull()
-    expect(alloyLogs?.class).toBe("accept")
-
-    for (const id of ["KSV001", "KSV003", "KSV012", "KSV017", "KSV020", "KSV021", "KSV023", "KSV121"]) {
-      const nqa = matchConfigAuditException("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", id)
-      expect(nqa, `nfs-quota-agent ${id}`).not.toBeNull()
-      expect(nqa?.class).toBe("accept")
-    }
-    expect(matchConfigAuditException("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", "KSV014")).toBeNull()
-    expect(matchConfigAuditException("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", "KSV104")).toBeNull()
-
-    // OpenBao snapshot CronJob/holder keep UID 100 (existing PVC backup files are owned by it): exact KSV020/KSV021 only
-    for (const id of ["KSV020", "KSV021"]) {
-      const cron = matchConfigAuditException("storage", "CronJob", "openbao-snapshot", id)
-      expect(cron, `openbao-snapshot ${id}`).not.toBeNull()
-      expect(cron?.class).toBe("accept")
-      const holder = matchConfigAuditException("storage", "ReplicaSet", "openbao-snapshot-holder-865bfd4d54", id, [
-        "openbao-snapshot-holder",
-      ])
-      expect(holder, `openbao-snapshot-holder ${id}`).not.toBeNull()
-      expect(holder?.class).toBe("accept")
-      // openbao-auto-unseal runs as 10100 and must stay unaccepted
-      expect(matchConfigAuditException("storage", "CronJob", "openbao-auto-unseal", id)).toBeNull()
-    }
-    expect(matchConfigAuditException("storage", "CronJob", "openbao-snapshot", "KSV014")).toBeNull()
-    expect(matchConfigAuditException("storage", "Job", "openbao-snapshot", "KSV020")).toBeNull()
-
-    expect(matchConfigAuditException("platform-system", "ReplicaSet", "waypoint-74b459c658", "KSV030")).toBeNull()
-    expect(matchConfigAuditException("platform-system", "ReplicaSet", "waypoint-74b459c658", "KSV104")).toBeNull()
-    expect(matchConfigAuditException("devtools", "ReplicaSet", "gitea-6cf86848f7", "KSV012")).toBeNull()
-    expect(matchConfigAuditException("devtools", "ReplicaSet", "gitea-6cf86848f7", "KSV014")).not.toBeNull()
-    expect(matchConfigAuditException("platform-system", "ReplicaSet", "apisix-6c89749f58", "KSV014")).toBeNull()
-    expect(matchConfigAuditException("security-system", "DaemonSet", "falco", "KSV014")).toBeNull()
+  it("leaves audited false and unverifiable reasons actionable", () => {
+    for (const [ns, kind, name, check, owners] of [
+      ["devtools", "ReplicaSet", "harbor-core-95b9f6d79", "KSV014", ["harbor-core"]],
+      ["storage", "ReplicaSet", "velero-dbc67d57", "KSV012", ["velero"]],
+      ["platform-system", "ReplicaSet", "apisix-ingress-controller-7c95479b49", "KSV020", ["apisix-ingress-controller"]],
+      ["platform-system", "ReplicaSet", "apisix-ingress-controller-7c95479b49", "KSV021", ["apisix-ingress-controller"]],
+      ["monitoring", "DaemonSet", "k8s-monitoring-alloy-logs", "KSV118", []],
+      ["platform-system", "DaemonSet", "metallb-speaker", "KSV119", []],
+      ["istio-system", "DaemonSet", "ztunnel", "KSV005", []],
+      ["storage", "StatefulSet", "seaweedfs-volume", "KSV012", []],
+    ] as const) expect(matchConfigAuditException(ns, kind, name, check, owners)).toBeNull()
+    expect(matchConfigAuditException("storage", "ReplicaSet", "velero-dbc67d57", "KSV020", ["velero"])?.reason).toContain("1002")
   })
 
-  it("keeps fixable KSV014 findings actionable (keycloak-operator, velero, node-agent)", () => {
-    expect(matchConfigAuditException("iam", "ReplicaSet", "keycloak-operator-74b459c658", "KSV014")).toBeNull()
-    expect(matchConfigAuditException("storage", "ReplicaSet", "velero-6447588f5f", "KSV014")).toBeNull()
-    expect(matchConfigAuditException("storage", "DaemonSet", "node-agent", "KSV014")).toBeNull()
-  })
-
-  it("fails closed when a NEW check ID appears on an allowlisted workload", () => {
-    expect(matchConfigAuditException("devtools", "ReplicaSet", "narwhal-portal-74b459c658", "KSV017")).toBeNull()
-    expect(matchConfigAuditException("devtools", "ReplicaSet", "harbor-core-b569bd8dd", "KSV017")).toBeNull()
-    expect(matchConfigAuditException("storage", "ReplicaSet", "velero-6447588f5f", "KSV017")).toBeNull()
-  })
-
-  it("fails closed on other workloads, wrong namespace, or wrong kind", () => {
-    expect(matchConfigAuditException("devtools", "ReplicaSet", "narwhal-portal-extra-74b459c658", "KSV020")).toBeNull()
-    expect(matchConfigAuditException("storage", "ReplicaSet", "velero-ui-58c868d4b8", "KSV012")).toBeNull()
-    expect(matchConfigAuditException("default", "DaemonSet", "falco", "KSV017")).toBeNull()
-    expect(matchConfigAuditException("security-system", "StatefulSet", "falco", "KSV017")).toBeNull()
+  it("matches RBAC by exact scope/namespace/kind/name AND explicit checks", () => {
+    expect(matchRbacException("platform-admin", "KSV041", "", "ClusterRole")?.ruleId).toBe("rbac:cluster:ClusterRole:platform-admin:accept")
+    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "devtools", "Role")).not.toBeNull()
+    for (const [name, check, ns, kind] of [
+      ["platform-admin", "KSV042", "", "ClusterRole"],
+      ["platform-admin-extra", "KSV041", "", "ClusterRole"],
+      ["platform-admin", "KSV041", "devtools", "ClusterRole"],
+      ["platform-admin", "KSV041", "devtools", "Role"],
+      ["narwhal-portal-jobs", "KSV048", "prod", "Role"],
+      ["narwhal-portal-jobs", "KSV048", "devtools", "Unknown"],
+      ["narwhal-portal-jobs", "KSV048", "devtools", "ClusterRole"],
+      ["developer-workload-admin", "KSV048", "", "ClusterRole"],
+      ["cilium-evil", "KSV041", "", "ClusterRole"],
+      ["velero-server-evil", "KSV041", "", "ClusterRole"],
+      ["system:discovery", "KSV041", "", "ClusterRole"],
+    ]) expect(matchRbacException(name, check, ns, kind)).toBeNull()
+    expect(matchRbacException("platform-admin", "KSV041")).toBeNull()
   })
 })
 
-describe("matchRbacException", () => {
-  it("matches exact (namespace, kind, roleName) and check IDs only, failing closed on Unknown or mismatched kind", () => {
-    const m = matchRbacException("platform-admin", "KSV041", "", "ClusterRole")
-    expect(m).not.toBeNull()
-    expect(m?.class).toBe("accept")
+describe("findUnusedAcceptanceRules (D-P2-4)", () => {
+  it("reports unmatched rules only for fulfilled domains and omits matched rules", () => {
+    const matched = new Set<string>([
+      ACCEPTED_CONFIG_AUDIT_RULES[0].id,
+      ACCEPTED_RBAC_RULES[0].id,
+    ])
+    const allEval = findUnusedAcceptanceRules(matched, { configAudit: true, rbac: true, infra: true })
+    expect(allEval.some((r) => r.id === ACCEPTED_CONFIG_AUDIT_RULES[0].id)).toBe(false)
+    expect(allEval.some((r) => r.id === ACCEPTED_RBAC_RULES[0].id)).toBe(false)
+    expect(allEval.length).toBe(ACCEPTED_CONFIG_AUDIT_RULES.length - 1 + ACCEPTED_RBAC_RULES.length - 1)
 
-    expect(matchRbacException("platform-admin", "KSV042", "", "ClusterRole")).toBeNull()
-    expect(matchRbacException("platform-admin-extra", "KSV041", "", "ClusterRole")).toBeNull()
-    expect(matchRbacException("developer-workload-admin", "AVD-KSV-0053", "", "ClusterRole")).not.toBeNull()
-    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "devtools", "Role")).not.toBeNull()
-    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "prod", "Role")).toBeNull()
-    expect(matchRbacException("narwhal-portal-notification-channels", "KSV113", "monitoring", "Role")).not.toBeNull()
-
-    // narwhal#717: Unknown, omitted, or mismatched kind must fail closed
-    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "devtools", "Unknown")).toBeNull()
-    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "devtools", "ClusterRole")).toBeNull()
-    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "devtools")).toBeNull()
-    expect(matchRbacException("narwhal-portal-jobs", "KSV048", "", "Role")).toBeNull()
-    expect(matchRbacException("platform-admin", "KSV041", "", "Role")).toBeNull()
-    expect(matchRbacException("platform-admin", "KSV041", "", "Unknown")).toBeNull()
-    expect(matchRbacException("platform-admin", "KSV041", "devtools", "ClusterRole")).toBeNull()
-    expect(matchRbacException("platform-admin", "KSV041", "")).toBeNull()
+    // When configAudit source is unavailable, do not falsely mark configAudit rules as unused
+    const rbacOnly = findUnusedAcceptanceRules(matched, { configAudit: false, rbac: true, infra: true })
+    expect(rbacOnly.every((r) => r.domain === "rbac")).toBe(true)
+    expect(rbacOnly.length).toBe(ACCEPTED_RBAC_RULES.length - 1)
   })
 })
 
@@ -376,17 +313,15 @@ describe("allowlist integrity and docs parity", () => {
     expect(markdown).not.toContain("(and not `replicasets`)")
   })
 
-  it("provides en and ko translations in i18n.ts for every accepted reason key", () => {
-    const extraKeys = [
-      "compliance.acceptedReason.systemNamespace",
-      "compliance.acceptedReason.k8sBuiltinRole",
-      "compliance.acceptedReason.upstreamRbacRole",
-    ] as const
-    for (const key of extraKeys) {
-      expect(en[key].trim().length).toBeGreaterThan(0)
-      expect(ko[key]).toMatch(/[\uAC00-\uD7A3]/)
-    }
+  it("provides en and ko translations and required audit metadata (id, owner, reviewedAt, explicit checks) for every rule", () => {
+    const seenIds = new Set<string>()
     for (const rule of [...ACCEPTED_CONFIG_AUDIT_RULES, ...ACCEPTED_RBAC_RULES, ...ACCEPTED_INFRA_RULES]) {
+      expect(rule.id.trim().length).toBeGreaterThan(0)
+      expect(seenIds.has(rule.id), `Duplicate rule id: ${rule.id}`).toBe(false)
+      seenIds.add(rule.id)
+      expect(rule.owner.trim().length).toBeGreaterThan(0)
+      expect(rule.reviewedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(rule.checks.size).toBeGreaterThan(0)
       expect(en[rule.reasonKey]).toBe(rule.reason)
       expect(ko[rule.reasonKey]).toMatch(/[\uAC00-\uD7A3]/)
     }

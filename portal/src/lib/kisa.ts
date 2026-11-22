@@ -79,7 +79,7 @@ async function checkImg03(): Promise<{ status: KisaStatus; detail: string }> {
 }
 
 async function checkCfg01(): Promise<{ status: KisaStatus; detail: string; partial?: boolean }> {
-  const { getComplianceFrameworks, getConfigAuditList, getRbacAuditList, getInfraAuditList, SYSTEM_NAMESPACES } =
+  const { getComplianceFrameworks, getConfigAuditList, getRbacAuditList, getInfraAuditList } =
     await import("./compliance")
   // D-CFG01-ALLSETTLED: Evaluate all 4 compliance sources independently so one unreadable source
   // (e.g. infra 403) never cancels an already-observed actionable failure or degrades CFG-01 into
@@ -109,15 +109,11 @@ async function checkCfg01(): Promise<{ status: KisaStatus; detail: string; parti
   // not-evaluated control (or unknown coverage / unreadable source) -> warn with reason; pass ONLY when every source
   // succeeded, every control is evaluated, and zero actionable failures remain. Escape hatch: restore threshold grading only
   // after positive check evidence covers 100% of framework controls.
-  const systemNs = new Set<string>(SYSTEM_NAMESPACES)
+  // D-P2-1: No namespace-blanket acceptance — rely on exact per-row actionableSummary/acceptedSummary.
   let actionableFailures = 0
   let lowSeverityFailures = 0
   let acceptedFailures = 0
   for (const r of configAuditRows) {
-    if (systemNs.has(r.namespace)) {
-      acceptedFailures += r.summary.Critical + r.summary.High + r.summary.Medium + r.summary.Low
-      continue
-    }
     const actionable = r.actionableSummary ?? (r.accepted ? { Critical: 0, High: 0, Medium: 0, Low: 0 } : r.summary)
     const accepted = r.acceptedSummary ?? (r.accepted ? r.summary : { Critical: 0, High: 0, Medium: 0, Low: 0 })
     actionableFailures += actionable.Critical + actionable.High + actionable.Medium + actionable.Low

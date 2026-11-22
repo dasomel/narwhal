@@ -5,6 +5,7 @@ import { useT } from "@/lib/i18n-client"
 import { DataState } from "@/components/ui/data-state"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { fetchComplianceJson } from "./fetch-json"
 import type { KisaResponse, KisaControl, KisaStatus } from "@/types/kisa"
 import type { Severity } from "@/types/security"
 
@@ -64,7 +65,7 @@ export function KisaChecklist() {
 
   const { data, isLoading, isError, refetch } = useQuery<KisaResponse>({
     queryKey: ["compliance", "kisa"],
-    queryFn: () => fetch("/api/compliance/kisa").then((r) => r.json()),
+    queryFn: () => fetchComplianceJson<KisaResponse>("/api/compliance/kisa"),
     staleTime: 60_000,
   })
 

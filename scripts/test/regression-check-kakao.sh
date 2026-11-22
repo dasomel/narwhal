@@ -3531,6 +3531,9 @@ PYEOF'
   # 2026-11-21: node compliance checks KCV0059 (/etc/passwd+/etc/group mounts) & KCV0056 (/etc/cni mount so /*/cni/* globs files; KCV0056 acceptance removed + verify-cluster.sh on-disk CIS 1.1.9/1.1.12 verifier)
   check R385 "Node compliance checks: trivy-operator.yaml mounts host /etc/passwd and /etc/group read-only and remounts host /etc/cni/net.d/ at container /etc/cni with podAnnotations checksum rollout trigger while keeping all 8 chart defaults (fixes KCV0059 and KCV0056 truthfully on master nodes), portal ACCEPTED_INFRA_RULES is empty (KCV0056/KCV0059 stay actionable when failing) while keeping fail-closed Infra/Framework machinery, docs/i18n align (master-only scope + empty-result behavior), and verify-cluster.sh checks CNI files <=600 (incl. 444/special bits, requires non-hidden *.conf/*.conflist/*.json so missing/empty/subdir-only/dotfile-only fail) & /var/lib/etcd <=700 etcd:etcd (bash 3.2 safe, follows symlinks, reports unreadable dir); behavioral fixture tests under bash 3.2/5.x + 23 mutations caught" \
     python3 scripts/test/lib/check-node-compliance-checks.py --mutation-verify
+  # 2026-11-22: portal /compliance three-state controls (passed/failed/not_evaluated), honest floored pass rates (<100%), unaccepted LOW, RS dropped reconciliation, and 503 data-unavailable reporting
+  check R386 "portal /compliance derives 3-state controls (excluded_namespace, unsupported_kind, missing_node_type, unlinked_check_id, manual, summary_only, coverage_unknown) from current RBAC, floors incomplete/failing rates <=99.9% via formatPassRatePct, surfaces unaccepted LOW & dropped superseded RS, returns 503 unavailable without empty caching, and fixes snapshot + UI tests; 14 mutations caught" \
+    python3 scripts/test/lib/check-portal-compliance-honest-status.py --mutation-verify
 }
 
 #=========================================

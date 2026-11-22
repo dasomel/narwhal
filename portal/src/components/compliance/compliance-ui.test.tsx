@@ -73,14 +73,16 @@ describe("Compliance UI accepted exceptions", () => {
 
     const koHtml = renderToStaticMarkup(<FailureCounters summary={summary} locale="ko" />)
     expect(koHtml).toContain("5")
-    expect(koHtml).toContain("위생 40건(LOW) · 수용 45건(시스템/예외)")
+    expect(koHtml).toContain("미수용 LOW 0건 · 위생 40건(LOW 수용) · 수용 45건(시스템/예외)")
     expect(koHtml).toContain("+60 수용(빌트인/업스트림/예외)")
     expect(koHtml).toContain("+1 수용(예외)")
+    expect(koHtml).toContain("80.0%")
 
     const enHtml = renderToStaticMarkup(<FailureCounters summary={summary} locale="en" />)
-    expect(enHtml).toContain("40 low-severity (hygiene) · 45 accepted (system/exception)")
+    expect(enHtml).toContain("0 unaccepted LOW · 40 accepted hygiene (LOW) · 45 accepted (system/exception)")
     expect(enHtml).toContain("+60 accepted (built-in/upstream/exception)")
     expect(enHtml).toContain("+1 accepted (exception)")
+    expect(enHtml).toContain("80.0%")
   })
 
   it("ConfigAuditTable shows accepted badges and keeps accepted rows visible", () => {
@@ -129,7 +131,7 @@ describe("Compliance UI accepted exceptions", () => {
       </LocaleProvider>,
     )
 
-    expect(html).toContain("1 actionable · 0 low-severity (hygiene) · 2 accepted (system/exception)")
+    expect(html).toContain("1 actionable (MEDIUM+) · 0 unaccepted LOW · 0 accepted hygiene (LOW) · 2 accepted (system/exception)")
     expect(html).toContain("falco")
     expect(html).toContain("Risk accepted")
     expect(html).toContain("harbor-core-b569bd8dd")
@@ -387,7 +389,8 @@ describe("Compliance UI accepted exceptions", () => {
       lastUpdated: new Date().toISOString(),
     }
     const countersHtml = renderToStaticMarkup(<FailureCounters summary={summaryWithFw} locale="en" />)
-    expect(countersHtml).toContain("99%")
+    expect(countersHtml).toContain("76.8%")
+    expect(countersHtml).toContain("Exception-adjusted pass rate: 99.1%")
     expect(countersHtml).toContain("2 actionable · 22 accepted")
 
     vi.mocked(useQuery).mockReturnValue({
@@ -402,8 +405,8 @@ describe("Compliance UI accepted exceptions", () => {
         <FrameworksGrid />
       </LocaleProvider>,
     )
-    expect(gridEn).toContain("2 actionable controls · 22 accepted (raw failed 24)")
-    expect(gridEn).toContain("100%")
+    expect(gridEn).toContain("2 actionable controls · 22 accepted · 0 not evaluated (raw failed 24)")
+    expect(gridEn).toContain("87.0%")
     expect(gridEn).toContain("+9 accepted (raw 9)")
     expect(gridEn).toContain("+13 accepted (raw 15)")
     expect(gridEn).toContain(COMPLIANCE_EXCEPTIONS_DOC_ANCHOR)
@@ -413,7 +416,7 @@ describe("Compliance UI accepted exceptions", () => {
         <FrameworksGrid />
       </LocaleProvider>,
     )
-    expect(gridKo).toContain("조치가능 컨트롤 2개 · 수용 22개 (원본 실패 24개)")
+    expect(gridKo).toContain("조치가능 컨트롤 2개 · 수용 22개 · 미평가 0개 (원본 실패 24개)")
     expect(gridKo).toContain("위험 수용 예외 문서")
 
     const detail: ComplianceFrameworkDetail = {
@@ -469,10 +472,11 @@ describe("Compliance UI accepted exceptions", () => {
       params: Promise.resolve({ id: "k8s-cis-1.23" }),
     })
     const pageEnHtml = renderToStaticMarkup(pageEnEl)
-    expect(pageEnHtml).toContain("98%")
+    expect(pageEnHtml).toContain("87.0%")
+    expect(pageEnHtml).toContain("Exception-adjusted pass rate: 98.2%")
     expect(pageEnHtml).toContain("✗ 2 Failed (actionable)")
     expect(pageEnHtml).toContain("+13 accepted")
-    expect(pageEnHtml).toContain("Raw failed 15 (pass rate 87%)")
+    expect(pageEnHtml).toContain("Raw failed 15 (raw pass rate 87.0%)")
     expect(pageEnHtml).toContain("Accepted exception controls (1)")
     expect(pageEnHtml).toContain("Risk accepted")
     expect(pageEnHtml).toContain(COMPLIANCE_EXCEPTIONS_DOC_ANCHOR)
@@ -518,11 +522,11 @@ describe("Compliance UI accepted exceptions", () => {
     }
 
     const countersEn = renderToStaticMarkup(<FailureCounters summary={summary} locale="en" />)
-    expect(countersEn).toContain("100%")
+    expect(countersEn).toContain("80.0%")
     expect(countersEn).toContain("0 actionable · 0 accepted (raw 2)")
 
     const countersKo = renderToStaticMarkup(<FailureCounters summary={summary} locale="ko" />)
-    expect(countersKo).toContain("조치가능 0건 · 수용 0건 (원본 2)")
+    expect(countersKo).toContain("평가 통과 8 · 미평가 0 · 조치가능 0 · 수용 0 (원본 2)")
 
     vi.mocked(useQuery).mockReturnValue({
       data: frameworks,
@@ -536,7 +540,7 @@ describe("Compliance UI accepted exceptions", () => {
         <FrameworksGrid />
       </LocaleProvider>,
     )
-    expect(gridEn).toContain("0 actionable controls · 0 accepted (raw failed 2)")
+    expect(gridEn).toContain("0 actionable controls · 0 accepted · 0 not evaluated (raw failed 2)")
     expect(gridEn).toContain("raw 2")
     expect(gridEn).not.toContain("+0 accepted")
 
@@ -579,9 +583,111 @@ describe("Compliance UI accepted exceptions", () => {
     })
     const pageHtml = renderToStaticMarkup(pageEl)
     expect(pageHtml).toContain("✗ 0 Failed (actionable)")
-    expect(pageHtml).toContain("Raw failed 2 (pass rate 80%)")
+    expect(pageHtml).toContain("Raw failed 2 (raw pass rate 80.0%)")
     expect(pageHtml).toContain("raw 2")
     expect(pageHtml).not.toContain("+0 accepted")
+  })
+
+  it("renders not-evaluated groups, data-unavailable error states, and per-source timestamps with 6h rebuild note", async () => {
+    const now = new Date().toISOString()
+    const unavailableSummary: ComplianceSummary = {
+      totalConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      unacceptedLowConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 4 },
+      lowSeverityConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 12 },
+      acceptedSystemConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      droppedConfigAuditReports: 3,
+      droppedConfigAuditFailures: { Critical: 0, High: 2, Medium: 1, Low: 5 },
+      totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      frameworks: [
+        {
+          id: "k8s-pss-baseline-0.1",
+          title: "PSS Baseline",
+          passCount: 8,
+          evaluatedPassCount: 2,
+          notEvaluatedCount: 6,
+          failCount: 3,
+          actionableFailCount: 0,
+          acceptedFailCount: 3,
+          totalControls: 11,
+          passRate: 8 / 11,
+          evaluatedPassRate: 2 / 11,
+          effectivePassRate: 5 / 11,
+        },
+      ],
+      scannedWorkloads: 10,
+      scannedRbacObjects: 0,
+      scannedNodes: 1,
+      lastUpdated: now,
+      dataUnavailable: true,
+      sources: {
+        configAudit: { status: "ok", lastUpdated: now, oldestUpdated: now },
+        rbac: { status: "unavailable", lastUpdated: null, error: "HTTP 503" },
+        infra: { status: "ok", lastUpdated: now, rebuildIntervalHours: 6 },
+        frameworks: { status: "ok", lastUpdated: now, rebuildIntervalHours: 6 },
+      },
+    }
+
+    const countersEn = renderToStaticMarkup(<FailureCounters summary={unavailableSummary} locale="en" />)
+    expect(countersEn).toContain("Data unavailable")
+    expect(countersEn).toContain("4 unaccepted LOW · 12 accepted hygiene (LOW)")
+    expect(countersEn).toContain("3 superseded RS dropped (8 checks)")
+    expect(countersEn).toContain("6 not evaluated")
+    expect(countersEn).toContain("6 hours")
+
+    const detailWithNotEval: ComplianceFrameworkDetail = {
+      ...unavailableSummary.frameworks[0],
+      controls: [
+        {
+          id: "1",
+          name: "HostProcess",
+          severity: "High",
+          passCount: 1,
+          failCount: 0,
+          evaluationState: "passed",
+        },
+        {
+          id: "6",
+          name: "Privilege Escalation",
+          severity: "Medium",
+          passCount: 0,
+          failCount: 0,
+          evaluationState: "not_evaluated",
+          notEvaluatedReason: "unlinked_check_id",
+          notEvaluatedDetail: "avd-ksv-0024",
+        },
+      ],
+    }
+
+    mockGetLocale.mockResolvedValue("en")
+    mockGetComplianceFrameworkDetail.mockResolvedValue(detailWithNotEval)
+    const fwPageEl = await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-pss-baseline-0.1" }) })
+    const fwPageHtml = renderToStaticMarkup(fwPageEl)
+    expect(fwPageHtml).toContain("Not evaluated controls (1)")
+    expect(fwPageHtml).toContain("Unlinked spec check ID")
+    expect(fwPageHtml).toContain("avd-ksv-0024")
+    expect(fwPageHtml).toContain("18.1%")
+
+    const unavailableErr = Object.assign(new Error("unavailable"), { name: "ComplianceDataUnavailableError" })
+    mockGetComplianceFrameworkDetail.mockRejectedValueOnce(unavailableErr)
+    const errPageEl = await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-pss-baseline-0.1" }) })
+    const errPageHtml = renderToStaticMarkup(errPageEl)
+    expect(errPageHtml).toContain("Data unavailable")
+
+    vi.mocked(useQuery).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      refetch: vi.fn(),
+    } as never)
+    const gridErr = renderToStaticMarkup(
+      <LocaleProvider locale="en">
+        <FrameworksGrid />
+      </LocaleProvider>,
+    )
+    expect(gridErr).toContain(en["dataState.unavailable"])
   })
 
   it("InfraAuditList, ExpandedInfraPanel, and InfraAuditDetailPage treat failing KCV0056 as actionable while preserving accepted-row UI machinery", async () => {

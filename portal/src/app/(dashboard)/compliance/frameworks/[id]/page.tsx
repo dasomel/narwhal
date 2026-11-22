@@ -1,10 +1,16 @@
 import { requireDashboardAccess } from "@/lib/dashboard-access"
 import { getLocale } from "@/lib/i18n-server"
-import { t, type Locale } from "@/lib/i18n"
+import { t, translateNotEvaluatedReason, type Locale } from "@/lib/i18n"
 import { COMPLIANCE_EXCEPTIONS_DOC_URL } from "@/lib/compliance-accepted"
 import { translateTitle } from "@/lib/check-translations"
 import { Badge } from "@/components/ui/badge"
-import type { AcceptedScope, ComplianceControl, ComplianceFrameworkDetail, Severity } from "@/types/compliance"
+import {
+  formatPassRatePct,
+  type AcceptedScope,
+  type ComplianceControl,
+  type ComplianceFrameworkDetail,
+  type Severity,
+} from "@/types/compliance"
 
 const severityBadgeClass: Record<Severity, string> = {
   Critical: "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400",
@@ -28,12 +34,22 @@ interface Props {
   params: Promise<{ id: string }>
 }
 
-async function fetchDetail(id: string): Promise<ComplianceFrameworkDetail | null> {
+type DetailFetchResult =
+  | { status: "ok"; detail: ComplianceFrameworkDetail }
+  | { status: "not_found" }
+  | { status: "unavailable" }
+
+async function fetchDetail(id: string): Promise<DetailFetchResult> {
   try {
     const { getComplianceFrameworkDetail } = await import("@/lib/compliance")
-    return await getComplianceFrameworkDetail(id)
-  } catch {
-    return null
+    const detail = await getComplianceFrameworkDetail(id)
+    if (!detail) return { status: "not_found" }
+    return { status: "ok", detail }
+  } catch (err) {
+    if (err && typeof err === "object" && "name" in err && err.name === "ComplianceDataUnavailableError") {
+      return { status: "unavailable" }
+    }
+    return { status: "not_found" }
   }
 }
 
@@ -42,11 +58,13 @@ function ControlsTable({
   frameworkId,
   locale,
   showAcceptedBadge,
+  showNotEvaluated = false,
 }: {
   controls: ComplianceControl[]
   frameworkId: string
   locale: Locale
   showAcceptedBadge: boolean
+  showNotEvaluated?: boolean
 }) {
   return (
     <div className="overflow-x-auto">
@@ -56,19 +74,31 @@ function ControlsTable({
             <th className="px-4 py-2.5 font-medium">ID</th>
             <th className="px-4 py-2.5 font-medium">Name</th>
             <th className="px-4 py-2.5 font-medium">Severity</th>
-            <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.check.passed")}</th>
-            <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.framework.actionableFailed")}</th>
+            {showNotEvaluated ? (
+              <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.framework.notEvaluatedShort")}</th>
+            ) : (
+              <>
+                <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.check.passed")}</th>
+                <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.framework.actionableFailed")}</th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
           {controls.map((ctrl) => {
             const actionableFail = ctrl.actionableFailCount ?? ctrl.failCount
             const acceptedFail = ctrl.acceptedFailCount ?? 0
+            const droppedFail = ctrl.droppedFailCount ?? 0
+            const isNotEvaluated = ctrl.evaluationState === "not_evaluated"
             return (
               <tr
                 key={ctrl.id}
                 className={`border-b last:border-0 hover:bg-muted/10 ${
-                  ctrl.accepted ? "bg-slate-50/40 dark:bg-slate-900/20" : ""
+                  isNotEvaluated
+                    ? "bg-amber-50/30 dark:bg-amber-950/10"
+                    : ctrl.accepted
+                      ? "bg-slate-50/40 dark:bg-slate-900/20"
+                      : ""
                 }`}
               >
                 <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
@@ -99,24 +129,46 @@ function ControlsTable({
                     {ctrl.severity}
                   </Badge>
                 </td>
-                <td className="px-4 py-2.5 text-green-600 font-medium">{ctrl.passCount}</td>
-                <td className="px-4 py-2.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
-                      {actionableFail}
-                    </span>
-                    {(acceptedFail > 0 || ctrl.failCount !== actionableFail) && (
-                      <Badge
-                        variant="outline"
-                        className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
-                      >
-                        {acceptedFail > 0
-                          ? `+${acceptedFail} ${t(locale, "compliance.framework.acceptedShort")} (${t(locale, "compliance.framework.rawChecks", { count: String(ctrl.failCount) })})`
-                          : t(locale, "compliance.framework.rawChecks", { count: String(ctrl.failCount) })}
-                      </Badge>
-                    )}
-                  </div>
-                </td>
+                {showNotEvaluated ? (
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                    <Badge
+                      variant="outline"
+                      className="mr-2 text-[0.65rem] px-1.5 py-0 text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-800"
+                    >
+                      {t(locale, "compliance.framework.notEvaluatedShort")}
+                    </Badge>
+                    {translateNotEvaluatedReason(locale, ctrl.notEvaluatedReason)}
+                    {ctrl.notEvaluatedDetail ? ` (${ctrl.notEvaluatedDetail})` : ""}
+                  </td>
+                ) : (
+                  <>
+                    <td className="px-4 py-2.5 text-green-600 font-medium">{ctrl.passCount}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                          {actionableFail}
+                        </span>
+                        {(acceptedFail > 0 || ctrl.failCount !== actionableFail || droppedFail > 0) && (
+                          <Badge
+                            variant="outline"
+                            className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+                          >
+                            {[
+                              acceptedFail > 0 ? `+${acceptedFail} ${t(locale, "compliance.framework.acceptedShort")}` : null,
+                              droppedFail > 0
+                                ? t(locale, "compliance.framework.droppedShort", { count: String(droppedFail) })
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ") || t(locale, "compliance.framework.rawChecks", { count: String(ctrl.failCount) })}
+                            {(acceptedFail > 0 || droppedFail > 0) &&
+                              ` (${t(locale, "compliance.framework.rawChecks", { count: String(ctrl.failCount) })})`}
+                          </Badge>
+                        )}
+                      </div>
+                    </td>
+                  </>
+                )}
               </tr>
             )
           })}
@@ -145,9 +197,24 @@ export default async function FrameworkDetailPage({ params }: Props) {
   const { id } = await params
   const idDecoded = decodeURIComponent(id)
 
-  const detail = await fetchDetail(idDecoded)
+  const fetched = await fetchDetail(idDecoded)
 
-  if (!detail) {
+  if (fetched.status === "unavailable") {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <a className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-[0.8rem] font-medium hover:bg-muted transition-colors" href="/compliance">← {t(locale, "common.back")}</a>
+          <h1 className="text-xl font-bold">{t(locale, "compliance.detail.title")}</h1>
+        </div>
+        <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/5 p-8 text-center space-y-1">
+          <p className="text-sm font-semibold text-destructive">{t(locale, "compliance.counter.dataUnavailable")}</p>
+          <p className="text-xs text-muted-foreground">{t(locale, "dataState.unavailable")}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (fetched.status === "not_found") {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -161,8 +228,10 @@ export default async function FrameworkDetailPage({ params }: Props) {
     )
   }
 
+  const { detail } = fetched
+
   const mainControls = [...detail.controls]
-    .filter((c) => !c.accepted)
+    .filter((c) => !c.accepted && c.evaluationState !== "not_evaluated")
     .sort((a, b) => {
       const aFail = (a.actionableFailCount ?? a.failCount) > 0 ? 0 : 1
       const bFail = (b.actionableFailCount ?? b.failCount) > 0 ? 0 : 1
@@ -174,13 +243,33 @@ export default async function FrameworkDetailPage({ params }: Props) {
     .filter((c) => Boolean(c.accepted))
     .sort((a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity))
 
-  const displayPassRate = detail.effectivePassRate ?? detail.passRate
-  const passRatePct = Math.round(displayPassRate * (displayPassRate <= 1 ? 100 : 1))
-  const rawPassRatePct = Math.round(detail.passRate * (detail.passRate <= 1 ? 100 : 1))
+  const notEvaluatedControls = [...detail.controls]
+    .filter((c) => c.evaluationState === "not_evaluated")
+    .sort((a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity))
+
+  const evaluatedRate = detail.evaluatedPassRate ?? detail.passRate
+  const effectiveRate = detail.effectivePassRate ?? detail.passRate
   const actionableControlsFail = detail.actionableFailCount ?? detail.failCount
   const acceptedControlsFail = detail.acceptedFailCount ?? acceptedControls.length
+  const evaluatedPass = detail.evaluatedPassCount ?? detail.passCount
+  const notEvaluated = detail.notEvaluatedCount ?? notEvaluatedControls.length
+  const droppedControls = detail.droppedFailCount ?? 0
+  const droppedChecks = detail.droppedCheckCount ?? 0
+
+  const evaluatedPctText = formatPassRatePct(evaluatedRate, {
+    hasActionableFail: actionableControlsFail > 0,
+    hasNotEvaluated: notEvaluated > 0,
+  })
+  const effectivePctText = formatPassRatePct(effectiveRate, {
+    hasActionableFail: actionableControlsFail > 0,
+    hasNotEvaluated: notEvaluated > 0,
+  })
+  const rawPctText = formatPassRatePct(detail.passRate, {
+    hasActionableFail: detail.failCount > 0,
+  })
+  const evaluatedWidthPct = Math.min(100, Math.max(0, evaluatedRate * (evaluatedRate <= 1 ? 100 : 1)))
   const barColor =
-    passRatePct >= 80 ? "bg-green-500" : passRatePct >= 50 ? "bg-amber-500" : "bg-red-500"
+    evaluatedRate >= 0.8 ? "bg-green-500" : evaluatedRate >= 0.5 ? "bg-amber-500" : "bg-red-500"
 
   return (
     <div className="space-y-6">
@@ -190,7 +279,9 @@ export default async function FrameworkDetailPage({ params }: Props) {
         <div>
           <h1 className="text-xl font-bold text-foreground">{detail.title}</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {t(locale, "compliance.framework.passRate")}: {passRatePct}% &middot;{" "}
+            {t(locale, "compliance.framework.evaluatedPassRate")}: {evaluatedPctText} &middot;{" "}
+            {t(locale, "compliance.framework.rawPassRate")}: {rawPctText} ({detail.passCount}/{detail.totalControls}) &middot;{" "}
+            {t(locale, "compliance.framework.effectivePassRate")}: {effectivePctText} &middot;{" "}
             {t(locale, "compliance.framework.controls", { count: detail.totalControls })}
           </p>
         </div>
@@ -199,27 +290,43 @@ export default async function FrameworkDetailPage({ params }: Props) {
       {/* Pass rate bar + counters */}
       <div className="rounded-lg border bg-card p-4 space-y-3">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">{t(locale, "compliance.framework.passRate")}</span>
+          <span className="text-muted-foreground">{t(locale, "compliance.framework.evaluatedPassRate")}</span>
           <span
             className={`font-bold text-lg ${
-              passRatePct >= 80
+              evaluatedRate >= 0.8
                 ? "text-green-600"
-                : passRatePct >= 50
+                : evaluatedRate >= 0.5
                 ? "text-amber-600"
                 : "text-red-600"
             }`}
           >
-            {passRatePct}%
+            {evaluatedPctText}
           </span>
         </div>
         <div className="w-full bg-muted rounded-full h-2.5">
-          <div className={`h-2.5 rounded-full ${barColor}`} style={{ width: `${passRatePct}%` }} />
+          <div className={`h-2.5 rounded-full ${barColor}`} style={{ width: `${evaluatedWidthPct}%` }} />
         </div>
         <div className="flex flex-wrap items-center gap-4 text-sm">
-          <span className="text-green-600 font-medium">✓ {detail.passCount} {t(locale, "compliance.check.passed")}</span>
+          <span className="text-green-600 font-medium">✓ {evaluatedPass} {t(locale, "compliance.check.passed")}</span>
           <span className={`font-medium ${actionableControlsFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
             ✗ {actionableControlsFail} {t(locale, "compliance.framework.actionableFailed")}
           </span>
+          {notEvaluated > 0 && (
+            <Badge
+              variant="outline"
+              className="text-xs text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-800"
+            >
+              ? {notEvaluated} {t(locale, "compliance.framework.notEvaluatedShort")}
+            </Badge>
+          )}
+          {(droppedChecks > 0 || droppedControls > 0) && (
+            <Badge
+              variant="outline"
+              className="text-xs text-muted-foreground border-muted-foreground/30"
+            >
+              {t(locale, "compliance.framework.droppedShort", { count: String(droppedChecks || droppedControls) })}
+            </Badge>
+          )}
           {(acceptedControlsFail > 0 || detail.failCount !== actionableControlsFail) && (
             <>
               {acceptedControlsFail > 0 && (
@@ -233,7 +340,7 @@ export default async function FrameworkDetailPage({ params }: Props) {
               <span className="text-xs text-muted-foreground">
                 {t(locale, "compliance.framework.rawSummary", {
                   fail: String(detail.failCount),
-                  rate: String(rawPassRatePct),
+                  rate: rawPctText.replace(/%$/, ""),
                 })}
               </span>
               <a
@@ -249,7 +356,7 @@ export default async function FrameworkDetailPage({ params }: Props) {
         </div>
       </div>
 
-      {/* Main Controls table (actionable + passed) */}
+      {/* Main Controls table (actionable + evaluated passed) */}
       <div className="rounded-lg border bg-card overflow-hidden">
         <div className="px-4 py-3 border-b bg-muted/30">
           <h2 className="text-sm font-semibold">
@@ -263,6 +370,30 @@ export default async function FrameworkDetailPage({ params }: Props) {
           showAcceptedBadge={false}
         />
       </div>
+
+      {/* Not-evaluated Controls (collapsed group) */}
+      {notEvaluatedControls.length > 0 && (
+        <details className="rounded-lg border border-amber-200/80 bg-card overflow-hidden dark:border-amber-900/60">
+          <summary className="px-4 py-3 border-b bg-amber-50/40 dark:bg-amber-950/20 cursor-pointer text-sm font-semibold flex flex-wrap items-center justify-between gap-2 select-none">
+            <span className="text-amber-800 dark:text-amber-300">
+              {t(locale, "compliance.framework.notEvaluatedControlsGroup", { count: String(notEvaluatedControls.length) })}
+            </span>
+            <Badge
+              variant="outline"
+              className="text-[0.65rem] px-1.5 py-0 text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-800"
+            >
+              {t(locale, "compliance.framework.notEvaluatedShort")}
+            </Badge>
+          </summary>
+          <ControlsTable
+            controls={notEvaluatedControls}
+            frameworkId={idDecoded}
+            locale={locale}
+            showAcceptedBadge={false}
+            showNotEvaluated={true}
+          />
+        </details>
+      )}
 
       {/* Accepted-only Controls (collapsed group) */}
       {acceptedControls.length > 0 && (

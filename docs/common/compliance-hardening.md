@@ -326,6 +326,20 @@ Every exception in `portal/src/lib/compliance-accepted.ts` is fail-closed by exa
 - **Reuse of existing matchers (no second allowlist):** Workload targets (`ReplicaSet`, `DaemonSet`, `StatefulSet`, `Pod`, `Deployment`, `CronJob`, `Job`) reuse `configAuditMatcher` (`SYSTEM_NAMESPACES` + `ACCEPTED_CONFIG_AUDIT_RULES`), `fetchReplicaSetMap()` superseded-revision dropping, and Deployment `ownerReferences` verification. RBAC targets (`Role`, `ClusterRole`) reuse `rbacAuditMatcher` (`isAcceptedRbacRole` + `ACCEPTED_RBAC_RULES`). Node (`Infra`) targets reuse `infraAuditMatcher` (`ACCEPTED_INFRA_RULES`, matching the Infra tab); any unlisted `KCV` check stays actionable.
 - **Control & summary rollup:** A control is marked `accepted: true` only when `failCount > 0`, `actionableFailCount === 0`, and `acceptedFailCount > 0` (mixed controls remain actionable). When `detailReport.results` is absent (e.g., `reportType=summary`) or has fewer failing controls than `status.summary.failCount`, unaccounted failures remain in `actionableFailCount`.
 
+### Three-state control evaluation & honest reporting
+
+Trivy `ClusterComplianceReport` emits a placeholder passing entry (`checks: [{ checkID: "", success: true }]`) for any control with zero failed checks — even when the control is manual, skipped because `kube-system` is excluded, targets `RoleBinding`/`ClusterRoleBinding` omitted from `trivy.supportedConfigAuditKinds`, targets absent worker nodes, or links lowercase `avd-ksv-*` IDs. The portal separates `passed`, `failed`, and `not_evaluated` controls without inflating pass rates or widening RBAC (`narwhal-portal` `ClusterRole` already allows reading `nodes`, `deployments`, `configmaps`, and Trivy CRDs):
+
+- **Three-state derivation (`classifyNonFailingControl` in `portal/src/lib/compliance.ts`):**
+  - When `detailReport.results` is absent (`reportType=summary`), every spec control becomes `not_evaluated` (`summary_only`) and `evaluatedPassRate` / `effectivePassRate` fail closed to `0`.
+  - When `results[].checks` is `[]`, the control becomes `not_evaluated` (`empty_checks`).
+  - When `spec.compliance.controls[]` carries automated checks elsewhere in the benchmark and a control omits both `checks` and `commands` (or specifies `checks: []`), it becomes `not_evaluated` (`manual`). If no control carries `spec.checks` metadata (trimmed fixture), fail closed as `coverage_unknown`.
+  - Non-uppercase spec check IDs (`avd-ksv-*` in PSS Baseline 6-11 and PSS Restricted 6-17) become `not_evaluated` (`unlinked_check_id`).
+  - `deploy/trivy-operator` env (`OPERATOR_EXCLUDE_NAMESPACES`, `OPERATOR_TARGET_NAMESPACES`, scanner flags), `cm/trivy-operator-trivy-config` (`trivy.supportedConfigAuditKinds`), `/api/v1/nodes` role labels, and live report presence classify `KCV0001..0047`/`KSV037` under excluded `kube-system` (`excluded_namespace`), `KSV111` without `RoleBinding`/`ClusterRoleBinding` support (`unsupported_kind`), `CMD-0022..0045` / `KCV0069..0092` without worker nodes (`missing_node_type`), disabled scanners (`scanner_disabled`), and failed lookups (`coverage_unknown`).
+- **Pass rates without false `100%` (`formatPassRatePct` in `portal/src/types/compliance.ts`):** Summary cards, frameworks grid, and framework detail show evaluated pass rate (`evaluatedPassCount / totalControls`), raw Trivy pass rate (`passCount / totalControls`), exception-adjusted pass rate (`(evaluatedPassCount + acceptedFailCount + droppedFailCount - unaccountedFail) / totalControls`, labeled `"Exception-adjusted pass rate"`), and `notEvaluatedCount`. Whenever `actionableFailCount > 0` or `notEvaluatedCount > 0`, rates floor to 1 decimal place and cap at `99.9%` (`100%` only appears when every control is evaluated and zero actionable failures remain).
+- **LOW visibility & superseded-ReplicaSet reconciliation:** `totalConfigAuditFailures` continues to count unaccepted `MEDIUM+` findings in non-system namespaces, `unacceptedLowConfigAuditFailures` surfaces unaccepted non-system `LOW` findings separately from accepted hygiene `lowSeverityConfigAuditFailures`, and `droppedConfigAuditReports` / `droppedConfigAuditFailures` / `droppedFailCount` / `droppedCheckCount` keep drained superseded-ReplicaSet drops visible next to raw and active numbers.
+- **Data unavailability & freshness (`ComplianceDataUnavailableError`):** Kubernetes HTTP/network list errors throw `ComplianceDataUnavailableError` (`503 { unavailable: true, source }` on API routes) instead of caching empty arrays or displaying `0`. `getComplianceSummary()` isolates failures per source (`ComplianceSummary.sources` + `dataUnavailable`), prefers `status.updateTimestamp` on `ClusterComplianceReport`s, and displays per-source ages alongside the 6-hour (`0 */6 * * *`) scheduled rebuild cadence note.
+
 Adding or expanding an entry requires:
 
 1. Verifying that no safe manifest/chart knob fixes the finding without breaking functionality (`accept`) or that the upstream chart/image lacks the knob (`upstream`).
@@ -458,7 +472,11 @@ trivy-operator scanners must be enabled (`gitops/charts/narwhal-apps/templates/t
 `configAuditScannerEnabled`, `rbacAssessmentScannerEnabled`, `infraAssessmentScannerEnabled`,
 `clusterComplianceEnabled` = true, and `compliance.reportType: all` (summary yields no
 per-control detail). Reports regenerate on the `0 */6 * * *` cron; to force one, briefly
-patch a report's `spec.cron` to `* * * * *`.
+patch a report's `spec.cron` to `* * * * *`. To evaluate coverage accurately without reading
+cluster secrets, `/compliance` also reads `nodes`, `deployments/trivy-operator`, and
+`configmaps/trivy-operator-trivy-config` under the existing `narwhal-portal` `ClusterRole`,
+surfaces `503 { unavailable: true }` on lookup failure, and shows per-source timestamps with the
+6-hour rebuild cadence note.
 
 ## Issue #109 live verifier findings
 

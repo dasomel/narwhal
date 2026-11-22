@@ -12,6 +12,7 @@ import {
   matchConfigAuditException,
   matchInfraException,
   matchRbacException,
+  normalizeCheckId,
 } from "./compliance-accepted"
 import {
   sumCheckSummary,
@@ -29,10 +30,23 @@ import {
   type ComplianceFramework,
   type ComplianceFrameworkDetail,
   type ComplianceControl,
+  type ComplianceSourceKey,
+  type ComplianceSourceStatus,
   type ComplianceSummary,
+  type ControlEvaluationState,
+  type ControlNotEvaluatedReason,
 } from "@/types/compliance"
 
 // --- K8s API helpers ---
+
+export class ComplianceDataUnavailableError extends Error {
+  readonly source: ComplianceSourceKey
+  constructor(source: ComplianceSourceKey, message: string) {
+    super(message)
+    this.name = "ComplianceDataUnavailableError"
+    this.source = source
+  }
+}
 
 async function complianceK8sFetch<T>(path: string): Promise<T> {
   const apiServer = getK8sApiServer()
@@ -46,6 +60,17 @@ async function complianceK8sFetch<T>(path: string): Promise<T> {
     throw new Error(`K8s API ${res.status} ${res.statusText} for ${path}`)
   }
   return readJsonWithPolicy<T>(res)
+}
+
+type TryFetchResult<T> = { ok: true; data: T } | { ok: false; error: string }
+
+async function tryComplianceK8sFetch<T>(path: string): Promise<TryFetchResult<T>> {
+  try {
+    const data = await complianceK8sFetch<T>(path)
+    return { ok: true, data }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 // System namespaces whose config-audit findings are inherent to K8s static pods / CNI / mesh
@@ -205,6 +230,15 @@ interface ReplicaSetSummary {
   superseded: boolean
 }
 
+interface RawSpecControl {
+  id: string
+  name: string
+  severity: string
+  description?: string
+  checks?: Array<{ id?: string }>
+  commands?: Array<{ id?: string }>
+}
+
 interface RawComplianceReport {
   metadata: {
     name: string
@@ -214,15 +248,11 @@ interface RawComplianceReport {
     compliance: {
       id: string
       title: string
-      controls?: Array<{
-        id: string
-        name: string
-        severity: string
-        description?: string
-      }>
+      controls?: RawSpecControl[]
     }
   }
   status?: {
+    updateTimestamp?: string
     summary?: {
       passCount?: number
       failCount?: number
@@ -247,6 +277,31 @@ interface RawComplianceReport {
 
 interface RawComplianceList {
   items: RawComplianceReport[]
+}
+
+interface RawNodeList {
+  items?: Array<{
+    metadata?: {
+      name?: string
+      labels?: Record<string, string>
+    }
+  }>
+}
+
+interface RawDeployment {
+  spec?: {
+    template?: {
+      spec?: {
+        containers?: Array<{
+          env?: Array<{ name?: string; value?: string }>
+        }>
+      }
+    }
+  }
+}
+
+interface RawConfigMap {
+  data?: Record<string, string>
 }
 
 // --- Mapping helpers ---
@@ -734,6 +789,71 @@ function resolveReplicaSetMetadata(
   )
 }
 
+function extractTimestampRange(
+  items: ReadonlyArray<{ metadata: { creationTimestamp?: string }; status?: { updateTimestamp?: string } }>,
+  preferUpdateTimestamp = false,
+): { newest: string | null; oldest: string | null } {
+  const ts = items
+    .map((i) => (preferUpdateTimestamp ? i.status?.updateTimestamp ?? i.metadata.creationTimestamp : i.metadata.creationTimestamp) ?? "")
+    .filter(Boolean)
+    .sort()
+  if (ts.length === 0) return { newest: null, oldest: null }
+  return { newest: ts[ts.length - 1], oldest: ts[0] }
+}
+
+interface ConfigAuditListWithMeta {
+  rows: ConfigAuditRow[]
+  droppedCount: number
+  droppedSummary: CheckSummary
+  lastUpdated: string | null
+  oldestUpdated: string | null
+  partial: boolean
+}
+
+async function fetchConfigAuditListWithMeta(): Promise<ConfigAuditListWithMeta> {
+  let list: RawAuditList
+  try {
+    list = await complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports")
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn("[compliance] getConfigAuditList failed:", msg)
+    throw new ComplianceDataUnavailableError("configAudit", msg)
+  }
+
+  const rsMap = await fetchReplicaSetMap()
+  const missingReplicaSets: string[] = []
+  const rows: ConfigAuditRow[] = []
+  const keptItems: RawAuditReport[] = []
+  let droppedCount = 0
+  let droppedSummary: CheckSummary = { ...emptyCheckSummary }
+
+  for (const item of list.items ?? []) {
+    const rsState = resolveReplicaSetMetadata(item, rsMap)
+    if (rsState.missingKey) missingReplicaSets.push(rsState.missingKey)
+    if (rsState.drop) {
+      droppedCount++
+      droppedSummary = addSummaries(droppedSummary, buildCheckSummaryFromCounts(item.report.summary))
+      continue
+    }
+    keptItems.push(item)
+    rows.push(classifyConfigAuditItem(item, rsState.deploymentOwners).row)
+  }
+  if (missingReplicaSets.length > 0) {
+    console.warn(
+      `[compliance] ReplicaSet(s) missing from cluster list, keeping reports fail-safe: ${missingReplicaSets.join(", ")}`,
+    )
+  }
+  const { newest, oldest } = extractTimestampRange(keptItems)
+  return {
+    rows,
+    droppedCount,
+    droppedSummary,
+    lastUpdated: newest,
+    oldestUpdated: oldest,
+    partial: rsMap === null,
+  }
+}
+
 // --- getConfigAuditList ---
 
 export async function getConfigAuditList(): Promise<ConfigAuditRow[]> {
@@ -741,30 +861,11 @@ export async function getConfigAuditList(): Promise<ConfigAuditRow[]> {
   const cached = await cacheGet<ConfigAuditRow[]>(cacheKey)
   if (cached) return cached
 
-  try {
-    const [list, rsMap] = await Promise.all([
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
-      fetchReplicaSetMap(),
-    ])
-    const missingReplicaSets: string[] = []
-    const rows: ConfigAuditRow[] = []
-    for (const item of list.items ?? []) {
-      const rsState = resolveReplicaSetMetadata(item, rsMap)
-      if (rsState.missingKey) missingReplicaSets.push(rsState.missingKey)
-      if (rsState.drop) continue
-      rows.push(classifyConfigAuditItem(item, rsState.deploymentOwners).row)
-    }
-    if (missingReplicaSets.length > 0) {
-      console.warn(
-        `[compliance] ReplicaSet(s) missing from cluster list, keeping reports fail-safe: ${missingReplicaSets.join(", ")}`,
-      )
-    }
-    await cacheSet(cacheKey, rows, cacheTtl("complianceConfigAuditList"))
-    return rows
-  } catch (err) {
-    console.warn("[compliance] getConfigAuditList failed:", err instanceof Error ? err.message : err)
-    return []
+  const meta = await fetchConfigAuditListWithMeta()
+  if (!meta.partial) {
+    await cacheSet(cacheKey, meta.rows, cacheTtl("complianceConfigAuditList"))
   }
+  return meta.rows
 }
 
 // --- getConfigAuditDetail ---
@@ -777,64 +878,78 @@ export async function getConfigAuditDetail(
   const cached = await cacheGet<ConfigAuditDetail>(cacheKey)
   if (cached) return cached
 
+  let list: RawAuditList
   try {
-    const [list, rsMap] = await Promise.all([
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
-      fetchReplicaSetMap(),
-    ])
-    const item = (list.items ?? []).find((i) => {
-      const labels = i.metadata.labels ?? {}
-      const rName = labels["trivy-operator.resource.name"] ?? i.metadata.name
-      return i.metadata.namespace === namespace && rName === name
-    })
-    if (!item) return null
-
-    const rsState = resolveReplicaSetMetadata(item, rsMap)
-    if (rsState.missingKey) {
-      console.warn(
-        `[compliance] ReplicaSet missing from cluster list, keeping report detail fail-safe: ${rsState.missingKey}`,
-      )
-    }
-    if (rsState.drop) return null
-
-    const { row, matcher } = classifyConfigAuditItem(item, rsState.deploymentOwners)
-    const detail: ConfigAuditDetail = {
-      ...row,
-      checks: mapChecks(item.report.checks ?? [], matcher),
-    }
-    await cacheSet(cacheKey, detail, cacheTtl("complianceConfigAuditDetail"))
-    return detail
+    list = await complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports")
   } catch (err) {
-    console.warn("[compliance] getConfigAuditDetail failed:", err instanceof Error ? err.message : err)
-    return null
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn("[compliance] getConfigAuditDetail failed:", msg)
+    throw new ComplianceDataUnavailableError("configAudit", msg)
   }
+
+  const rsMap = await fetchReplicaSetMap()
+  const item = (list.items ?? []).find((i) => {
+    const labels = i.metadata.labels ?? {}
+    const rName = labels["trivy-operator.resource.name"] ?? i.metadata.name
+    return i.metadata.namespace === namespace && rName === name
+  })
+  if (!item) return null
+
+  const rsState = resolveReplicaSetMetadata(item, rsMap)
+  if (rsState.missingKey) {
+    console.warn(
+      `[compliance] ReplicaSet missing from cluster list, keeping report detail fail-safe: ${rsState.missingKey}`,
+    )
+  }
+  if (rsState.drop) return null
+
+  const { row, matcher } = classifyConfigAuditItem(item, rsState.deploymentOwners)
+  const detail: ConfigAuditDetail = {
+    ...row,
+    checks: mapChecks(item.report.checks ?? [], matcher),
+  }
+  if (rsMap !== null) {
+    await cacheSet(cacheKey, detail, cacheTtl("complianceConfigAuditDetail"))
+  }
+  return detail
 }
 
 // --- getRbacAuditList ---
+
+interface RbacAuditListWithMeta {
+  rows: RbacAuditRow[]
+  lastUpdated: string | null
+  oldestUpdated: string | null
+}
+
+async function fetchRbacAuditListWithMeta(): Promise<RbacAuditListWithMeta> {
+  let namespaced: RawAuditList
+  let clustered: RawAuditList
+  try {
+    ;[namespaced, clustered] = await Promise.all([
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports"),
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports"),
+    ])
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn("[compliance] getRbacAuditList failed:", msg)
+    throw new ComplianceDataUnavailableError("rbac", msg)
+  }
+
+  const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
+  const rows: RbacAuditRow[] = allItems.map((item) => classifyRbacAuditItem(item).row)
+  const { newest, oldest } = extractTimestampRange(allItems)
+  return { rows, lastUpdated: newest, oldestUpdated: oldest }
+}
 
 export async function getRbacAuditList(): Promise<RbacAuditRow[]> {
   const cacheKey = cacheKeys.complianceRbacAuditList()
   const cached = await cacheGet<RbacAuditRow[]>(cacheKey)
   if (cached) return cached
 
-  try {
-    const [namespaced, clustered] = await Promise.all([
-      complianceK8sFetch<RawAuditList>(
-        "/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports",
-      ).catch(() => ({ items: [] as RawAuditReport[] })),
-      complianceK8sFetch<RawAuditList>(
-        "/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports",
-      ).catch(() => ({ items: [] as RawAuditReport[] })),
-    ])
-
-    const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
-    const rows: RbacAuditRow[] = allItems.map((item) => classifyRbacAuditItem(item).row)
-    await cacheSet(cacheKey, rows, cacheTtl("complianceRbacAuditList"))
-    return rows
-  } catch (err) {
-    console.warn("[compliance] getRbacAuditList failed:", err instanceof Error ? err.message : err)
-    return []
-  }
+  const meta = await fetchRbacAuditListWithMeta()
+  await cacheSet(cacheKey, meta.rows, cacheTtl("complianceRbacAuditList"))
+  return meta.rows
 }
 
 // --- getRbacAuditDetail ---
@@ -847,62 +962,72 @@ export async function getRbacAuditDetail(
   const cached = await cacheGet<RbacAuditDetail>(cacheKey)
   if (cached) return cached
 
+  let namespaced: RawAuditList
+  let clustered: RawAuditList
   try {
-    const [namespaced, clustered] = await Promise.all([
-      complianceK8sFetch<RawAuditList>(
-        "/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports",
-      ).catch(() => ({ items: [] as RawAuditReport[] })),
-      complianceK8sFetch<RawAuditList>(
-        "/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports",
-      ).catch(() => ({ items: [] as RawAuditReport[] })),
+    ;[namespaced, clustered] = await Promise.all([
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports"),
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports"),
     ])
-
-    const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
-    const item = allItems.find((i) => {
-      const rName = resolveRbacRoleName(i)
-      const rNamespace = i.metadata.namespace ?? ""
-      return rNamespace === namespace && rName === name
-    })
-    if (!item) return null
-
-    const { row, matcher } = classifyRbacAuditItem(item)
-    const detail: RbacAuditDetail = {
-      ...row,
-      checks: mapChecks(item.report.checks ?? [], matcher),
-    }
-    await cacheSet(cacheKey, detail, cacheTtl("complianceRbacAuditDetail"))
-    return detail
   } catch (err) {
-    console.warn("[compliance] getRbacAuditDetail failed:", err instanceof Error ? err.message : err)
-    return null
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn("[compliance] getRbacAuditDetail failed:", msg)
+    throw new ComplianceDataUnavailableError("rbac", msg)
   }
+
+  const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
+  const item = allItems.find((i) => {
+    const rName = resolveRbacRoleName(i)
+    const rNamespace = i.metadata.namespace ?? ""
+    return rNamespace === namespace && rName === name
+  })
+  if (!item) return null
+
+  const { row, matcher } = classifyRbacAuditItem(item)
+  const detail: RbacAuditDetail = {
+    ...row,
+    checks: mapChecks(item.report.checks ?? [], matcher),
+  }
+  await cacheSet(cacheKey, detail, cacheTtl("complianceRbacAuditDetail"))
+  return detail
 }
 
 // --- getInfraAuditList ---
+
+interface InfraAuditListWithMeta {
+  rows: InfraAuditRow[]
+  lastUpdated: string | null
+  oldestUpdated: string | null
+}
+
+async function fetchInfraAuditListWithMeta(): Promise<InfraAuditListWithMeta> {
+  let namespaced: RawAuditList
+  let clustered: RawAuditList
+  try {
+    ;[namespaced, clustered] = await Promise.all([
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports"),
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports"),
+    ])
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn("[compliance] getInfraAuditList failed:", msg)
+    throw new ComplianceDataUnavailableError("infra", msg)
+  }
+
+  const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
+  const rows: InfraAuditRow[] = allItems.map((item) => classifyInfraAuditItem(item).row)
+  const { newest, oldest } = extractTimestampRange(allItems)
+  return { rows, lastUpdated: newest, oldestUpdated: oldest }
+}
 
 export async function getInfraAuditList(): Promise<InfraAuditRow[]> {
   const cacheKey = cacheKeys.complianceInfraAuditList()
   const cached = await cacheGet<InfraAuditRow[]>(cacheKey)
   if (cached) return cached
 
-  try {
-    const [namespaced, clustered] = await Promise.all([
-      complianceK8sFetch<RawAuditList>(
-        "/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports",
-      ).catch(() => ({ items: [] as RawAuditReport[] })),
-      complianceK8sFetch<RawAuditList>(
-        "/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports",
-      ).catch(() => ({ items: [] as RawAuditReport[] })),
-    ])
-
-    const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
-    const rows: InfraAuditRow[] = allItems.map((item) => classifyInfraAuditItem(item).row)
-    await cacheSet(cacheKey, rows, cacheTtl("complianceInfraAuditList"))
-    return rows
-  } catch (err) {
-    console.warn("[compliance] getInfraAuditList failed:", err instanceof Error ? err.message : err)
-    return []
-  }
+  const meta = await fetchInfraAuditListWithMeta()
+  await cacheSet(cacheKey, meta.rows, cacheTtl("complianceInfraAuditList"))
+  return meta.rows
 }
 
 // --- getInfraAuditDetail ---
@@ -912,36 +1037,35 @@ export async function getInfraAuditDetail(node: string): Promise<InfraAuditDetai
   const cached = await cacheGet<InfraAuditDetail>(cacheKey)
   if (cached) return cached
 
+  let namespaced: RawAuditList
+  let clustered: RawAuditList
   try {
-    const [namespaced, clustered] = await Promise.all([
-      complianceK8sFetch<RawAuditList>(
-        "/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports",
-      ).catch(() => ({ items: [] as RawAuditReport[] })),
-      complianceK8sFetch<RawAuditList>(
-        "/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports",
-      ).catch(() => ({ items: [] as RawAuditReport[] })),
+    ;[namespaced, clustered] = await Promise.all([
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports"),
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports"),
     ])
-
-    const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
-    const item = allItems.find((i) => {
-      const labels = i.metadata.labels ?? {}
-      const rName = labels["trivy-operator.resource.name"] ?? i.metadata.name
-      return rName === node
-    })
-    if (!item) return null
-
-    const { row, matcher } = classifyInfraAuditItem(item)
-    const checks = mapChecks(item.report.checks ?? [], matcher)
-    const detail: InfraAuditDetail = {
-      ...row,
-      checks,
-    }
-    await cacheSet(cacheKey, detail, cacheTtl("complianceInfraAuditDetail"))
-    return detail
   } catch (err) {
-    console.warn("[compliance] getInfraAuditDetail failed:", err instanceof Error ? err.message : err)
-    return null
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn("[compliance] getInfraAuditDetail failed:", msg)
+    throw new ComplianceDataUnavailableError("infra", msg)
   }
+
+  const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
+  const item = allItems.find((i) => {
+    const labels = i.metadata.labels ?? {}
+    const rName = labels["trivy-operator.resource.name"] ?? i.metadata.name
+    return rName === node
+  })
+  if (!item) return null
+
+  const { row, matcher } = classifyInfraAuditItem(item)
+  const checks = mapChecks(item.report.checks ?? [], matcher)
+  const detail: InfraAuditDetail = {
+    ...row,
+    checks,
+  }
+  await cacheSet(cacheKey, detail, cacheTtl("complianceInfraAuditDetail"))
+  return detail
 }
 
 // --- Framework target parsing & check-level acceptance ---
@@ -1059,6 +1183,12 @@ function scopeForAcceptedClass(acceptedClass: AcceptedClass | undefined): Framew
   return acceptedClass === "upstream" ? "upstream" : "accept"
 }
 
+function resolveFrameworkAcceptedScope(scopes: Set<FrameworkAcceptedToken>): AcceptedScope | undefined {
+  if (scopes.size === 0) return undefined
+  if (scopes.size === 1) return scopes.values().next().value
+  return "mixed"
+}
+
 function classifyFrameworkCheck(
   check: { checkID?: string; target?: string },
   rsMap: Map<string, ReplicaSetSummary> | null,
@@ -1109,10 +1239,355 @@ function classifyFrameworkCheck(
   return { status: "actionable" }
 }
 
-function resolveFrameworkAcceptedScope(scopes: Set<FrameworkAcceptedToken>): AcceptedScope | undefined {
-  if (scopes.size === 0) return undefined
-  if (scopes.size === 1) return scopes.values().next().value
-  return "mixed"
+const CONTROL_PLANE_CHECK_IDS = new Set([
+  ...Array.from({ length: 47 }, (_, i) => `KCV${String(i + 1).padStart(4, "0")}`),
+  "KSV037",
+])
+const MASTER_NODE_CHECK_IDS = new Set(
+  Array.from({ length: 21 }, (_, i) => `KCV${String(i + 48).padStart(4, "0")}`),
+)
+const WORKER_NODE_CHECK_IDS = new Set(
+  Array.from({ length: 24 }, (_, i) => `KCV${String(i + 69).padStart(4, "0")}`),
+)
+const MASTER_COMMAND_RE = /^CMD-00(?:0[1-9]|1[0-9]|2[01]|4[6-9]|50)$/
+const WORKER_COMMAND_RE = /^CMD-00(?:2[2-9]|3[0-9]|4[0-5])$/
+const BINDING_CONFIG_AUDIT_CHECK_IDS = new Set(["KSV111"])
+const RBAC_ASSESSMENT_CHECK_IDS = new Set([
+  ...Array.from({ length: 16 }, (_, i) => `KSV${String(i + 41).padStart(3, "0")}`),
+  "KSV113",
+  "KSV114",
+])
+
+interface FrameworkEvalContext {
+  kubeSystemExcluded: boolean | "unknown"
+  supportedConfigAuditKinds: ReadonlySet<string> | "unknown"
+  hasRoleBindingReports: boolean
+  configAuditScannerEnabled: boolean | "unknown"
+  rbacScannerEnabled: boolean | "unknown"
+  infraScannerEnabled: boolean | "unknown"
+  hasMasterNodes: boolean | "unknown"
+  hasWorkerNodes: boolean | "unknown"
+  hasConfigAuditReports: boolean | "unknown"
+  hasRbacReports: boolean | "unknown"
+  hasInfraReports: boolean | "unknown"
+  hasHttpError: boolean
+}
+
+function parseCsvSet(raw: string | undefined): Set<string> {
+  if (!raw) return new Set()
+  return new Set(
+    raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  )
+}
+
+function isControlPlaneNodeLabels(labels: Record<string, string> | undefined): boolean {
+  if (!labels) return false
+  return (
+    Object.hasOwn(labels, "node-role.kubernetes.io/control-plane") ||
+    Object.hasOwn(labels, "node-role.kubernetes.io/master")
+  )
+}
+
+function buildFrameworkEvalContext(opts: {
+  configRes: TryFetchResult<RawAuditList>
+  rbacNsRes: TryFetchResult<RawAuditList>
+  rbacClusterRes: TryFetchResult<RawAuditList>
+  infraNsRes: TryFetchResult<RawAuditList>
+  infraClusterRes: TryFetchResult<RawAuditList>
+  nodesRes: TryFetchResult<RawNodeList>
+  operatorDeployRes: TryFetchResult<RawDeployment>
+  trivyConfigRes: TryFetchResult<RawConfigMap>
+  rsOk: boolean
+}): FrameworkEvalContext {
+  const {
+    configRes,
+    rbacNsRes,
+    rbacClusterRes,
+    infraNsRes,
+    infraClusterRes,
+    nodesRes,
+    operatorDeployRes,
+    trivyConfigRes,
+    rsOk,
+  } = opts
+
+  const hasHttpError =
+    !rsOk ||
+    !configRes.ok ||
+    !rbacNsRes.ok ||
+    !rbacClusterRes.ok ||
+    !infraNsRes.ok ||
+    !infraClusterRes.ok ||
+    !nodesRes.ok ||
+    !operatorDeployRes.ok ||
+    !trivyConfigRes.ok
+
+  const configItems = configRes.ok ? configRes.data.items ?? [] : []
+  const rbacItems = [
+    ...(rbacNsRes.ok ? rbacNsRes.data.items ?? [] : []),
+    ...(rbacClusterRes.ok ? rbacClusterRes.data.items ?? [] : []),
+  ]
+  const infraItems = [
+    ...(infraNsRes.ok ? infraNsRes.data.items ?? [] : []),
+    ...(infraClusterRes.ok ? infraClusterRes.data.items ?? [] : []),
+  ]
+
+  // Derive trivy-operator effective env config (Deployments get/list is in current RBAC).
+  const envList = operatorDeployRes.ok
+    ? operatorDeployRes.data.spec?.template?.spec?.containers?.[0]?.env
+    : undefined
+  const operatorEnv = envList
+    ? new Map(envList.filter((e) => typeof e.name === "string").map((e) => [e.name!, e.value ?? ""]))
+    : null
+
+  let kubeSystemExcluded: boolean | "unknown" = "unknown"
+  if (operatorEnv) {
+    const excluded = parseCsvSet(operatorEnv.get("OPERATOR_EXCLUDE_NAMESPACES"))
+    const targeted = parseCsvSet(operatorEnv.get("OPERATOR_TARGET_NAMESPACES"))
+    kubeSystemExcluded =
+      excluded.has("kube-system") || (targeted.size > 0 && !targeted.has("kube-system"))
+  } else if (configRes.ok) {
+    const hasKubeSystemReport = configItems.some((i) => i.metadata.namespace === "kube-system")
+    kubeSystemExcluded = hasKubeSystemReport ? false : "unknown"
+  }
+
+  const parseScannerFlag = (envKey: string): boolean | "unknown" => {
+    if (!operatorEnv) return "unknown"
+    const v = operatorEnv.get(envKey)
+    if (v === "false") return false
+    if (v === "true") return true
+    return "unknown"
+  }
+
+  // Derive supportedConfigAuditKinds from trivy-operator-trivy-config ConfigMap (current RBAC).
+  const rawSupportedKinds = trivyConfigRes.ok
+    ? trivyConfigRes.data.data?.["trivy.supportedConfigAuditKinds"]
+    : undefined
+  const supportedConfigAuditKinds: ReadonlySet<string> | "unknown" =
+    typeof rawSupportedKinds === "string" && rawSupportedKinds.trim().length > 0
+      ? new Set(
+          rawSupportedKinds
+            .split(",")
+            .map((s) => s.trim().toLowerCase())
+            .filter(Boolean),
+        )
+      : "unknown"
+
+  const hasRoleBindingReports = configItems.some((i) => {
+    const kind = i.metadata.labels?.["trivy-operator.resource.kind"] ?? ""
+    return kind === "RoleBinding" || kind === "ClusterRoleBinding"
+  })
+
+  // Derive node role presence from /api/v1/nodes (current RBAC).
+  let hasMasterNodes: boolean | "unknown" = "unknown"
+  let hasWorkerNodes: boolean | "unknown" = "unknown"
+  if (nodesRes.ok && (nodesRes.data.items?.length ?? 0) > 0) {
+    const nodes = nodesRes.data.items!
+    const masterCount = nodes.filter((n) => isControlPlaneNodeLabels(n.metadata?.labels)).length
+    const workerCount = nodes.length - masterCount
+    hasMasterNodes = masterCount > 0
+    hasWorkerNodes = workerCount > 0
+  }
+
+  return {
+    kubeSystemExcluded,
+    supportedConfigAuditKinds,
+    hasRoleBindingReports,
+    configAuditScannerEnabled: parseScannerFlag("OPERATOR_CONFIG_AUDIT_SCANNER_ENABLED"),
+    rbacScannerEnabled: parseScannerFlag("OPERATOR_RBAC_ASSESSMENT_SCANNER_ENABLED"),
+    infraScannerEnabled: parseScannerFlag("OPERATOR_INFRA_ASSESSMENT_SCANNER_ENABLED"),
+    hasMasterNodes,
+    hasWorkerNodes,
+    hasConfigAuditReports: configRes.ok ? configItems.length > 0 : "unknown",
+    hasRbacReports: rbacNsRes.ok && rbacClusterRes.ok ? rbacItems.length > 0 : "unknown",
+    hasInfraReports: infraNsRes.ok && infraClusterRes.ok ? infraItems.length > 0 : "unknown",
+    hasHttpError,
+  }
+}
+
+function classifyNonFailingControl(
+  resultControl: NonNullable<NonNullable<RawComplianceReport["status"]>["detailReport"]>["results"] extends Array<infer R> | undefined ? R : never,
+  specControl: RawSpecControl | undefined,
+  evalCtx: FrameworkEvalContext,
+  specHasAutomatedChecks: boolean,
+): {
+  evaluationState: ControlEvaluationState
+  notEvaluatedReason?: ControlNotEvaluatedReason
+  notEvaluatedDetail?: string
+} {
+  const checks = resultControl.checks ?? []
+  // Explicit passing check with a real non-empty checkID is direct evidence of evaluation.
+  const hasExplicitPassCheck = checks.some(
+    (k) => k.success === true && typeof k.checkID === "string" && k.checkID.trim().length > 0,
+  )
+  if (hasExplicitPassCheck) {
+    return { evaluationState: "passed" }
+  }
+
+  if (checks.length === 0) {
+    return {
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "empty_checks",
+      notEvaluatedDetail: "detailReport.results[].checks is empty",
+    }
+  }
+
+  if (!specControl) {
+    return {
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "coverage_unknown",
+      notEvaluatedDetail: "spec.compliance.controls[] metadata unavailable",
+    }
+  }
+
+  // Kubernetes YAML serialization (`omitempty`) drops empty `checks` on manual controls
+  // (e.g. CIS 3.1.1, NSA 3.0). When other controls in the same benchmark carry spec checks
+  // and this control has neither checks nor commands, classify it as `manual` rather than
+  // `coverage_unknown`; if no control carries `spec.checks` (trimmed fixture), fail closed.
+  if (!Array.isArray(specControl.checks)) {
+    const hasCommands = Array.isArray(specControl.commands) && specControl.commands.length > 0
+    if (specHasAutomatedChecks && !hasCommands) {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "manual",
+        notEvaluatedDetail: "no automated Trivy check IDs in spec",
+      }
+    }
+    return {
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "coverage_unknown",
+      notEvaluatedDetail: "spec.compliance.controls[].checks metadata unavailable",
+    }
+  }
+
+  if (specControl.checks.length === 0) {
+    return {
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "manual",
+      notEvaluatedDetail: "no automated Trivy check IDs in spec",
+    }
+  }
+
+  const rawIds = specControl.checks.map((c) => (c.id ?? "").trim()).filter(Boolean)
+  if (rawIds.length === 0) {
+    return {
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "manual",
+      notEvaluatedDetail: "no automated Trivy check IDs in spec",
+    }
+  }
+
+  // Case (c): lower-case check IDs in spec (e.g. avd-ksv-*) never match Trivy report IDs.
+  const nonUpperIds = rawIds.filter((id) => id !== id.toUpperCase())
+  if (nonUpperIds.length > 0) {
+    return {
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "unlinked_check_id",
+      notEvaluatedDetail: nonUpperIds.join(", "),
+    }
+  }
+
+  const cmdIds = (specControl.commands ?? []).map((c) => (c.id ?? "").trim().toUpperCase()).filter(Boolean)
+  const normIds = rawIds.map(normalizeCheckId)
+
+  // Check node-level commands/IDs (Case b).
+  const isWorkerNodeCtrl =
+    cmdIds.some((id) => WORKER_COMMAND_RE.test(id)) || normIds.some((id) => WORKER_NODE_CHECK_IDS.has(id))
+  const isMasterNodeCtrl =
+    cmdIds.some((id) => MASTER_COMMAND_RE.test(id)) || normIds.some((id) => MASTER_NODE_CHECK_IDS.has(id))
+
+  if (isWorkerNodeCtrl) {
+    if (evalCtx.infraScannerEnabled === false) {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "infraAssessmentScannerEnabled=false" }
+    }
+    if (evalCtx.hasWorkerNodes === false) {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type", notEvaluatedDetail: "no worker nodes on cluster" }
+    }
+    if (evalCtx.hasWorkerNodes === "unknown" || evalCtx.hasInfraReports !== true) {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "worker node / infra report coverage unknown" }
+    }
+    return { evaluationState: "passed" }
+  }
+
+  if (isMasterNodeCtrl) {
+    if (evalCtx.infraScannerEnabled === false) {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "infraAssessmentScannerEnabled=false" }
+    }
+    if (evalCtx.hasMasterNodes === false) {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type", notEvaluatedDetail: "no control-plane nodes on cluster" }
+    }
+    if (evalCtx.hasMasterNodes === "unknown" || evalCtx.hasInfraReports !== true) {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "control-plane node / infra report coverage unknown" }
+    }
+    return { evaluationState: "passed" }
+  }
+
+  // Case (a): excluded namespaces (kube-system control-plane static pods KCV0001..0047 & KSV037).
+  const needsKubeSystem = normIds.some((id) => CONTROL_PLANE_CHECK_IDS.has(id))
+  if (needsKubeSystem) {
+    if (evalCtx.configAuditScannerEnabled === false) {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "configAuditScannerEnabled=false" }
+    }
+    if (evalCtx.kubeSystemExcluded === true) {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "excluded_namespace", notEvaluatedDetail: "kube-system excluded by OPERATOR_EXCLUDE_NAMESPACES" }
+    }
+    if (evalCtx.kubeSystemExcluded === "unknown" || evalCtx.hasConfigAuditReports === "unknown") {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "kube-system ConfigAudit coverage unknown" }
+    }
+    return { evaluationState: "passed" }
+  }
+
+  // Case (a): unsupported ConfigAudit resource kinds (e.g. RoleBinding / ClusterRoleBinding for KSV111).
+  const needsBindings = normIds.some((id) => BINDING_CONFIG_AUDIT_CHECK_IDS.has(id))
+  if (needsBindings) {
+    if (evalCtx.configAuditScannerEnabled === false) {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "configAuditScannerEnabled=false" }
+    }
+    if (evalCtx.supportedConfigAuditKinds !== "unknown") {
+      const hasBindingKind =
+        evalCtx.supportedConfigAuditKinds.has("rolebinding") ||
+        evalCtx.supportedConfigAuditKinds.has("clusterrolebinding")
+      if (!hasBindingKind) {
+        return {
+          evaluationState: "not_evaluated",
+          notEvaluatedReason: "unsupported_kind",
+          notEvaluatedDetail: "RoleBinding/ClusterRoleBinding omitted from trivy.supportedConfigAuditKinds",
+        }
+      }
+      return { evaluationState: "passed" }
+    }
+    if (!evalCtx.hasRoleBindingReports) {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "unsupported_kind",
+        notEvaluatedDetail: "no RoleBinding/ClusterRoleBinding ConfigAuditReport present (config unknown)",
+      }
+    }
+    return { evaluationState: "passed" }
+  }
+
+  // Remaining RBAC checks (Role / ClusterRole) vs ConfigAudit checks (Workload/NetworkPolicy/LimitRange/ResourceQuota).
+  const isRbacCtrl = normIds.every((id) => RBAC_ASSESSMENT_CHECK_IDS.has(id))
+  if (isRbacCtrl) {
+    if (evalCtx.rbacScannerEnabled === false) {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "rbacAssessmentScannerEnabled=false" }
+    }
+    if (evalCtx.hasRbacReports !== true) {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "RBAC assessment report coverage unknown" }
+    }
+    return { evaluationState: "passed" }
+  }
+
+  if (evalCtx.configAuditScannerEnabled === false) {
+    return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "configAuditScannerEnabled=false" }
+  }
+  if (evalCtx.hasConfigAuditReports !== true) {
+    return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "ConfigAudit report coverage unknown" }
+  }
+  return { evaluationState: "passed" }
 }
 
 function buildComplianceFrameworkData(
@@ -1120,15 +1595,18 @@ function buildComplianceFrameworkData(
   rsMap: Map<string, ReplicaSetSummary> | null,
   reportTargetMap: ReadonlyMap<string, ParsedComplianceTarget>,
   missingReplicaSets: Set<string>,
+  evalCtx: FrameworkEvalContext,
 ): { summary: ComplianceFramework; detail: ComplianceFrameworkDetail } {
   const passCount = item.status?.summary?.passCount ?? 0
   const failCount = item.status?.summary?.failCount ?? 0
 
   // status.detailReport.results 가 있으면 per-control 사용, 없으면 spec.compliance.controls 폴백.
-  // (Trivy reportType=summary 이면 detailReport 비어있음 — 정의만 표시, pass/fail은 0으로.
-  //  reportType=all 이면 results[].checks[].success 로 컨트롤별 pass/fail 집계.)
+  // (Trivy reportType=summary 이면 detailReport 비어있음 — 모든 컨트롤을 not_evaluated 처리.
+  //  reportType=all 이면 results[].checks[].success 및 spec/cluster coverage로 3-상태 집계.)
   const detailControls = item.status?.detailReport?.results ?? []
   const specControls = item.spec.compliance.controls ?? []
+  const specControlMap = new Map(specControls.map((sc) => [sc.id, sc]))
+  const specHasAutomatedChecks = specControls.some((sc) => Array.isArray(sc.checks) && sc.checks.length > 0)
 
   let controls: ComplianceControl[]
   if (detailControls.length > 0) {
@@ -1138,6 +1616,7 @@ function buildComplianceFrameworkData(
       let ctrlFail = 0
       let actionableFailCount = 0
       let acceptedFailCount = 0
+      let droppedFailCount = 0
       const scopes = new Set<FrameworkAcceptedToken>()
 
       for (const k of checks) {
@@ -1152,20 +1631,43 @@ function buildComplianceFrameworkData(
           scopes.add(disp.scope)
         } else if (disp.status === "actionable") {
           actionableFailCount++
+        } else if (disp.status === "dropped") {
+          droppedFailCount++
         }
       }
 
-      const accepted = ctrlFail > 0 && actionableFailCount === 0 && acceptedFailCount > 0
+      if (ctrlFail > 0) {
+        const accepted = ctrlFail > 0 && actionableFailCount === 0 && acceptedFailCount > 0
+        return {
+          id: c.id,
+          name: c.name,
+          severity: mapSeverity(c.severity),
+          passCount: ctrlPass,
+          failCount: ctrlFail,
+          actionableFailCount,
+          acceptedFailCount,
+          droppedFailCount,
+          evaluationState: "failed" as const,
+          accepted,
+          ...(accepted ? { acceptedScope: resolveFrameworkAcceptedScope(scopes) } : {}),
+          description: c.description,
+        }
+      }
+
+      const evalOutcome = classifyNonFailingControl(c, specControlMap.get(c.id), evalCtx, specHasAutomatedChecks)
       return {
         id: c.id,
         name: c.name,
         severity: mapSeverity(c.severity),
-        passCount: ctrlPass,
-        failCount: ctrlFail,
-        actionableFailCount,
-        acceptedFailCount,
-        accepted,
-        ...(accepted ? { acceptedScope: resolveFrameworkAcceptedScope(scopes) } : {}),
+        passCount: evalOutcome.evaluationState === "passed" ? ctrlPass : 0,
+        failCount: 0,
+        actionableFailCount: 0,
+        acceptedFailCount: 0,
+        droppedFailCount: 0,
+        evaluationState: evalOutcome.evaluationState,
+        ...(evalOutcome.notEvaluatedReason ? { notEvaluatedReason: evalOutcome.notEvaluatedReason } : {}),
+        ...(evalOutcome.notEvaluatedDetail ? { notEvaluatedDetail: evalOutcome.notEvaluatedDetail } : {}),
+        accepted: false,
         description: c.description,
       }
     })
@@ -1178,6 +1680,10 @@ function buildComplianceFrameworkData(
       failCount: 0,
       actionableFailCount: 0,
       acceptedFailCount: 0,
+      droppedFailCount: 0,
+      evaluationState: "not_evaluated" as const,
+      notEvaluatedReason: "summary_only" as const,
+      notEvaluatedDetail: "ClusterComplianceReport detailReport.results absent (reportType=summary)",
       accepted: false,
       description: c.description,
     }))
@@ -1185,37 +1691,70 @@ function buildComplianceFrameworkData(
 
   let actionableFailCount: number
   let acceptedFailCount: number
+  let droppedFailCount: number
+  let droppedCheckCount: number
+  let evaluatedPassCount: number
+  let notEvaluatedCount: number
+  let unaccountedFailTotal = 0
+
+  const totalControls = specControls.length || controls.length || passCount + failCount
+
   if (detailControls.length > 0) {
     const detailFailControls = controls.filter((c) => c.failCount > 0).length
     const detailActionableFail = controls.filter((c) => (c.actionableFailCount ?? 0) > 0).length
     const detailAcceptedFail = controls.filter((c) => c.accepted === true).length
+    const detailDroppedOnlyFail = controls.filter(
+      (c) =>
+        c.failCount > 0 &&
+        (c.actionableFailCount ?? 0) === 0 &&
+        (c.acceptedFailCount ?? 0) === 0 &&
+        (c.droppedFailCount ?? 0) > 0,
+    ).length
     // Fail closed if summary.failCount exceeds failing controls present in detailReport.results.
     const unaccountedFail = Math.max(0, failCount - detailFailControls)
+    unaccountedFailTotal = unaccountedFail
     actionableFailCount = detailActionableFail + unaccountedFail
     acceptedFailCount = detailAcceptedFail
+    droppedFailCount = detailDroppedOnlyFail
+    droppedCheckCount = controls.reduce((acc, c) => acc + (c.droppedFailCount ?? 0), 0)
+    evaluatedPassCount = controls.filter((c) => c.evaluationState === "passed").length
+    notEvaluatedCount = controls.filter((c) => c.evaluationState === "not_evaluated").length
   } else {
-    // reportType=summary lacks per-check targets to verify exceptions — fail closed.
+    // reportType=summary lacks per-check targets to verify exceptions or control evaluation — fail closed.
     actionableFailCount = failCount
     acceptedFailCount = 0
+    droppedFailCount = 0
+    droppedCheckCount = 0
+    evaluatedPassCount = 0
+    notEvaluatedCount = Math.max(0, totalControls - failCount)
   }
 
-  // totalControls는 spec 정의 기준이 정확 (summary는 평가된 항목만 카운트)
-  const totalControls = specControls.length || controls.length || passCount + failCount
-  const evaluated = passCount + failCount
-  const passRate = evaluated > 0 ? passCount / evaluated : 0
-  const effectivePassRate =
-    evaluated > 0 ? Math.max(0, evaluated - actionableFailCount) / evaluated : 0
+  const passRate = totalControls > 0 ? Math.min(1, passCount / totalControls) : 0
+  const evaluatedPassRate = totalControls > 0 ? Math.min(1, evaluatedPassCount / totalControls) : 0
+  const effectiveNumerator = Math.max(0, evaluatedPassCount + acceptedFailCount + droppedFailCount - unaccountedFailTotal)
+  const effectivePassRate = totalControls > 0 ? Math.min(1, effectiveNumerator / totalControls) : 0
+  const reportTimestamp = item.status?.updateTimestamp ?? item.metadata.creationTimestamp
 
   const summary: ComplianceFramework = {
     id: item.spec.compliance.id,
     title: item.spec.compliance.title,
     passCount,
+    rawPassCount: passCount,
+    evaluatedPassCount,
+    notEvaluatedCount,
     failCount,
     actionableFailCount,
     acceptedFailCount,
+    droppedFailCount,
+    droppedCheckCount,
     totalControls,
     passRate,
+    evaluatedPassRate,
     effectivePassRate,
+    ...(evalCtx.hasHttpError || controls.some((c) => c.notEvaluatedReason === "coverage_unknown")
+      ? { coverageUnknown: true }
+      : {}),
+    ...(reportTimestamp ? { lastUpdated: reportTimestamp } : {}),
   }
   return {
     summary,
@@ -1230,29 +1769,92 @@ async function fetchFrameworkContext(): Promise<{
   list: RawComplianceList
   rsMap: Map<string, ReplicaSetSummary> | null
   reportTargetMap: Map<string, ParsedComplianceTarget>
+  evalCtx: FrameworkEvalContext
 }> {
-  const [list, rsMap, configList, rbacNs, rbacCluster] = await Promise.all([
-    complianceK8sFetch<RawComplianceList>("/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports"),
+  let list: RawComplianceList
+  try {
+    list = await complianceK8sFetch<RawComplianceList>(
+      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports",
+    )
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    throw new ComplianceDataUnavailableError("frameworks", msg)
+  }
+
+  const [
+    rsMap,
+    configRes,
+    rbacNsRes,
+    rbacClusterRes,
+    infraNsRes,
+    infraClusterRes,
+    nodesRes,
+    operatorDeployRes,
+    trivyConfigRes,
+  ] = await Promise.all([
     fetchReplicaSetMap(),
-    complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports")
-      .catch(() => ({ items: [] as RawAuditReport[] })),
-    complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports")
-      .catch(() => ({ items: [] as RawAuditReport[] })),
-    complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports")
-      .catch(() => ({ items: [] as RawAuditReport[] })),
+    tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
+    tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports"),
+    tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports"),
+    tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports"),
+    tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports"),
+    tryComplianceK8sFetch<RawNodeList>("/api/v1/nodes"),
+    tryComplianceK8sFetch<RawDeployment>("/apis/apps/v1/namespaces/security-system/deployments/trivy-operator"),
+    tryComplianceK8sFetch<RawConfigMap>("/api/v1/namespaces/security-system/configmaps/trivy-operator-trivy-config"),
   ])
+
+  const evalCtx = buildFrameworkEvalContext({
+    configRes,
+    rbacNsRes,
+    rbacClusterRes,
+    infraNsRes,
+    infraClusterRes,
+    nodesRes,
+    operatorDeployRes,
+    trivyConfigRes,
+    rsOk: rsMap !== null,
+  })
+
   return {
     list,
     rsMap,
     reportTargetMap: buildReportTargetMap(
-      configList.items ?? [],
-      rbacNs.items ?? [],
-      rbacCluster.items ?? [],
+      configRes.ok ? configRes.data.items ?? [] : [],
+      rbacNsRes.ok ? rbacNsRes.data.items ?? [] : [],
+      rbacClusterRes.ok ? rbacClusterRes.data.items ?? [] : [],
     ),
+    evalCtx,
   }
 }
 
 // --- getComplianceFrameworks ---
+
+interface FrameworksWithMeta {
+  frameworks: ComplianceFramework[]
+  lastUpdated: string | null
+  oldestUpdated: string | null
+  partial: boolean
+}
+
+async function fetchComplianceFrameworksWithMeta(): Promise<FrameworksWithMeta> {
+  const { list, rsMap, reportTargetMap, evalCtx } = await fetchFrameworkContext()
+  const missingReplicaSets = new Set<string>()
+  const frameworks: ComplianceFramework[] = (list.items ?? []).map(
+    (item) => buildComplianceFrameworkData(item, rsMap, reportTargetMap, missingReplicaSets, evalCtx).summary,
+  )
+  if (missingReplicaSets.size > 0) {
+    console.warn(
+      `[compliance] ReplicaSet(s) missing from cluster list, keeping framework checks fail-safe: ${Array.from(missingReplicaSets).join(", ")}`,
+    )
+  }
+  const { newest, oldest } = extractTimestampRange(list.items ?? [], true)
+  return {
+    frameworks,
+    lastUpdated: newest,
+    oldestUpdated: oldest,
+    partial: evalCtx.hasHttpError,
+  }
+}
 
 export async function getComplianceFrameworks(): Promise<ComplianceFramework[]> {
   const cacheKey = cacheKeys.complianceFrameworksList()
@@ -1260,21 +1862,16 @@ export async function getComplianceFrameworks(): Promise<ComplianceFramework[]> 
   if (cached) return cached
 
   try {
-    const { list, rsMap, reportTargetMap } = await fetchFrameworkContext()
-    const missingReplicaSets = new Set<string>()
-    const frameworks: ComplianceFramework[] = (list.items ?? []).map(
-      (item) => buildComplianceFrameworkData(item, rsMap, reportTargetMap, missingReplicaSets).summary,
-    )
-    if (missingReplicaSets.size > 0) {
-      console.warn(
-        `[compliance] ReplicaSet(s) missing from cluster list, keeping framework checks fail-safe: ${Array.from(missingReplicaSets).join(", ")}`,
-      )
+    const meta = await fetchComplianceFrameworksWithMeta()
+    if (!meta.partial) {
+      await cacheSet(cacheKey, meta.frameworks, cacheTtl("complianceFrameworksList"))
     }
-    await cacheSet(cacheKey, frameworks, cacheTtl("complianceFrameworksList"))
-    return frameworks
+    return meta.frameworks
   } catch (err) {
-    console.warn("[compliance] getComplianceFrameworks failed:", err instanceof Error ? err.message : err)
-    return []
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn("[compliance] getComplianceFrameworks failed:", msg)
+    if (err instanceof ComplianceDataUnavailableError) throw err
+    throw new ComplianceDataUnavailableError("frameworks", msg)
   }
 }
 
@@ -1288,22 +1885,26 @@ export async function getComplianceFrameworkDetail(
   if (cached) return cached
 
   try {
-    const { list, rsMap, reportTargetMap } = await fetchFrameworkContext()
+    const { list, rsMap, reportTargetMap, evalCtx } = await fetchFrameworkContext()
     const item = (list.items ?? []).find((i) => i.spec.compliance.id === id)
     if (!item) return null
 
     const missingReplicaSets = new Set<string>()
-    const { detail } = buildComplianceFrameworkData(item, rsMap, reportTargetMap, missingReplicaSets)
+    const { detail } = buildComplianceFrameworkData(item, rsMap, reportTargetMap, missingReplicaSets, evalCtx)
     if (missingReplicaSets.size > 0) {
       console.warn(
         `[compliance] ReplicaSet(s) missing from cluster list, keeping framework checks fail-safe: ${Array.from(missingReplicaSets).join(", ")}`,
       )
     }
-    await cacheSet(cacheKey, detail, cacheTtl("complianceFrameworksDetail"))
+    if (!evalCtx.hasHttpError) {
+      await cacheSet(cacheKey, detail, cacheTtl("complianceFrameworksDetail"))
+    }
     return detail
   } catch (err) {
-    console.warn("[compliance] getComplianceFrameworkDetail failed:", err instanceof Error ? err.message : err)
-    return null
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn("[compliance] getComplianceFrameworkDetail failed:", msg)
+    if (err instanceof ComplianceDataUnavailableError) throw err
+    throw new ComplianceDataUnavailableError("frameworks", msg)
   }
 }
 
@@ -1314,128 +1915,161 @@ export async function getComplianceSummary(): Promise<ComplianceSummary> {
   const cached = await cacheGet<ComplianceSummary>(cacheKey)
   if (cached) return cached
 
-  try {
-    const [configAuditList, rbacAuditList, infraAuditList, frameworks] = await Promise.all([
-      getConfigAuditList(),
-      getRbacAuditList(),
-      getInfraAuditList(),
-      getComplianceFrameworks(),
-    ])
+  const [carRes, rbacRes, infraRes, fwRes] = await Promise.allSettled([
+    fetchConfigAuditListWithMeta(),
+    fetchRbacAuditListWithMeta(),
+    fetchInfraAuditListWithMeta(),
+    fetchComplianceFrameworksWithMeta(),
+  ])
 
-    // Headline number reflects ACTIONABLE findings only: non-system namespace, not covered by
-    // ACCEPTED_CONFIG_AUDIT_RULES, AND Critical/High/Medium severity. LOW-severity checks stay
-    // in lowSeverityConfigAuditFailures (hygiene) and are NOT double-counted in accepted counts.
-    // System-namespace failures (all severities) and non-system accepted Critical/High/Medium
-    // failures are surfaced in acceptedSystemConfigAuditFailures rather than dropped.
-    const totalConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
-    const lowSeverityConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
-    const acceptedSystemConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
-
-    for (const row of configAuditList) {
-      if (isSystemNamespace(row.namespace)) {
-        acceptedSystemConfigAuditFailures.Critical += row.summary.Critical
-        acceptedSystemConfigAuditFailures.High += row.summary.High
-        acceptedSystemConfigAuditFailures.Medium += row.summary.Medium
-        acceptedSystemConfigAuditFailures.Low += row.summary.Low
-        continue
-      }
-      const actionable = row.actionableSummary ?? (row.accepted ? emptyCheckSummary : row.summary)
-      const accepted = row.acceptedSummary ?? (row.accepted ? row.summary : emptyCheckSummary)
-      totalConfigAuditFailures.Critical += actionable.Critical
-      totalConfigAuditFailures.High += actionable.High
-      totalConfigAuditFailures.Medium += actionable.Medium
-      lowSeverityConfigAuditFailures.Low += row.summary.Low
-      acceptedSystemConfigAuditFailures.Critical += accepted.Critical
-      acceptedSystemConfigAuditFailures.High += accepted.High
-      acceptedSystemConfigAuditFailures.Medium += accepted.Medium
-    }
-
-    // Headline RBAC number reflects ACTIONABLE findings only: excludes findings owned by K8s
-    // built-in roles, upstream controller/chart roles, and per-check reviewed exceptions on
-    // authored roles (see isAcceptedRbacRole / ACCEPTED_RBAC_RULES).
-    const totalRbacFailures: CheckSummary = { ...emptyCheckSummary }
-    const acceptedRbacFailures: CheckSummary = { ...emptyCheckSummary }
-    for (const row of rbacAuditList) {
-      const actionable = row.actionableSummary ?? (row.accepted ? emptyCheckSummary : row.summary)
-      const accepted = row.acceptedSummary ?? (row.accepted ? row.summary : emptyCheckSummary)
-      totalRbacFailures.Critical += actionable.Critical
-      totalRbacFailures.High += actionable.High
-      totalRbacFailures.Medium += actionable.Medium
-      totalRbacFailures.Low += actionable.Low
-      acceptedRbacFailures.Critical += accepted.Critical
-      acceptedRbacFailures.High += accepted.High
-      acceptedRbacFailures.Medium += accepted.Medium
-      acceptedRbacFailures.Low += accepted.Low
-    }
-    // Headline Infra number reflects ACTIONABLE findings only: excludes findings covered by
-    // reviewed node-check exceptions (see ACCEPTED_INFRA_RULES).
-    let totalInfraFailures: CheckSummary = { ...emptyCheckSummary }
-    let acceptedInfraFailures: CheckSummary = { ...emptyCheckSummary }
-    for (const row of infraAuditList) {
-      const actionable = row.actionableSummary ?? (row.accepted ? emptyCheckSummary : row.summary)
-      const accepted = row.acceptedSummary ?? (row.accepted ? row.summary : emptyCheckSummary)
-      totalInfraFailures = addSummaries(totalInfraFailures, actionable)
-      acceptedInfraFailures = addSummaries(acceptedInfraFailures, accepted)
-    }
-
-    // Derive lastUpdated from K8s timestamps via a separate fetch
-    let lastUpdated = new Date().toISOString()
-    try {
-      const [configList, rbacNs, rbacCluster, infraNs, infraCluster, ccList] = await Promise.all([
-        complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports").catch(() => ({ items: [] as RawAuditReport[] })),
-        complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports").catch(() => ({ items: [] as RawAuditReport[] })),
-        complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports").catch(() => ({ items: [] as RawAuditReport[] })),
-        complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports").catch(() => ({ items: [] as RawAuditReport[] })),
-        complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports").catch(() => ({ items: [] as RawAuditReport[] })),
-        complianceK8sFetch<RawComplianceList>("/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports").catch(() => ({ items: [] as RawComplianceReport[] })),
-      ])
-      const allTs = [
-        ...(configList.items ?? []),
-        ...(rbacNs.items ?? []),
-        ...(rbacCluster.items ?? []),
-        ...(infraNs.items ?? []),
-        ...(infraCluster.items ?? []),
-      ]
-        .map((i) => i.metadata.creationTimestamp ?? "")
-        .concat((ccList.items ?? []).map((i) => i.metadata.creationTimestamp ?? ""))
-        .filter(Boolean)
-        .sort()
-      if (allTs.length > 0) lastUpdated = allTs[allTs.length - 1]
-    } catch {
-      // lastUpdated stays as now
-    }
-
-    const result: ComplianceSummary = {
-      totalConfigAuditFailures,
-      lowSeverityConfigAuditFailures,
-      acceptedSystemConfigAuditFailures,
-      totalRbacFailures,
-      acceptedRbacFailures,
-      totalInfraFailures,
-      acceptedInfraFailures,
-      frameworks,
-      scannedWorkloads: configAuditList.length,
-      scannedRbacObjects: rbacAuditList.length,
-      scannedNodes: infraAuditList.length,
-      lastUpdated,
-    }
-    await cacheSet(cacheKey, result, cacheTtl("complianceSummary"))
-    return result
-  } catch (err) {
-    console.warn("[compliance] getComplianceSummary failed:", err instanceof Error ? err.message : err)
-    return {
-      totalConfigAuditFailures: { ...emptyCheckSummary },
-      lowSeverityConfigAuditFailures: { ...emptyCheckSummary },
-      acceptedSystemConfigAuditFailures: { ...emptyCheckSummary },
-      totalRbacFailures: { ...emptyCheckSummary },
-      acceptedRbacFailures: { ...emptyCheckSummary },
-      totalInfraFailures: { ...emptyCheckSummary },
-      acceptedInfraFailures: { ...emptyCheckSummary },
-      frameworks: [],
-      scannedWorkloads: 0,
-      scannedRbacObjects: 0,
-      scannedNodes: 0,
-      lastUpdated: new Date().toISOString(),
-    }
+  const sources: Record<ComplianceSourceKey, ComplianceSourceStatus> = {
+    configAudit:
+      carRes.status === "fulfilled"
+        ? {
+            status: "ok",
+            lastUpdated: carRes.value.lastUpdated,
+            oldestUpdated: carRes.value.oldestUpdated,
+            ...(carRes.value.partial ? { partial: true } : {}),
+          }
+        : {
+            status: "unavailable",
+            lastUpdated: null,
+            error: "K8s ConfigAuditReport list failed",
+          },
+    rbac:
+      rbacRes.status === "fulfilled"
+        ? {
+            status: "ok",
+            lastUpdated: rbacRes.value.lastUpdated,
+            oldestUpdated: rbacRes.value.oldestUpdated,
+          }
+        : {
+            status: "unavailable",
+            lastUpdated: null,
+            error: "K8s RBACAssessmentReport list failed",
+          },
+    infra:
+      infraRes.status === "fulfilled"
+        ? {
+            status: "ok",
+            lastUpdated: infraRes.value.lastUpdated,
+            oldestUpdated: infraRes.value.oldestUpdated,
+            rebuildIntervalHours: 6,
+          }
+        : {
+            status: "unavailable",
+            lastUpdated: null,
+            rebuildIntervalHours: 6,
+            error: "K8s InfraAssessmentReport list failed",
+          },
+    frameworks:
+      fwRes.status === "fulfilled"
+        ? {
+            status: "ok",
+            lastUpdated: fwRes.value.lastUpdated,
+            oldestUpdated: fwRes.value.oldestUpdated,
+            rebuildIntervalHours: 6,
+            ...(fwRes.value.partial ? { partial: true } : {}),
+          }
+        : {
+            status: "unavailable",
+            lastUpdated: null,
+            rebuildIntervalHours: 6,
+            error: "K8s ClusterComplianceReport list failed",
+          },
   }
+
+  const configAuditList = carRes.status === "fulfilled" ? carRes.value.rows : []
+  const rbacAuditList = rbacRes.status === "fulfilled" ? rbacRes.value.rows : []
+  const infraAuditList = infraRes.status === "fulfilled" ? infraRes.value.rows : []
+  const frameworks = fwRes.status === "fulfilled" ? fwRes.value.frameworks : []
+
+  // Headline number reflects ACTIONABLE (unaccepted MEDIUM+) findings only: non-system namespace,
+  // not covered by ACCEPTED_CONFIG_AUDIT_RULES, AND Critical/High/Medium severity.
+  // Non-system LOW checks are split into unacceptedLowConfigAuditFailures (no rule) vs
+  // lowSeverityConfigAuditFailures (accepted hygiene) without double-counting.
+  const totalConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
+  const unacceptedLowConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
+  const lowSeverityConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
+  const acceptedSystemConfigAuditFailures: CheckSummary = { ...emptyCheckSummary }
+
+  for (const row of configAuditList) {
+    if (isSystemNamespace(row.namespace)) {
+      acceptedSystemConfigAuditFailures.Critical += row.summary.Critical
+      acceptedSystemConfigAuditFailures.High += row.summary.High
+      acceptedSystemConfigAuditFailures.Medium += row.summary.Medium
+      acceptedSystemConfigAuditFailures.Low += row.summary.Low
+      continue
+    }
+    const actionable = row.actionableSummary ?? (row.accepted ? emptyCheckSummary : row.summary)
+    const accepted = row.acceptedSummary ?? (row.accepted ? row.summary : emptyCheckSummary)
+    totalConfigAuditFailures.Critical += actionable.Critical
+    totalConfigAuditFailures.High += actionable.High
+    totalConfigAuditFailures.Medium += actionable.Medium
+    unacceptedLowConfigAuditFailures.Low += actionable.Low
+    lowSeverityConfigAuditFailures.Low += accepted.Low
+    acceptedSystemConfigAuditFailures.Critical += accepted.Critical
+    acceptedSystemConfigAuditFailures.High += accepted.High
+    acceptedSystemConfigAuditFailures.Medium += accepted.Medium
+  }
+
+  const totalRbacFailures: CheckSummary = { ...emptyCheckSummary }
+  const acceptedRbacFailures: CheckSummary = { ...emptyCheckSummary }
+  for (const row of rbacAuditList) {
+    const actionable = row.actionableSummary ?? (row.accepted ? emptyCheckSummary : row.summary)
+    const accepted = row.acceptedSummary ?? (row.accepted ? row.summary : emptyCheckSummary)
+    totalRbacFailures.Critical += actionable.Critical
+    totalRbacFailures.High += actionable.High
+    totalRbacFailures.Medium += actionable.Medium
+    totalRbacFailures.Low += actionable.Low
+    acceptedRbacFailures.Critical += accepted.Critical
+    acceptedRbacFailures.High += accepted.High
+    acceptedRbacFailures.Medium += accepted.Medium
+    acceptedRbacFailures.Low += accepted.Low
+  }
+
+  let totalInfraFailures: CheckSummary = { ...emptyCheckSummary }
+  let acceptedInfraFailures: CheckSummary = { ...emptyCheckSummary }
+  for (const row of infraAuditList) {
+    const actionable = row.actionableSummary ?? (row.accepted ? emptyCheckSummary : row.summary)
+    const accepted = row.acceptedSummary ?? (row.accepted ? row.summary : emptyCheckSummary)
+    totalInfraFailures = addSummaries(totalInfraFailures, actionable)
+    acceptedInfraFailures = addSummaries(acceptedInfraFailures, accepted)
+  }
+
+  const sourceTimestamps = Object.values(sources)
+    .map((s) => s.lastUpdated ?? "")
+    .filter(Boolean)
+    .sort()
+  const lastUpdated = sourceTimestamps.length > 0 ? sourceTimestamps[sourceTimestamps.length - 1] : ""
+
+  const dataUnavailable = Object.values(sources).some((s) => s.status === "unavailable")
+  const hasPartial = Object.values(sources).some((s) => Boolean(s.partial))
+
+  const result: ComplianceSummary = {
+    totalConfigAuditFailures,
+    unacceptedLowConfigAuditFailures,
+    lowSeverityConfigAuditFailures,
+    acceptedSystemConfigAuditFailures,
+    droppedConfigAuditReports: carRes.status === "fulfilled" ? carRes.value.droppedCount : 0,
+    droppedConfigAuditFailures:
+      carRes.status === "fulfilled" ? carRes.value.droppedSummary : { ...emptyCheckSummary },
+    totalRbacFailures,
+    acceptedRbacFailures,
+    totalInfraFailures,
+    acceptedInfraFailures,
+    frameworks,
+    scannedWorkloads: configAuditList.length,
+    scannedRbacObjects: rbacAuditList.length,
+    scannedNodes: infraAuditList.length,
+    lastUpdated,
+    sources,
+    dataUnavailable,
+  }
+
+  // Never cache failed or partial results as a valid snapshot (cache-keys contract: cachesPartial=false).
+  if (!dataUnavailable && !hasPartial) {
+    await cacheSet(cacheKey, result, cacheTtl("complianceSummary"))
+  }
+  return result
 }

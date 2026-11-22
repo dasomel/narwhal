@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
+import { fetchComplianceJson } from "./fetch-json"
 import type { ConfigAuditRow, ConfigAuditDetail, Severity } from "@/types/compliance"
 
 const PAGE_SIZE = 20
@@ -76,12 +77,12 @@ export function ExpandedConfigPanel({
   const t = useT()
   const locale = useLocale()
 
-  const { data: detail, isLoading } = useQuery<ConfigAuditDetail>({
+  const { data: detail, isLoading, isError, refetch } = useQuery<ConfigAuditDetail>({
     queryKey: ["compliance-config-audit-detail", namespace, name],
     queryFn: () =>
-      fetch(
-        `/api/compliance/config-audit?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}`
-      ).then((r) => r.json()),
+      fetchComplianceJson<ConfigAuditDetail>(
+        `/api/compliance/config-audit?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}`,
+      ),
     enabled: true,
     staleTime: 60_000,
   })
@@ -103,6 +104,8 @@ export function ExpandedConfigPanel({
     <div className="px-6 py-4 bg-muted/10 border-t border-dashed">
       {isLoading ? (
         <span className="text-sm text-muted-foreground animate-pulse">{t("common.loading")}</span>
+      ) : isError ? (
+        <DataState state="unavailable" variant="inline" onRetry={() => { void refetch() }} />
       ) : detail ? (
         <div className="space-y-3">
           {top5Failed.length === 0 ? (
@@ -182,7 +185,7 @@ export function ConfigAuditTable() {
 
   const { data: rows = [], isLoading, isError, refetch } = useQuery<ConfigAuditRow[]>({
     queryKey: ["compliance-config-audit", severity, namespace],
-    queryFn: () => fetch(`/api/compliance/config-audit?${queryParams}`).then((r) => r.json()),
+    queryFn: () => fetchComplianceJson<ConfigAuditRow[]>(`/api/compliance/config-audit?${queryParams}`),
     staleTime: 60_000,
   })
 
@@ -191,11 +194,12 @@ export function ConfigAuditTable() {
     [rows]
   )
 
-  // Three-tier split: accepted (system-namespace or all non-LOW checks covered by reviewed
-  // allowlist) takes priority; remaining rows with actionable Critical/High/Medium count as
-  // actionable, and LOW-only non-system rows are broken out as hygiene.
-  const { actionableCount, lowSeverityCount, acceptedCount } = useMemo(() => {
+  // Four-tier split: accepted (system-namespace or all non-LOW checks covered by reviewed
+  // allowlist), actionable (unaccepted Critical/High/Medium), unaccepted LOW (no allowlist rule),
+  // and accepted LOW hygiene.
+  const { actionableCount, unacceptedLowCount, lowSeverityCount, acceptedCount } = useMemo(() => {
     let actionableCount = 0
+    let unacceptedLowCount = 0
     let lowSeverityCount = 0
     let acceptedCount = 0
     for (const r of rows) {
@@ -208,9 +212,10 @@ export function ConfigAuditTable() {
       const actionable = r.actionableSummary ?? r.summary
       const hasActionableSeverity = actionable.Critical + actionable.High + actionable.Medium > 0
       if (hasActionableSeverity) actionableCount++
+      else if (actionable.Low > 0) unacceptedLowCount++
       else if (r.summary.Low > 0) lowSeverityCount++
     }
-    return { actionableCount, lowSeverityCount, acceptedCount }
+    return { actionableCount, unacceptedLowCount, lowSeverityCount, acceptedCount }
   }, [rows])
 
   const filtered = useMemo(() => {
@@ -263,13 +268,14 @@ export function ConfigAuditTable() {
 
   return (
     <>
-      {(actionableCount > 0 || lowSeverityCount > 0 || acceptedCount > 0) && (
+      {(actionableCount > 0 || unacceptedLowCount > 0 || lowSeverityCount > 0 || acceptedCount > 0) && (
         <p
           className="text-xs text-muted-foreground mb-2"
-          title={`${t("compliance.table.lowSeverityHint")} · ${t("compliance.table.acceptedHint")}`}
+          title={`${t("compliance.table.unacceptedLowHint")} · ${t("compliance.table.lowSeverityHint")} · ${t("compliance.table.acceptedHint")}`}
         >
           {t("compliance.table.actionableSummary", {
             actionable: String(actionableCount),
+            unacceptedLow: String(unacceptedLowCount),
             low: String(lowSeverityCount),
             accepted: String(acceptedCount),
           })}
@@ -366,13 +372,23 @@ export function ConfigAuditTable() {
                             </Badge>
                           )}
                           {!row.accepted && row.summary.Critical + row.summary.High + row.summary.Medium === 0 && row.summary.Low > 0 && (
-                            <Badge
-                              variant="outline"
-                              className="ml-2 text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
-                              title={t("compliance.table.lowSeverityHint")}
-                            >
-                              {t("compliance.table.lowSeverity")}
-                            </Badge>
+                            (row.actionableSummary?.Low ?? 0) > 0 ? (
+                              <Badge
+                                variant="outline"
+                                className="ml-2 text-[0.65rem] px-1.5 py-0 text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-800"
+                                title={t("compliance.table.unacceptedLowHint")}
+                              >
+                                {t("compliance.table.unacceptedLow")}
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="ml-2 text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+                                title={t("compliance.table.lowSeverityHint")}
+                              >
+                                {t("compliance.table.lowSeverity")}
+                              </Badge>
+                            )
                           )}
                         </td>
                         <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.kind}</td>

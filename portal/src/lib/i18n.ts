@@ -920,21 +920,40 @@ export const ko = {
   "compliance.tab.rbac": "RBAC",
   "compliance.tab.infra": "인프라",
   "compliance.tab.frameworks": "프레임워크",
-  "compliance.counter.configAudit": "Config Audit 실패 (조치가능)",
-  "compliance.counter.configAuditBreakdown": "위생 {low}건(LOW) · 수용 {accepted}건(시스템/예외)",
+  "compliance.counter.configAudit": "Config Audit 실패 (조치가능 · 미수용 MEDIUM+)",
+  "compliance.counter.configAuditBreakdown": "미수용 LOW {unacceptedLow}건 · 위생 {low}건(LOW 수용) · 수용 {accepted}건(시스템/예외)",
+  "compliance.counter.droppedReports": "구 RS 제외 {reports}건 ({checks}건)",
   "compliance.counter.rbac": "RBAC 실패 (조치가능)",
   "compliance.counter.rbacBreakdown": "+{accepted} 수용(빌트인/업스트림/예외)",
   "compliance.counter.infra": "인프라 실패 (조치가능)",
   "compliance.counter.infraBreakdown": "+{accepted} 수용(예외)",
-  "compliance.counter.frameworksPassRate": "프레임워크 통과율",
-  "compliance.counter.frameworksBreakdown": "조치가능 {actionable}건 · 수용 {accepted}건",
+  "compliance.counter.frameworksPassRate": "프레임워크 평가 통과율",
+  "compliance.counter.frameworksRawRate": "원본 통과율 (Trivy raw)",
+  "compliance.counter.frameworksEffectiveRate": "예외 반영 통과율",
+  "compliance.counter.frameworksBreakdown": "평가 통과 {passed} · 미평가 {notEvaluated} · 조치가능 {actionable} · 수용 {accepted}",
+  "compliance.counter.dataUnavailable": "데이터 조회 불가",
   "compliance.framework.passRate": "통과율",
+  "compliance.framework.evaluatedPassRate": "평가 통과율",
+  "compliance.framework.rawPassRate": "원본 통과율",
+  "compliance.framework.effectivePassRate": "예외 반영 통과율",
   "compliance.framework.controls": "{count}개 컨트롤",
-  "compliance.framework.actionableSummary": "조치가능 컨트롤 {actionable}개 · 수용 {accepted}개 (원본 실패 {raw}개)",
+  "compliance.framework.actionableSummary": "조치가능 컨트롤 {actionable}개 · 수용 {accepted}개 · 미평가 {notEvaluated}개 (원본 실패 {raw}개)",
   "compliance.framework.actionableFailed": "실패 (조치가능)",
   "compliance.framework.acceptedShort": "수용",
+  "compliance.framework.notEvaluatedShort": "미평가",
+  "compliance.framework.droppedShort": "구 RS 제외 {count}",
   "compliance.framework.acceptedControlsGroup": "수용된 예외 컨트롤 ({count})",
-  "compliance.framework.rawSummary": "원본 실패 {fail} (통과율 {rate}%)",
+  "compliance.framework.notEvaluatedControlsGroup": "미평가 컨트롤 ({count})",
+  "compliance.framework.notEvaluatedReason.manual": "수동 점검 항목 (자동 검사 ID 없음)",
+  "compliance.framework.notEvaluatedReason.excluded_namespace": "스캔 제외 네임스페이스 대상 (kube-system 등)",
+  "compliance.framework.notEvaluatedReason.unsupported_kind": "지원 리소스 종류 미포함 (RoleBinding 등)",
+  "compliance.framework.notEvaluatedReason.missing_node_type": "해당 노드 유형 부재 (워커 노드 없음 등)",
+  "compliance.framework.notEvaluatedReason.unlinked_check_id": "미연결 스펙 검사 ID (소문자 avd-ksv-* 등)",
+  "compliance.framework.notEvaluatedReason.scanner_disabled": "해당 Trivy 스캐너 비활성화",
+  "compliance.framework.notEvaluatedReason.summary_only": "요약 전용 리포트 (컨트롤별 결과 없음)",
+  "compliance.framework.notEvaluatedReason.empty_checks": "점검 결과 비어 있음",
+  "compliance.framework.notEvaluatedReason.coverage_unknown": "커버리지 확인 불가 (설정·노드·리포트 조회 실패 또는 스펙 누락)",
+  "compliance.framework.rawSummary": "원본 실패 {fail} (원본 통과율 {rate}%)",
   "compliance.framework.rawChecks": "원본 {count}",
   "compliance.framework.exceptionsDocLink": "위험 수용 예외 문서",
   "compliance.framework.mixedScope": "수용됨 (혼합)",
@@ -955,12 +974,15 @@ export const ko = {
   "compliance.table.acceptedHint": "K8s 정적 파드/CNI/메시에 내재된 항목 — 조치 대상 아님",
   "compliance.table.acceptedExceptionHint": "검토된 예외 목록에 등록된 항목 — 사유가 있는 비조치 대상",
   "compliance.table.lowSeverity": "위생(LOW)",
-  "compliance.table.lowSeverityHint": "UID/GID·리소스 제한 등 LOW 심각도 위생 점검 — narwhal 문서상 강제 조치 시 업스트림 이미지 손상 위험이 있어 수용됨",
-  "compliance.table.actionableSummary": "조치가능 {actionable}건 · 위생 {low}건(LOW) · 수용 {accepted}건(시스템/예외)",
+  "compliance.table.lowSeverityHint": "예외 목록에 등록된 LOW 심각도 위생 점검",
+  "compliance.table.unacceptedLow": "미수용 LOW",
+  "compliance.table.unacceptedLowHint": "예외 목록에 등록되지 않은 LOW 심각도 점검 — 숨기지 않고 별도 추적됨",
+  "compliance.table.actionableSummary": "조치가능(MEDIUM+) {actionable}건 · 미수용 LOW {unacceptedLow}건 · 수용 위생 {low}건(LOW) · 수용 {accepted}건(시스템/예외)",
   "compliance.table.acceptedRbac": "수용(빌트인/업스트림)",
   "compliance.table.acceptedRbacHint": "K8s 빌트인 역할(system:*, cluster-admin 등), 업스트림 컨트롤러/차트 역할, 또는 검토된 예외 역할 — 조치 대상 아님",
   "compliance.table.rbacActionableSummary": "조치가능 {actionable}건 · 수용 {accepted}건(빌트인/업스트림/예외)",
   "compliance.table.infraActionableSummary": "조치가능 {actionable}건 · 수용 {accepted}건(예외)",
+  "compliance.infra.emptyChecksCaveat": "참고: Trivy는 recordFailedChecksOnly=true로 실패만 기록합니다. 실패 0건(checks: [])은 수집기 명령의 빈 출력을 구분해 증명하지 않습니다.",
   "compliance.forbidden": "cluster-admin 권한이 필요합니다",
   "compliance.filter.severity": "심각도 필터",
   "compliance.filter.namespace": "네임스페이스 필터",
@@ -971,6 +993,10 @@ export const ko = {
   "compliance.summary.scannedRbacObjects": "스캔된 RBAC 객체",
   "compliance.summary.scannedNodes": "스캔된 노드",
   "compliance.summary.lastUpdated": "마지막 업데이트",
+  "compliance.summary.rebuildNote": "컴플라이언스 프레임워크·인프라 리포트는 6시간마다 재집계됩니다.",
+  "compliance.summary.sourceUnavailable": "조회 불가",
+  "compliance.summary.sourceEmpty": "리포트 없음",
+  "compliance.summary.ageRange": "{newest} (최장 {oldest})",
   "compliance.detail.title": "감사 상세",
   "compliance.detail.checks": "점검 목록",
   "compliance.tab.kisa": "KISA",
@@ -2411,21 +2437,40 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.tab.rbac": "RBAC",
   "compliance.tab.infra": "Infrastructure",
   "compliance.tab.frameworks": "Frameworks",
-  "compliance.counter.configAudit": "Config Audit Failures (Actionable)",
-  "compliance.counter.configAuditBreakdown": "{low} low-severity (hygiene) · {accepted} accepted (system/exception)",
+  "compliance.counter.configAudit": "Config Audit Failures (Actionable · Unaccepted MEDIUM+)",
+  "compliance.counter.configAuditBreakdown": "{unacceptedLow} unaccepted LOW · {low} accepted hygiene (LOW) · {accepted} accepted (system/exception)",
+  "compliance.counter.droppedReports": "{reports} superseded RS dropped ({checks} checks)",
   "compliance.counter.rbac": "RBAC Failures (Actionable)",
   "compliance.counter.rbacBreakdown": "+{accepted} accepted (built-in/upstream/exception)",
   "compliance.counter.infra": "Infra Failures (Actionable)",
   "compliance.counter.infraBreakdown": "+{accepted} accepted (exception)",
-  "compliance.counter.frameworksPassRate": "Framework Pass Rate",
-  "compliance.counter.frameworksBreakdown": "{actionable} actionable · {accepted} accepted",
+  "compliance.counter.frameworksPassRate": "Framework Evaluated Pass Rate",
+  "compliance.counter.frameworksRawRate": "Raw pass rate (Trivy)",
+  "compliance.counter.frameworksEffectiveRate": "Exception-adjusted pass rate",
+  "compliance.counter.frameworksBreakdown": "{passed} evaluated pass · {notEvaluated} not evaluated · {actionable} actionable · {accepted} accepted",
+  "compliance.counter.dataUnavailable": "Data unavailable",
   "compliance.framework.passRate": "Pass rate",
+  "compliance.framework.evaluatedPassRate": "Evaluated pass rate",
+  "compliance.framework.rawPassRate": "Raw pass rate",
+  "compliance.framework.effectivePassRate": "Exception-adjusted pass rate",
   "compliance.framework.controls": "{count} controls",
-  "compliance.framework.actionableSummary": "{actionable} actionable controls · {accepted} accepted (raw failed {raw})",
+  "compliance.framework.actionableSummary": "{actionable} actionable controls · {accepted} accepted · {notEvaluated} not evaluated (raw failed {raw})",
   "compliance.framework.actionableFailed": "Failed (actionable)",
   "compliance.framework.acceptedShort": "accepted",
+  "compliance.framework.notEvaluatedShort": "not evaluated",
+  "compliance.framework.droppedShort": "{count} dropped",
   "compliance.framework.acceptedControlsGroup": "Accepted exception controls ({count})",
-  "compliance.framework.rawSummary": "Raw failed {fail} (pass rate {rate}%)",
+  "compliance.framework.notEvaluatedControlsGroup": "Not evaluated controls ({count})",
+  "compliance.framework.notEvaluatedReason.manual": "Manual control (no automated check ID)",
+  "compliance.framework.notEvaluatedReason.excluded_namespace": "Targets excluded namespace (e.g. kube-system)",
+  "compliance.framework.notEvaluatedReason.unsupported_kind": "Resource kind omitted from supportedConfigAuditKinds",
+  "compliance.framework.notEvaluatedReason.missing_node_type": "Required node type absent (e.g. no worker nodes)",
+  "compliance.framework.notEvaluatedReason.unlinked_check_id": "Unlinked spec check ID (e.g. lower-case avd-ksv-*)",
+  "compliance.framework.notEvaluatedReason.scanner_disabled": "Scanner disabled in trivy-operator config",
+  "compliance.framework.notEvaluatedReason.summary_only": "Summary-only report (no per-control results)",
+  "compliance.framework.notEvaluatedReason.empty_checks": "Control checks array is empty",
+  "compliance.framework.notEvaluatedReason.coverage_unknown": "Coverage unknown (config/node/report lookup failed or spec missing)",
+  "compliance.framework.rawSummary": "Raw failed {fail} (raw pass rate {rate}%)",
   "compliance.framework.rawChecks": "raw {count}",
   "compliance.framework.exceptionsDocLink": "Risk-accepted exceptions doc",
   "compliance.framework.mixedScope": "Accepted (mixed)",
@@ -2446,12 +2491,15 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.table.acceptedHint": "Inherent to K8s static pods/CNI/mesh — not actionable",
   "compliance.table.acceptedExceptionHint": "Covered by reviewed exception allowlist — accepted with documented reason",
   "compliance.table.lowSeverity": "Low-severity (hygiene)",
-  "compliance.table.lowSeverityHint": "LOW-severity hygiene checks (UID/GID, resource limits) — forcing fixes risks breaking upstream images, so these are risk-accepted per narwhal docs",
-  "compliance.table.actionableSummary": "{actionable} actionable · {low} low-severity (hygiene) · {accepted} accepted (system/exception)",
+  "compliance.table.lowSeverityHint": "LOW-severity hygiene checks covered by reviewed acceptance rules",
+  "compliance.table.unacceptedLow": "Unaccepted LOW",
+  "compliance.table.unacceptedLowHint": "LOW-severity checks without an acceptance rule — tracked separately",
+  "compliance.table.actionableSummary": "{actionable} actionable (MEDIUM+) · {unacceptedLow} unaccepted LOW · {low} accepted hygiene (LOW) · {accepted} accepted (system/exception)",
   "compliance.table.acceptedRbac": "Accepted (built-in/upstream)",
   "compliance.table.acceptedRbacHint": "Kubernetes built-in role (system:*, cluster-admin, etc.), upstream controller/chart role, or reviewed exception role — not actionable",
   "compliance.table.rbacActionableSummary": "{actionable} actionable · {accepted} accepted (built-in/upstream/exception)",
   "compliance.table.infraActionableSummary": "{actionable} actionable · {accepted} accepted (exception)",
+  "compliance.infra.emptyChecksCaveat": "Note: Trivy runs with recordFailedChecksOnly=true; 0 failures (checks: []) does not prove every collector command produced non-empty output.",
   "compliance.forbidden": "cluster-admin role required",
   "compliance.filter.severity": "Severity filter",
   "compliance.filter.namespace": "Namespace filter",
@@ -2462,6 +2510,10 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.summary.scannedRbacObjects": "Scanned RBAC objects",
   "compliance.summary.scannedNodes": "Scanned nodes",
   "compliance.summary.lastUpdated": "Last updated",
+  "compliance.summary.rebuildNote": "Compliance framework & infra reports rebuild every 6 hours.",
+  "compliance.summary.sourceUnavailable": "Unavailable",
+  "compliance.summary.sourceEmpty": "No reports",
+  "compliance.summary.ageRange": "{newest} (oldest {oldest})",
   "compliance.detail.title": "Audit Detail",
   "compliance.detail.checks": "Check List",
   "compliance.tab.kisa": "KISA",
@@ -3004,6 +3056,30 @@ export function translateAcceptedReason(
     return dictionaries[locale][reasonKey as TranslationKey]
   }
   return fallback
+}
+
+/** Resolves a compliance not-evaluated reason code via static i18n keys. */
+export function translateNotEvaluatedReason(locale: Locale, reason?: string): string {
+  switch (reason) {
+    case "manual":
+      return t(locale, "compliance.framework.notEvaluatedReason.manual")
+    case "excluded_namespace":
+      return t(locale, "compliance.framework.notEvaluatedReason.excluded_namespace")
+    case "unsupported_kind":
+      return t(locale, "compliance.framework.notEvaluatedReason.unsupported_kind")
+    case "missing_node_type":
+      return t(locale, "compliance.framework.notEvaluatedReason.missing_node_type")
+    case "unlinked_check_id":
+      return t(locale, "compliance.framework.notEvaluatedReason.unlinked_check_id")
+    case "scanner_disabled":
+      return t(locale, "compliance.framework.notEvaluatedReason.scanner_disabled")
+    case "summary_only":
+      return t(locale, "compliance.framework.notEvaluatedReason.summary_only")
+    case "empty_checks":
+      return t(locale, "compliance.framework.notEvaluatedReason.empty_checks")
+    default:
+      return t(locale, "compliance.framework.notEvaluatedReason.coverage_unknown")
+  }
 }
 
 export function getLocaleFromCookie(cookieValue: string | undefined): Locale {

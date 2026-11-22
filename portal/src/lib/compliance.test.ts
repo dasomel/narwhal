@@ -24,7 +24,10 @@ vi.mock("./http-client", () => ({
 }))
 
 import ccrLiveTrimmed from "./__fixtures__/ccr-live-trimmed.json"
+import complianceSnapshot from "./__fixtures__/compliance-snapshot.json"
+import { formatPassRatePct } from "@/types/compliance"
 import {
+  ComplianceDataUnavailableError,
   getComplianceFrameworkDetail,
   getComplianceFrameworks,
   getComplianceSummary,
@@ -1657,13 +1660,19 @@ describe("compliance framework actionable vs accepted split", () => {
       id: "summary-only",
       passCount: 10,
       failCount: 3,
+      evaluatedPassCount: 0,
       actionableFailCount: 3,
       acceptedFailCount: 0,
+      evaluatedPassRate: 0,
+      effectivePassRate: 0,
     })
-    expect(frameworks[0].effectivePassRate).toBeCloseTo(frameworks[0].passRate)
+
+    const detail = await getComplianceFrameworkDetail("summary-only")
+    expect(detail).not.toBeNull()
+    expect(detail!.controls.every((c) => c.evaluationState === "not_evaluated" && c.notEvaluatedReason === "summary_only")).toBe(true)
   })
 
-  it("computes the exact actionable vs accepted set from the trimmed live ClusterComplianceReport fixture", async () => {
+  it("fails closed to coverage_unknown when spec.checks metadata is trimmed (ccr-live-trimmed.json) while keeping actionable vs accepted fail counts", async () => {
     installK8sMock({
       "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": ccrLiveTrimmed,
     })
@@ -1674,33 +1683,44 @@ describe("compliance framework actionable vs accepted split", () => {
     expect(byId.get("k8s-nsa-1.0")).toMatchObject({
       passCount: 18,
       failCount: 9,
+      evaluatedPassCount: 0,
+      notEvaluatedCount: 18,
       actionableFailCount: 0,
       acceptedFailCount: 9,
-      effectivePassRate: 1,
+      coverageUnknown: true,
     })
+    expect(byId.get("k8s-nsa-1.0")!.effectivePassRate).toBeCloseTo(9 / 27)
     expect(byId.get("k8s-pss-baseline-0.1")).toMatchObject({
       passCount: 8,
       failCount: 3,
+      evaluatedPassCount: 0,
+      notEvaluatedCount: 8,
       actionableFailCount: 0,
       acceptedFailCount: 3,
-      effectivePassRate: 1,
     })
+    expect(byId.get("k8s-pss-baseline-0.1")!.effectivePassRate).toBeCloseTo(3 / 11)
     expect(byId.get("k8s-pss-restricted-0.1")).toMatchObject({
       passCount: 14,
       failCount: 3,
+      evaluatedPassCount: 0,
+      notEvaluatedCount: 14,
       actionableFailCount: 0,
       acceptedFailCount: 3,
-      effectivePassRate: 1,
     })
+    expect(byId.get("k8s-pss-restricted-0.1")!.effectivePassRate).toBeCloseTo(3 / 17)
     expect(byId.get("k8s-cis-1.23")).toMatchObject({
       passCount: 101,
       failCount: 15,
+      evaluatedPassCount: 0,
+      notEvaluatedCount: 101,
       actionableFailCount: 5,
       acceptedFailCount: 10,
     })
     expect(byId.get("k8s-kisa-1.0")).toMatchObject({
       passCount: 3,
       failCount: 4,
+      evaluatedPassCount: 0,
+      notEvaluatedCount: 3,
       actionableFailCount: 2,
       acceptedFailCount: 2,
     })
@@ -1876,10 +1896,12 @@ describe("compliance framework actionable vs accepted split", () => {
     const detail = await getComplianceFrameworkDetail("unaccounted-and-empty")
     expect(detail).not.toBeNull()
     // detailFailControls = 2 (C-ACCEPTED, C-ACTIONABLE); summary.failCount = 5 -> unaccountedFail = 3
-    // actionableFailCount = 1 + 3 = 4; acceptedFailCount = 1; evaluated = 10 -> effectivePassRate = 6 / 10
+    // C-EMPTY has checks: [] -> empty_checks (not_evaluated); no passing controls verified -> evaluatedPassCount = 0
     expect(detail!.actionableFailCount).toBe(4)
     expect(detail!.acceptedFailCount).toBe(1)
-    expect(detail!.effectivePassRate).toBeCloseTo(6 / 10)
+    expect(detail!.evaluatedPassCount).toBe(0)
+    expect(detail!.notEvaluatedCount).toBe(1)
+    expect(detail!.effectivePassRate).toBe(0)
 
     const emptyCtrl = detail!.controls.find((c) => c.id === "C-EMPTY")
     expect(emptyCtrl).toMatchObject({
@@ -1887,6 +1909,8 @@ describe("compliance framework actionable vs accepted split", () => {
       failCount: 0,
       actionableFailCount: 0,
       acceptedFailCount: 0,
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "empty_checks",
       accepted: false,
     })
   })
@@ -2050,5 +2074,331 @@ describe("Infra audit accepted vs actionable split", () => {
     const summary = await getComplianceSummary()
     expect(summary.totalInfraFailures).toEqual({ Critical: 0, High: 3, Medium: 0, Low: 1 })
     expect(summary.acceptedInfraFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+  })
+})
+
+describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data-unavailable", () => {
+  beforeEach(() => {
+    mockCache.clear()
+    mockFetchWithPolicy.mockReset()
+    mockReadJsonWithPolicy.mockReset()
+  })
+
+  it("never rounds pass rates with actionable failures or not-evaluated controls to 100%", () => {
+    expect(formatPassRatePct(0.9994, { hasActionableFail: true })).toBe("99.9%")
+    expect(formatPassRatePct(0.9999, { hasNotEvaluated: true })).toBe("99.9%")
+    expect(formatPassRatePct(1, { hasNotEvaluated: true })).toBe("99.9%")
+    expect(formatPassRatePct(1, { hasActionableFail: false, hasNotEvaluated: false })).toBe("100%")
+    expect(formatPassRatePct(101 / 116, { hasActionableFail: true })).toBe("87.0%")
+    expect(formatPassRatePct(10 / 10)).toBe("100%")
+  })
+
+  it("classifies excluded_namespace, unsupported_kind, missing_node_type, unlinked_check_id, manual, and passed controls", async () => {
+    installK8sMock({
+      "/api/v1/nodes": {
+        items: [
+          {
+            metadata: {
+              name: "master-1",
+              labels: { "node-role.kubernetes.io/control-plane": "" },
+            },
+          },
+        ],
+      },
+      "/apis/apps/v1/namespaces/security-system/deployments/trivy-operator": {
+        spec: {
+          template: {
+            spec: {
+              containers: [
+                {
+                  env: [
+                    { name: "OPERATOR_EXCLUDE_NAMESPACES", value: "kube-system,kube-public" },
+                    { name: "OPERATOR_CONFIG_AUDIT_SCANNER_ENABLED", value: "true" },
+                    { name: "OPERATOR_RBAC_ASSESSMENT_SCANNER_ENABLED", value: "true" },
+                    { name: "OPERATOR_INFRA_ASSESSMENT_SCANNER_ENABLED", value: "true" },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+      "/api/v1/namespaces/security-system/configmaps/trivy-operator-trivy-config": {
+        data: {
+          "trivy.supportedConfigAuditKinds": "Workload,Service,Role,ClusterRole",
+        },
+      },
+      "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
+        items: [
+          makeCar({
+            namespace: "dev",
+            kind: "Deployment",
+            name: "sample-app",
+            checks: [{ checkID: "KSV038", severity: "LOW", success: true }],
+          }),
+        ],
+      },
+      "/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports": {
+        items: [
+          {
+            metadata: { name: "node-master-1", creationTimestamp: "2026-11-22T00:00:00Z" },
+            report: { summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0 }, checks: [] },
+          },
+        ],
+      },
+      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": {
+        items: [
+          {
+            metadata: { name: "synthetic-3state", creationTimestamp: "2026-11-22T00:00:00Z" },
+            spec: {
+              compliance: {
+                id: "synthetic-3state",
+                title: "Synthetic 3-State",
+                controls: [
+                  { id: "CP-EXCL", name: "Control plane excluded", severity: "HIGH", checks: [{ id: "AVD-KCV-0001" }] },
+                  { id: "BIND-UNSUP", name: "Binding unsupported", severity: "HIGH", checks: [{ id: "AVD-KSV-0111" }] },
+                  { id: "WORKER-ABS", name: "Worker absent", severity: "MEDIUM", checks: [{ id: "AVD-KCV-0069" }], commands: [{ id: "CMD-0022" }] },
+                  { id: "MASTER-OK", name: "Master ok", severity: "HIGH", checks: [{ id: "AVD-KCV-0048" }], commands: [{ id: "CMD-0001" }] },
+                  { id: "LOWER-CASE", name: "PSS unlinked", severity: "MEDIUM", checks: [{ id: "avd-ksv-0024" }] },
+                  { id: "MANUAL-OMIT", name: "Manual control (Manual)", severity: "LOW" },
+                  { id: "WORKLOAD-OK", name: "Workload policy ok", severity: "MEDIUM", checks: [{ id: "AVD-KSV-0038" }] },
+                ],
+              },
+            },
+            status: {
+              updateTimestamp: "2026-11-22T06:00:00Z",
+              summary: { passCount: 7, failCount: 0 },
+              detailReport: {
+                results: [
+                  { id: "CP-EXCL", name: "Control plane excluded", severity: "HIGH", checks: [{ checkID: "", success: true }] },
+                  { id: "BIND-UNSUP", name: "Binding unsupported", severity: "HIGH", checks: [{ checkID: "", success: true }] },
+                  { id: "WORKER-ABS", name: "Worker absent", severity: "MEDIUM", checks: [{ checkID: "", success: true }] },
+                  { id: "MASTER-OK", name: "Master ok", severity: "HIGH", checks: [{ checkID: "", success: true }] },
+                  { id: "LOWER-CASE", name: "PSS unlinked", severity: "MEDIUM", checks: [{ checkID: "", success: true }] },
+                  { id: "MANUAL-OMIT", name: "Manual control (Manual)", severity: "LOW", checks: [{ checkID: "", success: true }] },
+                  { id: "WORKLOAD-OK", name: "Workload policy ok", severity: "MEDIUM", checks: [{ checkID: "", success: true }] },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    })
+
+    const detail = await getComplianceFrameworkDetail("synthetic-3state")
+    expect(detail).not.toBeNull()
+    const byId = new Map(detail!.controls.map((c) => [c.id, c]))
+
+    expect(byId.get("CP-EXCL")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "excluded_namespace" })
+    expect(byId.get("BIND-UNSUP")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "unsupported_kind" })
+    expect(byId.get("WORKER-ABS")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type" })
+    expect(byId.get("LOWER-CASE")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "unlinked_check_id" })
+    expect(byId.get("MANUAL-OMIT")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "manual" })
+    expect(byId.get("MASTER-OK")).toMatchObject({ evaluationState: "passed" })
+    expect(byId.get("WORKLOAD-OK")).toMatchObject({ evaluationState: "passed" })
+
+    expect(detail!.rawPassCount).toBe(7)
+    expect(detail!.evaluatedPassCount).toBe(2)
+    expect(detail!.notEvaluatedCount).toBe(5)
+    expect(detail!.evaluatedPassRate).toBeCloseTo(2 / 7)
+    expect(detail!.effectivePassRate).toBeCloseTo(2 / 7)
+    expect(detail!.lastUpdated).toBe("2026-11-22T06:00:00Z")
+  })
+
+  it("tracks unaccepted LOW separately from accepted hygiene LOW and reconciles dropped superseded ReplicaSets", async () => {
+    installK8sMock({
+      "/apis/apps/v1/replicasets": {
+        items: [
+          makeRs({ namespace: "dev", name: "app-old", replicas: 0, statusReplicas: 0, terminatingReplicas: 0, revision: 1, ownerDeployment: "app" }),
+          makeRs({ namespace: "dev", name: "app-live", replicas: 1, statusReplicas: 1, revision: 2, ownerDeployment: "app" }),
+        ],
+      },
+      "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
+        items: [
+          makeCar({
+            namespace: "dev",
+            kind: "ReplicaSet",
+            name: "app-old",
+            checks: [
+              { checkID: "KSV014", severity: "HIGH", success: false },
+              { checkID: "KSV020", severity: "LOW", success: false },
+            ],
+          }),
+          makeCar({
+            namespace: "dev",
+            kind: "ReplicaSet",
+            name: "app-live",
+            checks: [
+              { checkID: "KSV014", severity: "HIGH", success: false },
+              { checkID: "KSV999", severity: "LOW", success: false },
+              { checkID: "KSV106", severity: "LOW", success: false },
+            ],
+          }),
+        ],
+      },
+    })
+
+    const summary = await getComplianceSummary()
+    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+    expect(summary.unacceptedLowConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 2 })
+    expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+    expect(summary.droppedConfigAuditReports).toBe(1)
+    expect(summary.droppedConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 1 })
+  })
+
+  it("throws ComplianceDataUnavailableError on K8s 403/500, never caches errors, and isolates failed sources in summary", async () => {
+    for (const httpStatus of [403, 500]) {
+      mockCache.clear()
+      mockFetchWithPolicy.mockImplementation(async (url: string) => {
+        const path = new URL(url).pathname
+        if (path === "/apis/aquasecurity.github.io/v1alpha1/configauditreports") {
+          return { ok: false, status: httpStatus, statusText: "Error", _path: path }
+        }
+        return { ok: true, status: 200, statusText: "OK", _path: path }
+      })
+      mockReadJsonWithPolicy.mockImplementation(async (res: { _path: string }) => {
+        if (res._path === "/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports") {
+          return {
+            items: [
+              makeRbac({
+                namespace: "dev",
+                kind: "Role",
+                roleName: "custom-writer",
+                checks: [{ checkID: "KSV041", severity: "CRITICAL", success: false }],
+              }),
+            ],
+          }
+        }
+        return { items: [] }
+      })
+
+      await expect(getConfigAuditList()).rejects.toThrowError(ComplianceDataUnavailableError)
+      await expect(getConfigAuditList()).rejects.toMatchObject({ source: "configAudit" })
+      expect(mockCache.size).toBe(0)
+
+      const summary = await getComplianceSummary()
+      expect(summary.dataUnavailable).toBe(true)
+      expect(summary.sources?.configAudit.status).toBe("unavailable")
+      expect(summary.sources?.rbac.status).toBe("ok")
+      expect(summary.totalRbacFailures.Critical).toBe(1)
+    }
+  })
+
+  it("computes honest 3-state numbers on the full live compliance snapshot fixture", async () => {
+    const snap = complianceSnapshot as Record<string, unknown>
+    installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": snap.clustercompliancereports,
+      "/apis/aquasecurity.github.io/v1alpha1/configauditreports": snap.configauditreports,
+      "/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports": snap.rbacassessmentreports,
+      "/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports": snap.clusterrbacassessmentreports,
+      "/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports": snap.clusterinfraassessmentreports,
+      "/apis/apps/v1/replicasets": snap.replicasets,
+      "/api/v1/nodes": snap.nodes,
+      "/apis/apps/v1/namespaces/security-system/deployments/trivy-operator": snap.trivyOperatorDeployment,
+      "/api/v1/namespaces/security-system/configmaps/trivy-operator-trivy-config": snap.trivyConfigMap,
+    })
+
+    const summary = await getComplianceSummary()
+    expect(summary.dataUnavailable).toBe(false)
+    expect(summary.sources?.configAudit.status).toBe("ok")
+    expect(summary.sources?.rbac.status).toBe("ok")
+    expect(summary.sources?.infra.status).toBe("ok")
+    expect(summary.sources?.frameworks.status).toBe("ok")
+    expect(summary.sources?.frameworks.rebuildIntervalHours).toBe(6)
+    expect(summary.scannedWorkloads).toBe(183)
+    expect(summary.scannedRbacObjects).toBe(189)
+    expect(summary.scannedNodes).toBe(1)
+    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+    expect(summary.unacceptedLowConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 20 })
+    expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 181 })
+    expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 26, Medium: 24, Low: 0 })
+    expect(summary.droppedConfigAuditReports).toBe(5)
+    expect(summary.droppedConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 6 })
+    expect(summary.totalRbacFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+    expect(summary.acceptedRbacFailures).toEqual({ Critical: 64, High: 27, Medium: 78, Low: 0 })
+    expect(summary.totalInfraFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+
+    const frameworks = await getComplianceFrameworks()
+    const byId = new Map(frameworks.map((f) => [f.id, f]))
+
+    expect(byId.get("k8s-cis-1.23")).toMatchObject({
+      totalControls: 116,
+      passCount: 102,
+      evaluatedPassCount: 27,
+      notEvaluatedCount: 75,
+      failCount: 14,
+      actionableFailCount: 1,
+      acceptedFailCount: 13,
+      droppedFailCount: 0,
+      droppedCheckCount: 10,
+    })
+    expect(byId.get("k8s-cis-1.23")!.evaluatedPassRate).toBeCloseTo(27 / 116)
+    expect(byId.get("k8s-cis-1.23")!.effectivePassRate).toBeCloseTo(40 / 116)
+
+    expect(byId.get("k8s-kisa-1.0")).toMatchObject({
+      totalControls: 7,
+      passCount: 3,
+      evaluatedPassCount: 1,
+      notEvaluatedCount: 2,
+      failCount: 4,
+      actionableFailCount: 0,
+      acceptedFailCount: 4,
+    })
+    expect(byId.get("k8s-nsa-1.0")).toMatchObject({
+      totalControls: 27,
+      passCount: 18,
+      evaluatedPassCount: 6,
+      notEvaluatedCount: 12,
+      failCount: 9,
+      actionableFailCount: 0,
+      acceptedFailCount: 9,
+    })
+    expect(byId.get("k8s-pss-baseline-0.1")).toMatchObject({
+      totalControls: 11,
+      passCount: 8,
+      evaluatedPassCount: 2,
+      notEvaluatedCount: 6,
+      failCount: 3,
+      actionableFailCount: 0,
+      acceptedFailCount: 3,
+    })
+    expect(byId.get("k8s-pss-restricted-0.1")).toMatchObject({
+      totalControls: 17,
+      passCount: 14,
+      evaluatedPassCount: 2,
+      notEvaluatedCount: 12,
+      failCount: 3,
+      actionableFailCount: 0,
+      acceptedFailCount: 3,
+    })
+
+    const cisDetail = await getComplianceFrameworkDetail("k8s-cis-1.23")
+    const reasonCounts = (d: NonNullable<Awaited<ReturnType<typeof getComplianceFrameworkDetail>>>) =>
+      d.controls.reduce<Record<string, number>>((acc, c) => {
+        if (c.notEvaluatedReason) acc[c.notEvaluatedReason] = (acc[c.notEvaluatedReason] ?? 0) + 1
+        return acc
+      }, {})
+    expect(reasonCounts(cisDetail!)).toEqual({
+      excluded_namespace: 43,
+      manual: 8,
+      missing_node_type: 23,
+      unsupported_kind: 1,
+    })
+    expect(reasonCounts((await getComplianceFrameworkDetail("k8s-kisa-1.0"))!)).toEqual({ excluded_namespace: 2 })
+    expect(reasonCounts((await getComplianceFrameworkDetail("k8s-nsa-1.0"))!)).toEqual({
+      excluded_namespace: 8,
+      manual: 4,
+    })
+    expect(reasonCounts((await getComplianceFrameworkDetail("k8s-pss-baseline-0.1"))!)).toEqual({
+      unlinked_check_id: 6,
+    })
+    expect(reasonCounts((await getComplianceFrameworkDetail("k8s-pss-restricted-0.1"))!)).toEqual({
+      unlinked_check_id: 12,
+    })
+
+    for (const fw of frameworks) {
+      expect((fw.evaluatedPassCount ?? 0) + (fw.notEvaluatedCount ?? 0) + fw.failCount).toBe(fw.totalControls)
+      expect(fw.evaluatedPassCount ?? 0).toBeLessThanOrEqual(fw.passCount)
+    }
   })
 })

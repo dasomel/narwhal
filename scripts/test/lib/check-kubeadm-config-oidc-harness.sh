@@ -36,8 +36,8 @@ WIRED = [
 ]
 # (name, relative file, exact anchor, replacement): wiring mutations run against a copied tree.
 WIRING_MUTATIONS = [
-    ("join: CA copy removed", JOIN, "sudo install -o root -g root -m 0644 /tmp/oidc-ca.crt", "sudo true /tmp/oidc-ca.crt"),
-    ("join: CA fetch from master-1 removed", JOIN, ":/etc/kubernetes/pki/oidc-ca.crt", ":/etc/kubernetes/pki/other.crt"),
+    ("join: CA copy removed", JOIN, "sudo install -o root -g root -m 0600 /tmp/oidc-ca.crt", "sudo true /tmp/oidc-ca.crt"),
+    ("join: CA fetch from master-1 removed", JOIN, "sudo cat /etc/kubernetes/pki/oidc-ca.crt", "sudo cat /etc/kubernetes/pki/other.crt"),
     ("join: refuse path removed", JOIN, "could not be obtained — this node's apiserver would crashloop after join. Not joining\" >&2\n    exit 1", "could not be obtained\" >&2\n    true"),
     ("join: unreadable config no longer refused", JOIN, "not joining\" >&2\n    exit 1", "not joining\" >&2\n    true"),
     ("dist: CA staging removed", DIST, 'place "${ip}" oidc-ca.crt /tmp/oidc-ca.crt', "true"),
@@ -364,20 +364,20 @@ ok "10 wiring: 11-4 (hard fail), Kakao master-1 step, verify-cluster gate, init 
 
 # 11. Later-joined control planes (review of PR #521): the apiserver kubeadm renders from the
 #     patched ClusterConfiguration cannot start without oidc-ca.crt, and kubeadm join does not
-#     copy it. 02-join-control-plane.sh must install it root:root 0644 BEFORE the join and refuse
-#     to join when the config references it but it cannot be had; on Kakao the operator script
-#     stages it and refuses first.
+#     copy it. 02-join-control-plane.sh must install it root:root 0600 BEFORE the join (CIS 1.1.20,
+#     fetched via sudo cat so 0600 on master-1 stays readable) and refuse to join when the config
+#     references it but it cannot be had; on Kakao the operator script stages it and refuses first.
 JOIN="${WROOT}/scripts/cluster/02-join-control-plane.sh"
 DIST="${WROOT}/scripts/cloud/distribute-join-kakao.sh"
-code "${JOIN}" | grep 'install -o root -g root -m 0644 /tmp/oidc-ca.crt' >/dev/null \
-  || fail_case "case 11: 02-join does not install the OIDC CA root:root 0644"
-code "${JOIN}" | grep 'vagrant@.*:/etc/kubernetes/pki/oidc-ca.crt' >/dev/null \
-  || fail_case "case 11: 02-join does not fetch the OIDC CA from master-1"
+code "${JOIN}" | grep 'install -o root -g root -m 0600 /tmp/oidc-ca.crt' >/dev/null \
+  || fail_case "case 11: 02-join does not install the OIDC CA root:root 0600"
+code "${JOIN}" | grep 'sudo cat /etc/kubernetes/pki/oidc-ca.crt' >/dev/null \
+  || fail_case "case 11: 02-join does not fetch the OIDC CA from master-1 via sudo cat"
 code "${JOIN}" | grep -A2 'valid /tmp/oidc-ca.crt could not be obtained' | grep 'exit 1' >/dev/null \
   || fail_case "case 11: 02-join does not refuse to join without the OIDC CA"
 code "${JOIN}" | grep -A2 'cannot read kube-system/kubeadm-config from master-1' | grep 'exit 1' >/dev/null \
   || fail_case "case 11: 02-join joins when kubeadm-config is unreadable"
-inst_line="$(code "${JOIN}" | grep -n 'install -o root -g root -m 0644 /tmp/oidc-ca.crt' | head -n 1 | cut -d: -f1)"
+inst_line="$(code "${JOIN}" | grep -n 'install -o root -g root -m 0600 /tmp/oidc-ca.crt' | head -n 1 | cut -d: -f1)"
 join_line="$(code "${JOIN}" | grep -n 'sudo bash -c "$(cat /tmp/join-control-plane.sh)' | head -n 1 | cut -d: -f1)"
 { [ -n "${inst_line}" ] && [ -n "${join_line}" ] && [ "${inst_line}" -lt "${join_line}" ]; } \
   || fail_case "case 11: the OIDC CA is not installed before kubeadm join"

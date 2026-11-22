@@ -31,27 +31,36 @@ spec:
           - id: AVD-KCV-0022
           - id: AVD-KCV-0002
       - id: KISA-ETCD-01
-        name: etcd 저장 데이터 암호화
-        description: etcd 저장 시크릿 암호화 및 etcd 통신 TLS 적용 검증
+        name: etcd 저장 데이터 암호화 및 TLS 통신
+        description: kube-apiserver etcd 암호화/CA(--encryption-provider-config, --etcd-cafile) 및 etcd 클라이언트 TLS(--cert-file/--key-file, --client-cert-auth) 검증
         severity: CRITICAL
         checks:
           - id: AVD-KCV-0029
-          - id: AVD-KCV-0004
           - id: AVD-KCV-0030
+          - id: AVD-KCV-0042
+          - id: AVD-KCV-0043
       # KISA-SEC-01: Omitted - OpenBao Shamir secret contents in K8s Secret is an application-level secret content audit, not a K8s object spec check supported by Trivy scanner.
       # KISA-ETCD-02: Omitted - APISIX internal etcd transport security is an application process/connection setting, not observable via K8s manifest spec scanner.
       # KISA-IMG-01: Omitted - containerd registry skip_verify setting lives in node host config (/etc/containerd/config.toml), not exposed in K8s API objects or workload spec checks.
+      # D-KISA-CONTROL-ACCURACY (2026-11-22): align each control's name/description and checks
+      # strictly to what the listed Trivy Rego checks evaluate so no control claims broader
+      # coverage than its checks prove.
       - id: KISA-RBAC-01
-        name: 최소 권한·cluster-admin 통제
-        description: 불필요한 cluster-admin 바인딩 및 권한 승격(bind/impersonate/escalate) 통제 검증
+        name: 고권한 RBAC 역할 및 관리자 바인딩 점검
+        description: >-
+          ClusterRole 시크릿 접근(KSV041), 특권 그룹 impersonate(KSV043),
+          네임스페이스 RoleBinding의 cluster-admin/admin/edit 바인딩(KSV111) 검증
+          (클러스터 범위 ClusterRoleBinding은 ClusterConfigAuditReport에 기록되며
+          trivy-operator 0.25.0 컴플라이언스 집계 외)
         severity: HIGH
         checks:
           - id: AVD-KSV-0041
           - id: AVD-KSV-0043
+          - id: AVD-KSV-0111
       # KISA-TLS-01: Omitted - Istio PeerAuthentication mesh mode (STRICT vs PERMISSIVE) coverage is an Istio CRD setting, not covered by Trivy built-in K8s checks.
       - id: KISA-POD-01
-        name: Pod Security Admission 적용
-        description: Privileged/hostNetwork/hostPID/root 등 Pod 보안 표준 위반 검증
+        name: Pod 보안 기준 위반 점검
+        description: Privileged/allowPrivilegeEscalation/hostIPC/hostNetwork/hostPID/root 등 워크로드 Pod 보안 기준 위반 검증
         severity: MEDIUM
         checks:
           - id: AVD-KSV-0017
@@ -62,24 +71,24 @@ spec:
           - id: AVD-KSV-0012
       # KISA-OBS-01: Omitted - Alertmanager receiver notification routing lives in Alertmanager config, out of scope for Trivy K8s scanner.
       - id: KISA-NET-01
-        name: Ingress default-deny NetworkPolicy 적용
-        description: 네임스페이스별 NetworkPolicy 정의 여부 검증
+        name: NetworkPolicy 셀렉터 적용 점검
+        description: 정의된 NetworkPolicy에 podSelector 또는 namespaceSelector가 지정되어 있는지 검증 (네임스페이스별 default-deny 존재 여부는 별도 검증 대상)
         severity: MEDIUM
         checks:
           - id: AVD-KSV-0038
       # KISA-IMG-02: Omitted - Cosign signature state and image tag policies are verified by image policy webhooks/Kyverno, no built-in Trivy K8s config audit check ID exists.
       # KISA-IMG-03: Omitted - Image vulnerability findings are produced by Trivy VulnerabilityReport CRDs, not by ClusterComplianceReport checks.
       - id: KISA-ADM-01
-        name: 정책 강제 (Policy-as-Code)
-        description: Container Capabilities 제한 정책 준수 여부 검증
+        name: 컨테이너 Capabilities 제한
+        description: Container Capabilities 제한 정책(ALL drop 및 금지 capability 차단) 준수 여부 검증
         severity: MEDIUM
         checks:
           - id: AVD-KSV-0003
           - id: AVD-KSV-0004
       # KISA-TLS-02: Omitted - cert-manager Certificate CRD state and expiration are cert-manager internal object statuses, not scanned by Trivy K8s config audit checks.
       - id: KISA-RBAC-02
-        name: RBAC 위험 바인딩 점검
-        description: 시크릿 접근 권한 및 와일드카드 리소스/버브 부여 점검
+        name: RBAC 와일드카드 권한 점검
+        description: Role·ClusterRole의 와일드카드 리소스/버브 부여 점검
         severity: MEDIUM
         checks:
           - id: AVD-KSV-0044

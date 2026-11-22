@@ -15,23 +15,49 @@ spec:
     targetRevision: 0.27.0
     helm:
       valuesObject:
-        # 차트 0.27.0에서 targetNamespaces/excludeNamespaces는 최상위 키다.
-        # operator: 아래에 두면 조용히 무시되어 kube-system까지 스캔된다(2026-07-10 발견 —
-        # config audit 실패 1219건 중 479건이 시스템 ns). kyverno 제외·PSA privileged와
-        # 동일한 스코핑 원칙으로 istio-system도 제외.
+        # D-SCAN-CONTROL-PLANE (2026-11-22): include kube-system and istio-system so Trivy's
+        # in-operator ConfigAudit + InfraAssessment + RBAC scanners evaluate the control-plane
+        # static pods (CIS 1.2.x/1.3.x/1.4.x/2.x, KISA-CP-01/ETCD-01) and ambient mesh workloads
+        # instead of leaving those controls as empty-placeholder PASS. Keep zero-value namespaces
+        # excluded (kube-public, kube-node-lease, unused trivy-system).
+        # Live trial measured (orchestrator, single-node cluster): ConfigAuditReports rose 188->281,
+        # VulnerabilityReports rose 108->110 (only kube-vip and istio-cni-node appeared, as unlisted
+        # images), and node_load1 stayed within 0.56-1.66 (baseline ~0.5-0.9). In this ClientServer
+        # deployment excludeImages suppressed listed images at runtime, while reviewer reading of
+        # v0.25.0 source indicated Standalone-only (re-measure behavior on operator upgrade).
+        # Cost: higher raw ConfigAudit/Infra/CIS/KISA failure counts (truthful findings; kube-system
+        # High 54/Med 102/Low 142, istio-system High 6/Med 11/Low 18, Critical 0 in both).
+        # Escape hatch: add kube-system,istio-system back to excludeNamespaces.
         targetNamespaces: ""
-        excludeNamespaces: "kube-system,kube-public,kube-node-lease,trivy-system,istio-system"
+        excludeNamespaces: "kube-public,kube-node-lease,trivy-system"
         trivyOperator:
-          # D-SCAN-SKIP-VELERO-EPHEMERAL (2026-11-06): Velero creates short-lived workloads with
-          # unique names, and the operator treats each one as a new workload and scans the velero
-          # image again: a kopia maintenance Job per repository about every 5 min
-          # (`velero.io/repo-name`, 23 scan Jobs in 24h) and a velero-data-mover Pod per
-          # PodVolumeBackup/Restore (`velero.io/pod-volume-backup`, `velero.io/pod-volume-restore`,
-          # container named by a UUID; ~10 scan Jobs in 24h, 2-4 GiB of writes each). The same
-          # image is still scanned through the velero Deployment and the node-agent DaemonSet,
-          # so no deployed image loses coverage. Only resources carrying one of these label keys
-          # are skipped. Escape hatch: delete the line.
-          skipResourceByLabels: velero.io/repo-name,velero.io/pod-volume-backup,velero.io/pod-volume-restore
+          # D-SCAN-SKIP-VELERO-EPHEMERAL (2026-11-06) + ghost-pod-reaper child Jobs (2026-11-22):
+          # Velero and kube-system/ghost-pod-reaper (*/15 * * * *) create short-lived workloads
+          # with unique names; the operator treats each one as a new workload and re-scans it.
+          # Only child Jobs carrying narwhal.dasomel.io/skip-ephemeral-job-scan (or Velero keys)
+          # are skipped; CronJob/ghost-pod-reaper, Deploy/velero, and DS/node-agent stay scanned.
+          # Escape hatch: remove keys from skipResourceByLabels.
+          skipResourceByLabels: velero.io/repo-name,velero.io/pod-volume-backup,velero.io/pod-volume-restore,narwhal.dasomel.io/skip-ephemeral-job-scan
+          # D-SCAN-SYSTEM-EXCLUDE-IMAGES (2026-11-22): excludeImages (scanJob.excludeImages)
+          # filters containers only out of vulnerability/exposed-secret scan Jobs (trivy-operator
+          # v0.25.0 pkg/plugins/trivy/image.go:187, workload.go:355 skips 0-container Jobs) while
+          # leaving in-operator ConfigAudit/InfraAssessment untouched. Patterns use Go
+          # filepath.Match (* does not cross /) and are global across namespaces, so every entry
+          # pins an exact repository running in kube-system or istio-system (no org/* wildcards
+          # such as quay.io/cilium/* or sig-storage/*). Only the tag suffix (`:*`) remains
+          # pattern-based so patch/minor upgrades in VERSIONS.md do not break exclusions.
+          # Runtime trial confirmed listed images were suppressed in ClientServer mode, though v0.25.0
+          # source inspection suggested Standalone-only (must re-measure on upgrade). The trial
+          # observed two residual scans (pod-kube-vip and daemonset-istio-cni-node) because those
+          # images were not in the list; decision: add exact repo entries for kube-vip and istio
+          # install-cni (same control-plane/mesh class as listed ones; does not change hashed mounts).
+          # Intentionally NOT excluded: registry.k8s.io/etcd (shared with platform-system/apisix-etcd
+          # 3.5.31-0), docker.io/alpine/k8s (ghost-pod-reaper CronJob stays scanned; child Jobs
+          # skipped by label), and registry.istio.io/release/proxyv2 (app waypoints stay scanned).
+          # Cost: no Trivy CVE scan Jobs for these exact system image repos (if a tenant ever
+          # deploys one of these exact repos it would also skip CVE scanning).
+          # Escape hatch: set excludeImages: "" to scan all system images on the 168h TTL.
+          excludeImages: "registry.k8s.io/kube-apiserver:*,registry.k8s.io/kube-controller-manager:*,registry.k8s.io/kube-scheduler:*,registry.k8s.io/coredns/coredns:*,registry.k8s.io/metrics-server/metrics-server:*,registry.k8s.io/sig-storage/csi-node-driver-registrar:*,registry.k8s.io/sig-storage/csi-provisioner:*,registry.k8s.io/sig-storage/csi-resizer:*,registry.k8s.io/sig-storage/csi-snapshotter:*,registry.k8s.io/sig-storage/livenessprobe:*,registry.k8s.io/sig-storage/nfsplugin:*,ghcr.io/kube-vip/kube-vip:*,docker.io/kube-vip/kube-vip:*,kube-vip/kube-vip:*,quay.io/cilium/cilium:*,quay.io/cilium/cilium-envoy:*,quay.io/cilium/hubble-relay:*,quay.io/cilium/hubble-ui:*,quay.io/cilium/hubble-ui-backend:*,quay.io/cilium/operator-generic:*,docker.io/istio/install-cni:*,istio/install-cni:*,registry.istio.io/release/install-cni:*,registry.istio.io/release/pilot:*,registry.istio.io/release/ztunnel:*"
           scanJobPodTemplatePodSecurityContext:
             runAsNonRoot: true
             runAsUser: 10000
@@ -104,15 +130,35 @@ spec:
               # leaving its VulnerabilityReport missing + ~15min retry churn.
               # concurrentLimit=2 → 2Gi peak, fits worker 8GB headroom.
           dbRepositoryInsecure: "true"
+          # D-SCAN-BINDINGS (2026-11-22): add RoleBinding and ClusterRoleBinding so KSV111
+          # (CIS 5.1.1, cluster-admin/admin/edit bindings) is actually evaluated. Verified in
+          # trivy-operator v0.25.0 (pkg/configauditreport/controller/resource.go:108,123): both
+          # controllers are wired and ClusterRole/trivy-operator already grants get/list/watch.
+          # Note: v0.25.0 writes RoleBinding -> ConfigAuditReport (included in CIS 5.1.1 / KISA)
+          # and ClusterRoleBinding -> ClusterConfigAuditReport (visible via kubectl; not yet
+          # aggregated by v0.25.0 pkg/compliance/io.go).
+          # Cost: ~64 RoleBinding ConfigAuditReports + ~121 ClusterRoleBinding
+          # ClusterConfigAuditReports computed in-operator (no scan Jobs).
+          # Escape hatch: remove RoleBinding,ClusterRoleBinding to restore chart default.
+          supportedConfigAuditKinds: "Workload,Service,Role,ClusterRole,RoleBinding,ClusterRoleBinding,NetworkPolicy,Ingress,LimitRange,ResourceQuota"
         # Compliance report generation (사용자 결정 2026-07-08).
         # reportType MUST be "all" (not the chart default "summary"): summary only fills
         # status.summary.passCount, leaving status.detailReport empty — the portal then
         # shows every control as "✓0 ✗0" (definitions only, per src/lib/compliance.ts).
         # "all" populates detailReport.controls so per-control pass/fail renders.
+        # D-PSS-SPEC-CASE (2026-11-22): chart 0.27.0's bundled k8s-pss-baseline-0.1 (controls
+        # 6-11) and k8s-pss-restricted-0.1 (controls 6-17) templates hardcode lowercase
+        # `avd-ksv-*` check IDs while trivy-operator emits uppercase `AVD-KSV-*`, so failing
+        # checks never link and silently PASS. Restrict chart-rendered specs to CIS+NSA and
+        # own the uppercase PSS ClusterComplianceReports in gitops/resources/pss-compliance.yaml
+        # (Application/pss-compliance). Escape hatch: re-add both names here and remove that App.
         compliance:
           reportType: all
           failEntriesLimit: 10
           cron: "0 */6 * * *"
+          specs:
+            - k8s-cis-1.23
+            - k8s-nsa-1.0
         operator:
           builtInTrivyServer: true
           scanJobsConcurrentLimit: 2 # was 3: fewer concurrent scan Jobs => lower peak

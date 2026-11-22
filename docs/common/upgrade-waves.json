@@ -27,6 +27,7 @@
   "NOT_YET_MODELLED": {
     "falco": "Security sensor add-on; no component-specific upgrade contract.",
     "kisa-compliance": "Compliance policy bundle; no independent workload upgrade.",
+    "pss-compliance": "Compliance policy bundle (uppercase PSS baseline/restricted specs); no independent workload upgrade.",
     "k8s-monitoring": "Monitoring integration configuration owned with the stack.",
     "gitea-ingress-policy": "Network policy configuration, not a separately upgraded component.",
     "grafana-dashboards": "Dashboard configuration owned with the observability stack.",

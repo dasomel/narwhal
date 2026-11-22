@@ -48,6 +48,12 @@ spec:
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
+    metadata:
+      labels:
+        # D-SCAN-CONTROL-PLANE (2026-11-22): CronJob/ghost-pod-reaper runs every 15m (96 Jobs/day);
+        # mark child Jobs only so trivy-operator skips ephemeral Job re-scans while the CronJob
+        # itself stays covered by ConfigAudit and 168h VulnerabilityReport.
+        narwhal.dasomel.io/skip-ephemeral-job-scan: "true"
     spec:
       template:
         metadata:

@@ -259,6 +259,10 @@ metadata:
   namespace: storage
 spec:
   secretName: openbao-tls
+  # D-BAO-VALIDITY: platform convention (1y, renew 30d early); changing duration reissues once.
+  # Cost: annual rotation; escape hatch: restore the previous explicit duration.
+  duration: 8760h
+  renewBefore: 720h
   issuerRef:
     name: narwhal-ca-issuer
     kind: ClusterIssuer
@@ -274,7 +278,7 @@ EOF
 echo "Waiting for openbao-tls certificate..."
 kubectl wait --for=condition=Ready certificate/openbao-tls -n storage --timeout=120s 2>/dev/null || true
 
-# Helm values mirror gitops/apps/openbao.yaml so a clean install matches what ArgoCD
+# Helm values mirror gitops/charts/narwhal-apps/templates/openbao.yaml so a clean install matches what ArgoCD
 # manages afterward (no config drift / reseal on the first GitOps sync):
 #  - global.tlsDisable=false  -> BAO_ADDR/BAO_API_ADDR + readiness probe use https
 #                                (else pod NotReady -> Service loses endpoints)
@@ -329,6 +333,12 @@ server:
     storageClass: nfs-csi
     size: 5Gi
   volumes:
+    - name: tls-reload-cert
+      secret:
+        secretName: openbao-tls
+        items:
+          - key: tls.crt
+            path: tls.crt
     - name: userconfig-openbao-tls
       secret:
         secretName: openbao-tls
@@ -357,6 +367,64 @@ server:
             - ALL
         seccompProfile:
           type: RuntimeDefault
+  shareProcessNamespace: true
+  updateStrategyType: OnDelete
+  extraContainers:
+    - name: tls-reloader
+      image: docker.io/valkey/valkey:8-alpine@sha256:9971099af41c36e887aabdfe22b80c0fe45df949163dfc9cb434febc57cfc3fc
+      command:
+        - /bin/sh
+        - -ec
+        - |-
+          set -eu
+          set -o pipefail
+          while :; do
+            # D-BAO-HUP: compare mounted leaf to live listener, never Secret events.
+            # Cost: one local handshake/30s, shared PID namespace and same uid 100.
+            # Escape hatch: remove this sidecar; retain manual SIGHUP (never restart).
+            if mounted=$(openssl x509 -in /tls/tls.crt -noout -fingerprint -sha256 | sed 's/^.*=//') &&
+               served=$(timeout 10 openssl s_client -connect 127.0.0.1:8200 -servername openbao.storage.svc </dev/null 2>/dev/null |
+                 openssl x509 -noout -fingerprint -sha256 | sed 's/^.*=//') &&
+               [ -n "$mounted" ] && [ -n "$served" ]; then
+              if [ "$mounted" != "$served" ]; then
+                found=false
+                for proc in /proc/[0-9]*; do
+                  [ "$(cat "$proc/comm" 2>/dev/null)" = bao ] || continue
+                  [ "$(tr '\000' '\n' < "$proc/cmdline" 2>/dev/null | sed -n '2p')" = server ] || continue
+                  if kill -HUP "${proc##*/}"; then
+                    found=true
+                    echo "OpenBao TLS mismatch: sent SIGHUP; will recheck served certificate"
+                  fi
+                done
+                [ "$found" = true ] || echo "ERROR: OpenBao server PID missing or SIGHUP denied" >&2
+              fi
+            else
+              echo "ERROR: cannot compare mounted and served OpenBao TLS certificates" >&2
+            fi
+            sleep 30
+          done
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 1000
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+      volumeMounts:
+        - name: tls-reload-cert
+          mountPath: /tls
+          readOnly: true
+      resources:
+        requests:
+          cpu: 5m
+          memory: 16Mi
+        limits:
+          cpu: 50m
+          memory: 32Mi
 injector:
   # In-place rollout: the chart's per-node anti-affinity deadlocks a surge on one node
   # (same setting as gitops/charts/narwhal-apps/templates/openbao.yaml).

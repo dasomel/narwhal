@@ -3534,6 +3534,10 @@ PYEOF'
   # 2026-11-21: KISA-IMG-01 (Harbor containerd CA trust replacing skip_verify), KISA-POD-01 (PSA audit/warn 14/14 incl. late ns & chaos-testing), KISA-RBAC-02 (explicit dev Role/RoleBinding developer-dev-access replacing ClusterRole/edit without impersonate)
   check R386 "KISA-IMG-01/POD-01/RBAC-02: 02-containerd.sh drops harbor skip_verify, lib-harbor-ca.sh validates every PEM block & shares probe_remote_harbor_ca/sync_harbor_containerd_ca (Vagrant+Kakao SSH failure != CA-absent) & checks local CA, 08-6 fails loudly on node-enum/remote errors & 06-phase2-start records PHASE2_DEGRADED, apply-harbor-ca-kakao.sh propagates tofu/JSON/SSH failures, apply-psa-labels.sh matches exact per-ns API NotFound (rejecting exec-plugin/Forbidden/timeout) with 14/14 convergence, 08-3 stays tolerant while 14-gitops-bootstrap waits boundedly and enforces --require-all, and dev/developer-dev-access binds explicit Role/developer-dev-access (legacy developer-full-access pruned, no impersonate/escalate/bind/wildcards); bash 3.2 behavioral tests + 32 mutations caught" \
     python3 scripts/test/lib/check-kisa-node-trust-psa-rbac.py --mutation-verify
+  # 2026-11-22 (#766): mounted TLS certificate must reach the running listener without resealing.
+  check R390 "OpenBao TLS validity, bootstrap parity, least-privilege SIGHUP sidecar, 180s served/Secret verifier; bash 3.2/5 fixtures and 9 mutations" \
+    python3 scripts/test/lib/check-openbao-tls.py --mutation-verify
+
 }
 
 #=========================================

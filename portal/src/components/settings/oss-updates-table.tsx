@@ -9,7 +9,15 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DataState } from "@/components/ui/data-state"
 import { useLocale, useT } from "@/lib/i18n-client"
 import type { GapKind } from "@/lib/oss-updates/version"
-import type { OssDrift, OssUpdateRow, OssUpdatesResponse, OssUpgradeRequestResponse } from "@/types/oss-updates"
+import type {
+  OssCveReason,
+  OssDrift,
+  OssRunningReason,
+  OssUpdateRow,
+  OssUpdatesResponse,
+  OssUpgradeRequestResponse,
+  OssUpstreamReason,
+} from "@/types/oss-updates"
 
 const DOC_PATH = "docs/common/oss-update-process.md"
 
@@ -35,11 +43,90 @@ const driftLabels = (t: T): Record<OssDrift, string> => ({
   "in-sync": t("ossUpdates.driftInSync"),
   drift: t("ossUpdates.driftDrift"),
   unknown: t("ossUpdates.driftUnknown"),
+  "not-applicable": t("ossUpdates.driftNotApplicable"),
 })
 const driftClass: Record<OssDrift, string> = {
   "in-sync": "bg-narwhal-success/15 text-narwhal-success",
   drift: "bg-narwhal-danger/15 text-narwhal-danger",
   unknown: "bg-muted text-muted-foreground",
+  "not-applicable": "bg-muted text-muted-foreground",
+}
+
+function runningReasonText(t: T, reason: OssRunningReason | null, detail?: string | null): string | null {
+  if (!reason) return null
+  switch (reason) {
+    case "not-applicable":
+      return t("ossUpdates.notApplicableCli")
+    case "no-permission":
+      return detail ? t("ossUpdates.reasonNoPermission", { detail }) : t("ossUpdates.reasonNoPermissionShort")
+    case "list-truncated":
+      return detail ? t("ossUpdates.reasonListTruncated", { detail }) : t("ossUpdates.reasonListTruncatedShort")
+    case "workload-not-found":
+      return detail ? t("ossUpdates.reasonWorkloadNotFound", { detail }) : t("ossUpdates.reasonWorkloadNotFoundShort")
+    case "container-not-found":
+      return detail ? t("ossUpdates.reasonContainerNotFound", { detail }) : t("ossUpdates.reasonContainerNotFoundShort")
+    case "no-running-pod":
+      return t("ossUpdates.reasonNoRunningPod")
+    case "rollout-mixed":
+      return detail ? t("ossUpdates.reasonRolloutMixed", { detail }) : t("ossUpdates.reasonRolloutMixedShort")
+    case "digest-only":
+      return t("ossUpdates.reasonDigestOnly")
+    case "tag-unparseable":
+      return detail ? t("ossUpdates.reasonTagUnparseable", { detail }) : t("ossUpdates.reasonTagUnparseableShort")
+    case "k8s-unavailable":
+      return t("ossUpdates.reasonK8sUnavailable")
+  }
+}
+
+function shortDriftReasonText(t: T, reason: OssRunningReason | null): string | null {
+  if (!reason || reason === "not-applicable") return null
+  switch (reason) {
+    case "no-permission":
+      return t("ossUpdates.reasonNoPermissionShort")
+    case "list-truncated":
+      return t("ossUpdates.reasonListTruncatedShort")
+    case "workload-not-found":
+      return t("ossUpdates.reasonWorkloadNotFoundShort")
+    case "container-not-found":
+      return t("ossUpdates.reasonContainerNotFoundShort")
+    case "no-running-pod":
+      return t("ossUpdates.reasonNoRunningPod")
+    case "rollout-mixed":
+      return t("ossUpdates.reasonRolloutMixedShort")
+    case "digest-only":
+      return t("ossUpdates.reasonDigestOnly")
+    case "tag-unparseable":
+      return t("ossUpdates.reasonTagUnparseableShort")
+    case "k8s-unavailable":
+      return t("ossUpdates.reasonK8sUnavailable")
+  }
+}
+
+function upstreamReasonText(t: T, reason: OssUpstreamReason | null, state: OssUpdateRow["upstreamState"]): string {
+  const effective = reason ?? (state === "disabled" ? "upstream-off" : state === "unavailable" ? "upstream-failed" : "no-matching-release")
+  switch (effective) {
+    case "upstream-off":
+      return t("ossUpdates.reasonUpstreamOff")
+    case "upstream-failed":
+      return t("ossUpdates.reasonUpstreamFailed")
+    case "no-matching-release":
+      return t("ossUpdates.reasonNoMatchingRelease")
+  }
+}
+
+function cveReasonText(t: T, reason: OssCveReason | null): string | null {
+  switch (reason) {
+    case "not-applicable":
+      return t("ossUpdates.notApplicable")
+    case "trivy-unavailable":
+      return t("ossUpdates.reasonTrivyUnavailable")
+    case "no-running-image":
+      return t("ossUpdates.reasonNoRunningImage")
+    case "no-scan-for-running":
+      return t("ossUpdates.reasonNoScanForRunning")
+    default:
+      return null
+  }
 }
 
 function RequestDialog({ row, repo, onClose }: { row: OssUpdateRow; repo: string; onClose: () => void }) {
@@ -168,10 +255,15 @@ function Row({ row, coolingDays, onRequest }: { row: OssUpdateRow; coolingDays: 
   const u = row.upstream
   const gap = gapLabels(t)
   const drift = driftLabels(t)
-  const running = [
-    row.running.chartVersion ? t("ossUpdates.chartLabel", { version: row.running.chartVersion }) : null,
-    ...row.running.imageTags,
-  ].filter(Boolean)
+
+  const chartLabel = row.running.chartVersion ? t("ossUpdates.chartLabel", { version: row.running.chartVersion }) : null
+  const primaryDisplay = row.running.version
+    ?? (row.running.imageTags.length > 0 ? row.running.imageTags.join(", ") : null)
+  const runningReason = runningReasonText(t, row.running.reason, row.running.reasonDetail)
+  const driftReason = shortDriftReasonText(t, row.driftReason)
+  const upstreamReason = upstreamReasonText(t, row.upstreamReason, row.upstreamState)
+  const cveReason = cveReasonText(t, row.cveReason)
+
   return (
     <tr className="border-b last:border-0 align-top">
       <th scope="row" className="py-2.5 pr-2 text-left font-medium">
@@ -183,15 +275,71 @@ function Row({ row, coolingDays, onRequest }: { row: OssUpdateRow; coolingDays: 
         {row.declared.chartVersion && <div className="text-muted-foreground">{t("ossUpdates.chartLabel", { version: row.declared.chartVersion })}</div>}
       </td>
       <td className="py-2.5 pr-2 font-mono text-xs">
-        {running.length ? running.map((r) => <div key={r}>{r}</div>) : <span className="text-muted-foreground">{t("ossUpdates.unknown")}</span>}
+        {row.running.reason === "not-applicable" ? (
+          <span className="font-sans text-muted-foreground">{t("ossUpdates.notApplicableCli")}</span>
+        ) : (
+          <div className="space-y-0.5">
+            {primaryDisplay && (
+              <div>
+                {primaryDisplay}
+                {row.running.rawTag && row.running.rawTag !== primaryDisplay && (
+                  <span className="ml-1 text-muted-foreground">({row.running.rawTag})</span>
+                )}
+              </div>
+            )}
+            {chartLabel && <div className="text-muted-foreground">{chartLabel}</div>}
+            {!primaryDisplay && (
+              <div className="font-sans text-muted-foreground">
+                <span>{t("ossUpdates.unknown")}</span>
+              </div>
+            )}
+            {runningReason && (
+              <div className="font-sans text-[11px] text-muted-foreground">{runningReason}</div>
+            )}
+            {row.running.trivyHint && (
+              <div className="font-sans text-[11px] text-muted-foreground">
+                {t("ossUpdates.trivyHint", { tag: row.running.trivyHint })}
+              </div>
+            )}
+            {row.running.source && (
+              <div className="text-[11px] text-muted-foreground">{row.running.source}</div>
+            )}
+            {row.running.siblings.map((s) => {
+              const sibDisplay = s.rawTag
+                ?? s.version
+                ?? (s.imageTags.length > 0 ? s.imageTags.join(", ") : null)
+              const sibReason = runningReasonText(t, s.reason, s.reasonDetail)
+              const sibTagText = sibDisplay
+                ? (sibReason ? `${sibDisplay} (${sibReason})` : sibDisplay)
+                : (sibReason ?? t("ossUpdates.unknown"))
+              return (
+                <div key={`${s.label}:${s.source}`} className="text-[11px] text-muted-foreground">
+                  {t("ossUpdates.companionLabel", { label: s.label, tag: sibTagText })}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </td>
-      <td className="py-2.5 pr-2"><Badge className={`${driftClass[row.drift]} text-xs`}>{drift[row.drift]}</Badge></td>
+      <td className="py-2.5 pr-2">
+        <div className="space-y-0.5">
+          <Badge className={`${driftClass[row.drift]} text-xs`}>{drift[row.drift]}</Badge>
+          {(row.drift === "unknown" || row.drift === "drift") && driftReason && (
+            <div className="text-[11px] text-muted-foreground">{driftReason}</div>
+          )}
+        </div>
+      </td>
       <td className="py-2.5 pr-2 font-mono text-xs">
         {u ? (
           u.latestUrl
             ? <a href={u.latestUrl} target="_blank" rel="noopener noreferrer" className="underline">{u.latest}</a>
             : u.latest
-        ) : <span className="font-sans text-muted-foreground">{t("ossUpdates.unknown")}</span>}
+        ) : (
+          <div className="font-sans text-muted-foreground">
+            <span>{t("ossUpdates.unknown")}</span>
+            <div className="text-[11px]">{upstreamReason}</div>
+          </div>
+        )}
         {u && row.heldMinor && <div className="font-sans text-muted-foreground">{t("ossUpdates.heldMinor")}</div>}
       </td>
       <td className="py-2.5 pr-2">
@@ -201,10 +349,35 @@ function Row({ row, coolingDays, onRequest }: { row: OssUpdateRow; coolingDays: 
             {u.daysBehind !== null && u.gap !== "none" && <div className="text-xs text-muted-foreground">{t("ossUpdates.daysBehind", { count: u.daysBehind })}</div>}
             <div><Cooling row={row} total={coolingDays} /></div>
           </div>
-        ) : <span className="text-xs text-muted-foreground">{t("ossUpdates.unknown")}</span>}
+        ) : (
+          <div className="text-xs text-muted-foreground">
+            <span>{t("ossUpdates.unknown")}</span>
+            <div className="text-[11px]">{upstreamReason}</div>
+          </div>
+        )}
       </td>
       <td className="py-2.5 pr-2 text-xs">
-        {row.cves ? t("ossUpdates.cveCounts", { critical: row.cves.critical, high: row.cves.high }) : <span className="text-muted-foreground">{t("ossUpdates.noScan")}</span>}
+        <div className="space-y-0.5">
+          {row.cves ? (
+            <div>{t("ossUpdates.cveCounts", { critical: row.cves.critical, high: row.cves.high })}</div>
+          ) : row.cveReason === "not-applicable" ? (
+            <span className="text-muted-foreground">{t("ossUpdates.notApplicable")}</span>
+          ) : (
+            <div className="text-muted-foreground">
+              {cveReason ? <div>{cveReason}</div> : <span>{t("ossUpdates.noScan")}</span>}
+            </div>
+          )}
+          {row.running.siblings.map((s) => {
+            const sibCve = s.cves
+              ? t("ossUpdates.cveCounts", { critical: s.cves.critical, high: s.cves.high })
+              : (cveReasonText(t, s.cveReason) ?? t("ossUpdates.noScan"))
+            return (
+              <div key={`${s.label}:${s.source}:cve`} className="text-[11px] text-muted-foreground">
+                {t("ossUpdates.companionLabel", { label: s.label, tag: sibCve })}
+              </div>
+            )
+          })}
+        </div>
       </td>
       <td className="py-2.5">
         <Button type="button" size="sm" variant="outline" onClick={() => onRequest(row)} aria-label={t("ossUpdates.requestFor", { component: row.component })}>

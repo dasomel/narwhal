@@ -9,6 +9,13 @@
 
 ## [Unreleased]
 
+### 수정
+
+- **OSS 업데이트 실행 Pod 실측·접미사 허용목록·실행 이미지 CVE 귀속·사유 명시 (`src/lib/oss-updates/catalog.ts`, `src/lib/oss-updates/status.ts`, `src/lib/oss-updates/version.ts`, `src/lib/k8s-client.ts`, `src/lib/trivy.ts`, `src/types/oss-updates.ts`, `src/components/settings/oss-updates-table.tsx`, `src/lib/i18n.ts`):**
+  - 기존 포털 RBAC 범위 내 직접 Kubernetes 조회(`getOssClusterInventory()`: `/version`, bounded `deployments`·`daemonsets`·`statefulsets`·`replicasets`, 실제 실행 중인 `status.containerStatuses[].image`·`state.running`·`imageID` digest·`ownerReferences`·`deletionTimestamp`·정적 Pod `kubernetes.io/config.mirror`+`nodeName` 조회용 `/api/v1/pods`, `gateways.gateway.networking.k8s.io` CRD 403 확인)로 전환했습니다. 라벨만 겹치는 Job Pod 등은 소유권(`ownerReferences`) 검증으로 제외하고, 목록 페이지 상한 초과(`truncated`) 시 `목록이 잘려 전체 Pod을 확인하지 못함`(`unknown`)으로 처리하며, Terminating·Pending·Succeeded·Failed·비실행 컨테이너는 실행 중으로 세지 않습니다. 동일 태그라도 `imageID` digest가 다르면 축약 digest와 함께 `롤아웃 중 (혼재)` 드리프트로 표시하며, 워크로드·컨테이너 부재나 K8s 조회 실패 시 차트 버전·Trivy 태그만으로 `일치`를 내지 않고 `Helm`은 `해당 없음 (CLI)`로 구분합니다.
+  - 부분 문자열 `imageMatch` 대신 실행 중인 이미지의 정확한 `repo+tag`(또는 `digest`)만 매칭(`summarizeCvesForArtifacts`)해 이전 태그 리포트가 현재 실행 이미지 CVE로 합산되지 않도록 했으며(미일치 시 `스캔 없음 (이 실행 이미지의 리포트 없음)`), 동반·초기화·사이드카 이미지도 개별 CVE 수치와 조회 실패·digest-only(`태그 없음 (digest 고정)` 및 축약 digest) 사유를 생략 없이 표시합니다.
+  - 컴포넌트별 허용 접미사 목록(`allowedTagSuffixes`: Gitea `-rootless`, APISIX `-ubuntu`, Istio `-distroless`) 외의 접미사(`-rc1`, `-preview1`, `-custom`)와 비-SemVer 태그는 원문 그대로 `태그 해석 불가`로 두고 `일치` 처리하지 않습니다(`R394`).
+
 ### 변경
 
 - **Compliance 정직한 3-상태 판정 및 조회 실패 구분 표시 (`src/lib/compliance.ts`, `src/lib/kisa.ts`, `src/types/compliance.ts`, `src/components/compliance/*`, `src/app/api/compliance/*`, `src/app/(dashboard)/compliance/*`, `src/lib/i18n.ts`):**

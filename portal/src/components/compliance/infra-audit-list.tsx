@@ -88,6 +88,9 @@ export function ExpandedInfraPanel({ node }: { node: string }) {
                     <p className="mt-1 text-muted-foreground">
                       <span className="font-medium text-foreground">{t("compliance.check.acceptedReason")}: </span>
                       {translateAcceptedReason(locale, check.acceptedReasonKey, check.acceptedReason)}
+                        <span className="mt-1 block break-words font-mono">
+                          {check.acceptedRuleId} · {check.acceptedOwner} · {check.acceptedReviewedAt}
+                        </span>
                     </p>
                   )}
                   {check.remediation && (

@@ -77,16 +77,68 @@ describe("Compliance UI accepted exceptions", () => {
 
     const koHtml = renderToStaticMarkup(<FailureCounters summary={summary} locale="ko" />)
     expect(koHtml).toContain("5")
-    expect(koHtml).toContain("미수용 LOW 0건 · 위생 40건(LOW 수용) · 수용 45건(시스템/예외)")
-    expect(koHtml).toContain("+60 수용(빌트인/업스트림/예외)")
+    expect(koHtml).toContain("미수용 LOW 0건 · 위생 40건(LOW 수용) · 수용 45건(정확 규칙)")
+    expect(koHtml).toContain("+60 수용(정확 규칙)")
     expect(koHtml).toContain("+1 수용(예외)")
     expect(koHtml).toContain("80.0%")
 
     const enHtml = renderToStaticMarkup(<FailureCounters summary={summary} locale="en" />)
-    expect(enHtml).toContain("0 unaccepted LOW · 40 accepted hygiene (LOW) · 45 accepted (system/exception)")
-    expect(enHtml).toContain("+60 accepted (built-in/upstream/exception)")
+    expect(enHtml).toContain("0 unaccepted LOW · 40 accepted hygiene (LOW) · 45 accepted (exact rules)")
+    expect(enHtml).toContain("+60 accepted (exact rules)")
     expect(enHtml).toContain("+1 accepted (exception)")
     expect(enHtml).toContain("80.0%")
+  })
+
+  it("FailureCounters surfaces unused acceptance rules in ko and en", () => {
+    const summary: ComplianceSummary = {
+      totalConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      lowSeverityConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedSystemConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      frameworks: [],
+      scannedWorkloads: 10,
+      scannedRbacObjects: 5,
+      scannedNodes: 1,
+      lastUpdated: new Date().toISOString(),
+      unusedAcceptanceRuleCount: 2,
+      unusedAcceptanceRules: [
+        {
+          id: "cfg:platform-system:DaemonSet:metallb-speaker:accept",
+          domain: "configAudit",
+          scope: "namespace",
+          namespace: "platform-system",
+          kind: "DaemonSet",
+          name: "metallb-speaker",
+          checks: ["KSV009", "KSV119"],
+          owner: "metallb 0.16.1",
+          reviewedAt: "2026-11-23",
+        },
+        {
+          id: "rbac:cluster:ClusterRole:ghost-pod-reaper:accept",
+          domain: "rbac",
+          scope: "cluster",
+          namespace: "",
+          kind: "ClusterRole",
+          name: "ghost-pod-reaper",
+          checks: ["KSV048"],
+          owner: "narwhal",
+          reviewedAt: "2026-11-23",
+        },
+      ],
+    }
+
+    const koHtml = renderToStaticMarkup(<FailureCounters summary={summary} locale="ko" />)
+    expect(koHtml).toContain("미사용 수용 규칙 2건")
+    expect(koHtml).toContain("cfg:platform-system:DaemonSet:metallb-speaker:accept")
+    expect(koHtml).toContain("cluster/ClusterRole/ghost-pod-reaper")
+
+    const enHtml = renderToStaticMarkup(<FailureCounters summary={summary} locale="en" />)
+    expect(enHtml).toContain("2 unused acceptance rules")
+    expect(enHtml).toContain("platform-system/DaemonSet/metallb-speaker")
+    expect(enHtml).toContain("rbac:cluster:ClusterRole:ghost-pod-reaper:accept")
   })
 
   it("ConfigAuditTable shows accepted badges and keeps accepted rows visible", () => {
@@ -160,6 +212,9 @@ describe("Compliance UI accepted exceptions", () => {
           acceptedClass: "accept",
           acceptedReasonKey: "compliance.acceptedReason.portalUid1001",
           acceptedReason: "Portal image fixes non-root nextjs:nodejs UID/GID 1001 in portal/Dockerfile",
+          acceptedRuleId: "cfg:devtools:ReplicaSet:narwhal-portal:accept",
+          acceptedOwner: "portal/Dockerfile",
+          acceptedReviewedAt: "2026-11-23",
         },
         {
           id: "KSV014",
@@ -253,7 +308,7 @@ describe("Compliance UI accepted exceptions", () => {
           accepted: true,
           acceptedClass: "accept",
           acceptedReasonKey: "compliance.acceptedReason.rbacPlatformAdmin",
-          acceptedReason: "Administrative privileges required by OIDC platform-admin role",
+          acceptedReason: "rbac-policies.yaml grants the OIDC platform administrator",
         },
         {
           id: "KSV042",
@@ -279,7 +334,7 @@ describe("Compliance UI accepted exceptions", () => {
     )
     expect(panelHtml).toContain("KSV042")
     expect(panelHtml).toContain("KSV041")
-    expect(panelHtml).toContain("Administrative privileges required by OIDC platform-admin role")
+    expect(panelHtml).toContain("rbac-policies.yaml grants the OIDC platform administrator")
     expect(panelHtml.indexOf("KSV042")).toBeLessThan(panelHtml.indexOf("KSV041"))
 
     const koPanelHtml = renderToStaticMarkup(
@@ -309,6 +364,9 @@ describe("Compliance UI accepted exceptions", () => {
           acceptedClass: "accept",
           acceptedReasonKey: "compliance.acceptedReason.portalUid1001",
           acceptedReason: "Portal image fixes non-root nextjs:nodejs UID/GID 1001 in portal/Dockerfile",
+          acceptedRuleId: "cfg:devtools:ReplicaSet:narwhal-portal:accept",
+          acceptedOwner: "portal/Dockerfile",
+          acceptedReviewedAt: "2026-11-23",
         },
       ],
     })
@@ -327,7 +385,7 @@ describe("Compliance UI accepted exceptions", () => {
           accepted: true,
           acceptedClass: "accept",
           acceptedReasonKey: "compliance.acceptedReason.rbacPlatformAdmin",
-          acceptedReason: "Administrative privileges required by OIDC platform-admin role",
+          acceptedReason: "rbac-policies.yaml grants the OIDC platform administrator",
         },
       ],
     })
@@ -338,6 +396,9 @@ describe("Compliance UI accepted exceptions", () => {
     })
     const configPageHtml = renderToStaticMarkup(configPageEl)
     expect(configPageHtml).toContain(ko["compliance.acceptedReason.portalUid1001"])
+    expect(configPageHtml).toContain("cfg:devtools:ReplicaSet:narwhal-portal:accept")
+    expect(configPageHtml).toContain("portal/Dockerfile")
+    expect(configPageHtml).toContain("2026-11-23")
     expect(configPageHtml).not.toContain("Portal image fixes non-root")
 
     const rbacPageEl = await RbacAuditDetailPage({
@@ -347,8 +408,8 @@ describe("Compliance UI accepted exceptions", () => {
     expect(rbacPageHtml).toContain(ko["compliance.acceptedReason.rbacPlatformAdmin"])
     expect(rbacPageHtml).not.toContain("Administrative privileges required")
 
-    expect(translateAcceptedReason("ko", "compliance.acceptedReason.systemNamespace", "fallback")).toBe(
-      ko["compliance.acceptedReason.systemNamespace"],
+    expect(translateAcceptedReason("ko", "compliance.acceptedReason.ciliumAccept", "fallback")).toBe(
+      ko["compliance.acceptedReason.ciliumAccept"],
     )
     expect(translateAcceptedReason("ko", undefined, "fallback")).toBe("fallback")
   })

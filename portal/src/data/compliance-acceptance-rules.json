@@ -1,0 +1,1445 @@
+{
+  "schemaVersion": 1,
+  "configAudit": [
+    {
+      "id": "cfg:chaos-testing:DaemonSet:chaos-daemon:accept",
+      "scope": "namespace",
+      "namespace": "chaos-testing",
+      "kind": "DaemonSet",
+      "name": "chaos-daemon",
+      "checks": [
+        "KSV001",
+        "KSV003",
+        "KSV010",
+        "KSV012",
+        "KSV017",
+        "KSV020",
+        "KSV021",
+        "KSV022",
+        "KSV023",
+        "KSV106",
+        "KSV121"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.chaosDaemonAccept",
+      "owner": "chaos-mesh 2.8.3 (gitops/charts/narwhal-apps/templates/chaos-mesh.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:argocd-redis:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "argocd-redis",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.valkey8Uid999",
+      "owner": "argocd v3.4.4 / valkey:8-alpine (scripts/cluster/13-argocd.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:gitea:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "gitea",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.giteaUid1000",
+      "owner": "gitea 12.6.0 / v1.26.2 (scripts/cluster/12-gitea.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:harbor-core:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "harbor-core",
+      "checks": [
+        "KSV011"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.harborCoreProbes",
+      "owner": "harbor 1.19.1 / v2.15.1 (gitops/charts/narwhal-apps/templates/harbor.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:harbor-jobservice:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "harbor-jobservice",
+      "checks": [
+        "KSV011"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.harborJobserviceProbes",
+      "owner": "harbor 1.19.1 / v2.15.1 (gitops/charts/narwhal-apps/templates/harbor.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:harbor-registry:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "harbor-registry",
+      "checks": [
+        "KSV011"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.harborRegistryProbes",
+      "owner": "harbor 1.19.1 / v2.15.1 (gitops/charts/narwhal-apps/templates/harbor.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:headlamp:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "headlamp",
+      "checks": [
+        "KSV011"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.headlampUidAndProbes",
+      "owner": "headlamp 0.46.0 (gitops/charts/narwhal-apps/templates/headlamp.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:kubernetes-dashboard-api:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "kubernetes-dashboard-api",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.k8sDashboardUid",
+      "owner": "kubernetes-dashboard 7.14.0 (gitops/charts/narwhal-apps/templates/kubernetes-dashboard.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:kubernetes-dashboard-auth:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "kubernetes-dashboard-auth",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.k8sDashboardUid",
+      "owner": "kubernetes-dashboard 7.14.0 (gitops/charts/narwhal-apps/templates/kubernetes-dashboard.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:kubernetes-dashboard-kong:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "kubernetes-dashboard-kong",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.k8sDashboardKongUid",
+      "owner": "kubernetes-dashboard 7.14.0 / kong 2.52.0 (gitops/charts/narwhal-apps/templates/kubernetes-dashboard.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:kubernetes-dashboard-metrics-scraper:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "kubernetes-dashboard-metrics-scraper",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.k8sDashboardUid",
+      "owner": "kubernetes-dashboard 7.14.0 (gitops/charts/narwhal-apps/templates/kubernetes-dashboard.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:kubernetes-dashboard-web:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "kubernetes-dashboard-web",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.k8sDashboardUid",
+      "owner": "kubernetes-dashboard 7.14.0 (gitops/charts/narwhal-apps/templates/kubernetes-dashboard.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:narwhal-portal:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "narwhal-portal",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.portalUid1001",
+      "owner": "narwhal-portal (portal/Dockerfile, gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:narwhal-portal-valkey:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "narwhal-portal-valkey",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.valkey8DefaultUid",
+      "owner": "valkey:8-alpine (gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:kube-system:CronJob:ghost-pod-reaper:accept",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "CronJob",
+      "name": "ghost-pod-reaper",
+      "checks": [
+        "KSV020",
+        "KSV021",
+        "KSV037"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.ghostPodReaperAccept",
+      "owner": "narwhal (gitops/resources/ghost-pod-reaper.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:monitoring:DaemonSet:k8s-monitoring-alloy-logs:accept",
+      "scope": "namespace",
+      "namespace": "monitoring",
+      "kind": "DaemonSet",
+      "name": "k8s-monitoring-alloy-logs",
+      "checks": [
+        "KSV012",
+        "KSV020",
+        "KSV021",
+        "KSV023"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.alloyLogsAccept",
+      "owner": "k8s-monitoring 4.2.0 / alloy v1.17.0 (gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:monitoring:ReplicaSet:k8s-monitoring-alloy-operator:accept",
+      "scope": "namespace",
+      "namespace": "monitoring",
+      "kind": "ReplicaSet",
+      "name": "k8s-monitoring-alloy-operator",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.alloyOperatorUid4242",
+      "owner": "k8s-monitoring 4.2.0 / alloy-operator 0.5.11 (gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:monitoring:ReplicaSet:prometheus-stack-grafana:accept",
+      "scope": "namespace",
+      "namespace": "monitoring",
+      "kind": "ReplicaSet",
+      "name": "prometheus-stack-grafana",
+      "checks": [
+        "KSV020"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.grafanaUid472",
+      "owner": "kube-prometheus-stack 86.2.3 (gitops/charts/narwhal-apps/templates/prometheus-stack.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:monitoring:StatefulSet:loki:accept",
+      "scope": "namespace",
+      "namespace": "monitoring",
+      "kind": "StatefulSet",
+      "name": "loki",
+      "checks": [
+        "KSV011"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.lokiCpuLimit",
+      "owner": "loki 18.4.0 / v3.7.3 (gitops/charts/narwhal-apps/templates/loki.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:monitoring:StatefulSet:prometheus-prometheus-stack-kube-prom-prometheus:accept",
+      "scope": "namespace",
+      "namespace": "monitoring",
+      "kind": "StatefulSet",
+      "name": "prometheus-prometheus-stack-kube-prom-prometheus",
+      "checks": [
+        "KSV011"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.prometheusUidAndCpuLimit",
+      "owner": "kube-prometheus-stack 86.2.3 (gitops/charts/narwhal-apps/templates/prometheus-stack.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:nfs-quota-agent:DaemonSet:nfs-quota-agent:accept",
+      "scope": "namespace",
+      "namespace": "nfs-quota-agent",
+      "kind": "DaemonSet",
+      "name": "nfs-quota-agent",
+      "checks": [
+        "KSV001",
+        "KSV003",
+        "KSV012",
+        "KSV017",
+        "KSV020",
+        "KSV021",
+        "KSV023",
+        "KSV121"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.nfsQuotaAgentAccept",
+      "owner": "nfs-quota-agent v0.5.0 (scripts/cluster/05-nfs-quota-agent.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:platform-system:ReplicaSet:apisix:accept",
+      "scope": "namespace",
+      "namespace": "platform-system",
+      "kind": "ReplicaSet",
+      "name": "apisix",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.apisixUid636",
+      "owner": "apisix 2.13.0 / 3.15.0 (gitops/charts/narwhal-apps/templates/apisix.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:security-system:DaemonSet:falco:accept",
+      "scope": "namespace",
+      "namespace": "security-system",
+      "kind": "DaemonSet",
+      "name": "falco",
+      "checks": [
+        "KSV001",
+        "KSV003",
+        "KSV012",
+        "KSV017",
+        "KSV020",
+        "KSV021",
+        "KSV023",
+        "KSV106",
+        "KSV121"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.falcoAccept",
+      "owner": "falco 9.2.1 / v0.45.1 (gitops/charts/narwhal-apps/templates/falco.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:security-system:ReplicaSet:falco-falcosidekick:accept",
+      "scope": "namespace",
+      "namespace": "security-system",
+      "kind": "ReplicaSet",
+      "name": "falco-falcosidekick",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.falcosidekickUid",
+      "owner": "falco 9.2.1 / falcosidekick 0.14.1 (gitops/charts/narwhal-apps/templates/falco.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:security-system:ReplicaSet:trivy-operator:accept",
+      "scope": "namespace",
+      "namespace": "security-system",
+      "kind": "ReplicaSet",
+      "name": "trivy-operator",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.trivyOperatorUid",
+      "owner": "trivy-operator 0.27.0 / 0.25.0 (gitops/charts/narwhal-apps/templates/trivy-operator.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:storage:DaemonSet:node-agent:accept",
+      "scope": "namespace",
+      "namespace": "storage",
+      "kind": "DaemonSet",
+      "name": "node-agent",
+      "checks": [
+        "KSV001",
+        "KSV003",
+        "KSV012",
+        "KSV020",
+        "KSV021",
+        "KSV023",
+        "KSV105",
+        "KSV106"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.veleroNodeAgentAccept",
+      "owner": "velero 12.0.3 / v1.18.1 (gitops/charts/narwhal-apps/templates/velero.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:storage:CronJob:openbao-snapshot:accept",
+      "scope": "namespace",
+      "namespace": "storage",
+      "kind": "CronJob",
+      "name": "openbao-snapshot",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.openbaoSnapshotUid",
+      "owner": "narwhal / openbao backup (gitops/resources/openbao-backup.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:storage:ReplicaSet:openbao-snapshot-holder:accept",
+      "scope": "namespace",
+      "namespace": "storage",
+      "kind": "ReplicaSet",
+      "name": "openbao-snapshot-holder",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.openbaoSnapshotUid",
+      "owner": "narwhal / openbao backup (gitops/resources/openbao-backup.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:storage:ReplicaSet:seaweedfs-s3:accept",
+      "scope": "namespace",
+      "namespace": "storage",
+      "kind": "ReplicaSet",
+      "name": "seaweedfs-s3",
+      "checks": [
+        "KSV011",
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.seaweedfsS3",
+      "owner": "seaweedfs 4.34.0 (gitops/charts/narwhal-apps/templates/seaweedfs.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:storage:ReplicaSet:velero:accept",
+      "scope": "namespace",
+      "namespace": "storage",
+      "kind": "ReplicaSet",
+      "name": "velero",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.veleroUid1002",
+      "owner": "velero 12.0.3 / v1.18.1 (gitops/charts/narwhal-apps/templates/velero.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:storage:ReplicaSet:velero-ui:accept",
+      "scope": "namespace",
+      "namespace": "storage",
+      "kind": "ReplicaSet",
+      "name": "velero-ui",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.veleroUiUid",
+      "owner": "velero-ui 0.14.0 / v0.10.1 (gitops/charts/narwhal-apps/templates/velero-ui.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:storage:StatefulSet:seaweedfs-filer:accept",
+      "scope": "namespace",
+      "namespace": "storage",
+      "kind": "StatefulSet",
+      "name": "seaweedfs-filer",
+      "checks": [
+        "KSV011",
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.seaweedfsStateful",
+      "owner": "seaweedfs 4.34.0 (gitops/charts/narwhal-apps/templates/seaweedfs.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:storage:StatefulSet:seaweedfs-master:accept",
+      "scope": "namespace",
+      "namespace": "storage",
+      "kind": "StatefulSet",
+      "name": "seaweedfs-master",
+      "checks": [
+        "KSV011",
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.seaweedfsStateful",
+      "owner": "seaweedfs 4.34.0 (gitops/charts/narwhal-apps/templates/seaweedfs.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "configAudit:kube-system:DaemonSet:cilium:verified",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "DaemonSet",
+      "name": "cilium",
+      "checks": [
+        "KSV005",
+        "KSV009",
+        "KSV017",
+        "KSV022",
+        "KSV023",
+        "KSV106",
+        "KSV119",
+        "KSV120",
+        "KSV121"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedciliumHost",
+      "owner": "cilium 1.19.4 (scripts/cluster/03-cni-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "configAudit:kube-system:DaemonSet:cilium-envoy:verified",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "DaemonSet",
+      "name": "cilium-envoy",
+      "checks": [
+        "KSV005",
+        "KSV009",
+        "KSV022",
+        "KSV023",
+        "KSV106"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedciliumEnvoyHost",
+      "owner": "cilium 1.19.4 (scripts/cluster/03-cni-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "configAudit:istio-system:DaemonSet:istio-cni-node:verified",
+      "scope": "namespace",
+      "namespace": "istio-system",
+      "kind": "DaemonSet",
+      "name": "istio-cni-node",
+      "checks": [
+        "KSV005",
+        "KSV012",
+        "KSV020",
+        "KSV021",
+        "KSV022",
+        "KSV023",
+        "KSV105",
+        "KSV106",
+        "KSV119",
+        "KSV121"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedistioCniHost",
+      "owner": "istio-cni 1.30.1 (gitops/charts/narwhal-apps/templates/istio-cni.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "configAudit:istio-system:DaemonSet:ztunnel:verified",
+      "scope": "namespace",
+      "namespace": "istio-system",
+      "kind": "DaemonSet",
+      "name": "ztunnel",
+      "checks": [
+        "KSV005",
+        "KSV012",
+        "KSV020",
+        "KSV021",
+        "KSV022",
+        "KSV023",
+        "KSV105",
+        "KSV106",
+        "KSV119"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedztunnelHost",
+      "owner": "ztunnel 1.30.1 (gitops/charts/narwhal-apps/templates/ztunnel.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "configAudit:kube-system:Pod:etcd-narwhal-master-1:verified",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Pod",
+      "name": "etcd-narwhal-master-1",
+      "checks": [
+        "KSV009",
+        "KSV023",
+        "KSV024"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedkubeadmHost",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh, scripts/cluster/02-init-cluster.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "configAudit:kube-system:Pod:kube-apiserver-narwhal-master-1:verified",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Pod",
+      "name": "kube-apiserver-narwhal-master-1",
+      "checks": [
+        "KSV009",
+        "KSV023",
+        "KSV024"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedkubeadmHost",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh, scripts/cluster/02-init-cluster.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "configAudit:kube-system:Pod:kube-controller-manager-narwhal-master-1:verified",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Pod",
+      "name": "kube-controller-manager-narwhal-master-1",
+      "checks": [
+        "KSV009",
+        "KSV023",
+        "KSV024"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedkubeadmHost",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh, scripts/cluster/02-init-cluster.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "configAudit:kube-system:Pod:kube-scheduler-narwhal-master-1:verified",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Pod",
+      "name": "kube-scheduler-narwhal-master-1",
+      "checks": [
+        "KSV009",
+        "KSV023",
+        "KSV024"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedkubeadmHost",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh, scripts/cluster/02-init-cluster.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "configAudit:kube-system:Pod:kube-vip-narwhal-master-1:verified",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Pod",
+      "name": "kube-vip-narwhal-master-1",
+      "checks": [
+        "KSV009",
+        "KSV022",
+        "KSV023",
+        "KSV106",
+        "KSV119"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedkubeVipHost",
+      "owner": "kube-vip v1.1.2 (scripts/cluster/00-kube-vip.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "configAudit:kube-system:DaemonSet:csi-nfs-node:verified",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "DaemonSet",
+      "name": "csi-nfs-node",
+      "checks": [
+        "KSV005",
+        "KSV009",
+        "KSV017",
+        "KSV022",
+        "KSV023",
+        "KSV037",
+        "KSV106"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedcsiNfsHost",
+      "owner": "csi-driver-nfs 4.13.2 (scripts/cluster/04-addons.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "configAudit:kube-system:ReplicaSet:csi-nfs-controller:verified",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "ReplicaSet",
+      "name": "csi-nfs-controller",
+      "checks": [
+        "KSV005",
+        "KSV009",
+        "KSV017",
+        "KSV022",
+        "KSV023",
+        "KSV037",
+        "KSV106"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedcsiNfsHost",
+      "owner": "csi-driver-nfs 4.13.2 (scripts/cluster/04-addons.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "configAudit:monitoring:DaemonSet:prometheus-stack-prometheus-node-exporter:verified",
+      "scope": "namespace",
+      "namespace": "monitoring",
+      "kind": "DaemonSet",
+      "name": "prometheus-stack-prometheus-node-exporter",
+      "checks": [
+        "KSV009",
+        "KSV010",
+        "KSV023",
+        "KSV121"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiednodeExporterHost",
+      "owner": "kube-prometheus-stack 86.2.3 (gitops/charts/narwhal-apps/templates/prometheus-stack.yaml)",
+      "reviewedAt": "2026-11-23"
+    }
+  ],
+  "rbac": [
+    {
+      "id": "rbac:cluster:ClusterRole:platform-admin:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "platform-admin",
+      "checks": [
+        "KSV041",
+        "KSV048",
+        "KSV049",
+        "KSV053",
+        "KSV056"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.rbacPlatformAdmin",
+      "owner": "narwhal (gitops/resources/rbac-policies.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:velero-server:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "velero-server",
+      "checks": [
+        "KSV041",
+        "KSV046",
+        "KSV048",
+        "KSV049",
+        "KSV050",
+        "KSV056"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.rbacVeleroServer",
+      "owner": "narwhal / velero v1.18.1 (gitops/resources/velero-server-rbac.yaml, scripts/ops/gen-velero-rbac.py)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:ghost-pod-reaper:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "ghost-pod-reaper",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.rbacGhostPodReaper",
+      "owner": "narwhal (gitops/resources/ghost-pod-reaper.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:argocd-server:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "argocd-server",
+      "checks": [
+        "KSV041",
+        "KSV046",
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.rbacArgocdServer",
+      "owner": "narwhal / argocd v3.4.4 (gitops/charts/narwhal-apps/templates/argocd-server-rbac.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:devtools:Role:narwhal-portal-jobs:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "Role",
+      "name": "narwhal-portal-jobs",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.rbacPortalJobs",
+      "owner": "narwhal-portal (gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:monitoring:Role:narwhal-portal-notification-channels:accept",
+      "scope": "namespace",
+      "namespace": "monitoring",
+      "kind": "Role",
+      "name": "narwhal-portal-notification-channels",
+      "checks": [
+        "KSV113"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.rbacPortalNotificationChannels",
+      "owner": "narwhal-portal (gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:admin:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "admin",
+      "checks": [
+        "KSV041",
+        "KSV048",
+        "KSV049",
+        "KSV050",
+        "KSV053",
+        "KSV056"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:cert-manager-cainjector:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "cert-manager-cainjector",
+      "checks": [
+        "KSV041",
+        "KSV114"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedcert-manager-cainjector",
+      "owner": "cert-manager v1.20.2 (gitops/charts/narwhal-apps/templates/cert-manager.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:cert-manager-controller-certificates:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "cert-manager-controller-certificates",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedcert-manager-controller-certificates",
+      "owner": "cert-manager v1.20.2 (gitops/charts/narwhal-apps/templates/cert-manager.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:cert-manager-controller-challenges:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "cert-manager-controller-challenges",
+      "checks": [
+        "KSV041",
+        "KSV048",
+        "KSV056"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedcert-manager-controller-challenges",
+      "owner": "cert-manager v1.20.2 (gitops/charts/narwhal-apps/templates/cert-manager.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:cert-manager-controller-clusterissuers:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "cert-manager-controller-clusterissuers",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedcert-manager-controller-clusterissuers",
+      "owner": "cert-manager v1.20.2 (gitops/charts/narwhal-apps/templates/cert-manager.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:cert-manager-controller-issuers:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "cert-manager-controller-issuers",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedcert-manager-controller-issuers",
+      "owner": "cert-manager v1.20.2 (gitops/charts/narwhal-apps/templates/cert-manager.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:cert-manager-controller-orders:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "cert-manager-controller-orders",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedcert-manager-controller-orders",
+      "owner": "cert-manager v1.20.2 (gitops/charts/narwhal-apps/templates/cert-manager.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:cluster-admin:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "cluster-admin",
+      "checks": [
+        "KSV044",
+        "KSV046"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:edit:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "edit",
+      "checks": [
+        "KSV041",
+        "KSV048",
+        "KSV049",
+        "KSV053",
+        "KSV056"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:istiod-clusterrole-istio-system:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "istiod-clusterrole-istio-system",
+      "checks": [
+        "KSV041",
+        "KSV049",
+        "KSV114"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedistiod-clusterrole-istio-system",
+      "owner": "istiod 1.30.1 (gitops/charts/narwhal-apps/templates/istiod.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:istiod-gateway-controller-istio-system:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "istiod-gateway-controller-istio-system",
+      "checks": [
+        "KSV048",
+        "KSV056"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedistiod-gateway-controller-istio-system",
+      "owner": "istiod 1.30.1 (gitops/charts/narwhal-apps/templates/istiod.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:metallb:controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "metallb:controller",
+      "checks": [
+        "KSV114"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedmetallb-controller",
+      "owner": "metallb 0.16.1 (gitops/charts/narwhal-apps/templates/metallb.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:openbao-agent-injector-clusterrole:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "openbao-agent-injector-clusterrole",
+      "checks": [
+        "KSV114"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedopenbao-agent-injector-clusterrole",
+      "owner": "openbao 0.28.3 (gitops/charts/narwhal-apps/templates/openbao.yaml)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:aggregate-to-admin:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:aggregate-to-admin",
+      "checks": [
+        "KSV050"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:aggregate-to-edit:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:aggregate-to-edit",
+      "checks": [
+        "KSV041",
+        "KSV048",
+        "KSV049",
+        "KSV053",
+        "KSV056"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:cronjob-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:cronjob-controller",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:daemon-set-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:daemon-set-controller",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:deployment-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:deployment-controller",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:endpoint-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:endpoint-controller",
+      "checks": [
+        "KSV056"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:endpointslice-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:endpointslice-controller",
+      "checks": [
+        "KSV056"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:endpointslicemirroring-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:endpointslicemirroring-controller",
+      "checks": [
+        "KSV056"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:generic-garbage-collector:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:generic-garbage-collector",
+      "checks": [
+        "KSV046"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:horizontal-pod-autoscaler:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:horizontal-pod-autoscaler",
+      "checks": [
+        "KSV046"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:job-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:job-controller",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:legacy-service-account-token-cleaner:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:legacy-service-account-token-cleaner",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:namespace-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:namespace-controller",
+      "checks": [
+        "KSV046"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:node-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:node-controller",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:persistent-volume-binder:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:persistent-volume-binder",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:pod-garbage-collector:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:pod-garbage-collector",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:replicaset-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:replicaset-controller",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:replication-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:replication-controller",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:resourcequota-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:resourcequota-controller",
+      "checks": [
+        "KSV046"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:root-ca-cert-publisher:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:root-ca-cert-publisher",
+      "checks": [
+        "KSV049"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:statefulset-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:statefulset-controller",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:controller:ttl-after-finished-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:controller:ttl-after-finished-controller",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:kube-controller-manager:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:kube-controller-manager",
+      "checks": [
+        "KSV041",
+        "KSV046"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:kube-scheduler:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:kube-scheduler",
+      "checks": [
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:system:node:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "system:node",
+      "checks": [
+        "KSV041",
+        "KSV048"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:kube-system:Role:system:controller:bootstrap-signer:verified",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Role",
+      "name": "system:controller:bootstrap-signer",
+      "checks": [
+        "KSV113"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:kube-system:Role:system:controller:cloud-provider:verified",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Role",
+      "name": "system:controller:cloud-provider",
+      "checks": [
+        "KSV049"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:kube-system:Role:system:controller:token-cleaner:verified",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Role",
+      "name": "system:controller:token-cleaner",
+      "checks": [
+        "KSV113"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-23"
+    }
+  ],
+  "infra": []
+}

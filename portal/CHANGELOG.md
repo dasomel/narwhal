@@ -18,6 +18,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ### Changed
 
+- **Exact Compliance acceptance:** replaced namespace/built-in/substring blanket acceptance with reviewed scope, namespace, kind, resource and explicit check IDs; removed unverifiable exceptions, require ReplicaSet Deployment ownership, versioned affected caches, and expose unused rule targets/counts in the summary API and English/Korean UI (R395).
+
 - **Honest three-state Compliance status & data-unavailability reporting (`src/lib/compliance.ts`, `src/lib/kisa.ts`, `src/types/compliance.ts`, `src/components/compliance/*`, `src/app/api/compliance/*`, `src/app/(dashboard)/compliance/*`, `src/lib/i18n.ts`):**
   - Replaced binary pass assumptions on Trivy's `{ checkID: "", success: true }` placeholders with three-state control evaluation (`passed`, `failed`, `not_evaluated`) requiring positive per-check-ID evidence in the matching report kind/scope (`no_evidence_in_report` on clean `checks: []` reports or unknown IDs, `coverage_unknown` on failed auxiliary reads, `absent_from_report` for spec controls omitted from `detailReport.results`, plus `excluded_namespace`, `unsupported_kind`, `missing_node_type` from spec/collector `nodeType` only, `unlinked_check_id`, `manual`, `scanner_disabled`, `summary_only`, `empty_checks`).
   - Pooled aggregate framework pass rates (sum of numerators / sum of denominators with explicit `num/den` labels), prevented `100%` leaks across every `formatPassRatePct` call site (including raw rates), and updated KISA `CFG-01` to fail on actionable controls, warn on unevaluated controls, and pass only when every control is evaluated with zero actionable failures.

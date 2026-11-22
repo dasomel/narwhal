@@ -18,6 +18,7 @@ Verifies:
 from __future__ import annotations
 
 import copy
+import json
 import re
 import sys
 from pathlib import Path
@@ -29,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[3]
 FILES = {
     "unseal": ROOT / "gitops/resources/openbao-unseal.yaml",
     "backup": ROOT / "gitops/resources/openbao-backup.yaml",
-    "accepted": ROOT / "portal/src/lib/compliance-accepted.ts",
+    "accepted": ROOT / "portal/src/data/compliance-acceptance-rules.json",
     "i18n": ROOT / "portal/src/lib/i18n.ts",
     "doc": ROOT / "docs/common/compliance-hardening.md",
     "reg": ROOT / "scripts/test/regression-check-kakao.sh",
@@ -71,16 +72,8 @@ def _check_pod_uid_100(label: str, pod_spec: dict, errors: list[str]) -> None:
 
 
 def _parse_config_rules(src: str) -> list[tuple[tuple[str, str, str, str], set[str]]]:
-    rules: list[tuple[tuple[str, str, str, str], set[str]]] = []
-    pat = re.compile(
-        r'configRule\(\s*"([^"]*)",\s*"([^"]*)",\s*"([^"]*)",\s*\[([^\]]*)\],\s*"([^"]*)"',
-        re.S,
-    )
-    for m in pat.finditer(src):
-        ns, kind, name, checks_raw, cls = m.groups()
-        checks = set(re.findall(r'"([^"]+)"', checks_raw))
-        rules.append(((ns, kind, name, cls), checks))
-    return rules
+    return [((r["namespace"], r["kind"], r["name"], r["class"]), set(r["checks"]))
+            for r in json.loads(src)["configAudit"]]
 
 
 def check(texts: dict[str, str]) -> list[str]:
@@ -127,9 +120,11 @@ def check(texts: dict[str, str]) -> list[str]:
     if any(k[2] == "openbao-auto-unseal" for k, _ in rules):
         errors.append("compliance-accepted.ts must not allowlist fixed workload openbao-auto-unseal")
 
+    # D-P2-2: no repo manifest proves the former CNPG UID/pooler necessity.
+    if any(k[2] in ("narwhal-db-1", "narwhal-db-pooler-rw") for k, _ in rules):
+        errors.append("unverified CNPG acceptance must stay absent")
+
     expected_rules = {
-        ("database", "Pod", "narwhal-db-1", "accept"): {"KSV020", "KSV021", "KSV036"},
-        ("database", "ReplicaSet", "narwhal-db-pooler-rw", "upstream"): {"KSV020", "KSV021"},
         ("storage", "CronJob", "openbao-snapshot", "accept"): {"KSV020", "KSV021"},
         ("storage", "ReplicaSet", "openbao-snapshot-holder", "accept"): {"KSV020", "KSV021"},
         ("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", "accept"): {
@@ -155,7 +150,7 @@ def check(texts: dict[str, str]) -> list[str]:
     want_summary = f"{len(rules)} Config Audit rules across {len({k[:3] for k, _ in rules})} workloads"
     if want_summary not in texts["doc"]:
         errors.append(f"docs/common/compliance-hardening.md allowlist summary must read '{want_summary}'")
-    for row in ("ReplicaSet/narwhal-db-pooler-rw", "CronJob/openbao-snapshot", "ReplicaSet/openbao-snapshot-holder"):
+    for row in ("CronJob/openbao-snapshot", "ReplicaSet/openbao-snapshot-holder"):
         if row not in texts["doc"]:
             errors.append(f"docs/common/compliance-hardening.md missing {row} row")
     if "Matching is exact: `database/Pod/narwhal-db-1`" not in texts["doc"]:
@@ -173,18 +168,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("openbao-snapshot switched to 10100", "backup", "            runAsUser: 100", "            runAsUser: 10100"),
     ("openbao-snapshot gains runAsGroup", "backup", "            runAsUser: 100\n", "            runAsUser: 100\n            runAsGroup: 10100\n"),
     ("openbao-snapshot-holder switched to 10100", "backup", "        runAsUser: 100", "        runAsUser: 10100"),
-    ("drop narwhal-db-1 KSV020/021", "accepted", '["KSV020", "KSV021", "KSV036"]', '["KSV036"]'),
-    ("extra check on narwhal-db-1", "accepted", '["KSV020", "KSV021", "KSV036"]', '["KSV014", "KSV020", "KSV021", "KSV036"]'),
-    ("drop narwhal-db-pooler-rw rule", "accepted", '"narwhal-db-pooler-rw"', '"narwhal-db-pooler-other"'),
-    ("pooler reclassified as accept", "accepted", '"upstream",\n    "compliance.acceptedReason.cnpgPoolerUid"', '"accept",\n    "compliance.acceptedReason.cnpgPoolerUid"'),
-    ("drop snapshot CronJob rule", "accepted", '"openbao-snapshot",\n    ["KSV020", "KSV021"]', '"openbao-snapshot-x",\n    ["KSV020", "KSV021"]'),
-    ("extra check on snapshot-holder", "accepted", '"openbao-snapshot-holder",\n    ["KSV020", "KSV021"]', '"openbao-snapshot-holder",\n    ["KSV014", "KSV020", "KSV021"]'),
-    ("drop nfs-quota-agent KSV003", "accepted", '"KSV001", "KSV003", "KSV012", "KSV017", "KSV020", "KSV021", "KSV023", "KSV121"', '"KSV001", "KSV012", "KSV017", "KSV020", "KSV021", "KSV023", "KSV121"'),
-    ("allowlist openbao-auto-unseal", "accepted", '"openbao-agent-injector"', '"openbao-auto-unseal"'),
     ("drop i18n cnpgPoolerUid", "i18n", '"compliance.acceptedReason.cnpgPoolerUid"', '"compliance.acceptedReason.removed"'),
     ("drop i18n openbaoSnapshotUid", "i18n", '"compliance.acceptedReason.openbaoSnapshotUid"', '"compliance.acceptedReason.removed"'),
-    ("stale doc count", "doc", "73 Config Audit rules across 61 workloads", "71 Config Audit rules across 59 workloads"),
-    ("false /etc/pgbouncer claim", "doc", "no supported setting changes it", "no supported setting changes it (/etc/pgbouncer ownership)"),
+    ("stale doc count", "doc", "45 Config Audit rules across 45 workloads", "31 Config Audit rules across 31 workloads"),
+    ("false /etc/pgbouncer claim", "doc", "### Config Audit allowlist", "### Config Audit allowlist /etc/pgbouncer"),
     ("drop exact-match doc note", "doc", "Matching is exact: `database/Pod/narwhal-db-1`", "Matching is loose: `database/Pod/narwhal-db-1`"),
     ("drop R383 wiring", "reg", "check R383 ", "check R9999 "),
 ]
@@ -197,6 +184,25 @@ def main() -> int:
         print("\n".join(errors), file=sys.stderr)
         return 1
 
+    # Exercise the JSON artifact directly; preserve and strengthen the old rule mutations.
+    data = json.loads(texts["accepted"])
+    json_mutations = []
+    for name in ("narwhal-db-1", "narwhal-db-pooler-rw", "openbao-auto-unseal"):
+        changed = copy.deepcopy(data)
+        rule = copy.deepcopy(data["configAudit"][0])
+        rule["name"] = name
+        changed["configAudit"].append(rule)
+        json_mutations.append((f"resurrect unverified/fixed {name}", changed))
+    for name in ("openbao-snapshot", "openbao-snapshot-holder", "nfs-quota-agent"):
+        for mode in ("drop", "extra check"):
+            changed = copy.deepcopy(data)
+            rule = next(r for r in changed["configAudit"] if r["name"] == name)
+            if mode == "drop":
+                changed["configAudit"].remove(rule)
+            else:
+                rule["checks"].append("KSV014")
+            json_mutations.append((f"{mode}: {name}", changed))
+
     if "--mutation-verify" in sys.argv:
         for name, key, old, new in MUTATIONS:
             mutated = copy.deepcopy(texts)
@@ -207,7 +213,11 @@ def main() -> int:
             if not check(mutated):
                 print(f"FAIL: mutation not rejected: {name}", file=sys.stderr)
                 return 1
-        print(f"PASS: R383 low-severity compliance hardening & allowlist ({len(MUTATIONS)} mutations rejected)")
+        for name, data in json_mutations:
+            mutated = dict(texts, accepted=json.dumps(data))
+            if not check(mutated):
+                raise AssertionError(f"mutation not rejected: {name}")
+        print(f"PASS: R383 low-severity compliance hardening & allowlist ({len(MUTATIONS) + len(json_mutations)} mutations rejected)")
         return 0
 
     print("PASS: R383 low-severity compliance hardening & allowlist")

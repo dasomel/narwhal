@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[3]
 FILES = {
     "trivy": ROOT / "gitops/charts/narwhal-apps/templates/trivy-operator.yaml",
     "accepted": ROOT / "portal/src/lib/compliance-accepted.ts",
+    "acceptance": ROOT / "portal/src/lib/compliance-acceptance.ts",
     "compliance": ROOT / "portal/src/lib/compliance.ts",
     "infra_list": ROOT / "portal/src/components/compliance/infra-audit-list.tsx",
     "types": ROOT / "portal/src/types/compliance.ts",
@@ -308,7 +309,7 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
         )
 
     # 2. compliance-accepted.ts: KCV normalization + empty ACCEPTED_INFRA_RULES (neither KCV0056 nor KCV0059)
-    acc = texts["accepted"]
+    acc = texts["accepted"] + texts["acceptance"]
     for needle in (
         "CHECK_ID_PAD_WIDTH",
         "(?:AVD-(KSV|KCV)-|(KSV|KCV))0*(\\d+)",
@@ -420,7 +421,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("stale nodeCollector checksum annotation", "trivy", "checksum/node-collector-mounts: \"eca6d129ecc1594eb2d9bcc63e2d5b2ea63cc89909a235fa591134bc555d4a70\"", "checksum/node-collector-mounts: \"stale\""),
     ("allowlist KCV0056", "accepted", "export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = []", 'export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = [\n  infraRule("*", ["KCV0056"], "upstream", "compliance.acceptedReason.infraCniDirGlob"),\n]'),
     ("allowlist KCV0059", "accepted", "export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = []", 'export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = [\n  infraRule("*", ["KCV0059"], "upstream", "compliance.acceptedReason.infraCniDirGlob"),\n]'),
-    ("drop KCV normalization", "accepted", "(?:AVD-(KSV|KCV)-|(KSV|KCV))0*(\\d+)", "(?:AVD-(KSV)-|(KSV))0*(\\d+)"),
+    ("drop KCV normalization", "acceptance", "(?:AVD-(KSV|KCV)-|(KSV|KCV))0*(\\d+)", "(?:AVD-(KSV)-|(KSV))0*(\\d+)"),
     ("drop Node matcher in frameworks", "compliance", 'if (resolved.kind === "Node")', 'if (resolved.kind === "NeverNode")'),
     ("drop mixed-node accepted badge", "infra_list", "{hasActionable && acceptedFailures > 0 && (", "{false && acceptedFailures > 0 && ("),
     ("drop acceptedInfraFailures type", "types", "acceptedInfraFailures: CheckSummary", "removedInfra: CheckSummary"),

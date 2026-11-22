@@ -34,7 +34,7 @@
         "runtime:kubectl security-system temporary Jobs kcv0056-neg-{a,b,c,d} (deleted) -> node-collector:0.3.1 values (a)=[644], (b)=[600,644], (c)=[], (d)=[700]; deployed embedded trivy-checks v1.7.1 KCV0056 via trivy config & opa eval -> (a) FAIL, (b) FAIL, (c) PASS, (d) FAIL, [444] PASS, worker:[644] PASS",
         "test:python3 scripts/test/lib/check-node-compliance-checks.py --mutation-verify (default bash, /bin/bash 3.2 PATH, no-helm/no-promtool PATH) -> PASS (23 mutations rejected)",
         "test:cd portal && pnpm typecheck && pnpm vitest run src/lib/compliance-accepted.test.ts src/lib/compliance.test.ts src/components/compliance/compliance-ui.test.tsx -> passed",
-        "test:make lint && make validate && RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed",
+        "test:make validate && RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> passed; make lint: shellcheck passed, yamllint exits non-zero on pre-existing line-length errors in untouched files (ghost-pod-reaper.yaml, prometheus-alerts.yaml, velero-server-rbac.yaml)",
         "policy:python3 .agents/evals/gate.py + scripts/ci/check-agent-trace-evidence.py -> passed"
       ]
     },

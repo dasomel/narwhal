@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-kisa-node-trust-psa-rbac-20261121",
-  "task": "Fix three real security/compliance gaps behind KISA controls (KISA-IMG-01 Harbor containerd CA trust, KISA-POD-01 PSA audit/warn 14/14 namespaces, KISA-RBAC-02 explicit dev Role/RoleBinding without serviceaccounts/impersonate) and resolve Round 2 security review findings.",
+  "task": "Fix three real security/compliance gaps behind KISA controls (KISA-IMG-01 Harbor containerd CA trust, KISA-POD-01 PSA audit/warn 14/14 namespaces, KISA-RBAC-02 explicit dev Role/RoleBinding without serviceaccounts/impersonate) and resolve Round 2 and Round 3 security review findings.",
   "changeContext": {
     "paths": [
       ".agents/evals/traces/2026-11-kisa-node-trust-psa-rbac.json",
@@ -16,25 +16,25 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Touched containerd/TLS/join/Kakao scripts (02-containerd.sh, lib-harbor-ca.sh, 08-6-tls-routes.sh, 08-6b-harbor-containerd-tls-node.sh, 06-phase2-start.sh, 02-join-{worker,control-plane}.sh, distribute-join-kakao.sh, apply-harbor-ca-kakao.sh, provision-kakao.sh, operations.md), PSA scripts/GitOps/docs/check (lib/apply-psa-labels.sh, 08-3-security.sh, 14-gitops-bootstrap.sh, dev-namespace.yaml, narwhal-db.yaml, chaos-mesh.yaml, workload-security-profile.md, check-workload-psa-profile.py), dev RBAC (rbac-policies.yaml, 11-4-keycloak-apiserver.sh), R317 boundary update (check-harbor-ca-rotate.py), R386 (check-kisa-node-trust-psa-rbac.py, regression-check-kakao.sh), and lessons-log.md. Deliberately left alone: portal/, scripts/airgap/06-configure-mirrors.sh, velero-server-rbac.yaml, and live cluster/node state."
+      "summary": "Touched containerd/TLS/join/Kakao scripts (02-containerd.sh, lib-harbor-ca.sh, 08-6-tls-routes.sh, 08-6b-harbor-containerd-tls-node.sh, 06-phase2-start.sh, 02-join-{worker,control-plane}.sh, distribute-join-kakao.sh, apply-harbor-ca-kakao.sh, provision-kakao.sh, operations.md), PSA scripts/GitOps/docs/check (lib/apply-psa-labels.sh, 08-3-security.sh, 14-gitops-bootstrap.sh, dev-namespace.yaml, narwhal-db.yaml, chaos-mesh.yaml, workload-security-profile.md, check-workload-psa-profile.py), dev RBAC (rbac-policies.yaml, 11-4-keycloak-apiserver.sh), R317 boundary update (check-harbor-ca-rotate.py), R386 (check-kisa-node-trust-psa-rbac.py, regression-check-kakao.sh), and lessons-log.md. Deliberately left alone: portal/, scripts/airgap/06-configure-mirrors.sh, velero-server-rbac.yaml, D5 residual risk design, and live cluster/node state."
     },
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Verified read-only on narwhal-master-1 (v1.35.7, containerd 2.2.2): /etc/containerd/certs.d/harbor.local.narwhal.internal/hosts.toml has skip_verify = true; kubectl --kubeconfig=/etc/kubernetes/kubelet.conf confirmed NodeAuthorizer blocks kube-public/{cluster-info,kube-root-ca.crt} and platform-system/narwhal-wildcard-tls (devtools/narwhal-ca-cert only readable when a pod mounts it on that node); RoleBinding dev/developer-full-access binds ClusterRole/edit with argocd tracking-id under Application rbac-policies (automated.prune: true, selfHeal: true, ServerSideApply=true); 9/14 namespaces have PSA labels."
+      "summary": "Verified read-only on narwhal-master-1 (v1.35.7, containerd 2.2.2): /etc/containerd/certs.d/harbor.local.narwhal.internal/hosts.toml has skip_verify = true; kubectl --kubeconfig=/etc/kubernetes/kubelet.conf confirmed NodeAuthorizer blocks kube-public/{cluster-info,kube-root-ca.crt} and platform-system/narwhal-wildcard-tls; kubectl get namespace nonexistent-psa-probe-check -o name returned exact line 'Error from server (NotFound): namespaces \"nonexistent-psa-probe-check\" not found'; RoleBinding dev/developer-full-access binds ClusterRole/edit under Application rbac-policies (automated.prune: true); 9/14 namespaces have PSA labels."
     },
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Implemented D-HARBOR-NODE-CA with shared scripts/common/lib-harbor-ca.sh (all-block PEM/expiry/notBefore/private-key/garbage validation matching R372, deduplicated sync_harbor_containerd_ca distinguishing SSH failure from HARBOR_CA_ABSENT, local check for 06-phase2-start.sh), loud node-enumeration/remote failures in 08-6-tls-routes.sh recorded in PHASE2_DEGRADED (/tmp/vagrant-shell safe), tofu/JSON failure propagation in apply-harbor-ca-kakao.sh, D5 NodeAuthorizer residual risk documented; D-PSA-LABELS-14 distinguishing NotFound from Forbidden/API errors with 14/14 convergence output; and D-DEV-ROLE-NO-IMPERSONATE introducing new Role/RoleBinding dev/developer-dev-access while removing legacy developer-full-access (auto-pruned by rbac-policies prune:true, documenting accepted pods/exec+secrets residual risk)."
+      "summary": "Implemented D-HARBOR-NODE-CA with shared scripts/common/lib-harbor-ca.sh (all-block PEM validation, shared three-way probe_remote_harbor_ca used by both Vagrant sync_harbor_containerd_ca and Kakao distribute-join-kakao.sh so SSH/sudo errors abort instead of masquerading as CA-absent, local check in 06-phase2-start.sh), loud node-enumeration/remote failures in 08-6-tls-routes.sh recorded in PHASE2_DEGRADED, tofu/JSON/SSH failure propagation in apply-harbor-ca-kakao.sh; D-PSA-LABELS-14 matching exact per-namespace API NotFound in apply-psa-labels.sh (rejecting exec-plugin 'not found', Forbidden, API timeout, wrong-ns NotFound), keeping 08-3 tolerant while 14-gitops-bootstrap.sh waits boundedly for GitOps-managed namespaces (dev, chaos-testing) and enforces --require-all under CRITICAL_SCRIPTS; and D-DEV-ROLE-NO-IMPERSONATE replacing legacy developer-full-access with Role/RoleBinding dev/developer-dev-access."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Offline static, behavioral (bash 3.2 + default bash, PATH without helm/promtool), and mutation verification across make lint, make validate, make test (incl. R317, R384, check-workload-psa-profile.py, and R386 with 27 mutations), shellcheck --severity=warning on touched scripts, plus evals gate and trace-evidence checks. NOT covered: live cluster/node rollout, live Harbor ctr pull, and live kubectl auth can-i after ArgoCD sync (owned by orchestrator).",
+      "scope": "Offline static, behavioral (default bash, /bin/bash 3.2 first on PATH, PATH without helm/promtool), and mutation verification across make lint, make validate, make test (incl. R317, R384, check-workload-psa-profile.py, and R386 with 32 mutations), shellcheck --severity=warning on touched scripts, plus evals gate and trace-evidence checks. NOT covered: live cluster/node rollout, live Harbor ctr pull, and live kubectl auth can-i after ArgoCD sync (owned by orchestrator).",
       "evidence": [
-        "test:python3 scripts/test/lib/check-kisa-node-trust-psa-rbac.py --mutation-verify -> PASS (27 mutations rejected, bash 3.2 + no-helm/promtool behavioral verified)",
+        "test:python3 scripts/test/lib/check-kisa-node-trust-psa-rbac.py --mutation-verify (default bash, /bin/bash 3.2 first, no helm/promtool PATH) -> PASS (32 mutations rejected)",
         "test:shellcheck --severity=warning on all touched shell scripts -> exited 0",
         "test:make lint && make validate && make test -> passed",
         "policy:python3 .agents/evals/gate.py && python3 scripts/ci/check-agent-trace-evidence.py -> passed"
@@ -43,7 +43,7 @@
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "All three Lane 3 parts and all 8 MAJOR + 2 MINOR review items addressed; offline behavioral, mutation, lint, validate, test, and trace gates pass."
+      "summary": "All three Lane 3 parts and all Round 2 and Round 3 review items (3 MAJOR + 2 MINOR) addressed; offline behavioral, mutation, lint, validate, test, and trace gates pass."
     },
     {
       "id": "e6",

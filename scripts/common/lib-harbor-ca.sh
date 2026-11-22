@@ -125,6 +125,67 @@ sys.exit(0 if t <= datetime.datetime.now(datetime.timezone.utc) else 1)
   return 0
 }
 
+# Probe whether a remote Harbor CA file exists and is non-empty over a caller-supplied
+# transport command (e.g. sshpass ssh on Vagrant, ssh_node on Kakao).
+# The remote command prints an explicit HARBOR_CA_PRESENT or HARBOR_CA_ABSENT sentinel so
+# SSH/transport/sudo failures (non-zero rc or unexpected output) can never be misclassified
+# as "CA not issued yet".
+#
+# Usage: probe_remote_harbor_ca <remote_ca_path> <use_sudo:0|1> <transport_cmd...>
+# Returns:
+#   0 -> HARBOR_CA_PRESENT
+#   2 -> HARBOR_CA_ABSENT (not issued yet — initial Phase 1 join)
+#   1 -> transport/sudo error or unexpected output (fail closed)
+probe_remote_harbor_ca() {
+  local remote_ca="${1:-}"
+  local use_sudo="${2:-0}"
+  if [ "$#" -lt 3 ]; then
+    echo "ERROR: probe_remote_harbor_ca requires <remote_ca> <use_sudo> <transport_cmd...>" >&2
+    return 1
+  fi
+  shift 2
+  case "${remote_ca}" in
+    ""|*[!A-Za-z0-9_/.-]*)
+      echo "ERROR: invalid remote Harbor CA path: ${remote_ca}" >&2
+      return 1
+      ;;
+  esac
+
+  local remote_cmd
+  if [ "${use_sudo}" = "1" ]; then
+    # Run the test inside `sudo sh -c` so a sudo failure itself exits non-zero instead of
+    # falling into the else branch and falsely printing HARBOR_CA_ABSENT.
+    remote_cmd="sudo sh -c 'if [ -s \"\$1\" ]; then printf \"HARBOR_CA_PRESENT\\n\"; else printf \"HARBOR_CA_ABSENT\\n\"; fi' _ '${remote_ca}'"
+  else
+    remote_cmd="if [ -s '${remote_ca}' ]; then printf 'HARBOR_CA_PRESENT\n'; else printf 'HARBOR_CA_ABSENT\n'; fi"
+  fi
+
+  local probe_out=""
+  local probe_rc=0
+  probe_out="$("$@" "${remote_cmd}" 2>&1)" || probe_rc=$?
+  if [ "${probe_rc}" -ne 0 ]; then
+    echo "ERROR: remote probe failed while checking Harbor CA (${remote_ca}, rc=${probe_rc}): ${probe_out}" >&2
+    return 1
+  fi
+
+  local has_present=0
+  local has_absent=0
+  case $'\n'"${probe_out}"$'\n' in
+    *$'\n'HARBOR_CA_PRESENT$'\n'*) has_present=1 ;;
+  esac
+  case $'\n'"${probe_out}"$'\n' in
+    *$'\n'HARBOR_CA_ABSENT$'\n'*) has_absent=1 ;;
+  esac
+
+  if [ "${has_present}" -eq 1 ] && [ "${has_absent}" -eq 0 ]; then
+    return 0
+  elif [ "${has_absent}" -eq 1 ] && [ "${has_present}" -eq 0 ]; then
+    return 2
+  fi
+  echo "ERROR: unexpected Harbor CA probe output (${remote_ca}): ${probe_out}" >&2
+  return 1
+}
+
 # Synchronize Harbor containerd CA trust for late-joining control-plane or worker nodes
 # (nodes added after Phase 2 08-6-tls-routes.sh already ran).
 # During initial Phase 1 bring-up, master-1 does not have the CA yet and explicitly reports
@@ -167,27 +228,16 @@ sync_harbor_containerd_ca() {
       return 0
     fi
   else
-    local probe_out=""
     local probe_rc=0
-    probe_out="$(sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-      "vagrant@${master_ip}" \
-      "if [ -s '${harbor_ca_remote}' ]; then printf 'HARBOR_CA_PRESENT\n'; else printf 'HARBOR_CA_ABSENT\n'; fi" 2>&1)" || probe_rc=$?
-    if [ "${probe_rc}" -ne 0 ]; then
-      echo "ERROR: SSH probe to master-1 (${master_ip}) failed while checking Harbor CA (${harbor_ca_remote}, rc=${probe_rc}): ${probe_out}" >&2
+    probe_remote_harbor_ca "${harbor_ca_remote}" 0 \
+      sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+      "vagrant@${master_ip}" || probe_rc=$?
+    if [ "${probe_rc}" -eq 2 ]; then
+      echo "Harbor CA not yet provisioned on master-1 (${harbor_ca_remote}); 08-6-tls-routes.sh will distribute it in Phase 2"
+      return 0
+    elif [ "${probe_rc}" -ne 0 ]; then
       return 1
     fi
-    case $'\n'"${probe_out}"$'\n' in
-      *$'\n'HARBOR_CA_ABSENT$'\n'*)
-        echo "Harbor CA not yet provisioned on master-1 (${harbor_ca_remote}); 08-6-tls-routes.sh will distribute it in Phase 2"
-        return 0
-        ;;
-      *$'\n'HARBOR_CA_PRESENT$'\n'*)
-        ;;
-      *)
-        echo "ERROR: unexpected Harbor CA probe output from master-1 (${master_ip}): ${probe_out}" >&2
-        return 1
-        ;;
-    esac
 
     tmp_ca="$(mktemp "${TMPDIR:-/tmp}/harbor-ca.XXXXXX")"
     cleanup_tmp_ca=1

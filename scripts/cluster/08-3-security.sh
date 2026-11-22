@@ -196,9 +196,11 @@ kubectl patch deployment headlamp -n devtools --type='json' \
 
 echo "Headlamp installed"
 
-# D-PSA-LABELS-14 (KISA-POD-01): delegate to the shared PSA helper so 08-3-security.sh
-# and 14-gitops-bootstrap.sh (after later namespaces are created) apply the exact same
-# audit/warn labels across all 14 platform namespaces without drift.
+# D-PSA-LABELS-14 (KISA-POD-01): tolerant early PSA pass (no --require-all).
+# security-system (08-5), istio-system (09), iam (11), dev (11-4/ArgoCD), and chaos-testing
+# (ArgoCD in step 14) legitimately do not exist yet here, so missing namespaces are skipped
+# while non-NotFound API errors still fail loudly. The strict final pass (--require-all) runs
+# at the end of 14-gitops-bootstrap.sh once all 14 namespaces exist.
 PSA_HELPER="/home/vagrant/scripts/cluster/lib/apply-psa-labels.sh"
 if [ ! -f "${PSA_HELPER}" ]; then
   PSA_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/apply-psa-labels.sh"

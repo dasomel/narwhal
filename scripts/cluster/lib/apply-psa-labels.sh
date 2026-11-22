@@ -27,13 +27,19 @@ if [ -z "${KUBECONFIG:-}" ] && [ -r /home/vagrant/.kube/config-local ]; then
   export KUBECONFIG=/home/vagrant/.kube/config-local
 fi
 
-# Distinguish "namespace does not exist yet" (NotFound) from API/permission errors (Forbidden,
-# Unauthorized, connection refused, etc.) and fail loudly on the latter.
-is_not_found_error() {
-  local out="$1"
-  if printf '%s' "${out}" | grep -qiE 'notfound|\(notfound\)|not found'; then
-    return 0
-  fi
+# Match only an API Server NotFound error for the exact target namespace.
+# Any other failure (exec-plugin "not found" text, Forbidden, API timeout, missing kubectl,
+# or NotFound for a different namespace/resource) must fail loudly instead of looking absent.
+is_namespace_not_found_error() {
+  local ns="$1"
+  local out="$2"
+  local expected="Error from server (NotFound): namespaces \"${ns}\" not found"
+  local line
+  while IFS= read -r line; do
+    if [ "${line}" = "${expected}" ]; then
+      return 0
+    fi
+  done <<< "${out}"
   return 1
 }
 
@@ -41,14 +47,14 @@ ns_exists_or_not_found() {
   local ns="$1"
   local out=""
   local rc=0
-  out="$(kubectl get ns "${ns}" -o name 2>&1)" || rc=$?
+  out="$(kubectl get namespace "${ns}" -o name 2>&1)" || rc=$?
   if [ "${rc}" -eq 0 ]; then
     return 0
   fi
-  if is_not_found_error "${out}"; then
+  if is_namespace_not_found_error "${ns}" "${out}"; then
     return 1
   fi
-  echo "ERROR: kubectl get ns ${ns} failed with non-NotFound error (rc=${rc}): ${out}" >&2
+  echo "ERROR: kubectl get namespace ${ns} failed with non-NotFound error (rc=${rc}): ${out}" >&2
   exit 1
 }
 
@@ -62,10 +68,10 @@ check_converged_profile() {
   local expected="$2"
   local out=""
   local rc=0
-  out="$(kubectl get ns "${ns}" \
+  out="$(kubectl get namespace "${ns}" \
     -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/audit}:{.metadata.labels.pod-security\.kubernetes\.io/warn}' 2>&1)" || rc=$?
   if [ "${rc}" -ne 0 ]; then
-    if is_not_found_error "${out}"; then
+    if is_namespace_not_found_error "${ns}" "${out}"; then
       skipped_ns+=("${ns}")
       return 0
     fi
@@ -85,7 +91,7 @@ echo "=== Applying Pod Security Admission labels (KISA-POD-01) ==="
 for ns in iam devtools monitoring database dev default cilium-secrets; do
   convergence_targets+=("${ns}:baseline")
   if ns_exists_or_not_found "${ns}"; then
-    kubectl label ns "${ns}" \
+    kubectl label namespace "${ns}" \
       pod-security.kubernetes.io/audit=baseline \
       pod-security.kubernetes.io/warn=baseline --overwrite
   else
@@ -96,7 +102,7 @@ done
 for ns in kube-system istio-system platform-system storage security-system nfs-quota-agent chaos-testing; do
   convergence_targets+=("${ns}:privileged")
   if ns_exists_or_not_found "${ns}"; then
-    kubectl label ns "${ns}" \
+    kubectl label namespace "${ns}" \
       pod-security.kubernetes.io/audit=privileged \
       pod-security.kubernetes.io/warn=privileged --overwrite
   else

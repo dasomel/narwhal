@@ -168,6 +168,26 @@ want_pass="${{2:-2}}"
                 manifest = r / "etc/kubernetes/manifests/etcd.yaml"
                 manifest.parent.mkdir(parents=True)
                 manifest.write_text("kind: Pod\n", encoding="utf-8")
+            pki_dir = r / "etc/kubernetes/pki"
+            pki_dir.mkdir(parents=True, exist_ok=True)
+            ca = pki_dir / "ca.crt"
+            ca.write_text("cert\n", encoding="utf-8")
+            os.chmod(ca, 0o600)
+            svc = r / "usr/lib/systemd/system/kubelet.service"
+            svc.parent.mkdir(parents=True, exist_ok=True)
+            svc.write_text("[Service]\n", encoding="utf-8")
+            os.chmod(svc, 0o600)
+            dropin = r / "usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf"
+            dropin.parent.mkdir(parents=True, exist_ok=True)
+            dropin.write_text("[Service]\n", encoding="utf-8")
+            os.chmod(dropin, 0o600)
+            kcfg = r / "var/lib/kubelet/config.yaml"
+            kcfg.parent.mkdir(parents=True, exist_ok=True)
+            kcfg.write_text(
+                "protectKernelDefaults: true\ntlsCipherSuites:\n  - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n",
+                encoding="utf-8",
+            )
+            os.chmod(kcfg, 0o600)
             return r
 
         good = make_root("good", 0o600, 0o700, cni_dotfile_mode=0o600)
@@ -189,26 +209,26 @@ want_pass="${{2:-2}}"
         bad_etcd_sgid = make_root("bad_etcd_sgid", 0o600, 0o2700)
 
         cases: list[tuple[str, Path, str, str, bool, str, str | None]] = [
-            ("compliant master fixture", good, "2", owner, True, "CIS 1.1.9 CNI file perms: 2 file(s) <=600", None),
-            ("compliant worker fixture", worker, "1", owner, True, "SUMMARY pass=1 fail=0", None),
-            ("missing etcd dir when etcd.yaml exists", etcd_missing, "2", owner, False, "FAIL: CIS 1.1.12 etcd data dir missing or symlink", None),
-            ("444 CNI file", bad_cni_444, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
-            ("644 CNI file", bad_cni_644, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
-            ("0700 CNI file", bad_cni_700, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
-            ("4600 CNI file", bad_cni_suid, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
-            ("symlink->644 CNI file", bad_cni_symlink, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
-            ("missing CNI dir", missing_cni_dir, "2", owner, False, "FAIL: CIS 1.1.9 CNI config dir missing or symlink", None),
-            ("empty CNI dir", empty_cni, "2", owner, False, "FAIL: CIS 1.1.9 CNI config files: none found", None),
-            ("subdir-only CNI dir", subdir_only_cni, "2", owner, False, "FAIL: CIS 1.1.9 CNI config files: none found", None),
-            ("dotfile-only CNI dir", dotfile_only_cni, "2", owner, False, "FAIL: CIS 1.1.9 CNI config files: none found", None),
-            ("644 dotfile with 600 conflist", bad_dotfile_cni, "2", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
-            ("755 etcd dir", bad_etcd_755, "2", owner, False, "FAIL: CIS 1.1.12 etcd data dir", None),
-            ("4700 etcd dir", bad_etcd_suid, "2", owner, False, "FAIL: CIS 1.1.12 etcd data dir", None),
-            ("2700 etcd dir", bad_etcd_sgid, "2", owner, False, "FAIL: CIS 1.1.12 etcd data dir", None),
-            ("wrong etcd owner", good, "2", "wronguser:wronggroup", False, "FAIL: CIS 1.1.12 etcd data dir", None),
+            ("compliant master fixture", good, "5", owner, True, "CIS 1.1.9 CNI file perms: 2 file(s) <=600", None),
+            ("compliant worker fixture", worker, "4", owner, True, "SUMMARY pass=4 fail=0", None),
+            ("missing etcd dir when etcd.yaml exists", etcd_missing, "5", owner, False, "FAIL: CIS 1.1.12 etcd data dir missing or symlink", None),
+            ("444 CNI file", bad_cni_444, "5", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
+            ("644 CNI file", bad_cni_644, "5", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
+            ("0700 CNI file", bad_cni_700, "5", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
+            ("4600 CNI file", bad_cni_suid, "5", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
+            ("symlink->644 CNI file", bad_cni_symlink, "5", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
+            ("missing CNI dir", missing_cni_dir, "5", owner, False, "FAIL: CIS 1.1.9 CNI config dir missing or symlink", None),
+            ("empty CNI dir", empty_cni, "5", owner, False, "FAIL: CIS 1.1.9 CNI config files: none found", None),
+            ("subdir-only CNI dir", subdir_only_cni, "5", owner, False, "FAIL: CIS 1.1.9 CNI config files: none found", None),
+            ("dotfile-only CNI dir", dotfile_only_cni, "5", owner, False, "FAIL: CIS 1.1.9 CNI config files: none found", None),
+            ("644 dotfile with 600 conflist", bad_dotfile_cni, "5", owner, False, "FAIL: CIS 1.1.9 CNI file perms", None),
+            ("755 etcd dir", bad_etcd_755, "5", owner, False, "FAIL: CIS 1.1.12 etcd data dir", None),
+            ("4700 etcd dir", bad_etcd_suid, "5", owner, False, "FAIL: CIS 1.1.12 etcd data dir", None),
+            ("2700 etcd dir", bad_etcd_sgid, "5", owner, False, "FAIL: CIS 1.1.12 etcd data dir", None),
+            ("wrong etcd owner", good, "5", "wronguser:wronggroup", False, "FAIL: CIS 1.1.12 etcd data dir", None),
         ]
         if os.geteuid() != 0:
-            cases.append(("000 CNI dir", unreadable_cni, "2", owner, False, "FAIL: CIS 1.1.9 CNI config dir unreadable", "none found"))
+            cases.append(("000 CNI dir", unreadable_cni, "5", owner, False, "FAIL: CIS 1.1.9 CNI config dir unreadable", "none found"))
 
         def run_case(
             bash_bin: str,
@@ -372,7 +392,7 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
         fn_src = "\n\n".join((priv_fn, stat_fn, hard_fn))
         if '${priv[@]+"${priv[@]}"}' not in priv_fn:
             errors.append("_node_priv must guard priv expansion with ${priv[@]+\"${priv[@]}\"} for bash 3.2 set -u")
-        for token in ("_node_priv", "8#7177", "8#7077", "find -L", "stat -L", "CNI config dir unreadable", "*.conf|*.conflist|*.json", 'if [ "${cni_conf_count}" -eq 0 ]'):
+        for token in ("_node_priv", "((8#${mode} & 8#7177))", "8#7077", 'find -L "${cni_dir}"', "stat -L", "CNI config dir unreadable", "*.conf|*.conflist|*.json", 'if [ "${cni_conf_count}" -eq 0 ]'):
             if token not in fn_src:
                 errors.append(f"verify_node_file_hardening missing hardening check token {token!r}")
         if "_node_priv" not in stat_fn or "_node_priv" not in hard_fn:

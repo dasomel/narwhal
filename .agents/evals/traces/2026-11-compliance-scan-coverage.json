@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-compliance-scan-coverage-20261122",
+  "task": "Close silent unevaluated compliance gaps across Trivy Operator scan scope (kube-system, istio-system, RoleBinding/ClusterRoleBinding), uppercase PSS specs, KISA control accuracy, and node PKI/kubelet hardening and verification.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-compliance-scan-coverage.json",
+      "gitops/charts/narwhal-apps/templates/trivy-operator.yaml",
+      "gitops/charts/narwhal-apps/templates/pss-compliance.yaml",
+      "gitops/resources/pss-compliance.yaml",
+      "gitops/resources/kisa-compliance.yaml",
+      "gitops/resources/ghost-pod-reaper.yaml"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Touched GitOps Trivy/PSS/KISA/ghost-pod-reaper manifests, node provisioning/hardening scripts (01-prerequisites.sh, 02-init-cluster.sh, 02-join-control-plane.sh, 11-4b-apiserver-oidc-node.sh, harden-node-files.sh), verify-cluster.sh, docs (compliance-hardening.md, lessons-log.md), and regression tests (R297/R385 updates + new R388). Deliberately did not edit portal/ (owned by other lanes) and did not mutate the live cluster or node."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Verified live cluster, master-1 node, trivy-operator 0.27.0 chart tarball, and trivy-operator v0.25.0 Go source: (1) commit 25d69d98 excluded kube-system/istio-system, suppressing static-pod ConfigAudit/InfraAssessment reports while v0.25.0 pkg/plugins/trivy/image.go:187 + workload.go:355 allow skipping system-image vuln Jobs via excludeImages without affecting in-operator audits; (2) v0.25.0 resource.go:108,123 wires RoleBinding (ConfigAuditReport) and ClusterRoleBinding (ClusterConfigAuditReport, omitted by v0.25.0 pkg/compliance/io.go); (3) chart 0.27.0 PSS templates hardcode 6/12 lowercase avd-ksv-* IDs gated by compliance.specs; (4) kisa-compliance.yaml mapped KISA-ETCD-01 to KCV0004 (kubelet-https) and overclaimed KISA-NET-01/RBAC-01; (5) temporary read-only node-collector:0.3.1 Job on narwhal-master-1 (deleted) returned [] for PKI CMD-0019/0020/0021 (CMD-0020 also has upstream awk'...' typo), protectKernelDefaults, RotateKubeletServerCertificate, and tlsCipherSuites; master-1 stat showed 10/11 PKI .crt files at 644 while all control-plane/kubelet processes run as uid 0, and /etc/sysctl.d lacked 4 of 6 kubelet kernel-default sysctls."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Included kube-system and istio-system in trivy-operator.yaml with exact system-image excludeImages (preserving app waypoint proxyv2) and ghost-pod-reaper child-Job skipResourceByLabels; added RoleBinding,ClusterRoleBinding to supportedConfigAuditKinds; limited chart compliance.specs to CIS+NSA and added GitOps-owned uppercase AVD-KSV-* PSS specs (pss-compliance.yaml + wave-5 App); aligned kisa-compliance.yaml controls to real Rego checks; tightened PKI *.crt/*.key to 0600 root:root with narwhal-harden-node-files.timer for kubeadm certs renew (02-join-control-plane.sh sudo cat + 0600, 11-4b 0600); persisted 95-kubelet-kernel-defaults.conf and enabled protectKernelDefaults=true + 6 PFS AEAD tlsCipherSuites in 02-init-cluster.sh (keeping serverTLSBootstrap false without CSR approver); expanded verify_node_file_hardening and added R388 + docs Scan coverage."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Live read-only node-collector Job (deleted) + R388 (default bash + /bin/bash 3.2 + no-helm/no-promtool, 27 mutations) + R385 + R297 + R368 + make lint + make validate + make test + trace gate/evidence checks.",
+      "evidence": [
+        "runtime:kubectl security-system temporary Job diag-node-collector-scan (deleted) -> confirmed empty [] for PKI CMD-0019/0020/0021, protectKernelDefaults, RotateKubeletServerCertificate, tlsCipherSuites; master-1 stat confirmed 10/11 PKI .crt at 644 and all control-plane/kubelet PIDs at uid 0",
+        "test:python3 scripts/test/lib/check-compliance-scan-coverage.py --mutation-verify (bash 5.x, /bin/bash 3.2, no-helm/no-promtool) -> PASS (27 mutations rejected)",
+        "test:python3 scripts/test/lib/check-node-compliance-checks.py --mutation-verify && bash scripts/test/lib/check-kubeadm-config-oidc-harness.sh && python3 scripts/test/lib/check-node-hardening.py --mutation-verify -> PASS",
+        "test:make validate && RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> PASS; make lint verified for all touched files",
+        "policy:python3 .agents/evals/gate.py + scripts/ci/check-agent-trace-evidence.py -> PASS"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "All scan-coverage fixes, node PKI/kubelet hardening, on-node verifier assertions, docs Scan coverage, lessons-log row, R388 tests, and trace verified offline; live cluster rollout/verification delegated to orchestrator per lane contract."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete on branch fix/compliance-scan-coverage; ready for orchestrator rollout and independent review."
+    }
+  ]
+}

@@ -166,8 +166,10 @@ else
   if grep -q 'oidc-ca-file' <<<"${cluster_config}"; then
     oidc_ca_required=true
     echo "Fetching oidc-ca.crt from master-1 (kubeadm-config references oidc-ca-file)..."
-    sshpass -p "vagrant" scp -o StrictHostKeyChecking=no \
-      "vagrant@${MASTER1_IP}:/etc/kubernetes/pki/oidc-ca.crt" /tmp/oidc-ca.crt 2>/dev/null || true
+    # Read via sudo cat on master-1 because CIS 1.1.20 (D-NODE-PKI-PERMS) tightens
+    # /etc/kubernetes/pki/*.crt to 0600 root:root (matching distribute-join-kakao.sh).
+    sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no "vagrant@${MASTER1_IP}" \
+      "sudo cat /etc/kubernetes/pki/oidc-ca.crt" > /tmp/oidc-ca.crt 2>/dev/null || true
   fi
 fi
 if [ "${oidc_ca_required}" = "true" ]; then
@@ -176,7 +178,7 @@ if [ "${oidc_ca_required}" = "true" ]; then
     exit 1
   fi
   sudo mkdir -p /etc/kubernetes/pki
-  sudo install -o root -g root -m 0644 /tmp/oidc-ca.crt "${OIDC_CA_DEST}"
+  sudo install -o root -g root -m 0600 /tmp/oidc-ca.crt "${OIDC_CA_DEST}"
   echo "OIDC CA installed at ${OIDC_CA_DEST}"
 fi
 

@@ -180,6 +180,169 @@ verify_node_file_hardening() {
   elif _node_priv test -f "${etcd_manifest}"; then
     fail "CIS 1.1.12 etcd data dir missing or symlink: ${etcd_dir}"
   fi
+
+  # D-NODE-VERIFY-COVERAGE (2026-11-22): directly assert node controls where upstream
+  # node-collector returns empty values (CMD-0019/0020/0021 PKI, CMD-0028/0029 kubelet CA,
+  # kubelet systemd drop-in under /usr/lib/systemd/system/kubelet.service.d, and kubelet
+  # config.yaml CIS 4.1.9/4.2.6/4.2.13).
+  local pki_dir="${prefix}/etc/kubernetes/pki"
+  if ! _node_priv test -d "${pki_dir}" || _node_priv test -L "${pki_dir}"; then
+    fail "CIS 1.1.19-21/4.1.7 PKI dir missing or symlink: ${pki_dir}"
+  elif ! _node_priv test -r "${pki_dir}" || ! _node_priv test -x "${pki_dir}"; then
+    fail "CIS 1.1.19-21/4.1.7 PKI dir unreadable: ${pki_dir}"
+  elif ! _node_priv test -f "${pki_dir}/ca.crt"; then
+    fail "CIS 4.1.7 kubelet CA file missing: ${pki_dir}/ca.crt"
+  else
+    local pki_entries pki_count=0 pki_bad=""
+    if ! pki_entries=$(_node_priv find -L "${pki_dir}" \( -type f -o -type d \) 2>/dev/null); then
+      fail "CIS 1.1.19-21 PKI scan failed (unreadable entry or broken symlink): ${pki_dir}"
+    else
+      pki_entries=$(printf '%s\n' "${pki_entries}" | sort)
+      while IFS= read -r entry; do
+        [ -n "${entry}" ] || continue
+        local pinfo pmode powner rel
+        pinfo=$(_node_stat "${entry}" || echo "")
+        pmode="${pinfo%% *}"
+        powner="${pinfo#* }"
+        rel="${entry#"${pki_dir}"}"
+        [ -n "${rel}" ] || rel="/"
+        if [ -z "${pinfo}" ] || ! [[ "${pmode}" =~ ^[0-7]+$ ]] || [ "${powner}" != "${expected_cni_owner}" ]; then
+          pki_bad="${pki_bad} ${rel}=${pmode:-?}:${powner:-?}"
+          continue
+        fi
+        case "${entry}" in
+          *.crt|*.key)
+            pki_count=$((pki_count + 1))
+            if [ $((8#${pmode} & 8#7177)) -ne 0 ]; then
+              pki_bad="${pki_bad} ${rel}=${pmode}:${powner}"
+            fi
+            ;;
+        esac
+      done <<< "${pki_entries}"
+      if [ "${pki_count}" -eq 0 ]; then
+        fail "CIS 1.1.20-21 PKI certs/keys: none found in ${pki_dir}"
+      elif [ -n "${pki_bad}" ]; then
+        fail "CIS 1.1.19-21/4.1.7 PKI perms/owner (expected <=600 ${expected_cni_owner}):${pki_bad}"
+      else
+        pass "CIS 1.1.19-21/4.1.7 PKI hardening: ${pki_count} cert/key file(s) <=600 (${expected_cni_owner})"
+      fi
+    fi
+  fi
+
+  local svc_count=0 svc_bad="" svc_path svc_dir dropin_files
+  for svc_path in \
+    "${prefix}/usr/lib/systemd/system/kubelet.service" \
+    "${prefix}/lib/systemd/system/kubelet.service" \
+    "${prefix}/etc/systemd/system/kubelet.service"; do
+    if _node_priv test -f "${svc_path}"; then
+      svc_count=$((svc_count + 1))
+      local sinfo smode sowner
+      sinfo=$(_node_stat "${svc_path}" || echo "")
+      smode="${sinfo%% *}"
+      sowner="${sinfo#* }"
+      if [ -z "${sinfo}" ] || ! [[ "${smode}" =~ ^[0-7]+$ ]] || [ $((8#${smode} & 8#7177)) -ne 0 ] || [ "${sowner}" != "${expected_cni_owner}" ]; then
+        svc_bad="${svc_bad} ${svc_path#"${prefix}"}=${smode:-?}:${sowner:-?}"
+      fi
+    fi
+  done
+  for svc_dir in \
+    "${prefix}/usr/lib/systemd/system/kubelet.service.d" \
+    "${prefix}/etc/systemd/system/kubelet.service.d"; do
+    if _node_priv test -d "${svc_dir}"; then
+      if ! dropin_files=$(_node_priv find -L "${svc_dir}" -mindepth 1 -maxdepth 1 -type f 2>/dev/null); then
+        svc_bad="${svc_bad} ${svc_dir#"${prefix}"}=unreadable"
+      else
+        dropin_files=$(printf '%s\n' "${dropin_files}" | sort)
+        while IFS= read -r f; do
+          [ -n "${f}" ] || continue
+          svc_count=$((svc_count + 1))
+          local dinfo dmode downer
+          dinfo=$(_node_stat "${f}" || echo "")
+          dmode="${dinfo%% *}"
+          downer="${dinfo#* }"
+          if [ -z "${dinfo}" ] || ! [[ "${dmode}" =~ ^[0-7]+$ ]] || [ $((8#${dmode} & 8#7177)) -ne 0 ] || [ "${downer}" != "${expected_cni_owner}" ]; then
+            svc_bad="${svc_bad} ${f#"${prefix}"}=${dmode:-?}:${downer:-?}"
+          fi
+        done <<< "${dropin_files}"
+      fi
+    fi
+  done
+  if [ "${svc_count}" -eq 0 ]; then
+    fail "CIS 4.1.1-2 kubelet systemd unit/drop-ins: none found"
+  elif [ -n "${svc_bad}" ]; then
+    fail "CIS 4.1.1-2 kubelet systemd unit/drop-ins (expected <=600 ${expected_cni_owner}):${svc_bad}"
+  else
+    pass "CIS 4.1.1-2 kubelet systemd unit/drop-ins: ${svc_count} file(s) <=600 (${expected_cni_owner})"
+  fi
+
+  local kubelet_cfg="${prefix}/var/lib/kubelet/config.yaml"
+  if ! _node_priv test -f "${kubelet_cfg}"; then
+    fail "CIS 4.1.9/4.2.6/4.2.13 kubelet config missing: ${kubelet_cfg}"
+  else
+    local kinfo kmode kowner kbad=""
+    kinfo=$(_node_stat "${kubelet_cfg}" || echo "")
+    kmode="${kinfo%% *}"
+    kowner="${kinfo#* }"
+    if [ -z "${kinfo}" ] || ! [[ "${kmode}" =~ ^[0-7]+$ ]] || [ $((8#${kmode} & 8#7177)) -ne 0 ] || [ "${kowner}" != "${expected_cni_owner}" ]; then
+      kbad="${kbad} perm=${kmode:-?}:${kowner:-?}"
+    fi
+    local kbody
+    if ! kbody=$(_node_priv cat "${kubelet_cfg}" 2>/dev/null); then
+      kbad="${kbad} unreadable"
+    else
+      if ! printf '%s\n' "${kbody}" | grep -Eq '^[[:space:]]*protectKernelDefaults:[[:space:]]*true([[:space:]]*(#.*)?)?$'; then
+        kbad="${kbad} protectKernelDefaults!=true"
+      fi
+      local ciphers cipher_count=0 bad_ciphers=""
+      ciphers=$(printf '%s\n' "${kbody}" | awk '
+        /^[[:space:]]*tlsCipherSuites:[[:space:]]*\[/ {
+          sub(/^[^[]*\[/, ""); sub(/\].*$/, "");
+          n = split($0, arr, ",");
+          for (i = 1; i <= n; i++) {
+            gsub(/^[[:space:]"\047]+|[[:space:]"\047]+$/, "", arr[i]);
+            if (arr[i] != "") print arr[i];
+          }
+          next
+        }
+        /^[[:space:]]*tlsCipherSuites:[[:space:]]*(#.*)?$/ { in_list = 1; next }
+        in_list && /^[[:space:]]*-[[:space:]]+/ {
+          val = $0;
+          sub(/^[[:space:]]*-[[:space:]]+/, "", val);
+          sub(/[[:space:]]+#.*$/, "", val);
+          gsub(/^[[:space:]"\047]+|[[:space:]"\047]+$/, "", val);
+          if (val != "") print val;
+          next
+        }
+        in_list && /^[[:space:]]*(#.*)?$/ { next }
+        in_list { in_list = 0 }
+      ')
+      while IFS= read -r c; do
+        [ -n "${c}" ] || continue
+        cipher_count=$((cipher_count + 1))
+        case "${c}" in
+          TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256|\
+          TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256|\
+          TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384|\
+          TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384|\
+          TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305|\
+          TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305|\
+          TLS_RSA_WITH_AES_256_GCM_SHA384|\
+          TLS_RSA_WITH_AES_128_GCM_SHA256) ;;
+          *) bad_ciphers="${bad_ciphers} ${c}" ;;
+        esac
+      done <<< "${ciphers}"
+      if [ "${cipher_count}" -eq 0 ]; then
+        kbad="${kbad} tlsCipherSuites=empty"
+      elif [ -n "${bad_ciphers}" ]; then
+        kbad="${kbad} weakCipher=${bad_ciphers# }"
+      fi
+    fi
+    if [ -n "${kbad}" ]; then
+      fail "CIS 4.1.9/4.2.6/4.2.13 kubelet config (${kubelet_cfg}):${kbad}"
+    else
+      pass "CIS 4.1.9/4.2.6/4.2.13 kubelet config: <=600 (${expected_cni_owner}), protectKernelDefaults=true, ${cipher_count} strong TLS ciphers"
+    fi
+  fi
 }
 
 # Stage → section mapping

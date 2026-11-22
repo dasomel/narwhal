@@ -170,10 +170,11 @@ backup_manifest() {
 mkdir -p "$(dirname "${OIDC_CA_DEST}")"
 if [ ! -f "${OIDC_CA_DEST}" ] || ! cmp -s "${CA_SRC}" "${OIDC_CA_DEST}"; then
   if [ "${CA_SRC}" != "${OIDC_CA_DEST}" ]; then
-    install -m 0644 "${CA_SRC}" "${OIDC_CA_DEST}"
+    install -m 0600 "${CA_SRC}" "${OIDC_CA_DEST}"
   fi
   echo "Installed OIDC CA certificate to ${OIDC_CA_DEST}"
 else
+  chmod 0600 "${OIDC_CA_DEST}"
   echo "OIDC CA certificate at ${OIDC_CA_DEST} already up to date"
 fi
 openssl x509 -in "${OIDC_CA_DEST}" -noout -subject >/dev/null

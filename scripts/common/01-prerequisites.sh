@@ -515,6 +515,18 @@ net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 net.ipv4.ip_forward                 = 1
 SYSEOF
+# D-KUBELET-KERNEL-DEFAULTS (2026-11-22): persist the 6 kernel parameters kubelet checks
+# when protectKernelDefaults: true (CIS 4.2.6 / KCV0083) is enabled in KubeletConfiguration.
+# Without persistent sysctl.d values, kubelet refuses to start after a reboot.
+# Escape hatch: remove 95-kubelet-kernel-defaults.conf and set protectKernelDefaults: false.
+sudo tee /etc/sysctl.d/95-kubelet-kernel-defaults.conf >/dev/null <<'KDEOF'
+vm.overcommit_memory = 1
+vm.panic_on_oom = 0
+kernel.panic = 10
+kernel.panic_on_oops = 1
+kernel.keys.root_maxkeys = 1000000
+kernel.keys.root_maxbytes = 25000000
+KDEOF
 sudo sysctl --system >/dev/null 2>&1 || true
 
 echo "  ip_forward=$(cat /proc/sys/net/ipv4/ip_forward)" \

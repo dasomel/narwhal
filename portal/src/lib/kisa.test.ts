@@ -149,3 +149,92 @@ it("G5 old-shape framework and KISA cache never produce CFG-01 pass", async () =
   expect(cfg?.status).toBe("warn")
   expect(cfg?.detail).toContain("미평가 프레임워크 컨트롤 10건")
 })
+
+it("J2 KISA CFG-01 fails on cluster-scoped ClusterRoleBinding KSV122 finding in config-audit list", async () => {
+  mockCache.clear()
+  mockGetComplianceFrameworks.mockResolvedValue([{
+    id: "clean", title: "Clean", totalControls: 1, passCount: 1, failCount: 0, passRate: 1,
+    evaluatedPassCount: 1, notEvaluatedCount: 0, actionableFailCount: 0,
+  }])
+  mockGetConfigAuditList.mockResolvedValue([{
+    namespace: "",
+    scope: "cluster",
+    kind: "ClusterRoleBinding",
+    name: "custom:cluster-binding",
+    summary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+    actionableSummary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+    acceptedSummary: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    accepted: false,
+  }])
+  mockGetRbacAuditList.mockResolvedValue([])
+  mockGetInfraAuditList.mockResolvedValue([])
+
+  const cfg = (await getKisaControls()).controls.find((c) => c.id === "KISA-CFG-01")
+  expect(cfg?.status).toBe("fail")
+  expect(cfg?.detail).toContain("config-audit(1건)")
+  expect(cfg?.detail).toContain("config-audit 조치가능 1건")
+})
+
+it("J3 (MAJOR 3): actionable framework failure + infra 403 stays fail and names both failing and unreadable sources", async () => {
+  mockCache.clear()
+  mockGetComplianceFrameworks.mockResolvedValue([{
+    id: "k8s-cis-1.23",
+    title: "CIS",
+    totalControls: 10,
+    passCount: 9,
+    evaluatedPassCount: 9,
+    notEvaluatedCount: 0,
+    failCount: 1,
+    actionableFailCount: 1,
+    acceptedFailCount: 0,
+    passRate: 0.9,
+    evaluatedPassRate: 0.9,
+    effectivePassRate: 0.9,
+  }])
+  mockGetConfigAuditList.mockResolvedValue([])
+  mockGetRbacAuditList.mockResolvedValue([])
+  mockGetInfraAuditList.mockRejectedValueOnce(new Error("K8s API 403 Forbidden for /apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports"))
+
+  const cfg = (await getKisaControls()).controls.find((c) => c.id === "KISA-CFG-01")
+  expect(cfg?.status).toBe("fail")
+  expect(cfg?.live).toBe(true)
+  expect(cfg?.detail).toContain("frameworks(1건)")
+  expect(cfg?.detail).toContain("조회 불가 소스: infra")
+  expect(mockCache.size).toBe(0)
+
+  // No known failure + infra 403 -> warn with unreadable source reason (never reasonless manual, never pass).
+  mockGetComplianceFrameworks.mockResolvedValue([{
+    id: "k8s-cis-1.23",
+    title: "CIS",
+    totalControls: 10,
+    passCount: 10,
+    evaluatedPassCount: 10,
+    notEvaluatedCount: 0,
+    failCount: 0,
+    actionableFailCount: 0,
+    acceptedFailCount: 0,
+    passRate: 1,
+    evaluatedPassRate: 1,
+    effectivePassRate: 1,
+  }])
+  mockGetInfraAuditList.mockRejectedValueOnce(new Error("K8s API 403 Forbidden"))
+  const cfgWarn = (await getKisaControls()).controls.find((c) => c.id === "KISA-CFG-01")
+  expect(cfgWarn?.status).toBe("warn")
+  expect(cfgWarn?.detail).toContain("infra")
+  expect(mockCache.size).toBe(0)
+
+  // All 4 sources unavailable -> warn with reason, never reasonless manual.
+  mockGetComplianceFrameworks.mockRejectedValueOnce(new Error("403"))
+  mockGetConfigAuditList.mockRejectedValueOnce(new Error("403"))
+  mockGetRbacAuditList.mockRejectedValueOnce(new Error("403"))
+  mockGetInfraAuditList.mockRejectedValueOnce(new Error("403"))
+  const cfgAllDown = (await getKisaControls()).controls.find((c) => c.id === "KISA-CFG-01")
+  expect(cfgAllDown?.status).toBe("warn")
+  expect(cfgAllDown?.detail).toContain("frameworks, configAudit, rbac, infra")
+  expect(mockCache.size).toBe(0)
+
+  // Reset mocks cleanly for any subsequent test
+  mockGetConfigAuditList.mockResolvedValue([])
+  mockGetRbacAuditList.mockResolvedValue([])
+  mockGetInfraAuditList.mockResolvedValue([])
+})

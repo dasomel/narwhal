@@ -56,6 +56,8 @@ export interface AuditCheck {
 
 export interface ConfigAuditRow {
   namespace: string
+  /** Resource scope: `"cluster"` for ClusterConfigAuditReport rows (namespace === ""), `"namespace"` otherwise. */
+  scope?: "cluster" | "namespace"
   kind: string
   name: string
   summary: CheckSummary
@@ -126,6 +128,7 @@ export type ControlNotEvaluatedReason =
   | "unlinked_check_id"
   | "not_in_catalogue"
   | "no_report_for_family"
+  | "no_report_in_scope_namespace"
   | "infra_no_per_check_evidence"
   | "scanner_disabled"
   | "summary_only"

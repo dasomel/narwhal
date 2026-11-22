@@ -102,7 +102,7 @@ def check(texts: dict[str, str]) -> list[str]:
     if "- clusterconfigauditreports" not in texts["rbac_yaml"]:
         errors.append("ClusterRole narwhal-portal expected to allow clusterconfigauditreports")
     for needle in (
-        '"/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"',
+        'tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports")',
         'if (!configClusterRes.ok) failedAuxSources.push("clusterconfigauditreports")',
         'clusterrolebinding: "ClusterRoleBinding"',
     ):
@@ -158,7 +158,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("H1: drop Pod infra_no_per_check_evidence", "compliance", 'notEvaluatedReason: "infra_no_per_check_evidence",\n      notEvaluatedDetail: `node/control-plane check (${normId}): the scanner leaves no per-check evidence`,', 'notEvaluatedReason: "no_report_for_family",'),
     ("H2: bypass exact alias lookup in catalogue resolver", "catalogue_ts", "const exact = EXACT_ALIAS_TO_CANONICAL.get(upper)", "const exact = undefined"),
     ("H2: restrict failure join away from config reports", "compliance", "...ctx.evidenceReports.config,", ""),
-    ("H3: stop fetching clusterconfigauditreports", "compliance", '"/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"', '"/apis/aquasecurity.github.io/v1alpha1/configauditreports"'),
+    ("H3: stop fetching clusterconfigauditreports", "compliance", 'tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports")', 'tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports")'),
     ("H4: reintroduce ctx.nodeRoles filter in controlEvidenceFailures", "compliance", "const seenCanonicalIds = new Set<string>()", "const _roles = ctx.nodeRoles; const seenCanonicalIds = new Set<string>()"),
     ("H5: restore Korean 모든 검사 통과", "i18n", '"compliance.check.allPassed": "실패 기록 없음"', '"compliance.check.allPassed": "모든 검사 통과"'),
     ("H5: restore English All checks passed", "i18n", '"compliance.check.allPassed": "No failure recorded"', '"compliance.check.allPassed": "All checks passed"'),

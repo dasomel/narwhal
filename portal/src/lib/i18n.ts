@@ -954,6 +954,7 @@ export const ko = {
   "compliance.framework.notEvaluatedReason.unlinked_check_id": "미연결 스펙 검사 ID (소문자 avd-ksv-* 등)",
   "compliance.framework.notEvaluatedReason.not_in_catalogue": "스캐너 카탈로그에 없는 검사 ID (배포된 내장 정책에 미포함)",
   "compliance.framework.notEvaluatedReason.no_report_for_family": "해당 리포트 계열·종류의 범위 내 리포트 부재 (스캐너 실행 미확인)",
+  "compliance.framework.notEvaluatedReason.no_report_in_scope_namespace": "이 검사가 적용되는 네임스페이스에 리포트 없음",
   "compliance.framework.notEvaluatedReason.infra_no_per_check_evidence": "노드/컨트롤플레인 검사: 스캐너가 항목별 평가 증거를 남기지 않음",
   "compliance.framework.notEvaluatedReason.scanner_disabled": "해당 Trivy 스캐너 비활성화",
   "compliance.framework.notEvaluatedReason.summary_only": "요약 전용 리포트 (컨트롤별 결과 없음)",
@@ -975,6 +976,7 @@ export const ko = {
   "compliance.check.category": "카테고리",
   "compliance.table.kind": "종류",
   "compliance.table.namespace": "네임스페이스",
+  "compliance.table.clusterScope": "클러스터",
   "compliance.table.name": "이름",
   "compliance.table.node": "노드",
   "compliance.table.accepted": "시스템 수용",
@@ -2482,6 +2484,7 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.framework.notEvaluatedReason.unlinked_check_id": "Unlinked spec check ID (e.g. lower-case avd-ksv-*)",
   "compliance.framework.notEvaluatedReason.not_in_catalogue": "Check ID not in scanner catalogue (absent from deployed embedded policies)",
   "compliance.framework.notEvaluatedReason.no_report_for_family": "No in-scope report of required report family/kind (scanner execution not observed)",
+  "compliance.framework.notEvaluatedReason.no_report_in_scope_namespace": "No report in the namespaces this check applies to",
   "compliance.framework.notEvaluatedReason.infra_no_per_check_evidence": "Node/control-plane check: the scanner leaves no per-check evidence",
   "compliance.framework.notEvaluatedReason.scanner_disabled": "Scanner disabled in trivy-operator config",
   "compliance.framework.notEvaluatedReason.summary_only": "Summary-only report (no per-control results)",
@@ -2503,6 +2506,7 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.check.category": "Category",
   "compliance.table.kind": "Kind",
   "compliance.table.namespace": "Namespace",
+  "compliance.table.clusterScope": "Cluster",
   "compliance.table.name": "Name",
   "compliance.table.node": "Node",
   "compliance.table.accepted": "System accepted",
@@ -3097,6 +3101,8 @@ export function translateNotEvaluatedReason(locale: Locale, reason?: string): st
       return t(locale, "compliance.framework.notEvaluatedReason.not_in_catalogue")
     case "no_report_for_family":
       return t(locale, "compliance.framework.notEvaluatedReason.no_report_for_family")
+    case "no_report_in_scope_namespace":
+      return t(locale, "compliance.framework.notEvaluatedReason.no_report_in_scope_namespace")
     case "infra_no_per_check_evidence":
       return t(locale, "compliance.framework.notEvaluatedReason.infra_no_per_check_evidence")
     case "scanner_disabled":

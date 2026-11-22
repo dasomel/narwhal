@@ -155,7 +155,7 @@ export function ExpandedConfigPanel({
                 ))}
               </div>
               <div>
-                <a className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-[0.8rem] font-medium hover:bg-muted transition-colors" href={`/compliance/config-audit/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`}>
+                <a className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-[0.8rem] font-medium hover:bg-muted transition-colors" href={`/compliance/config-audit/${encodeURIComponent(namespace || "_cluster")}/${encodeURIComponent(name)}`}>
                     {t("common.viewFullDetails")}
                   </a>
               </div>
@@ -181,7 +181,7 @@ export function ConfigAuditTable() {
 
   const queryParams = new URLSearchParams()
   if (severity !== "all") queryParams.set("severity", severity)
-  if (namespace !== "all") queryParams.set("namespace", namespace)
+  if (namespace !== "all" && namespace !== "__cluster__") queryParams.set("namespace", namespace)
 
   const { data: rows = [], isLoading, isError, refetch } = useQuery<ConfigAuditRow[]>({
     queryKey: ["compliance-config-audit", severity, namespace],
@@ -189,8 +189,13 @@ export function ConfigAuditTable() {
     staleTime: 60_000,
   })
 
+  const hasClusterScoped = useMemo(
+    () => rows.some((r) => r.scope === "cluster" || r.namespace === ""),
+    [rows]
+  )
+
   const allNamespaces = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.namespace))).sort(),
+    () => Array.from(new Set(rows.map((r) => r.namespace).filter(Boolean))).sort(),
     [rows]
   )
 
@@ -218,11 +223,26 @@ export function ConfigAuditTable() {
     return { actionableCount, unacceptedLowCount, lowSeverityCount, acceptedCount }
   }, [rows])
 
+  const clusterScopeLabel = t("compliance.table.clusterScope")
+
   const filtered = useMemo(() => {
-    if (!nameSearch.trim()) return rows
+    const scopeFiltered =
+      namespace === "__cluster__"
+        ? rows.filter((r) => r.scope === "cluster" || r.namespace === "")
+        : namespace !== "all"
+          ? rows.filter((r) => r.namespace === namespace)
+          : rows
+    if (!nameSearch.trim()) return scopeFiltered
     const q = nameSearch.toLowerCase()
-    return rows.filter((r) => r.name.toLowerCase().includes(q) || r.namespace.toLowerCase().includes(q))
-  }, [rows, nameSearch])
+    return scopeFiltered.filter((r) => {
+      const isCluster = r.scope === "cluster" || r.namespace === ""
+      return (
+        r.name.toLowerCase().includes(q) ||
+        r.namespace.toLowerCase().includes(q) ||
+        (isCluster && (clusterScopeLabel.toLowerCase().includes(q) || "cluster".includes(q)))
+      )
+    })
+  }, [rows, namespace, nameSearch, clusterScopeLabel])
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -238,8 +258,18 @@ export function ConfigAuditTable() {
     const copy = [...filtered]
     copy.sort((a, b) => {
       if (sortKey === "namespace" || sortKey === "kind" || sortKey === "name") {
-        const av = sortKey === "namespace" ? a.namespace : sortKey === "kind" ? a.kind : a.name
-        const bv = sortKey === "namespace" ? b.namespace : sortKey === "kind" ? b.kind : b.name
+        const av =
+          sortKey === "namespace"
+            ? (a.scope === "cluster" || !a.namespace ? clusterScopeLabel : a.namespace)
+            : sortKey === "kind"
+              ? a.kind
+              : a.name
+        const bv =
+          sortKey === "namespace"
+            ? (b.scope === "cluster" || !b.namespace ? clusterScopeLabel : b.namespace)
+            : sortKey === "kind"
+              ? b.kind
+              : b.name
         return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av)
       }
       const av = a.summary[sortKey]
@@ -249,7 +279,7 @@ export function ConfigAuditTable() {
       return 0
     })
     return copy
-  }, [filtered, sortKey, sortDir])
+  }, [filtered, sortKey, sortDir, clusterScopeLabel])
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -300,6 +330,9 @@ export function ConfigAuditTable() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("compliance.filter.allNamespaces")}</SelectItem>
+            {hasClusterScoped && (
+              <SelectItem value="__cluster__">{clusterScopeLabel}</SelectItem>
+            )}
             {allNamespaces.map((ns) => (
               <SelectItem key={ns} value={ns}>{ns}</SelectItem>
             ))}
@@ -353,7 +386,13 @@ export function ConfigAuditTable() {
                           </button>
                         </td>
                         <td className="px-4 py-2.5 text-muted-foreground">
-                          <span>{row.namespace}</span>
+                          {row.scope === "cluster" || !row.namespace ? (
+                            <Badge variant="secondary" className="text-[0.65rem] px-1.5 py-0 font-normal">
+                              {clusterScopeLabel}
+                            </Badge>
+                          ) : (
+                            <span>{row.namespace}</span>
+                          )}
                           {row.accepted && (
                             <Badge
                               variant="outline"

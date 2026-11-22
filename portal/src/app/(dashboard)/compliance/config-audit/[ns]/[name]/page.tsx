@@ -46,9 +46,10 @@ export default async function ConfigAuditDetailPage({ params }: Props) {
 
   const { ns, name } = await params
   const nsDecoded = decodeURIComponent(ns)
+  const resolvedNs = nsDecoded === "_cluster" ? "" : nsDecoded
   const nameDecoded = decodeURIComponent(name)
 
-  const detail = await fetchDetail(nsDecoded, nameDecoded)
+  const detail = await fetchDetail(resolvedNs, nameDecoded)
 
   if (!detail) {
     return (
@@ -78,7 +79,7 @@ export default async function ConfigAuditDetailPage({ params }: Props) {
         <div>
           <h1 className="text-xl font-bold text-foreground">{t(locale, "compliance.detail.title")}</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {detail.namespace} / {detail.kind} / {detail.name}
+            {detail.scope === "cluster" || !detail.namespace ? t(locale, "compliance.table.clusterScope") : detail.namespace} / {detail.kind} / {detail.name}
           </p>
         </div>
       </div>

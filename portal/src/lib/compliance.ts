@@ -13,7 +13,7 @@ import {
   matchInfraException,
   matchRbacException,
 } from "./compliance-accepted"
-import { getCatalogueCheck, resolveCanonicalCheckId } from "./trivy-check-catalogue"
+import { getCatalogueCheck, resolveCanonicalCheckId, type TrivyCheckCatalogueEntry } from "./trivy-check-catalogue"
 import {
   sumCheckSummary,
   type AcceptedClass,
@@ -189,6 +189,7 @@ interface RawAuditReport {
     namespace?: string
     creationTimestamp?: string
     labels?: Record<string, string>
+    annotations?: Record<string, string>
     ownerReferences?: Array<{ kind: string; name: string }>
   }
   report: {
@@ -476,6 +477,23 @@ function configAuditMatcher(
   }
 }
 
+function resolveConfigAuditResourceKind(item: RawAuditReport): string {
+  const labels = item.metadata.labels ?? {}
+  const ownerRefs = item.metadata.ownerReferences ?? []
+  return labels["trivy-operator.resource.kind"] ?? ownerRefs[0]?.kind ?? "Unknown"
+}
+
+function resolveConfigAuditResourceName(item: RawAuditReport): string {
+  const labels = item.metadata.labels ?? {}
+  const ownerRefs = item.metadata.ownerReferences ?? []
+  return (
+    labels["trivy-operator.resource.name"] ??
+    ownerRefs[0]?.name ??
+    item.metadata.annotations?.["trivy-operator.resource.name"] ??
+    item.metadata.name
+  )
+}
+
 function classifyConfigAuditItem(
   item: RawAuditReport,
   deploymentOwners?: readonly string[],
@@ -483,10 +501,10 @@ function classifyConfigAuditItem(
   row: ConfigAuditRow
   matcher: AcceptanceMatcher
 } {
-  const labels = item.metadata.labels ?? {}
-  const kind = labels["trivy-operator.resource.kind"] ?? "Unknown"
-  const name = labels["trivy-operator.resource.name"] ?? item.metadata.name
+  const kind = resolveConfigAuditResourceKind(item)
+  const name = resolveConfigAuditResourceName(item)
   const namespace = item.metadata.namespace ?? ""
+  const scopeField = namespace === "" ? { scope: "cluster" as const } : {}
   const matcher = configAuditMatcher(namespace, kind, name, deploymentOwners)
 
   if (isSystemNamespace(namespace)) {
@@ -517,6 +535,7 @@ function classifyConfigAuditItem(
   return {
     row: {
       namespace,
+      ...scopeField,
       kind,
       name,
       summary,
@@ -812,10 +831,21 @@ interface ConfigAuditListWithMeta {
   partialSources: string[]
 }
 
+// D-CONFIG-AUDIT-CLUSTER-SCOPE: Fetch ClusterConfigAuditReports alongside namespaced
+// ConfigAuditReports so cluster-scoped findings (e.g. ClusterRoleBinding KSV111/KSV122)
+// appear in the Config Audit list, counters, summary totals, and KISA CFG-01. Either list
+// failing throws ComplianceDataUnavailableError (never an empty success); cluster-scoped
+// rows keep namespace "" with scope "cluster" and stay fail-closed in configAuditMatcher.
+// Cost: one extra cluster-scoped list read (already allowed by ClusterRole/narwhal-portal).
+// Escape hatch: split into separate source status if cluster CRDs are ever restricted.
 async function fetchConfigAuditListWithMeta(): Promise<ConfigAuditListWithMeta> {
-  let list: RawAuditList
+  let namespaced: RawAuditList
+  let clustered: RawAuditList
   try {
-    list = await complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports")
+    ;[namespaced, clustered] = await Promise.all([
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"),
+    ])
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.warn("[compliance] getConfigAuditList failed:", msg)
@@ -829,7 +859,8 @@ async function fetchConfigAuditListWithMeta(): Promise<ConfigAuditListWithMeta> 
   let droppedCount = 0
   let droppedSummary: CheckSummary = { ...emptyCheckSummary }
 
-  for (const item of list.items ?? []) {
+  const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
+  for (const item of allItems) {
     const rsState = resolveReplicaSetMetadata(item, rsMap)
     if (rsState.missingKey) missingReplicaSets.push(rsState.missingKey)
     if (rsState.drop) {
@@ -881,9 +912,13 @@ export async function getConfigAuditDetail(
   const cached = await cacheGet<ConfigAuditDetail>(cacheKey)
   if (cached) return cached
 
-  let list: RawAuditList
+  let namespaced: RawAuditList
+  let clustered: RawAuditList
   try {
-    list = await complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports")
+    ;[namespaced, clustered] = await Promise.all([
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
+      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"),
+    ])
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.warn("[compliance] getConfigAuditDetail failed:", msg)
@@ -891,10 +926,11 @@ export async function getConfigAuditDetail(
   }
 
   const rsMap = await fetchReplicaSetMap()
-  const item = (list.items ?? []).find((i) => {
-    const labels = i.metadata.labels ?? {}
-    const rName = labels["trivy-operator.resource.name"] ?? i.metadata.name
-    return i.metadata.namespace === namespace && rName === name
+  const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
+  const item = allItems.find((i) => {
+    const rName = resolveConfigAuditResourceName(i)
+    const rNamespace = i.metadata.namespace ?? ""
+    return rNamespace === namespace && rName === name
   })
   if (!item) return null
 
@@ -1530,6 +1566,18 @@ interface NonFailingControlOutcome {
   notEvaluatedDetail?: string
 }
 
+// D-CHECK-SCOPE-NS: Enforce both `requiredNamespaces` and `scopeNamespaces` from the check
+// catalogue when filtering evidence reports. A check scoped to specific namespaces (e.g.
+// KSV110 -> `default`) cannot reach the positive "no failure recorded" state from reports
+// in unrelated namespaces (e.g. `dev`). Cost: one namespace check per report; escape hatch:
+// regenerate the catalogue if an upstream Rego check drops its namespace predicate.
+function getApplicableNamespaces(entry: TrivyCheckCatalogueEntry): readonly string[] | null {
+  const req = entry.requiredNamespaces?.length ? entry.requiredNamespaces : null
+  const scope = entry.scopeNamespaces?.length ? entry.scopeNamespaces : null
+  if (req && scope) return req.filter((ns) => scope.includes(ns))
+  return req ?? scope
+}
+
 // D-CHECK-CATALOGUE: trivy-operator 0.25.0 drops all `success: true` checks in `evaluate()`
 // because passed Rego rules carry empty `Messages` (confirmed even with `recordFailedChecksOnly=false`).
 // Therefore positive success records never exist in this deployment. A non-failing control reaches
@@ -1731,15 +1779,27 @@ function evaluateCheckAgainstCatalogue(
         notEvaluatedDetail: `${entry.kinds.join("/")} omitted from trivy.supportedConfigAuditKinds`,
       }
     }
+    const applicableRbacNamespaces = getApplicableNamespaces(entry)
     const matchingRbacReports = evalCtx.evidenceReports.rbac.filter((r) =>
       auditedKinds.some((k) => reportMatchesKind(r, k)),
     )
     const inScopeRbacReports = matchingRbacReports.filter((r) => {
+      const ns = r.metadata.namespace ?? ""
+      if (applicableRbacNamespaces !== null) {
+        return applicableRbacNamespaces.includes(ns) && isNamespaceExcluded(ns, evalCtx) === false
+      }
       const kind = reportResourceKind(r)
-      if (kind === "ClusterRole" || !r.metadata.namespace) return true
-      return isNamespaceExcluded(r.metadata.namespace, evalCtx) === false
+      if (kind === "ClusterRole" || !ns) return true
+      return isNamespaceExcluded(ns, evalCtx) === false
     })
     if (inScopeRbacReports.length === 0) {
+      if (applicableRbacNamespaces !== null) {
+        return {
+          evaluationState: "not_evaluated",
+          notEvaluatedReason: "no_report_in_scope_namespace",
+          notEvaluatedDetail: `no report in the namespaces this check applies to (${applicableRbacNamespaces.join(", ")}) for ${normId}`,
+        }
+      }
       if (matchingRbacReports.length > 0 && matchingRbacReports.every((r) => r.metadata.namespace && isNamespaceExcluded(r.metadata.namespace, evalCtx) === true)) {
         return {
           evaluationState: "not_evaluated",
@@ -1796,18 +1856,26 @@ function evaluateCheckAgainstCatalogue(
       notEvaluatedDetail: `${entry.kinds.join("/")} omitted from trivy.supportedConfigAuditKinds`,
     }
   }
+  const applicableNamespaces = getApplicableNamespaces(entry)
   const matchingConfigReports = evalCtx.evidenceReports.config.filter((r) =>
     auditedKinds.some((k) => reportMatchesKind(r, k)),
   )
   const inScopeConfigReports = matchingConfigReports.filter((r) => {
     const ns = r.metadata.namespace ?? ""
-    if (entry.requiredNamespaces && entry.requiredNamespaces.length > 0) {
-      return entry.requiredNamespaces.includes(ns) && isNamespaceExcluded(ns, evalCtx) === false
+    if (applicableNamespaces !== null) {
+      return applicableNamespaces.includes(ns) && isNamespaceExcluded(ns, evalCtx) === false
     }
     if (!ns) return true
     return isNamespaceExcluded(ns, evalCtx) === false
   })
   if (inScopeConfigReports.length === 0) {
+    if (applicableNamespaces !== null) {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "no_report_in_scope_namespace",
+        notEvaluatedDetail: `no report in the namespaces this check applies to (${applicableNamespaces.join(", ")}) for ${normId}`,
+      }
+    }
     if (matchingConfigReports.length > 0 && matchingConfigReports.every((r) => r.metadata.namespace && isNamespaceExcluded(r.metadata.namespace, evalCtx) === true)) {
       return {
         evaluationState: "not_evaluated",

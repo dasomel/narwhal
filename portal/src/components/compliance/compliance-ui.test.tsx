@@ -1121,3 +1121,95 @@ it("H5/H1: empty failure lists never say All checks passed or 모든 검사 통�
     )
   }
 })
+
+it("J1/J2 UI: renders cluster-scoped ConfigAuditRow with visible Cluster scope, actionable counter, _cluster detail link, and no_report_in_scope_namespace reason", async () => {
+  const clusterRow: ConfigAuditRow = {
+    namespace: "",
+    scope: "cluster",
+    kind: "ClusterRoleBinding",
+    name: "custom:cluster-binding",
+    summary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+    actionableSummary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+    acceptedSummary: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    accepted: false,
+  }
+
+  vi.mocked(useQuery).mockReturnValue({
+    data: [clusterRow],
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  } as never)
+
+  const enTableHtml = renderToStaticMarkup(
+    <LocaleProvider locale="en">
+      <ConfigAuditTable />
+    </LocaleProvider>,
+  )
+  expect(enTableHtml).toContain("1 actionable (MEDIUM+)")
+  expect(enTableHtml).toContain("Cluster")
+  expect(enTableHtml).toContain("ClusterRoleBinding")
+  expect(enTableHtml).toContain("custom:cluster-binding")
+
+  const koTableHtml = renderToStaticMarkup(
+    <LocaleProvider locale="ko">
+      <ConfigAuditTable />
+    </LocaleProvider>,
+  )
+  expect(koTableHtml).toContain("클러스터")
+  expect(koTableHtml).toContain("custom:cluster-binding")
+
+  const clusterDetail: ConfigAuditDetail = {
+    ...clusterRow,
+    checks: [{ id: "KSV122", title: "Broad cluster binding", severity: "High", success: false, accepted: false }],
+  }
+  vi.mocked(useQuery).mockReturnValue({
+    data: clusterDetail,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  } as never)
+  const panelHtml = renderToStaticMarkup(
+    <LocaleProvider locale="en">
+      <ExpandedConfigPanel namespace="" name="custom:cluster-binding" />
+    </LocaleProvider>,
+  )
+  expect(panelHtml).toContain("KSV122")
+  expect(panelHtml).toContain("/compliance/config-audit/_cluster/custom%3Acluster-binding")
+
+  mockGetLocale.mockResolvedValue("en")
+  mockGetConfigAuditDetail.mockReset()
+  mockGetConfigAuditDetail.mockResolvedValue(clusterDetail)
+  const pageHtml = renderToStaticMarkup(
+    await ConfigAuditDetailPage({ params: Promise.resolve({ ns: "_cluster", name: "custom%3Acluster-binding" }) }),
+  )
+  expect(mockGetConfigAuditDetail).toHaveBeenCalledWith("", "custom:cluster-binding")
+  expect(pageHtml).toContain("Cluster / ClusterRoleBinding / custom:cluster-binding")
+  expect(pageHtml).toContain("KSV122")
+
+  mockGetComplianceFrameworkDetail.mockResolvedValue({
+    id: "k8s-cis-1.23",
+    title: "CIS",
+    totalControls: 1,
+    passCount: 1,
+    evaluatedPassCount: 0,
+    notEvaluatedCount: 1,
+    failCount: 0,
+    actionableFailCount: 0,
+    acceptedFailCount: 0,
+    passRate: 1,
+    evaluatedPassRate: 0,
+    effectivePassRate: 0,
+    controls: [{
+      id: "5.7.4",
+      name: "The default namespace should not be used",
+      severity: "Low",
+      passCount: 0,
+      failCount: 0,
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "no_report_in_scope_namespace",
+    }],
+  })
+  const fwHtml = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-cis-1.23" }) }))
+  expect(fwHtml).toContain("No report in the namespaces this check applies to")
+})

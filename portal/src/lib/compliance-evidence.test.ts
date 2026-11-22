@@ -15,7 +15,14 @@ vi.mock("./http-client", () => ({
   fetchWithPolicy: (...args: unknown[]) => fetchMock(...args),
   readJsonWithPolicy: (...args: unknown[]) => readMock(...args),
 }))
-import { getComplianceFrameworkDetail, getComplianceFrameworks, getComplianceSummary } from "./compliance"
+import {
+  ComplianceDataUnavailableError,
+  getComplianceFrameworkDetail,
+  getComplianceFrameworks,
+  getComplianceSummary,
+  getConfigAuditDetail,
+  getConfigAuditList,
+} from "./compliance"
 import { cacheKeys } from "./cache-keys"
 
 const prefix = "/apis/aquasecurity.github.io/v1alpha1/"
@@ -488,4 +495,116 @@ it("matches all 10 reviewer expected control states on a hand-built live-like fi
 
   const pss = await getComplianceFrameworkDetail("k8s-pss-restricted-0.1")
   expect(pss!.controls[0]).toMatchObject({ id: "17", evaluationState: "failed", actionableFailCount: 1 })
+})
+
+it("J1 (MAJOR 1): enforces check scopeNamespaces (KSV110 / CIS 5.7.4 requires a Workload report in default, not dev or default Service)", async () => {
+  const routes = setup(["AVD-KSV-0110"])
+  const cleanSummary = { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0 }
+  // Ensure default is NOT excluded, and provide a dev Workload report + default Service report (live cluster shape).
+  routes[auxiliary[1]] = {
+    spec: { template: { spec: { containers: [{ env: [{ name: "OPERATOR_EXCLUDE_NAMESPACES", value: "kube-public,kube-node-lease,trivy-system" }] }] } } },
+  }
+  routes[auxiliary[2]] = {
+    data: { "trivy.supportedConfigAuditKinds": "Workload,Service,Role,ClusterRole,RoleBinding,ClusterRoleBinding,NetworkPolicy" },
+  }
+  routes[prefix + "configauditreports"] = {
+    items: [
+      { ...report("KSV014", true, "Deployment", "dev", "app"), report: { summary: cleanSummary, checks: [] } },
+      { ...report("KSV038", true, "Service", "default", "kubernetes"), report: { summary: cleanSummary, checks: [] } },
+    ],
+  }
+
+  const withoutDefaultWorkload = await getComplianceFrameworkDetail("experiment")
+  expect(withoutDefaultWorkload!.evaluatedPassCount).toBe(0)
+  expect(withoutDefaultWorkload!.notEvaluatedCount).toBe(1)
+  expect(withoutDefaultWorkload!.controls[0]).toMatchObject({
+    evaluationState: "not_evaluated",
+    notEvaluatedReason: "no_report_in_scope_namespace",
+  })
+  expect(withoutDefaultWorkload!.controls[0].notEvaluatedDetail).toContain("no report in the namespaces this check applies to")
+  expect(withoutDefaultWorkload!.controls[0].notEvaluatedDetail).toContain("default")
+
+  // Adding an in-scope Workload report in `default` satisfies KSV110 -> no failure recorded ("passed").
+  cache.clear()
+  routes[prefix + "configauditreports"] = {
+    items: [
+      { ...report("KSV014", true, "Deployment", "dev", "app"), report: { summary: cleanSummary, checks: [] } },
+      { ...report("KSV110", true, "Deployment", "default", "sample-app"), report: { summary: cleanSummary, checks: [] } },
+    ],
+  }
+  const withDefaultWorkload = await getComplianceFrameworkDetail("experiment")
+  expect(withDefaultWorkload!.evaluatedPassCount).toBe(1)
+  expect(withDefaultWorkload!.notEvaluatedCount).toBe(0)
+  expect(withDefaultWorkload!.controls[0]).toMatchObject({
+    evaluationState: "passed",
+    failCount: 0,
+  })
+})
+
+it("J2 (MAJOR 2): ClusterConfigAuditReport ClusterRoleBinding KSV122 appears in Config Audit list, detail, and summary totals and fails closed on 403", async () => {
+  const routes = setup(["AVD-KSV-0014"])
+  routes[prefix + "configauditreports"] = {
+    items: [{ ...report("KSV014", true, "Deployment", "dev", "clean-app"), report: { summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0 }, checks: [] } }],
+  }
+  routes[prefix + "clusterconfigauditreports"] = {
+    items: [
+      {
+        metadata: {
+          name: "clusterrolebinding-67649766f5",
+          creationTimestamp: "2026-11-23T01:00:00Z",
+          labels: {
+            "trivy-operator.resource.kind": "ClusterRoleBinding",
+            "trivy-operator.resource.name-hash": "67649766f5",
+          },
+          annotations: { "trivy-operator.resource.name": "custom:cluster-binding" },
+          ownerReferences: [{ kind: "ClusterRoleBinding", name: "custom:cluster-binding" }],
+        },
+        report: {
+          summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 },
+          checks: [{ checkID: "KSV122", success: false, severity: "HIGH", title: "ClusterRoleBinding with broad privileges" }],
+        },
+      },
+    ],
+  }
+
+  const list = await getConfigAuditList()
+  const bindingRow = list.find((r) => r.name === "custom:cluster-binding")
+  expect(bindingRow).toBeDefined()
+  expect(bindingRow).toMatchObject({
+    namespace: "",
+    scope: "cluster",
+    kind: "ClusterRoleBinding",
+    name: "custom:cluster-binding",
+    accepted: false,
+    summary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+    actionableSummary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+  })
+
+  const detail = await getConfigAuditDetail("", "custom:cluster-binding")
+  expect(detail).not.toBeNull()
+  expect(detail).toMatchObject({
+    namespace: "",
+    scope: "cluster",
+    kind: "ClusterRoleBinding",
+    name: "custom:cluster-binding",
+    accepted: false,
+  })
+  expect(detail!.checks).toEqual([
+    expect.objectContaining({ id: "KSV122", success: false, severity: "High", accepted: false }),
+  ])
+
+  const summary = await getComplianceSummary()
+  expect(summary.sources?.configAudit.status).toBe("ok")
+  expect(summary.scannedWorkloads).toBe(2)
+  expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+
+  // Failed ClusterConfigAuditReport list (403) must fail closed (unavailable, never empty success).
+  cache.clear()
+  setup(["AVD-KSV-0014"], prefix + "clusterconfigauditreports")
+  await expect(getConfigAuditList()).rejects.toThrowError(ComplianceDataUnavailableError)
+  await expect(getConfigAuditList()).rejects.toMatchObject({ source: "configAudit" })
+  const summary403 = await getComplianceSummary()
+  expect(summary403.dataUnavailable).toBe(true)
+  expect(summary403.sources?.configAudit.status).toBe("unavailable")
+  expect(cache.size).toBe(0)
 })

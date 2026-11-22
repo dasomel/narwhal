@@ -216,23 +216,6 @@ authentication:
 authorization:
   mode: Webhook
 readOnlyPort: 0
-# D-KUBELET-KERNEL-DEFAULTS (2026-11-22): CIS 4.2.6 / KCV0083; requires persistent sysctl
-# values in /etc/sysctl.d/95-kubelet-kernel-defaults.conf (written by 01-prerequisites.sh).
-# Cost: kubelet fails closed at boot if kernel defaults drift. Escape hatch: set false.
-protectKernelDefaults: true
-# D-KUBELET-TLS-CIPHERS (2026-11-22): CIS 4.2.13 / KCV0092; restrict TLS 1.2 to PFS AEAD
-# suites (TLS 1.3 suites stay enabled by Go crypto/tls; compatible with apiserver,
-# Prometheus, and metrics-server). Escape hatch: remove tlsCipherSuites.
-tlsCipherSuites:
-  - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
-  - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-  - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
-  - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
-  - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
-  - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
-# D-KUBELET-NO-SERVER-TLS-BOOTSTRAP (CIS 4.2.12 / KCV0091): serverTLSBootstrap intentionally
-# remains omitted/false until an automated kubelet-serving CSR approver is deployed;
-# enabling it without an approver leaves joining/restarted nodes with Pending CSRs.
 EOF
 
 # D-SINGLE-NODE-PODS: all platform pods share one kubelet; default 110 is too small.

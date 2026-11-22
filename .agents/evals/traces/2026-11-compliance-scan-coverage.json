@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-compliance-scan-coverage-20261122",
-  "task": "Close silent unevaluated compliance gaps across Trivy Operator scan scope (kube-system, istio-system, RoleBinding/ClusterRoleBinding), uppercase PSS specs, KISA control accuracy, and node PKI/kubelet hardening and verification.",
+  "task": "Close silent unevaluated compliance gaps across Trivy Operator scan scope (kube-system, istio-system, RoleBinding/ClusterRoleBinding), uppercase PSS specs pinned to chart 0.27.0, KISA control accuracy, and node PKI hardening/fail-loudly exit while documenting deferred kubelet gaps (CIS 4.2.6/4.2.12/4.2.13) and portal SYSTEM_NAMESPACES interaction.",
   "changeContext": {
     "paths": [
       ".agents/evals/traces/2026-11-compliance-scan-coverage.json",
@@ -17,41 +17,41 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Touched GitOps Trivy/PSS/KISA/ghost-pod-reaper manifests, node provisioning/hardening scripts (01-prerequisites.sh, 02-init-cluster.sh, 02-join-control-plane.sh, 11-4b-apiserver-oidc-node.sh, harden-node-files.sh), verify-cluster.sh, docs (compliance-hardening.md, lessons-log.md), and regression tests (R297/R385 updates + new R388). Deliberately did not edit portal/ (owned by other lanes) and did not mutate the live cluster or node."
+      "summary": "Touched GitOps Trivy/PSS/KISA/ghost-pod-reaper manifests, node PKI hardening scripts (02-join-control-plane.sh, 11-4b-apiserver-oidc-node.sh, harden-node-files.sh), verify-cluster.sh, docs (compliance-hardening.md, lessons-log.md, upgrade-waves.json), and regression tests (R297/R385 updates + R388). Restored 01-prerequisites.sh and 02-init-cluster.sh to origin/main (D1). Deliberately did not edit portal/ (owned by other lanes) and did not mutate the live cluster or node."
     },
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Verified live cluster, master-1 node, trivy-operator 0.27.0 chart tarball, and trivy-operator v0.25.0 Go source: (1) commit 25d69d98 excluded kube-system/istio-system, suppressing static-pod ConfigAudit/InfraAssessment reports while v0.25.0 pkg/plugins/trivy/image.go:187 + workload.go:355 allow skipping system-image vuln Jobs via excludeImages without affecting in-operator audits; (2) v0.25.0 resource.go:108,123 wires RoleBinding (ConfigAuditReport) and ClusterRoleBinding (ClusterConfigAuditReport, omitted by v0.25.0 pkg/compliance/io.go); (3) chart 0.27.0 PSS templates hardcode 6/12 lowercase avd-ksv-* IDs gated by compliance.specs; (4) kisa-compliance.yaml mapped KISA-ETCD-01 to KCV0004 (kubelet-https) and overclaimed KISA-NET-01/RBAC-01; (5) temporary read-only node-collector:0.3.1 Job on narwhal-master-1 (deleted) returned [] for PKI CMD-0019/0020/0021 (CMD-0020 also has upstream awk'...' typo), protectKernelDefaults, RotateKubeletServerCertificate, and tlsCipherSuites; master-1 stat showed 10/11 PKI .crt files at 644 while all control-plane/kubelet processes run as uid 0, and /etc/sysctl.d lacked 4 of 6 kubelet kernel-default sysctls."
+      "summary": "Verified live cluster pods/workloads, master-1 node, trivy-operator 0.27.0 chart tarball, and portal/src/lib/compliance.ts: (1) excludeNamespaces suppressed kube-system/istio-system in-operator audits while live pod inventory showed 21 distinct system image repos plus shared registry.k8s.io/etcd (also used by platform-system/apisix-etcd 3.5.31-0), docker.io/alpine/k8s (ghost-pod-reaper), and registry.istio.io/release/proxyv2 (waypoints); (2) RoleBinding/ClusterRoleBinding were absent from supportedConfigAuditKinds; (3) chart 0.27.0 PSS templates hardcode lowercase avd-ksv-* IDs on baseline 6-11 and restricted 6-17; (4) kisa-compliance.yaml mis-mapped KISA-ETCD-01 to KCV0004; (5) live node-collector:0.3.1 Job (deleted) returned [] for PKI CMD-0019/0020/0021 and unset kubelet fields; (6) find -exec chmod 600 {} \\; returns rc=0 on chmod failure while -exec chmod 600 {} + propagates rc=1; (7) portal/src/lib/compliance.ts:436-448,1086-1088 still classifies kube-system/istio-system via SYSTEM_NAMESPACES as accepted/system until the portal lane lands."
     },
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Included kube-system and istio-system in trivy-operator.yaml with exact system-image excludeImages (preserving app waypoint proxyv2) and ghost-pod-reaper child-Job skipResourceByLabels; added RoleBinding,ClusterRoleBinding to supportedConfigAuditKinds; limited chart compliance.specs to CIS+NSA and added GitOps-owned uppercase AVD-KSV-* PSS specs (pss-compliance.yaml + wave-5 App); aligned kisa-compliance.yaml controls to real Rego checks; tightened PKI *.crt/*.key to 0600 root:root with narwhal-harden-node-files.timer for kubeadm certs renew (02-join-control-plane.sh sudo cat + 0600, 11-4b 0600); persisted 95-kubelet-kernel-defaults.conf and enabled protectKernelDefaults=true + 6 PFS AEAD tlsCipherSuites in 02-init-cluster.sh (keeping serverTLSBootstrap false without CSR approver); expanded verify_node_file_hardening and added R388 + docs Scan coverage."
+      "summary": "Round 2 (D1-D6): (D1) removed protectKernelDefaults/sysctl/tlsCipherSuites edits from 01-prerequisites.sh and 02-init-cluster.sh, keeping CIS 4.1.9 perms PASS/FAIL and CIS 4.2.6/4.2.12/4.2.13 as WARN-level known gaps in verify_node_file_hardening plus rollout prerequisites in docs/common/compliance-hardening.md; (D2) documented portal SYSTEM_NAMESPACES accepted/system classification and raw failure count rise in docs Scan coverage; (D3) replaced broad excludeImages globs with 21 exact live kube-system/istio-system repo:* entries (omitting shared registry.k8s.io/etcd, alpine/k8s, proxyv2); (D4) updated harden-node-files.sh to use -exec chmod 600 {} +, remove timer || true guards, collect failures, and exit 1 on any failure (all 4 provisioning callers keep non-fatal || echo WARN); (D5) added offline chart-0.27.0 upstream PSS drift check, HostProcess check-removal mutation, and D4 failure mutations to R388 (36 mutations); (D6) recorded honest lint/test outcomes."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Live read-only node-collector Job (deleted) + R388 (default bash + /bin/bash 3.2 + no-helm/no-promtool, 27 mutations) + R385 + R297 + R368 + make lint + make validate + make test + trace gate/evidence checks.",
+      "scope": "R388 (default bash + /bin/bash 3.2 + no-helm/no-promtool, 36 mutations) + R385 + R386 + R368 + R297 + check-static-pod-hostpaths + shellcheck --severity=warning on touched scripts + make validate + full make test + trace gate/evidence checks. Note: make lint exited 2 due to pre-existing yamllint line-length errors in untouched lines/files (ghost-pod-reaper.yaml:117, prometheus-alerts.yaml, velero-server-rbac.yaml); shellcheck across all scripts/ passed.",
       "evidence": [
-        "runtime:kubectl security-system temporary Job diag-node-collector-scan (deleted) -> confirmed empty [] for PKI CMD-0019/0020/0021, protectKernelDefaults, RotateKubeletServerCertificate, tlsCipherSuites; master-1 stat confirmed 10/11 PKI .crt at 644 and all control-plane/kubelet PIDs at uid 0",
-        "test:python3 scripts/test/lib/check-compliance-scan-coverage.py --mutation-verify (bash 5.x, /bin/bash 3.2, no-helm/no-promtool) -> PASS (27 mutations rejected)",
-        "test:python3 scripts/test/lib/check-node-compliance-checks.py --mutation-verify && bash scripts/test/lib/check-kubeadm-config-oidc-harness.sh && python3 scripts/test/lib/check-node-hardening.py --mutation-verify -> PASS",
-        "test:make validate && RESEARCH_EVIDENCE_DIR=$(mktemp -d) make test -> PASS; make lint verified for all touched files",
+        "test:python3 scripts/test/lib/check-compliance-scan-coverage.py --mutation-verify (default bash, PATH=/bin:... bash 3.2, helm+promtool removed from PATH) -> PASS: R388 compliance scan coverage (36 mutations rejected)",
+        "test:R385 (23 mutations) + R386 (32 mutations) + R368 (30 mutations + behavioral) + R297 (26 mutations) + check-static-pod-hostpaths --mutation-verify -> PASS",
+        "lint:shellcheck --severity=warning on 6 touched scripts -> exit 0 (SHELLCHECK_TOUCHED_OK); make lint -> exit 2 (shellcheck clean across scripts/, yamllint failed on pre-existing line-length errors in ghost-pod-reaper.yaml:117, prometheus-alerts.yaml:286,336, velero-server-rbac.yaml:3,25,69,125,173)",
+        "test:make validate -> exit 0 (MAKE_VALIDATE_OK); full make test -> exit 0 (passed 496 failed 0 warnings 3)",
         "policy:python3 .agents/evals/gate.py + scripts/ci/check-agent-trace-evidence.py -> PASS"
       ]
     },
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "All scan-coverage fixes, node PKI/kubelet hardening, on-node verifier assertions, docs Scan coverage, lessons-log row, R388 tests, and trace verified offline; live cluster rollout/verification delegated to orchestrator per lane contract."
+      "summary": "Round 2 decisions D1-D6 implemented and verified offline with full make test (passed 496 failed 0 warnings 3), make validate, shellcheck on touched scripts, R388 (3 envs, 36 mutations), R385, R386, R368, R297, and trace gate/evidence checks; live cluster rollout/verification delegated to orchestrator."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete on branch fix/compliance-scan-coverage; ready for orchestrator rollout and independent review."
+      "summary": "Complete on branch fix/compliance-scan-coverage after origin/main merge and Round 2 fixes; ready for orchestrator rollout and re-review."
     }
   ]
 }

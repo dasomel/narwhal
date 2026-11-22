@@ -40,11 +40,17 @@ spec:
           # filters containers only out of vulnerability/exposed-secret scan Jobs (trivy-operator
           # v0.25.0 pkg/plugins/trivy/image.go:187, workload.go:355 skips 0-container Jobs) while
           # leaving in-operator ConfigAudit/InfraAssessment untouched. Patterns use Go
-          # filepath.Match (* does not cross /) and target exact Istio system repos so app
-          # waypoint proxies (registry.istio.io/release/proxyv2:*) keep vulnerability coverage.
-          # Cost: no Trivy CVE scan Jobs for control-plane/CNI/CSI/Istio system images.
+          # filepath.Match (* does not cross /) and are global across namespaces, so every entry
+          # pins an exact repository running in kube-system or istio-system (no org/* wildcards
+          # such as quay.io/cilium/* or sig-storage/*). Only the tag suffix (`:*`) remains
+          # pattern-based so patch/minor upgrades in VERSIONS.md do not break exclusions.
+          # Intentionally NOT excluded: registry.k8s.io/etcd (shared with platform-system/apisix-etcd
+          # 3.5.31-0), docker.io/alpine/k8s (ghost-pod-reaper CronJob stays scanned; child Jobs
+          # skipped by label), and registry.istio.io/release/proxyv2 (app waypoints stay scanned).
+          # Cost: no Trivy CVE scan Jobs for these 21 exact system image repos (if a tenant ever
+          # deploys one of these exact repos it would also skip CVE scanning).
           # Escape hatch: set excludeImages: "" to scan all system images on the 168h TTL.
-          excludeImages: "registry.k8s.io/kube-apiserver:*,registry.k8s.io/kube-controller-manager:*,registry.k8s.io/kube-scheduler:*,registry.k8s.io/etcd:*,registry.k8s.io/coredns/*,registry.k8s.io/metrics-server/*,registry.k8s.io/sig-storage/*,ghcr.io/kube-vip/*,quay.io/cilium/*,registry.istio.io/release/pilot:*,registry.istio.io/release/ztunnel:*,registry.istio.io/release/install-cni:*"
+          excludeImages: "registry.k8s.io/kube-apiserver:*,registry.k8s.io/kube-controller-manager:*,registry.k8s.io/kube-scheduler:*,registry.k8s.io/coredns/coredns:*,registry.k8s.io/metrics-server/metrics-server:*,registry.k8s.io/sig-storage/csi-node-driver-registrar:*,registry.k8s.io/sig-storage/csi-provisioner:*,registry.k8s.io/sig-storage/csi-resizer:*,registry.k8s.io/sig-storage/csi-snapshotter:*,registry.k8s.io/sig-storage/livenessprobe:*,registry.k8s.io/sig-storage/nfsplugin:*,ghcr.io/kube-vip/kube-vip:*,quay.io/cilium/cilium:*,quay.io/cilium/cilium-envoy:*,quay.io/cilium/hubble-relay:*,quay.io/cilium/hubble-ui:*,quay.io/cilium/hubble-ui-backend:*,quay.io/cilium/operator-generic:*,registry.istio.io/release/install-cni:*,registry.istio.io/release/pilot:*,registry.istio.io/release/ztunnel:*"
           scanJobPodTemplatePodSecurityContext:
             runAsNonRoot: true
             runAsUser: 10000

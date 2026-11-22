@@ -184,7 +184,7 @@ want_pass="${{2:-2}}"
             kcfg = r / "var/lib/kubelet/config.yaml"
             kcfg.parent.mkdir(parents=True, exist_ok=True)
             kcfg.write_text(
-                "protectKernelDefaults: true\ntlsCipherSuites:\n  - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n",
+                "apiVersion: kubelet.config.k8s.io/v1beta1\nkind: KubeletConfiguration\n",
                 encoding="utf-8",
             )
             os.chmod(kcfg, 0o600)

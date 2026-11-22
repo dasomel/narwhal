@@ -184,7 +184,8 @@ verify_node_file_hardening() {
   # D-NODE-VERIFY-COVERAGE (2026-11-22): directly assert node controls where upstream
   # node-collector returns empty values (CMD-0019/0020/0021 PKI, CMD-0028/0029 kubelet CA,
   # kubelet systemd drop-in under /usr/lib/systemd/system/kubelet.service.d, and kubelet
-  # config.yaml CIS 4.1.9/4.2.6/4.2.13).
+  # config.yaml CIS 4.1.9 perms). Deferred kubelet runtime settings (CIS 4.2.6/4.2.12/4.2.13)
+  # are reported as WARN-level known gaps (never PASS, never FAIL) with a pointer to docs.
   local pki_dir="${prefix}/etc/kubernetes/pki"
   if ! _node_priv test -d "${pki_dir}" || _node_priv test -L "${pki_dir}"; then
     fail "CIS 1.1.19-21/4.1.7 PKI dir missing or symlink: ${pki_dir}"
@@ -277,21 +278,31 @@ verify_node_file_hardening() {
 
   local kubelet_cfg="${prefix}/var/lib/kubelet/config.yaml"
   if ! _node_priv test -f "${kubelet_cfg}"; then
-    fail "CIS 4.1.9/4.2.6/4.2.13 kubelet config missing: ${kubelet_cfg}"
+    fail "CIS 4.1.9 kubelet config missing: ${kubelet_cfg}"
   else
-    local kinfo kmode kowner kbad=""
+    local kinfo kmode kowner
     kinfo=$(_node_stat "${kubelet_cfg}" || echo "")
     kmode="${kinfo%% *}"
     kowner="${kinfo#* }"
     if [ -z "${kinfo}" ] || ! [[ "${kmode}" =~ ^[0-7]+$ ]] || [ $((8#${kmode} & 8#7177)) -ne 0 ] || [ "${kowner}" != "${expected_cni_owner}" ]; then
-      kbad="${kbad} perm=${kmode:-?}:${kowner:-?}"
+      fail "CIS 4.1.9 kubelet config perms/owner (${kubelet_cfg}): perm=${kmode:-?}:${kowner:-?} (expected <=600 ${expected_cni_owner})"
+    else
+      pass "CIS 4.1.9 kubelet config perms: <=600 (${expected_cni_owner})"
     fi
-    local kbody
+
+    # D-KUBELET-DEFERRED-GAPS (2026-11-22): CIS 4.2.6 (protectKernelDefaults), 4.2.12
+    # (serverTLSBootstrap), and 4.2.13 (tlsCipherSuites) are open, non-compliant, and not
+    # evaluated by trivy-operator when unset. Surface them as WARN-level known gaps (never
+    # PASS, never FAIL) until node sysctl/CSR/TLS-consumer rollout prerequisites are met.
+    local kbody kgap=""
     if ! kbody=$(_node_priv cat "${kubelet_cfg}" 2>/dev/null); then
-      kbad="${kbad} unreadable"
+      warn "CIS 4.2.6/4.2.12/4.2.13 kubelet config unreadable (known gap; see docs/common/compliance-hardening.md#scan-coverage): ${kubelet_cfg}"
     else
       if ! printf '%s\n' "${kbody}" | grep -Eq '^[[:space:]]*protectKernelDefaults:[[:space:]]*true([[:space:]]*(#.*)?)?$'; then
-        kbad="${kbad} protectKernelDefaults!=true"
+        kgap="${kgap} protectKernelDefaults!=true(CIS-4.2.6)"
+      fi
+      if ! printf '%s\n' "${kbody}" | grep -Eq '^[[:space:]]*serverTLSBootstrap:[[:space:]]*true([[:space:]]*(#.*)?)?$'; then
+        kgap="${kgap} serverTLSBootstrap!=true(CIS-4.2.12)"
       fi
       local ciphers cipher_count=0 bad_ciphers=""
       ciphers=$(printf '%s\n' "${kbody}" | awk '
@@ -332,15 +343,13 @@ verify_node_file_hardening() {
         esac
       done <<< "${ciphers}"
       if [ "${cipher_count}" -eq 0 ]; then
-        kbad="${kbad} tlsCipherSuites=empty"
+        kgap="${kgap} tlsCipherSuites=empty(CIS-4.2.13)"
       elif [ -n "${bad_ciphers}" ]; then
-        kbad="${kbad} weakCipher=${bad_ciphers# }"
+        kgap="${kgap} weakCipher=${bad_ciphers# }(CIS-4.2.13)"
       fi
-    fi
-    if [ -n "${kbad}" ]; then
-      fail "CIS 4.1.9/4.2.6/4.2.13 kubelet config (${kubelet_cfg}):${kbad}"
-    else
-      pass "CIS 4.1.9/4.2.6/4.2.13 kubelet config: <=600 (${expected_cni_owner}), protectKernelDefaults=true, ${cipher_count} strong TLS ciphers"
+      if [ -n "${kgap}" ]; then
+        warn "CIS 4.2.6/4.2.12/4.2.13 kubelet hardening known gap (see docs/common/compliance-hardening.md#scan-coverage):${kgap}"
+      fi
     fi
   fi
 }

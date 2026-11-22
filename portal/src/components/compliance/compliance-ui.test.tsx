@@ -397,8 +397,10 @@ describe("Compliance UI accepted exceptions", () => {
     const countersHtml = renderToStaticMarkup(<FailureCounters summary={summaryWithFw} locale="en" />)
     expect(countersHtml).toContain("83.2%")
     expect(countersHtml).toContain("(119/143)")
-    expect(countersHtml).toContain("Exception-adjusted pass rate: 98.6% (141/143)")
+    expect(countersHtml).toContain("Exception-adjusted rate: 98.6% (141/143)")
     expect(countersHtml).toContain("2 actionable · 22 accepted")
+    expect(countersHtml).toContain("No failure recorded (scanner records failures only)")
+    expect(countersHtml).toContain("records failed checks only")
 
     vi.mocked(useQuery).mockReturnValue({
       data: frameworks,
@@ -482,7 +484,8 @@ describe("Compliance UI accepted exceptions", () => {
     })
     const pageEnHtml = renderToStaticMarkup(pageEnEl)
     expect(pageEnHtml).toContain("87.0%")
-    expect(pageEnHtml).toContain("Exception-adjusted pass rate: 98.2%")
+    expect(pageEnHtml).toContain("Exception-adjusted rate: 98.2%")
+    expect(pageEnHtml).toContain("No failure recorded (scanner records failures only)")
     expect(pageEnHtml).toContain("✗ 2 Failed (actionable)")
     expect(pageEnHtml).toContain("+13 accepted")
     expect(pageEnHtml).toContain("Raw failed 15 (raw pass rate 87.0%)")
@@ -495,6 +498,8 @@ describe("Compliance UI accepted exceptions", () => {
       params: Promise.resolve({ id: "k8s-cis-1.23" }),
     })
     const pageKoHtml = renderToStaticMarkup(pageKoEl)
+    expect(pageKoHtml).toContain("실패 기록 없음 (스캐너는 실패만 기록)")
+    expect(pageKoHtml).toContain("실패한 검사만 기록")
     expect(pageKoHtml).toContain("실패 (조치가능)")
     expect(pageKoHtml).toContain("수용된 예외 컨트롤 (1)")
     expect(pageKoHtml).toContain("위험 수용 예외 문서")
@@ -538,7 +543,8 @@ describe("Compliance UI accepted exceptions", () => {
     expect(countersEn).toContain("0 actionable · 0 accepted (raw 2)")
 
     const countersKo = renderToStaticMarkup(<FailureCounters summary={summary} locale="ko" />)
-    expect(countersKo).toContain("평가 통과 8 · 미평가 0 · 조치가능 0 · 수용 0 (원본 2)")
+    expect(countersKo).toContain("실패 기록 없음 8 · 미평가 0 · 조치가능 0 · 수용 0 (원본 2)")
+    expect(countersKo).toContain("실패 기록 없음 (스캐너는 실패만 기록)")
 
     vi.mocked(useQuery).mockReturnValue({
       data: frameworks,

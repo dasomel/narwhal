@@ -257,6 +257,7 @@ export function FrameworksGrid() {
           {t("compliance.framework.coverageUnknownNotice")}
         </div>
       )}
+      <p className="text-xs text-muted-foreground">{t("compliance.framework.failureOnlyNote")}</p>
       {(totalActionable > 0 || totalAccepted > 0 || totalNotEvaluated > 0 || totalRaw > 0) && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>
@@ -345,7 +346,9 @@ export function FrameworksGrid() {
                   <span>{t("compliance.framework.effectivePassRate")}: {effectivePctText} ({effectivePassNum}/{fw.totalControls})</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground">
-                  <span className="text-green-600 font-medium">✓ {evaluatedPass}</span>
+                  <span className="text-green-600 font-medium" title={t("compliance.framework.noFailureRecordedLabel")}>
+                    ✓ {evaluatedPass} {t("compliance.framework.noFailureRecordedShort")}
+                  </span>
                   <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
                     ✗ {actionableFail}
                   </span>

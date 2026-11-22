@@ -125,7 +125,7 @@ async function checkCfg01(): Promise<{ status: KisaStatus; detail: string }> {
   if (actionableControls > 0 || actionableFailures > 0 || auditFailures > 0) {
     return {
       status: "fail",
-      detail: `조치가능 프레임워크 컨트롤 실패 ${actionableControls}건 (평가 통과 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 미평가 ${notEvaluatedControls}) ${breakdown}`,
+      detail: `조치가능 프레임워크 컨트롤 실패 ${actionableControls}건 (실패 기록 없음 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 미평가 ${notEvaluatedControls}) ${breakdown}`,
     }
   }
   if (frameworks.length === 0) {
@@ -134,12 +134,12 @@ async function checkCfg01(): Promise<{ status: KisaStatus; detail: string }> {
   if (notEvaluatedControls > 0 || hasUnknownCoverage) {
     return {
       status: "warn",
-      detail: `미평가 프레임워크 컨트롤 ${notEvaluatedControls}건 (평가 통과 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 조치가능 0건) ${breakdown}`,
+      detail: `미평가 프레임워크 컨트롤 ${notEvaluatedControls}건 (실패 기록 없음 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 조치가능 0건) ${breakdown}`,
     }
   }
   return {
     status: "pass",
-    detail: `전 프레임워크 ${totalControls}개 컨트롤 평가 완료·조치가능 실패 없음 (평가 통과 ${evaluatedPassControls}, 수용 ${acceptedControls}) ${breakdown}`,
+    detail: `전 프레임워크 ${totalControls}개 컨트롤 평가 완료·조치가능 실패 없음 (실패 기록 없음 ${evaluatedPassControls}, 수용 ${acceptedControls}) ${breakdown}`,
   }
 }
 

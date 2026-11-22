@@ -67,7 +67,8 @@ REQUIRED_VITEST_CASES: list[tuple[str, str]] = [
     ("kisa_test", "G4 KISA CFG-01 fails on actionable %s findings without actionable framework controls"),
     ("kisa_test", "G5 old-shape framework and KISA cache never produce CFG-01 pass"),
     ("ui_test", "G5 old-shape object renders unknown in grid, summary SSR and framework detail"),
-    ("unit_test", "never classifies unknown check ID (AVD-KSV-9999) or clean empty-checks infra report as passed"),
+    ("unit_test", "never classifies unknown check ID (AVD-KSV-9999) or uncatalogued optional IDs as passed while allowing clean in-scope catalogue checks"),
+    ("unit_test", "evaluates every C2 check-catalogue branch on failed-only reports with exact hand-derived counts"),
     ("unit_test", "fails closed to coverage_unknown and surfaces partial without caching when auxiliary Deployment/ConfigMap read returns 403"),
     ("unit_test", "evaluates 4.1.5 (KCV0073) on control-plane nodes from positive infra report evidence without worker-node over-correction"),
     ("unit_test", "materialises spec.compliance.controls absent from status.detailReport.results as not_evaluated (absent_from_report)"),
@@ -98,20 +99,21 @@ def check(texts: dict[str, str]) -> list[str]:
     kisa = texts["kisa"]
     doc = texts["doc"]
 
-    # 1. Positive per-check evidence, no CIS-section worker over-correction, missing-spec materialisation
+    # 1. Check-catalogue evidence, no CIS-section worker over-correction, missing-spec materialisation
     for needle in (
         "export class ComplianceDataUnavailableError",
-        "function collectPassedCheckIds(",
+        "function evaluateCheckAgainstCatalogue(",
         "function buildFrameworkEvalContext(",
         "function classifyNonFailingControl(",
-        "const checkEvidence =",
+        "getCatalogueCheck(",
+        'notEvaluatedReason: "not_in_catalogue"',
+        'notEvaluatedReason: "no_report_for_family"',
         'notEvaluatedReason: "excluded_namespace"',
         'notEvaluatedReason: "unsupported_kind"',
         'notEvaluatedReason: "missing_node_type"',
         'notEvaluatedReason: "unlinked_check_id"',
         'notEvaluatedReason: "manual"',
         'notEvaluatedReason: "summary_only"',
-        'notEvaluatedReason: "no_evidence_in_report"',
         'notEvaluatedReason: "absent_from_report"',
         'notEvaluatedReason: "coverage_unknown"',
         "operatorConfigError",
@@ -130,7 +132,7 @@ def check(texts: dict[str, str]) -> list[str]:
         if forbidden in comp:
             errors.append(f"compliance.ts must not hardcode CIS section/ID node-type mapping: {forbidden!r}")
 
-    # Reject short-circuiting classifyNonFailingControl to passed before evidence check
+    # Reject short-circuiting classifyNonFailingControl to passed before check-catalogue evaluation
     cls_m = re.search(
         r"function classifyNonFailingControl\b[\s\S]*?function buildComplianceFrameworkData\b",
         comp,
@@ -141,8 +143,8 @@ def check(texts: dict[str, str]) -> list[str]:
         cls_body = cls_m.group(0)
         if re.search(r"if\s*\(\s*true\s*\)\s*(?:\{\s*)?return\s*\{\s*evaluationState:\s*['\"]passed['\"]", cls_body):
             errors.append("classifyNonFailingControl must never unconditionally return passed")
-        if len(re.findall(r"return checkEvidence\(", cls_body)) < 5:
-            errors.append("classifyNonFailingControl must gate all 5 report scopes through checkEvidence()")
+        if "evaluateCheckAgainstCatalogue(id, specControl, evalCtx)" not in cls_body:
+            errors.append("classifyNonFailingControl must evaluate every check ID via evaluateCheckAgainstCatalogue()")
 
     if ".catch(() => ({" in comp:
         errors.append("compliance.ts must never mask K8s list failures as { items: [] }")
@@ -247,7 +249,7 @@ def check(texts: dict[str, str]) -> list[str]:
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("force classifyNonFailingControl to passed", "compliance", "const checks = resultControl.checks ?? []", 'if (true) return { evaluationState: "passed" }\n  const checks = resultControl.checks ?? []'),
-    ("bypass checkEvidence on general ConfigAudit", "compliance", 'return checkEvidence("ConfigAuditReport")', 'return { evaluationState: "passed" }'),
+    ("bypass evaluateCheckAgainstCatalogue in classifyNonFailingControl", "compliance", "const outcome = evaluateCheckAgainstCatalogue(id, specControl, evalCtx)", 'const outcome = { evaluationState: "passed" as const }'),
     ("reintroduce hardcoded WORKER_COMMAND_RE over-correction", "compliance", "const CONTROL_PLANE_CHECK_IDS", "const WORKER_COMMAND_RE = /^CMD-0022$/\nconst CONTROL_PLANE_CHECK_IDS"),
     ("drop missing-spec absent_from_report materialisation", "compliance", 'notEvaluatedReason: "absent_from_report"', 'notEvaluatedReason: "removed" as never'),
     ("swallow configAudit error instead of throwing unavailable", "compliance", 'throw new ComplianceDataUnavailableError("configAudit", msg)', "return []"),
@@ -260,7 +262,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("return 200 instead of 503 on summary route when all sources fail", "summary_route", "if (allUnavailable) {", "if (false) {"),
     ("return 200 instead of 503 on unavailable config route", "config_route", "{ status: 503 }", "{ status: 200 }"),
     ("hide unavailableSummary on server error", "page", "dataUnavailable: true", "dataUnavailable: false"),
-    ("drop unknown-ID behavioral vitest case", "unit_test", "never classifies unknown check ID (AVD-KSV-9999) or clean empty-checks infra report as passed", "removed test"),
+    ("drop unknown-ID behavioral vitest case", "unit_test", "never classifies unknown check ID (AVD-KSV-9999) or uncatalogued optional IDs as passed while allowing clean in-scope catalogue checks", "removed test"),
     ("drop R387 wiring in regression-check-kakao.sh", "reg", "check R387 ", "check R9999 "),
 ]
 

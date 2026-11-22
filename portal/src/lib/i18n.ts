@@ -927,15 +927,18 @@ export const ko = {
   "compliance.counter.rbacBreakdown": "+{accepted} 수용(빌트인/업스트림/예외)",
   "compliance.counter.infra": "인프라 실패 (조치가능)",
   "compliance.counter.infraBreakdown": "+{accepted} 수용(예외)",
-  "compliance.counter.frameworksPassRate": "프레임워크 평가 통과율",
+  "compliance.counter.frameworksPassRate": "프레임워크 실패 기록 없음 비율",
   "compliance.counter.frameworksRawRate": "원본 통과율 (Trivy raw)",
-  "compliance.counter.frameworksEffectiveRate": "예외 반영 통과율",
-  "compliance.counter.frameworksBreakdown": "평가 통과 {passed} · 미평가 {notEvaluated} · 조치가능 {actionable} · 수용 {accepted}",
+  "compliance.counter.frameworksEffectiveRate": "예외 반영 비율",
+  "compliance.counter.frameworksBreakdown": "실패 기록 없음 {passed} · 미평가 {notEvaluated} · 조치가능 {actionable} · 수용 {accepted}",
   "compliance.counter.dataUnavailable": "데이터 조회 불가",
   "compliance.framework.passRate": "통과율",
-  "compliance.framework.evaluatedPassRate": "평가 통과율",
+  "compliance.framework.evaluatedPassRate": "실패 기록 없음 비율 (스캐너는 실패만 기록)",
+  "compliance.framework.noFailureRecordedLabel": "실패 기록 없음 (스캐너는 실패만 기록)",
+  "compliance.framework.noFailureRecordedShort": "실패 기록 없음",
+  "compliance.framework.failureOnlyNote": "이 배포의 Trivy Operator는 실패한 검사만 기록하므로, '실패 기록 없음'은 카탈로그에 등록된 검사 ID가 스캔 범위 내 리포트에서 실패를 기록하지 않았음을 뜻하며 개별 통과 증명이 아닙니다.",
   "compliance.framework.rawPassRate": "원본 통과율",
-  "compliance.framework.effectivePassRate": "예외 반영 통과율",
+  "compliance.framework.effectivePassRate": "예외 반영 비율",
   "compliance.framework.controls": "{count}개 컨트롤",
   "compliance.framework.actionableSummary": "조치가능 컨트롤 {actionable}개 · 수용 {accepted}개 · 미평가 {notEvaluated}개 (원본 실패 {raw}개)",
   "compliance.framework.actionableFailed": "실패 (조치가능)",
@@ -949,6 +952,8 @@ export const ko = {
   "compliance.framework.notEvaluatedReason.unsupported_kind": "지원 리소스 종류 미포함 (RoleBinding 등)",
   "compliance.framework.notEvaluatedReason.missing_node_type": "해당 노드 유형 부재 (워커 노드 없음 등)",
   "compliance.framework.notEvaluatedReason.unlinked_check_id": "미연결 스펙 검사 ID (소문자 avd-ksv-* 등)",
+  "compliance.framework.notEvaluatedReason.not_in_catalogue": "스캐너 카탈로그에 없는 검사 ID (배포된 내장 정책에 미포함)",
+  "compliance.framework.notEvaluatedReason.no_report_for_family": "해당 리포트 계열·종류의 범위 내 리포트 부재 (스캐너 실행 미확인)",
   "compliance.framework.notEvaluatedReason.scanner_disabled": "해당 Trivy 스캐너 비활성화",
   "compliance.framework.notEvaluatedReason.summary_only": "요약 전용 리포트 (컨트롤별 결과 없음)",
   "compliance.framework.notEvaluatedReason.empty_checks": "점검 결과 비어 있음",
@@ -2449,15 +2454,18 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.counter.rbacBreakdown": "+{accepted} accepted (built-in/upstream/exception)",
   "compliance.counter.infra": "Infra Failures (Actionable)",
   "compliance.counter.infraBreakdown": "+{accepted} accepted (exception)",
-  "compliance.counter.frameworksPassRate": "Framework Evaluated Pass Rate",
+  "compliance.counter.frameworksPassRate": "Framework No-Failure-Recorded Rate",
   "compliance.counter.frameworksRawRate": "Raw pass rate (Trivy)",
-  "compliance.counter.frameworksEffectiveRate": "Exception-adjusted pass rate",
-  "compliance.counter.frameworksBreakdown": "{passed} evaluated pass · {notEvaluated} not evaluated · {actionable} actionable · {accepted} accepted",
+  "compliance.counter.frameworksEffectiveRate": "Exception-adjusted rate",
+  "compliance.counter.frameworksBreakdown": "{passed} no failure recorded · {notEvaluated} not evaluated · {actionable} actionable · {accepted} accepted",
   "compliance.counter.dataUnavailable": "Data unavailable",
   "compliance.framework.passRate": "Pass rate",
-  "compliance.framework.evaluatedPassRate": "Evaluated pass rate",
+  "compliance.framework.evaluatedPassRate": "No failure recorded rate (scanner records failures only)",
+  "compliance.framework.noFailureRecordedLabel": "No failure recorded (scanner records failures only)",
+  "compliance.framework.noFailureRecordedShort": "no failure recorded",
+  "compliance.framework.failureOnlyNote": "Trivy Operator in this deployment records failed checks only, so 'no failure recorded' means the catalogued check IDs recorded no failures on in-scope reports rather than verified individual pass records.",
   "compliance.framework.rawPassRate": "Raw pass rate",
-  "compliance.framework.effectivePassRate": "Exception-adjusted pass rate",
+  "compliance.framework.effectivePassRate": "Exception-adjusted rate",
   "compliance.framework.controls": "{count} controls",
   "compliance.framework.actionableSummary": "{actionable} actionable controls · {accepted} accepted · {notEvaluated} not evaluated (raw failed {raw})",
   "compliance.framework.actionableFailed": "Failed (actionable)",
@@ -2471,6 +2479,8 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.framework.notEvaluatedReason.unsupported_kind": "Resource kind omitted from supportedConfigAuditKinds",
   "compliance.framework.notEvaluatedReason.missing_node_type": "Required node type absent (e.g. no worker nodes)",
   "compliance.framework.notEvaluatedReason.unlinked_check_id": "Unlinked spec check ID (e.g. lower-case avd-ksv-*)",
+  "compliance.framework.notEvaluatedReason.not_in_catalogue": "Check ID not in scanner catalogue (absent from deployed embedded policies)",
+  "compliance.framework.notEvaluatedReason.no_report_for_family": "No in-scope report of required report family/kind (scanner execution not observed)",
   "compliance.framework.notEvaluatedReason.scanner_disabled": "Scanner disabled in trivy-operator config",
   "compliance.framework.notEvaluatedReason.summary_only": "Summary-only report (no per-control results)",
   "compliance.framework.notEvaluatedReason.empty_checks": "Control checks array is empty",
@@ -3081,6 +3091,10 @@ export function translateNotEvaluatedReason(locale: Locale, reason?: string): st
       return t(locale, "compliance.framework.notEvaluatedReason.missing_node_type")
     case "unlinked_check_id":
       return t(locale, "compliance.framework.notEvaluatedReason.unlinked_check_id")
+    case "not_in_catalogue":
+      return t(locale, "compliance.framework.notEvaluatedReason.not_in_catalogue")
+    case "no_report_for_family":
+      return t(locale, "compliance.framework.notEvaluatedReason.no_report_for_family")
     case "scanner_disabled":
       return t(locale, "compliance.framework.notEvaluatedReason.scanner_disabled")
     case "summary_only":

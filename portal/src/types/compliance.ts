@@ -109,6 +109,13 @@ export interface InfraAuditDetail extends InfraAuditRow {
   checks: AuditCheck[]
 }
 
+/**
+ * Three-state evaluation classification for a framework control.
+ * Note: `"passed"` denotes **no failure recorded** (every check ID is in the scanner's
+ * check catalogue and at least one in-scope report of its report family/kind exists with
+ * zero failures) — trivy-operator 0.25.0 records failed checks only, so it is not a
+ * positive individual pass record.
+ */
 export type ControlEvaluationState = "passed" | "failed" | "not_evaluated"
 
 export type ControlNotEvaluatedReason =
@@ -117,6 +124,8 @@ export type ControlNotEvaluatedReason =
   | "unsupported_kind"
   | "missing_node_type"
   | "unlinked_check_id"
+  | "not_in_catalogue"
+  | "no_report_for_family"
   | "scanner_disabled"
   | "summary_only"
   | "empty_checks"
@@ -131,9 +140,9 @@ export interface ComplianceFramework {
   passCount: number
   /** Alias for raw Trivy control pass count (`status.summary.passCount`). */
   rawPassCount?: number
-  /** Controls verified as evaluated-pass (excludes not-evaluated controls). */
+  /** Controls with no failure recorded across catalogued check IDs on in-scope reports (scanner records failures only; excludes not-evaluated controls). */
   evaluatedPassCount?: number
-  /** Controls that could not be evaluated on this cluster (excluded scope, absent node type, manual/unlinked IDs, or unknown coverage). */
+  /** Controls that could not be evaluated on this cluster (not in catalogue, excluded scope, unsupported kind, absent node type, no report of family, manual/unlinked IDs, or unknown coverage). */
   notEvaluatedCount?: number
   failCount: number
   /** Actionable failed controls count (controls with >=1 actionable failing check). */
@@ -147,9 +156,9 @@ export interface ComplianceFramework {
   totalControls: number
   /** Raw Trivy control pass rate: passCount / totalControls. */
   passRate: number
-  /** Evaluated control pass rate: evaluatedPassCount / totalControls. */
+  /** No-failure-recorded control rate: evaluatedPassCount / totalControls (scanner records failures only). */
   evaluatedPassRate?: number
-  /** Exception-adjusted pass rate: (evaluatedPassCount + acceptedFailCount) / totalControls. Never counts not-evaluated controls as passed. */
+  /** Exception-adjusted rate: (evaluatedPassCount + acceptedFailCount) / totalControls. Never counts not-evaluated controls as passed. */
   effectivePassRate?: number
   /** True when cluster config, node list, or report lists needed to verify coverage failed to load. */
   coverageUnknown?: boolean

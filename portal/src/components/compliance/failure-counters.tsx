@@ -247,12 +247,14 @@ export function FailureCounters({ summary, locale }: Props) {
                         })}`}
                     </div>
                   )}
+                  <div>{t(locale, "compliance.framework.noFailureRecordedLabel")}</div>
                 </div>
               )}
             </div>
           )
         })}
       </div>
+      <p className="text-xs text-muted-foreground">{t(locale, "compliance.framework.failureOnlyNote")}</p>
       <div className="flex flex-wrap items-center gap-6 text-xs text-muted-foreground">
         <span>
           {t(locale, "compliance.summary.scannedWorkloads")}:{" "}

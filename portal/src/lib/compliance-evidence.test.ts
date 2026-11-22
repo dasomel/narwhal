@@ -77,9 +77,19 @@ it("G1 underlying failure keeps the existing accepted split and resolves absent 
 
 it("G2 KCV0007 requires InfraAssessmentReport evidence and rejects ConfigAuditReport evidence", async () => {
   const routes = setup(["AVD-KCV-0007"])
+  // Ensure kube-system is in scan scope so we test report-family isolation (infra vs configAudit).
+  routes[auxiliary[1]] = {
+    spec: { template: { spec: { containers: [{ env: [{ name: "OPERATOR_EXCLUDE_NAMESPACES", value: "kube-public" }] }] } } },
+  }
   routes[prefix + "configauditreports"] = { items: [report("KCV0007", true, "Pod", "kube-system")] }
-  expect((await getComplianceFrameworkDetail("experiment"))!.controls[0].evaluationState).toBe("not_evaluated")
-  routes[prefix + "infraassessmentreports"] = { items: [report("KCV0007", true, "Pod", "kube-system")] }
+  expect((await getComplianceFrameworkDetail("experiment"))!.controls[0]).toMatchObject({
+    evaluationState: "not_evaluated",
+    notEvaluatedReason: "no_report_for_family",
+  })
+  // Clean (failed-only) kube-system Pod InfraAssessmentReport -> no failure recorded ("passed").
+  routes[prefix + "infraassessmentreports"] = {
+    items: [{ ...report("KCV0007", true, "Pod", "kube-system"), report: { summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0 }, checks: [] } }],
+  }
   cache.clear()
   expect((await getComplianceFrameworkDetail("experiment"))!.controls[0].evaluationState).toBe("passed")
   routes[prefix + "infraassessmentreports"] = { items: [report("KCV0007", false, "Pod", "kube-system")] }
@@ -93,13 +103,16 @@ it("G2 maps snapshot RBAC KSV041 and KSV048 to RBAC evidence, including mixed-fa
   const routes = setup(["AVD-KSV-0041", "AVD-KSV-0048"])
   const ccr = routes[prefix + "clustercompliancereports"] as { items: Array<{ spec: { compliance: { controls: Array<{ checks: Array<{ id: string }> }> } } }> }
   ccr.items[0].spec.compliance.controls[0].checks.push({ id: "AVD-KSV-0038" })
-  routes[prefix + "configauditreports"] = { items: [report("KSV041", true), report("KSV048", true), report("KSV038", true)] }
+  // ConfigAudit only (no RBAC reports yet): neither RBAC control can reach no-failure-recorded.
+  routes[prefix + "configauditreports"] = { items: [report("KSV038", true, "NetworkPolicy", "dev", "netpol-1")] }
   expect((await getComplianceFrameworkDetail("experiment"))!.evaluatedPassCount).toBe(0)
-  routes[prefix + "rbacassessmentreports"] = { items: [report("KSV048", true, "Role")] }
-  routes[prefix + "clusterrbacassessmentreports"] = { items: [report("KSV041", true, "ClusterRole", "")] }
+  // Clean (failed-only) RBAC reports exist in the RBAC family alongside NetworkPolicy ConfigAuditReport -> both reach no-failure-recorded.
+  const cleanSummary = { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0 }
+  routes[prefix + "rbacassessmentreports"] = { items: [{ ...report("KSV048", true, "Role", "dev", "app-role"), report: { summary: cleanSummary, checks: [] } }] }
+  routes[prefix + "clusterrbacassessmentreports"] = { items: [{ ...report("KSV041", true, "ClusterRole", "", "app-cluster-role"), report: { summary: cleanSummary, checks: [] } }] }
   cache.clear()
   expect((await getComplianceFrameworkDetail("experiment"))!.evaluatedPassCount).toBe(2)
-  routes[prefix + "rbacassessmentreports"] = { items: [report("KSV048", false, "Role")] }
+  routes[prefix + "rbacassessmentreports"] = { items: [report("KSV048", false, "Role", "dev", "app-role")] }
   cache.clear()
   expect((await getComplianceFrameworkDetail("experiment"))!.controls[1].evaluationState).toBe("failed")
 })

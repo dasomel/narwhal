@@ -78,7 +78,7 @@ function ControlsTable({
               <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.framework.notEvaluatedShort")}</th>
             ) : (
               <>
-                <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.check.passed")}</th>
+                <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.framework.noFailureRecordedLabel")}</th>
                 <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.framework.actionableFailed")}</th>
               </>
             )}
@@ -318,8 +318,9 @@ export default async function FrameworkDetailPage({ params }: Props) {
         <div className="w-full bg-muted rounded-full h-2.5">
           <div className={`h-2.5 rounded-full ${barColor}`} style={{ width: `${evaluatedWidthPct}%` }} />
         </div>
+        <p className="text-xs text-muted-foreground">{t(locale, "compliance.framework.failureOnlyNote")}</p>
         <div className="flex flex-wrap items-center gap-4 text-sm">
-          <span className="text-green-600 font-medium">✓ {evaluatedPass} {t(locale, "compliance.check.passed")}</span>
+          <span className="text-green-600 font-medium">✓ {evaluatedPass} {t(locale, "compliance.framework.noFailureRecordedLabel")}</span>
           <span className={`font-medium ${actionableControlsFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
             ✗ {actionableControlsFail} {t(locale, "compliance.framework.actionableFailed")}
           </span>

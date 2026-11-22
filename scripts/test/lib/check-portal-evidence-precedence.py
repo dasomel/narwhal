@@ -21,12 +21,12 @@ def check(texts):
     errors = []
     required = {
         "comp": [
-            "if (check.success === false) ids.delete(normalizeCheckId(check.checkID))",
             "for (const failure of controlEvidenceFailures(evidenceSpec, evalCtx))",
-            'const family = /^KCV\\d+$/.test(id) ? "infra"',
+            'catEntry.reportFamily === "configAudit" ? "config" : catEntry.reportFamily',
+            ': /^KCV\\d+$/.test(id) ? "infra"',
             "ctx.evidenceReports.rbac.some",
-            "collectPassedCheckIds(controlEvidenceReports(id, specControl, evalCtx))",
-            "cmdIds.length > 0 || normIds.some((id) => /^KCV\\d+$/.test(id))",
+            "evaluateCheckAgainstCatalogue(id, specControl, evalCtx)",
+            'entry.reportFamily === "infra"',
         ],
         "kisa": [
             "if (actionableControls > 0 || actionableFailures > 0 || auditFailures > 0)",
@@ -58,9 +58,9 @@ def check(texts):
 
 
 MUTATIONS = [
-    ("ignore failed evidence", "comp", "if (check.success === false) ids.delete", "if (false) ids.delete"),
+    ("bypass catalogue family mapping", "comp", 'catEntry.reportFamily === "configAudit" ? "config" : catEntry.reportFamily', '"config"'),
     ("ignore underlying failures", "comp", "controlEvidenceFailures(evidenceSpec, evalCtx)", "[]"),
-    ("KCV in config", "comp", 'const family = /^KCV\\d+$/.test(id) ? "infra"', 'const family = /^KCV\\d+$/.test(id) ? "config"'),
+    ("KCV fallback in config", "comp", ': /^KCV\\d+$/.test(id) ? "infra"', ': /^KCV\\d+$/.test(id) ? "config"'),
     ("guess RBAC family", "comp", "ctx.evidenceReports.rbac.some", "ctx.evidenceReports.config.some"),
     ("miss auxiliary errors", "comp", "if (evalCtx.hasHttpError)", "if (evalCtx.operatorConfigError)"),
     ("ignore audit-only failures", "kisa", " || actionableFailures > 0 || auditFailures > 0", ""),

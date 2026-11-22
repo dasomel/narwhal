@@ -14,6 +14,7 @@ import {
   matchRbacException,
   normalizeCheckId,
 } from "./compliance-accepted"
+import { getCatalogueCheck } from "./trivy-check-catalogue"
 import {
   sumCheckSummary,
   type AcceptedClass,
@@ -1246,11 +1247,25 @@ const CONTROL_PLANE_CHECK_IDS = new Set(["KSV037"])
 const BINDING_CONFIG_AUDIT_CHECK_IDS = new Set(["KSV111"])
 const RBAC_ASSESSMENT_CHECK_IDS = new Set([
   ...Array.from({ length: 16 }, (_, i) => `KSV${String(i + 41).padStart(3, "0")}`),
+  "KSV112",
   "KSV113",
   "KSV114",
+  "KSV115",
+])
+const WORKLOAD_KINDS_LOWER = new Set([
+  "pod",
+  "replicaset",
+  "replicationcontroller",
+  "deployment",
+  "statefulset",
+  "daemonset",
+  "cronjob",
+  "job",
 ])
 
 interface FrameworkEvalContext {
+  excludedNamespaces: ReadonlySet<string> | "unknown"
+  targetNamespaces: ReadonlySet<string> | "unknown"
   kubeSystemExcluded: boolean | "unknown"
   supportedConfigAuditKinds: ReadonlySet<string> | "unknown"
   configAuditScannerEnabled: boolean | "unknown"
@@ -1286,29 +1301,52 @@ function isControlPlaneNodeLabels(labels: Record<string, string> | undefined): b
   )
 }
 
-function collectPassedCheckIds(items: readonly RawAuditReport[]): Set<string> {
-  const ids = new Set<string>()
-  for (const item of items) {
-    for (const check of item.report?.checks ?? []) {
-      if (check.success === true && typeof check.checkID === "string" && check.checkID.trim().length > 0) {
-        ids.add(normalizeCheckId(check.checkID))
-      }
-    }
+function isNamespaceExcluded(ns: string, ctx: FrameworkEvalContext): boolean | "unknown" {
+  if (ctx.excludedNamespaces === "unknown" || ctx.targetNamespaces === "unknown") {
+    return ns === "kube-system" ? ctx.kubeSystemExcluded : "unknown"
   }
-  for (const item of items) {
-    for (const check of item.report?.checks ?? []) {
-      if (check.success === false) ids.delete(normalizeCheckId(check.checkID))
-    }
-  }
-  return ids
+  return ctx.excludedNamespaces.has(ns) || (ctx.targetNamespaces.size > 0 && !ctx.targetNamespaces.has(ns))
 }
 
-// D1: Use the v0.25 report family, including KSV IDs actually emitted by RBAC reports.
-// Cost: linear report lookup; escape hatch: update families when the scanner contract changes.
+function matchesSupportedKind(checkKind: string, supported: ReadonlySet<string>): boolean {
+  const lower = checkKind.toLowerCase()
+  if (lower === "workload") {
+    return supported.has("workload") || Array.from(WORKLOAD_KINDS_LOWER).some((k) => supported.has(k))
+  }
+  if (WORKLOAD_KINDS_LOWER.has(lower)) {
+    return supported.has(lower) || supported.has("workload")
+  }
+  return supported.has(lower)
+}
+
+function reportResourceKind(r: RawAuditReport): string {
+  return r.metadata.labels?.["trivy-operator.resource.kind"] ?? r.metadata.ownerReferences?.[0]?.kind ?? ""
+}
+
+function reportMatchesKind(r: RawAuditReport, targetKind: string): boolean {
+  const rk = reportResourceKind(r).toLowerCase()
+  if (!rk) return false
+  const tk = targetKind.toLowerCase()
+  if (tk === "workload") return WORKLOAD_KINDS_LOWER.has(rk)
+  return rk === tk
+}
+
+function isNodeInfraReport(r: RawAuditReport): boolean {
+  const rk = reportResourceKind(r).toLowerCase()
+  if (rk === "node") return true
+  return !r.metadata.namespace && r.metadata.name.startsWith("node-")
+}
+
+// D1: Use the v0.25 report family from the embedded check catalogue, falling back to KCV->infra
+// and observed RBAC reports for uncatalogued IDs.
+// Cost: linear report lookup; escape hatch: regenerate catalogue when trivy-operator bumps.
 function controlEvidenceReports(id: string, spec: RawSpecControl | undefined, ctx: FrameworkEvalContext): readonly RawAuditReport[] {
-  const family = /^KCV\d+$/.test(id) ? "infra"
-    : RBAC_ASSESSMENT_CHECK_IDS.has(id) || ctx.evidenceReports.rbac.some((r) =>
-      r.report?.checks?.some((c) => normalizeCheckId(c.checkID) === id)) ? "rbac" : "config"
+  const catEntry = getCatalogueCheck(id)
+  const family = catEntry
+    ? (catEntry.reportFamily === "configAudit" ? "config" : catEntry.reportFamily)
+    : /^KCV\d+$/.test(id) ? "infra"
+      : RBAC_ASSESSMENT_CHECK_IDS.has(id) || ctx.evidenceReports.rbac.some((r) =>
+        r.report?.checks?.some((c) => normalizeCheckId(c.checkID) === id)) ? "rbac" : "config"
   const nodeTypes = new Set([spec?.nodeType, ...(spec?.commands ?? []).map((c) => c.nodeType)]
     .map(normalizeNodeType).filter(Boolean))
   return ctx.evidenceReports[family].filter((r) => {
@@ -1316,7 +1354,7 @@ function controlEvidenceReports(id: string, spec: RawSpecControl | undefined, ct
       const name = r.metadata.labels?.["trivy-operator.resource.name"] ?? ""
       return ctx.nodeRoles.get(name) === nodeTypes.values().next().value
     }
-    if (family === "config" && id === "KSV037") return r.metadata.namespace === "kube-system"
+    if (family === "config" && CONTROL_PLANE_CHECK_IDS.has(id)) return r.metadata.namespace === "kube-system"
     if (family === "config" && BINDING_CONFIG_AUDIT_CHECK_IDS.has(id)) {
       return ["RoleBinding", "ClusterRoleBinding"].includes(r.metadata.labels?.["trivy-operator.resource.kind"] ?? "")
     }
@@ -1402,12 +1440,17 @@ function buildFrameworkEvalContext(opts: {
     ? new Map(envList.filter((e) => typeof e.name === "string").map((e) => [e.name!, e.value ?? ""]))
     : null
 
+  const excludedNamespaces: ReadonlySet<string> | "unknown" = operatorEnv
+    ? parseCsvSet(operatorEnv.get("OPERATOR_EXCLUDE_NAMESPACES"))
+    : "unknown"
+  const targetNamespaces: ReadonlySet<string> | "unknown" = operatorEnv
+    ? parseCsvSet(operatorEnv.get("OPERATOR_TARGET_NAMESPACES"))
+    : "unknown"
+
   let kubeSystemExcluded: boolean | "unknown" = "unknown"
-  if (operatorEnv) {
-    const excluded = parseCsvSet(operatorEnv.get("OPERATOR_EXCLUDE_NAMESPACES"))
-    const targeted = parseCsvSet(operatorEnv.get("OPERATOR_TARGET_NAMESPACES"))
+  if (excludedNamespaces !== "unknown" && targetNamespaces !== "unknown") {
     kubeSystemExcluded =
-      excluded.has("kube-system") || (targeted.size > 0 && !targeted.has("kube-system"))
+      excludedNamespaces.has("kube-system") || (targetNamespaces.size > 0 && !targetNamespaces.has("kube-system"))
   } else if (operatorDeployRes.ok && configRes.ok) {
     const hasKubeSystemReport = configItems.some((i) => i.metadata.namespace === "kube-system")
     kubeSystemExcluded = hasKubeSystemReport ? false : "unknown"
@@ -1458,6 +1501,8 @@ function buildFrameworkEvalContext(opts: {
   return {
     nodeRoles: nodeRoleByName,
     evidenceReports: { config: configItems, rbac: rbacItems, infra: infraItems },
+    excludedNamespaces,
+    targetNamespaces,
     kubeSystemExcluded,
     supportedConfigAuditKinds,
     configAuditScannerEnabled: parseScannerFlag("OPERATOR_CONFIG_AUDIT_SCANNER_ENABLED"),
@@ -1474,16 +1519,295 @@ function buildFrameworkEvalContext(opts: {
   }
 }
 
+interface NonFailingControlOutcome {
+  evaluationState: ControlEvaluationState
+  notEvaluatedReason?: ControlNotEvaluatedReason
+  notEvaluatedDetail?: string
+}
+
+// D-CHECK-CATALOGUE: trivy-operator 0.25.0 drops all `success: true` checks in `evaluate()`
+// because passed Rego rules carry empty `Messages` (confirmed even with `recordFailedChecksOnly=false`).
+// Therefore positive success records never exist in this deployment. A non-failing control reaches
+// `"passed"` (displayed as "no failure recorded — scanner records failures only") ONLY when EVERY
+// check ID is in the pinned embedded `trivy-checks` catalogue, the operator scope covers at least
+// one applicable kind/node type/namespace, and at least one in-scope report of the right family and
+// kind exists. Cost: regenerate `trivy-check-catalogue.generated.json` on trivy-operator/chart bumps
+// (enforced by `gen-trivy-check-catalogue.mjs --check` and R391). Escape hatch: restore positive
+// success-record evidence once an upstream operator version emits `success: true` checks.
+function evaluateCheckAgainstCatalogue(
+  normId: string,
+  specControl: RawSpecControl,
+  evalCtx: FrameworkEvalContext,
+): NonFailingControlOutcome {
+  const entry = getCatalogueCheck(normId)
+  if (!entry) {
+    return {
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "not_in_catalogue",
+      notEvaluatedDetail: `${normId} not in trivy-checks catalogue`,
+    }
+  }
+
+  if (entry.reportFamily === "infra") {
+    if (evalCtx.infraScannerEnabled === false) {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "scanner_disabled",
+        notEvaluatedDetail: "infraAssessmentScannerEnabled=false",
+      }
+    }
+    if (evalCtx.operatorConfigError || evalCtx.hasInfraReports === "unknown") {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "coverage_unknown",
+        notEvaluatedDetail: "infra report or operator config lookup failed",
+      }
+    }
+
+    if (entry.kinds.includes("Node")) {
+      if (evalCtx.hasMasterNodes === "unknown" || evalCtx.hasWorkerNodes === "unknown") {
+        return {
+          evaluationState: "not_evaluated",
+          notEvaluatedReason: "coverage_unknown",
+          notEvaluatedDetail: "node list unavailable",
+        }
+      }
+      const declaredNodeTypes = new Set<"master" | "worker">()
+      const ctrlNodeType = normalizeNodeType(specControl.nodeType)
+      if (ctrlNodeType) declaredNodeTypes.add(ctrlNodeType)
+      for (const cmd of specControl.commands ?? []) {
+        const nt = normalizeNodeType(cmd.nodeType)
+        if (nt) declaredNodeTypes.add(nt)
+      }
+      const catalogueNodeTypes = entry.nodeTypes ?? ["master", "worker"]
+      const applicableNodeTypes =
+        declaredNodeTypes.size > 0
+          ? catalogueNodeTypes.filter((nt) => declaredNodeTypes.has(nt))
+          : [...catalogueNodeTypes]
+      const effectiveNodeTypes = applicableNodeTypes.length > 0 ? applicableNodeTypes : [...declaredNodeTypes]
+
+      if (evalCtx.hasMasterNodes === false && evalCtx.hasWorkerNodes === false) {
+        return {
+          evaluationState: "not_evaluated",
+          notEvaluatedReason: "missing_node_type",
+          notEvaluatedDetail: "no nodes on cluster",
+        }
+      }
+      const presentNodeTypes = effectiveNodeTypes.filter((nt) =>
+        nt === "master" ? evalCtx.hasMasterNodes === true : evalCtx.hasWorkerNodes === true,
+      )
+      if (presentNodeTypes.length === 0) {
+        const missingLabel =
+          effectiveNodeTypes.length === 1 && effectiveNodeTypes[0] === "worker"
+            ? "no worker nodes on cluster"
+            : effectiveNodeTypes.length === 1 && effectiveNodeTypes[0] === "master"
+              ? "no control-plane nodes on cluster"
+              : "no matching node types on cluster"
+        return {
+          evaluationState: "not_evaluated",
+          notEvaluatedReason: "missing_node_type",
+          notEvaluatedDetail: missingLabel,
+        }
+      }
+
+      const hasMatchingNodeReport = evalCtx.evidenceReports.infra.some((r) => {
+        if (!isNodeInfraReport(r)) return false
+        const nodeName = r.metadata.labels?.["trivy-operator.resource.name"] ?? r.metadata.name.replace(/^node-/, "")
+        const role = evalCtx.nodeRoles.get(nodeName)
+        return role !== undefined && presentNodeTypes.includes(role)
+      })
+      if (!hasMatchingNodeReport) {
+        return {
+          evaluationState: "not_evaluated",
+          notEvaluatedReason: "no_report_for_family",
+          notEvaluatedDetail: `no ClusterInfraAssessmentReport for ${presentNodeTypes.join("/")} node (${normId})`,
+        }
+      }
+      return { evaluationState: "passed" }
+    }
+
+    // Pod-level InfraAssessment checks (control-plane static pods in kube-system).
+    for (const ns of entry.requiredNamespaces ?? []) {
+      const excl = isNamespaceExcluded(ns, evalCtx)
+      if (excl === true) {
+        return {
+          evaluationState: "not_evaluated",
+          notEvaluatedReason: "excluded_namespace",
+          notEvaluatedDetail: `${ns} excluded by OPERATOR_EXCLUDE_NAMESPACES`,
+        }
+      }
+      if (excl === "unknown") {
+        return {
+          evaluationState: "not_evaluated",
+          notEvaluatedReason: "coverage_unknown",
+          notEvaluatedDetail: `${ns} namespace scope unknown`,
+        }
+      }
+    }
+    if (evalCtx.supportedConfigAuditKinds === "unknown") {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "coverage_unknown",
+        notEvaluatedDetail: "trivy.supportedConfigAuditKinds unavailable",
+      }
+    }
+    const auditedKinds = entry.kinds.filter((k) => matchesSupportedKind(k, evalCtx.supportedConfigAuditKinds as ReadonlySet<string>))
+    if (auditedKinds.length === 0) {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "unsupported_kind",
+        notEvaluatedDetail: `${entry.kinds.join("/")} omitted from trivy.supportedConfigAuditKinds`,
+      }
+    }
+    const matchingInfraReports = evalCtx.evidenceReports.infra.filter((r) =>
+      auditedKinds.some((k) => reportMatchesKind(r, k)),
+    )
+    const inScopeInfraReports = matchingInfraReports.filter((r) => {
+      const ns = r.metadata.namespace ?? ""
+      if (entry.requiredNamespaces && entry.requiredNamespaces.length > 0) {
+        return entry.requiredNamespaces.includes(ns) && isNamespaceExcluded(ns, evalCtx) === false
+      }
+      return ns === "" || isNamespaceExcluded(ns, evalCtx) === false
+    })
+    if (inScopeInfraReports.length === 0) {
+      if (matchingInfraReports.length > 0 && matchingInfraReports.every((r) => isNamespaceExcluded(r.metadata.namespace ?? "", evalCtx) === true)) {
+        return {
+          evaluationState: "not_evaluated",
+          notEvaluatedReason: "excluded_namespace",
+          notEvaluatedDetail: `only excluded-namespace InfraAssessmentReports exist for ${normId}`,
+        }
+      }
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "no_report_for_family",
+        notEvaluatedDetail: `no in-scope ${auditedKinds.join("/")} InfraAssessmentReport for ${normId}`,
+      }
+    }
+    return { evaluationState: "passed" }
+  }
+
+  if (entry.reportFamily === "rbac") {
+    if (evalCtx.rbacScannerEnabled === false) {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "scanner_disabled",
+        notEvaluatedDetail: "rbacAssessmentScannerEnabled=false",
+      }
+    }
+    if (evalCtx.operatorConfigError || evalCtx.hasRbacReports === "unknown" || evalCtx.supportedConfigAuditKinds === "unknown") {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "coverage_unknown",
+        notEvaluatedDetail: "RBAC assessment report or operator config lookup failed",
+      }
+    }
+    const auditedKinds = entry.kinds.filter((k) => matchesSupportedKind(k, evalCtx.supportedConfigAuditKinds as ReadonlySet<string>))
+    if (auditedKinds.length === 0) {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "unsupported_kind",
+        notEvaluatedDetail: `${entry.kinds.join("/")} omitted from trivy.supportedConfigAuditKinds`,
+      }
+    }
+    const matchingRbacReports = evalCtx.evidenceReports.rbac.filter((r) =>
+      auditedKinds.some((k) => reportMatchesKind(r, k)),
+    )
+    const inScopeRbacReports = matchingRbacReports.filter((r) => {
+      const kind = reportResourceKind(r)
+      if (kind === "ClusterRole" || !r.metadata.namespace) return true
+      return isNamespaceExcluded(r.metadata.namespace, evalCtx) === false
+    })
+    if (inScopeRbacReports.length === 0) {
+      if (matchingRbacReports.length > 0 && matchingRbacReports.every((r) => r.metadata.namespace && isNamespaceExcluded(r.metadata.namespace, evalCtx) === true)) {
+        return {
+          evaluationState: "not_evaluated",
+          notEvaluatedReason: "excluded_namespace",
+          notEvaluatedDetail: `only excluded-namespace RbacAssessmentReports exist for ${normId}`,
+        }
+      }
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "no_report_for_family",
+        notEvaluatedDetail: `no in-scope ${auditedKinds.join("/")} RbacAssessmentReport for ${normId}`,
+      }
+    }
+    return { evaluationState: "passed" }
+  }
+
+  // ConfigAudit family
+  if (evalCtx.configAuditScannerEnabled === false) {
+    return {
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "scanner_disabled",
+      notEvaluatedDetail: "configAuditScannerEnabled=false",
+    }
+  }
+  if (evalCtx.operatorConfigError || evalCtx.hasConfigAuditReports === "unknown" || evalCtx.supportedConfigAuditKinds === "unknown") {
+    return {
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "coverage_unknown",
+      notEvaluatedDetail: "ConfigAudit report or operator config lookup failed",
+    }
+  }
+  for (const ns of [...(entry.requiredNamespaces ?? []), ...(entry.scopeNamespaces ?? [])]) {
+    const excl = isNamespaceExcluded(ns, evalCtx)
+    if (excl === true) {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "excluded_namespace",
+        notEvaluatedDetail: `${ns} excluded by OPERATOR_EXCLUDE_NAMESPACES`,
+      }
+    }
+    if (excl === "unknown") {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "coverage_unknown",
+        notEvaluatedDetail: `${ns} namespace scope unknown`,
+      }
+    }
+  }
+  const auditedKinds = entry.kinds.filter((k) => matchesSupportedKind(k, evalCtx.supportedConfigAuditKinds as ReadonlySet<string>))
+  if (auditedKinds.length === 0) {
+    return {
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "unsupported_kind",
+      notEvaluatedDetail: `${entry.kinds.join("/")} omitted from trivy.supportedConfigAuditKinds`,
+    }
+  }
+  const matchingConfigReports = evalCtx.evidenceReports.config.filter((r) =>
+    auditedKinds.some((k) => reportMatchesKind(r, k)),
+  )
+  const inScopeConfigReports = matchingConfigReports.filter((r) => {
+    const ns = r.metadata.namespace ?? ""
+    if (entry.requiredNamespaces && entry.requiredNamespaces.length > 0) {
+      return entry.requiredNamespaces.includes(ns) && isNamespaceExcluded(ns, evalCtx) === false
+    }
+    if (!ns) return true
+    return isNamespaceExcluded(ns, evalCtx) === false
+  })
+  if (inScopeConfigReports.length === 0) {
+    if (matchingConfigReports.length > 0 && matchingConfigReports.every((r) => r.metadata.namespace && isNamespaceExcluded(r.metadata.namespace, evalCtx) === true)) {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "excluded_namespace",
+        notEvaluatedDetail: `only excluded-namespace ${auditedKinds.join("/")} ConfigAuditReports exist for ${normId}`,
+      }
+    }
+    return {
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "no_report_for_family",
+      notEvaluatedDetail: `no in-scope ${auditedKinds.join("/")} ConfigAuditReport for ${normId}`,
+    }
+  }
+  return { evaluationState: "passed" }
+}
+
 function classifyNonFailingControl(
   resultControl: NonNullable<NonNullable<RawComplianceReport["status"]>["detailReport"]>["results"] extends Array<infer R> | undefined ? R : never,
   specControl: RawSpecControl | undefined,
   evalCtx: FrameworkEvalContext,
   specHasAutomatedChecks: boolean,
-): {
-  evaluationState: ControlEvaluationState
-  notEvaluatedReason?: ControlNotEvaluatedReason
-  notEvaluatedDetail?: string
-} {
+): NonFailingControlOutcome {
   if (evalCtx.hasHttpError) {
     return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: evalCtx.failedAuxSources.join(", ") }
   }
@@ -1545,7 +1869,7 @@ function classifyNonFailingControl(
     }
   }
 
-  // Case (c): lower-case check IDs in spec (e.g. avd-ksv-*) never match Trivy report IDs.
+  // Lower-case check IDs in spec (e.g. avd-ksv-*) never match Trivy report IDs.
   const nonUpperIds = rawIds.filter((id) => id !== id.toUpperCase())
   if (nonUpperIds.length > 0) {
     return {
@@ -1555,127 +1879,14 @@ function classifyNonFailingControl(
     }
   }
 
-  const cmdList = specControl.commands ?? []
-  const cmdIds = cmdList.map((c) => (c.id ?? "").trim().toUpperCase()).filter(Boolean)
   const normIds = rawIds.map(normalizeCheckId)
-
-  const checkEvidence = (
-    reportKindLabel: string,
-  ): {
-    evaluationState: ControlEvaluationState
-    notEvaluatedReason?: ControlNotEvaluatedReason
-    notEvaluatedDetail?: string
-  } => {
-    // Each ID uses its own report family; mixed controls cannot borrow another family's pass.
-    const missing = normIds.filter((id) => !collectPassedCheckIds(controlEvidenceReports(id, specControl, evalCtx)).has(id))
-    if (missing.length === 0) {
-      return { evaluationState: "passed" }
-    }
-    return {
-      evaluationState: "not_evaluated",
-      notEvaluatedReason: "no_evidence_in_report",
-      notEvaluatedDetail: `no evidence in ${reportKindLabel} for ${missing.join(", ")}`,
+  for (const id of normIds) {
+    const outcome = evaluateCheckAgainstCatalogue(id, specControl, evalCtx)
+    if (outcome.evaluationState !== "passed") {
+      return outcome
     }
   }
-
-  // Node / Infra controls: all KCV IDs belong to InfraAssessmentReports (v0.25).
-  // D-NODE-APPLICABILITY: Never infer worker-only vs master-only from CIS section numbers
-  // (e.g. 4.1.5 / KCV0073 applies to control-plane nodes too). Apply node-type gating ONLY when
-  // explicit `nodeType` metadata is present on spec/command data (or when the cluster has zero
-  // nodes); otherwise fall back to positive per-check evidence in InfraAssessmentReport.
-  const isNodeInfraCtrl =
-    cmdIds.length > 0 || normIds.some((id) => /^KCV\d+$/.test(id))
-
-  if (isNodeInfraCtrl) {
-    if (evalCtx.infraScannerEnabled === false) {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "infraAssessmentScannerEnabled=false" }
-    }
-    const declaredNodeTypes = new Set<"master" | "worker">()
-    const ctrlNodeType = normalizeNodeType(specControl.nodeType)
-    if (ctrlNodeType) declaredNodeTypes.add(ctrlNodeType)
-    for (const cmd of cmdList) {
-      const nt = normalizeNodeType(cmd.nodeType)
-      if (nt) declaredNodeTypes.add(nt)
-    }
-
-    if (evalCtx.hasMasterNodes === false && evalCtx.hasWorkerNodes === false) {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type", notEvaluatedDetail: "no nodes on cluster" }
-    }
-    if (declaredNodeTypes.size === 1 && declaredNodeTypes.has("worker") && evalCtx.hasWorkerNodes === false) {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type", notEvaluatedDetail: "no worker nodes on cluster" }
-    }
-    if (declaredNodeTypes.size === 1 && declaredNodeTypes.has("master") && evalCtx.hasMasterNodes === false) {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type", notEvaluatedDetail: "no control-plane nodes on cluster" }
-    }
-    if (evalCtx.operatorConfigError || evalCtx.hasInfraReports === "unknown" || evalCtx.hasMasterNodes === "unknown") {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "node / infra report or operator config lookup failed" }
-    }
-    return checkEvidence("InfraAssessmentReport")
-  }
-
-  // KSV037 is a workload/config check scoped to kube-system; KCV IDs use infra above.
-  const needsKubeSystem = normIds.some((id) => CONTROL_PLANE_CHECK_IDS.has(id))
-  if (needsKubeSystem) {
-    if (evalCtx.configAuditScannerEnabled === false) {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "configAuditScannerEnabled=false" }
-    }
-    if (evalCtx.kubeSystemExcluded === true) {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "excluded_namespace", notEvaluatedDetail: "kube-system excluded by OPERATOR_EXCLUDE_NAMESPACES" }
-    }
-    if (evalCtx.operatorConfigError || evalCtx.kubeSystemExcluded === "unknown" || evalCtx.hasConfigAuditReports === "unknown") {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "kube-system ConfigAudit coverage unknown" }
-    }
-    return checkEvidence("kube-system ConfigAuditReport")
-  }
-
-  // Binding ConfigAudit checks (RoleBinding / ClusterRoleBinding for KSV111).
-  const needsBindings = normIds.some((id) => BINDING_CONFIG_AUDIT_CHECK_IDS.has(id))
-  if (needsBindings) {
-    if (evalCtx.configAuditScannerEnabled === false) {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "configAuditScannerEnabled=false" }
-    }
-    if (evalCtx.supportedConfigAuditKinds !== "unknown") {
-      const hasBindingKind =
-        evalCtx.supportedConfigAuditKinds.has("rolebinding") ||
-        evalCtx.supportedConfigAuditKinds.has("clusterrolebinding")
-      if (!hasBindingKind) {
-        return {
-          evaluationState: "not_evaluated",
-          notEvaluatedReason: "unsupported_kind",
-          notEvaluatedDetail: "RoleBinding/ClusterRoleBinding omitted from trivy.supportedConfigAuditKinds",
-        }
-      }
-    }
-    if (evalCtx.operatorConfigError || evalCtx.supportedConfigAuditKinds === "unknown" || evalCtx.hasConfigAuditReports === "unknown") {
-      return {
-        evaluationState: "not_evaluated",
-        notEvaluatedReason: "coverage_unknown",
-        notEvaluatedDetail: "RoleBinding/ClusterRoleBinding ConfigAudit coverage unknown",
-      }
-    }
-    return checkEvidence("RoleBinding/ClusterRoleBinding ConfigAuditReport")
-  }
-
-  // RBAC checks (Role / ClusterRole).
-  const isRbacCtrl = normIds.every((id) => RBAC_ASSESSMENT_CHECK_IDS.has(id))
-  if (isRbacCtrl) {
-    if (evalCtx.rbacScannerEnabled === false) {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "rbacAssessmentScannerEnabled=false" }
-    }
-    if (evalCtx.operatorConfigError || evalCtx.hasRbacReports === "unknown") {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "RBAC assessment report or operator config lookup failed" }
-    }
-    return checkEvidence("RbacAssessmentReport")
-  }
-
-  // General ConfigAudit checks (and any unknown check IDs such as AVD-KSV-9999).
-  if (evalCtx.configAuditScannerEnabled === false) {
-    return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "configAuditScannerEnabled=false" }
-  }
-  if (evalCtx.operatorConfigError || evalCtx.hasConfigAuditReports === "unknown") {
-    return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "ConfigAudit report or operator config lookup failed" }
-  }
-  return checkEvidence("ConfigAuditReport")
+  return { evaluationState: "passed" }
 }
 
 function buildComplianceFrameworkData(

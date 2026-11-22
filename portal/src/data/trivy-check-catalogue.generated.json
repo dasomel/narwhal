@@ -1,0 +1,1914 @@
+{
+  "source": {
+    "trivyOperatorVersion": "0.25.0",
+    "trivyOperatorChartVersion": "0.27.0",
+    "trivyChecksModule": "github.com/aquasecurity/trivy-checks",
+    "trivyChecksVersion": "v1.7.1",
+    "policyMode": "embedded",
+    "excludedPaths": [
+      "checks/kubernetes/advanced/optional"
+    ]
+  },
+  "checks": {
+    "KCV0001": {
+      "id": "KCV0001",
+      "avdId": "AVD-KCV-0001",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Medium",
+      "title": "Ensure that the --anonymous-auth argument is set to false"
+    },
+    "KCV0002": {
+      "id": "KCV0002",
+      "avdId": "AVD-KCV-0002",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --token-auth-file parameter is not set"
+    },
+    "KCV0003": {
+      "id": "KCV0003",
+      "avdId": "AVD-KCV-0003",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --DenyServiceExternalIPs is not set"
+    },
+    "KCV0004": {
+      "id": "KCV0004",
+      "avdId": "AVD-KCV-0004",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --kubelet-https argument is set to true"
+    },
+    "KCV0005": {
+      "id": "KCV0005",
+      "avdId": "AVD-KCV-0005",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --kubelet-client-certificate and --kubelet-client-key arguments are set as appropriate"
+    },
+    "KCV0006": {
+      "id": "KCV0006",
+      "avdId": "AVD-KCV-0006",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --kubelet-certificate-authority argument is set as appropriate"
+    },
+    "KCV0007": {
+      "id": "KCV0007",
+      "avdId": "AVD-KCV-0007",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --authorization-mode argument is not set to AlwaysAllow"
+    },
+    "KCV0008": {
+      "id": "KCV0008",
+      "avdId": "AVD-KCV-0008",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --authorization-mode argument includes Node"
+    },
+    "KCV0009": {
+      "id": "KCV0009",
+      "avdId": "AVD-KCV-0009",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --authorization-mode argument includes RBAC"
+    },
+    "KCV0010": {
+      "id": "KCV0010",
+      "avdId": "AVD-KCV-0010",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the admission control plugin EventRateLimit is set"
+    },
+    "KCV0011": {
+      "id": "KCV0011",
+      "avdId": "AVD-KCV-0011",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the admission control plugin AlwaysAdmit is not set"
+    },
+    "KCV0012": {
+      "id": "KCV0012",
+      "avdId": "AVD-KCV-0012",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the admission control plugin AlwaysPullImages is set",
+      "legacyId": "KSV0012"
+    },
+    "KCV0013": {
+      "id": "KCV0013",
+      "avdId": "AVD-KCV-0013",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the admission control plugin SecurityContextDeny is set if PodSecurityPolicy is not used"
+    },
+    "KCV0014": {
+      "id": "KCV0014",
+      "avdId": "AVD-KCV-0014",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the admission control plugin ServiceAccount is set"
+    },
+    "KCV0015": {
+      "id": "KCV0015",
+      "avdId": "AVD-KCV-0015",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the admission control plugin NamespaceLifecycle is set"
+    },
+    "KCV0016": {
+      "id": "KCV0016",
+      "avdId": "AVD-KCV-0016",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the admission control plugin NodeRestriction is set"
+    },
+    "KCV0017": {
+      "id": "KCV0017",
+      "avdId": "AVD-KCV-0017",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --secure-port argument is not set to 0"
+    },
+    "KCV0018": {
+      "id": "KCV0018",
+      "avdId": "AVD-KCV-0018",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --profiling argument is set to false"
+    },
+    "KCV0019": {
+      "id": "KCV0019",
+      "avdId": "AVD-KCV-0019",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --audit-log-path argument is set"
+    },
+    "KCV0020": {
+      "id": "KCV0020",
+      "avdId": "AVD-KCV-0020",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --audit-log-maxage argument is set to 30 or as appropriate"
+    },
+    "KCV0021": {
+      "id": "KCV0021",
+      "avdId": "AVD-KCV-0021",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --audit-log-maxbackup argument is set to 10 or as appropriate"
+    },
+    "KCV0022": {
+      "id": "KCV0022",
+      "avdId": "AVD-KCV-0022",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --audit-log-maxsize argument is set to 100 or as appropriate"
+    },
+    "KCV0024": {
+      "id": "KCV0024",
+      "avdId": "AVD-KCV-0024",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --service-account-lookup argument is set to true"
+    },
+    "KCV0025": {
+      "id": "KCV0025",
+      "avdId": "AVD-KCV-0025",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --service-account-key-file argument is set as appropriate"
+    },
+    "KCV0026": {
+      "id": "KCV0026",
+      "avdId": "AVD-KCV-0026",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --etcd-certfile and --etcd-keyfile arguments are set as appropriate"
+    },
+    "KCV0027": {
+      "id": "KCV0027",
+      "avdId": "AVD-KCV-0027",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --tls-cert-file and --tls-private-key-file arguments are set as appropriate"
+    },
+    "KCV0028": {
+      "id": "KCV0028",
+      "avdId": "AVD-KCV-0028",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --client-ca-file argument is set as appropriate"
+    },
+    "KCV0029": {
+      "id": "KCV0029",
+      "avdId": "AVD-KCV-0029",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --etcd-cafile argument is set as appropriate"
+    },
+    "KCV0030": {
+      "id": "KCV0030",
+      "avdId": "AVD-KCV-0030",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --encryption-provider-config argument is set as appropriate"
+    },
+    "KCV0033": {
+      "id": "KCV0033",
+      "avdId": "AVD-KCV-0033",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --terminated-pod-gc-threshold argument is set as appropriate"
+    },
+    "KCV0034": {
+      "id": "KCV0034",
+      "avdId": "AVD-KCV-0034",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --profiling argument is set to false"
+    },
+    "KCV0035": {
+      "id": "KCV0035",
+      "avdId": "AVD-KCV-0035",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --use-service-account-credentials argument is set to true",
+      "legacyId": "KCV0135"
+    },
+    "KCV0036": {
+      "id": "KCV0036",
+      "avdId": "AVD-KCV-0036",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --service-account-private-key-file argument is set as appropriate"
+    },
+    "KCV0037": {
+      "id": "KCV0037",
+      "avdId": "AVD-KCV-0037",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --root-ca-file argument is set as appropriate"
+    },
+    "KCV0038": {
+      "id": "KCV0038",
+      "avdId": "AVD-KCV-0038",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the RotateKubeletServerCertificate argument is set to true"
+    },
+    "KCV0039": {
+      "id": "KCV0039",
+      "avdId": "AVD-KCV-0039",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --bind-address argument is set to 127.0.0.1"
+    },
+    "KCV0040": {
+      "id": "KCV0040",
+      "avdId": "AVD-KCV-0040",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --profiling argument is set to false"
+    },
+    "KCV0041": {
+      "id": "KCV0041",
+      "avdId": "AVD-KCV-0041",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --bind-address argument is set to 127.0.0.1"
+    },
+    "KCV0042": {
+      "id": "KCV0042",
+      "avdId": "AVD-KCV-0042",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --cert-file and --key-file arguments are set as appropriate"
+    },
+    "KCV0043": {
+      "id": "KCV0043",
+      "avdId": "AVD-KCV-0043",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --client-cert-auth argument is set to true"
+    },
+    "KCV0044": {
+      "id": "KCV0044",
+      "avdId": "AVD-KCV-0044",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --auto-tls argument is not set to true"
+    },
+    "KCV0045": {
+      "id": "KCV0045",
+      "avdId": "AVD-KCV-0045",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --peer-cert-file and --peer-key-file arguments are set as appropriate"
+    },
+    "KCV0046": {
+      "id": "KCV0046",
+      "avdId": "AVD-KCV-0046",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --peer-client-cert-auth argument is set to true"
+    },
+    "KCV0047": {
+      "id": "KCV0047",
+      "avdId": "AVD-KCV-0047",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the --peer-auto-tls argument is not set to true"
+    },
+    "KCV0048": {
+      "id": "KCV0048",
+      "avdId": "AVD-KCV-0048",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the API server pod specification file permissions are set to 600 or more restrictive"
+    },
+    "KCV0049": {
+      "id": "KCV0049",
+      "avdId": "AVD-KCV-0049",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the API server pod specification file ownership is set to root:root"
+    },
+    "KCV0050": {
+      "id": "KCV0050",
+      "avdId": "AVD-KCV-0050",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the controller manager pod specification file permissions are set to 600 or more restrictive"
+    },
+    "KCV0051": {
+      "id": "KCV0051",
+      "avdId": "AVD-KCV-0051",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the controller manager pod specification file ownership is set to root:root"
+    },
+    "KCV0052": {
+      "id": "KCV0052",
+      "avdId": "AVD-KCV-0052",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the scheduler pod specification file permissions are set to 600 or more restrictive"
+    },
+    "KCV0053": {
+      "id": "KCV0053",
+      "avdId": "AVD-KCV-0053",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the scheduler pod specification file ownership is set to root:root"
+    },
+    "KCV0054": {
+      "id": "KCV0054",
+      "avdId": "AVD-KCV-0054",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the etcd pod specification file permissions are set to 600 or more restrictive"
+    },
+    "KCV0055": {
+      "id": "KCV0055",
+      "avdId": "AVD-KCV-0055",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the etcd pod specification file ownership is set to root:root"
+    },
+    "KCV0056": {
+      "id": "KCV0056",
+      "avdId": "AVD-KCV-0056",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the container network interface file permissions are set to 600 or more restrictive"
+    },
+    "KCV0057": {
+      "id": "KCV0057",
+      "avdId": "AVD-KCV-0057",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the container network interface file ownership is set to root:root"
+    },
+    "KCV0058": {
+      "id": "KCV0058",
+      "avdId": "AVD-KCV-0058",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the etcd data directory permissions are set to 700 or more restrictive"
+    },
+    "KCV0059": {
+      "id": "KCV0059",
+      "avdId": "AVD-KCV-0059",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "Low",
+      "title": "Ensure that the etcd data directory ownership is set to etcd:etcd"
+    },
+    "KCV0060": {
+      "id": "KCV0060",
+      "avdId": "AVD-KCV-0060",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "Critical",
+      "title": "Ensure that the admin config file permissions are set to 600 or more restrictive"
+    },
+    "KCV0061": {
+      "id": "KCV0061",
+      "avdId": "AVD-KCV-0061",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "Critical",
+      "title": "Ensure that the admin config  file ownership is set to root:root"
+    },
+    "KCV0062": {
+      "id": "KCV0062",
+      "avdId": "AVD-KCV-0062",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the scheduler config file permissions are set to 600 or more restrictive"
+    },
+    "KCV0063": {
+      "id": "KCV0063",
+      "avdId": "AVD-KCV-0063",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the scheduler config  file ownership is set to root:root"
+    },
+    "KCV0064": {
+      "id": "KCV0064",
+      "avdId": "AVD-KCV-0064",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the controller-manager config file permissions are set to 600 or more restrictive"
+    },
+    "KCV0065": {
+      "id": "KCV0065",
+      "avdId": "AVD-KCV-0065",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the controller-manager config  file ownership is set to root:root"
+    },
+    "KCV0066": {
+      "id": "KCV0066",
+      "avdId": "AVD-KCV-0066",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "Critical",
+      "title": "Ensure that the Kubernetes PKI directory and file file ownership is set to root:root"
+    },
+    "KCV0067": {
+      "id": "KCV0067",
+      "avdId": "AVD-KCV-0067",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "Critical",
+      "title": "Ensure that the Kubernetes PKI key file permission is set to 600"
+    },
+    "KCV0068": {
+      "id": "KCV0068",
+      "avdId": "AVD-KCV-0068",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master"
+      ],
+      "severity": "High",
+      "title": "Ensure that the Kubernetes PKI certificate file permission is set to 600"
+    },
+    "KCV0069": {
+      "id": "KCV0069",
+      "avdId": "AVD-KCV-0069",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "Ensure that the kubelet service file permissions are set to 600 or more restrictive"
+    },
+    "KCV0070": {
+      "id": "KCV0070",
+      "avdId": "AVD-KCV-0070",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "Critical",
+      "title": "Ensure that the kubelet service file ownership is set to root:root"
+    },
+    "KCV0071": {
+      "id": "KCV0071",
+      "avdId": "AVD-KCV-0071",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "If proxy kubeconfig file exists ensure permissions are set to 600 or more restrictive"
+    },
+    "KCV0072": {
+      "id": "KCV0072",
+      "avdId": "AVD-KCV-0072",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "if proxy kubeconfig file exists ensure ownership is set to root:root"
+    },
+    "KCV0073": {
+      "id": "KCV0073",
+      "avdId": "AVD-KCV-0073",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "Ensure that the --kubeconfig kubelet.conf file permissions are set to 600 or more restrictive"
+    },
+    "KCV0074": {
+      "id": "KCV0074",
+      "avdId": "AVD-KCV-0074",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "Ensure that the --kubeconfig kubelet.conf file ownership is set to root:root"
+    },
+    "KCV0075": {
+      "id": "KCV0075",
+      "avdId": "AVD-KCV-0075",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "Critical",
+      "title": "Ensure that the certificate authorities file permissions are set to 600 or more restrictive"
+    },
+    "KCV0076": {
+      "id": "KCV0076",
+      "avdId": "AVD-KCV-0076",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "Critical",
+      "title": "Ensure that the client certificate authorities file ownership is set to root:root"
+    },
+    "KCV0077": {
+      "id": "KCV0077",
+      "avdId": "AVD-KCV-0077",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "If the kubelet config.yaml configuration file is being used validate permissions set to 600 or more restrictive"
+    },
+    "KCV0078": {
+      "id": "KCV0078",
+      "avdId": "AVD-KCV-0078",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "If the kubelet config.yaml configuration file is being used validate file ownership is set to root:root "
+    },
+    "KCV0079": {
+      "id": "KCV0079",
+      "avdId": "AVD-KCV-0079",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "Critical",
+      "title": "Ensure that the --anonymous-auth argument is set to false"
+    },
+    "KCV0080": {
+      "id": "KCV0080",
+      "avdId": "AVD-KCV-0080",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "Ensure that the --authorization-mode argument is not set to AlwaysAllow"
+    },
+    "KCV0081": {
+      "id": "KCV0081",
+      "avdId": "AVD-KCV-0081",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "Critical",
+      "title": "Ensure that the --client-ca-file argument is set as appropriate"
+    },
+    "KCV0082": {
+      "id": "KCV0082",
+      "avdId": "AVD-KCV-0082",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "Verify that the --read-only-port argument is set to 0"
+    },
+    "KCV0083": {
+      "id": "KCV0083",
+      "avdId": "AVD-KCV-0083",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "Ensure that the --protect-kernel-defaults is set to true"
+    },
+    "KCV0084": {
+      "id": "KCV0084",
+      "avdId": "AVD-KCV-0084",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "Ensure that the --make-iptables-util-chains argument is set to true"
+    },
+    "KCV0085": {
+      "id": "KCV0085",
+      "avdId": "AVD-KCV-0085",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "Ensure that the --streaming-connection-idle-timeout argument is not set to 0"
+    },
+    "KCV0086": {
+      "id": "KCV0086",
+      "avdId": "AVD-KCV-0086",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "Ensure that the --hostname-override argument is not set"
+    },
+    "KCV0087": {
+      "id": "KCV0087",
+      "avdId": "AVD-KCV-0087",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "Ensure that the --event-qps argument is set to 0 or a level which ensures appropriate event capture"
+    },
+    "KCV0088": {
+      "id": "KCV0088",
+      "avdId": "AVD-KCV-0088",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "Critical",
+      "title": "Ensure that the --tls-cert-file argument are set as appropriate"
+    },
+    "KCV0089": {
+      "id": "KCV0089",
+      "avdId": "AVD-KCV-0089",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "Critical",
+      "title": "Ensure that the --tls-key-file argument are set as appropriate"
+    },
+    "KCV0090": {
+      "id": "KCV0090",
+      "avdId": "AVD-KCV-0090",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "Ensure that the --rotate-certificates argument is not set to false"
+    },
+    "KCV0091": {
+      "id": "KCV0091",
+      "avdId": "AVD-KCV-0091",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "High",
+      "title": "Verify that the RotateKubeletServerCertificate argument is set to true"
+    },
+    "KCV0092": {
+      "id": "KCV0092",
+      "avdId": "AVD-KCV-0092",
+      "reportFamily": "infra",
+      "kinds": [
+        "Node"
+      ],
+      "nodeTypes": [
+        "master",
+        "worker"
+      ],
+      "severity": "Critical",
+      "title": "Ensure that the Kubelet only makes use of Strong Cryptographic Ciphers"
+    },
+    "KSV001": {
+      "id": "KSV001",
+      "avdId": "AVD-KSV-0001",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Medium",
+      "title": "Can elevate its own privileges"
+    },
+    "KSV002": {
+      "id": "KSV002",
+      "avdId": "AVD-KSV-0002",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "Runtime/Default AppArmor profile not set"
+    },
+    "KSV003": {
+      "id": "KSV003",
+      "avdId": "AVD-KSV-0003",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "Default capabilities: some containers do not drop all"
+    },
+    "KSV005": {
+      "id": "KSV005",
+      "avdId": "AVD-KSV-0005",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "High",
+      "title": "SYS_ADMIN capability added"
+    },
+    "KSV006": {
+      "id": "KSV006",
+      "avdId": "AVD-KSV-0006",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "High",
+      "title": "hostPath volume mounted with docker.sock"
+    },
+    "KSV008": {
+      "id": "KSV008",
+      "avdId": "AVD-KSV-0008",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "High",
+      "title": "Access to host IPC namespace"
+    },
+    "KSV009": {
+      "id": "KSV009",
+      "avdId": "AVD-KSV-0009",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "High",
+      "title": "Access to host network"
+    },
+    "KSV010": {
+      "id": "KSV010",
+      "avdId": "AVD-KSV-0010",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "High",
+      "title": "Access to host PID"
+    },
+    "KSV011": {
+      "id": "KSV011",
+      "avdId": "AVD-KSV-0011",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "CPU not limited"
+    },
+    "KSV012": {
+      "id": "KSV012",
+      "avdId": "AVD-KSV-0012",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Medium",
+      "title": "Runs as root user"
+    },
+    "KSV013": {
+      "id": "KSV013",
+      "avdId": "AVD-KSV-0013",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Medium",
+      "title": "Image tag \":latest\" used"
+    },
+    "KSV014": {
+      "id": "KSV014",
+      "avdId": "AVD-KSV-0014",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "High",
+      "title": "Root file system is not read-only"
+    },
+    "KSV015": {
+      "id": "KSV015",
+      "avdId": "AVD-KSV-0015",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "CPU requests not specified"
+    },
+    "KSV016": {
+      "id": "KSV016",
+      "avdId": "AVD-KSV-0016",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "Memory requests not specified"
+    },
+    "KSV017": {
+      "id": "KSV017",
+      "avdId": "AVD-KSV-0017",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "High",
+      "title": "Privileged"
+    },
+    "KSV018": {
+      "id": "KSV018",
+      "avdId": "AVD-KSV-0018",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "Memory not limited"
+    },
+    "KSV020": {
+      "id": "KSV020",
+      "avdId": "AVD-KSV-0020",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "Runs with UID <= 10000"
+    },
+    "KSV021": {
+      "id": "KSV021",
+      "avdId": "AVD-KSV-0021",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "Runs with GID <= 10000"
+    },
+    "KSV022": {
+      "id": "KSV022",
+      "avdId": "AVD-KSV-0022",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Medium",
+      "title": "Specific capabilities added"
+    },
+    "KSV023": {
+      "id": "KSV023",
+      "avdId": "AVD-KSV-0023",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Medium",
+      "title": "hostPath volumes mounted"
+    },
+    "KSV024": {
+      "id": "KSV024",
+      "avdId": "AVD-KSV-0024",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "High",
+      "title": "Access to host ports"
+    },
+    "KSV025": {
+      "id": "KSV025",
+      "avdId": "AVD-KSV-0025",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Medium",
+      "title": "SELinux custom options set"
+    },
+    "KSV026": {
+      "id": "KSV026",
+      "avdId": "AVD-KSV-0026",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Medium",
+      "title": "Unsafe sysctl options set"
+    },
+    "KSV027": {
+      "id": "KSV027",
+      "avdId": "AVD-KSV-0027",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Medium",
+      "title": "Non-default /proc masks set"
+    },
+    "KSV028": {
+      "id": "KSV028",
+      "avdId": "AVD-KSV-0028",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "Non-core volume types used."
+    },
+    "KSV030": {
+      "id": "KSV030",
+      "avdId": "AVD-KSV-0030",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "Runtime/Default Seccomp profile not set"
+    },
+    "KSV036": {
+      "id": "KSV036",
+      "avdId": "AVD-KSV-0036",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Medium",
+      "title": "Protecting Pod service account tokens"
+    },
+    "KSV037": {
+      "id": "KSV037",
+      "avdId": "AVD-KSV-0037",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Medium",
+      "title": "User Pods should not be placed in kube-system namespace"
+    },
+    "KSV038": {
+      "id": "KSV038",
+      "avdId": "AVD-KSV-0038",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "NetworkPolicy"
+      ],
+      "severity": "Medium",
+      "title": "Selector usage in network policies"
+    },
+    "KSV041": {
+      "id": "KSV041",
+      "avdId": "AVD-KSV-0041",
+      "reportFamily": "rbac",
+      "kinds": [
+        "ClusterRole"
+      ],
+      "severity": "Critical",
+      "title": "Manage secrets"
+    },
+    "KSV042": {
+      "id": "KSV042",
+      "avdId": "AVD-KSV-0042",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "Medium",
+      "title": "Delete pod logs"
+    },
+    "KSV043": {
+      "id": "KSV043",
+      "avdId": "AVD-KSV-0043",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "Critical",
+      "title": "Do not allow impersonation of privileged groups"
+    },
+    "KSV044": {
+      "id": "KSV044",
+      "avdId": "AVD-KSV-0044",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "Critical",
+      "title": "No wildcard verb and resource roles"
+    },
+    "KSV045": {
+      "id": "KSV045",
+      "avdId": "AVD-KSV-0045",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "Critical",
+      "title": "No wildcard verb roles"
+    },
+    "KSV046": {
+      "id": "KSV046",
+      "avdId": "AVD-KSV-0046",
+      "reportFamily": "rbac",
+      "kinds": [
+        "ClusterRole"
+      ],
+      "severity": "Critical",
+      "title": "Manage all resources"
+    },
+    "KSV047": {
+      "id": "KSV047",
+      "avdId": "AVD-KSV-0047",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "High",
+      "title": "Do not allow privilege escalation from node proxy"
+    },
+    "KSV048": {
+      "id": "KSV048",
+      "avdId": "AVD-KSV-0048",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "Medium",
+      "title": "Manage Kubernetes workloads and pods"
+    },
+    "KSV049": {
+      "id": "KSV049",
+      "avdId": "AVD-KSV-0049",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "Medium",
+      "title": "Manage configmaps"
+    },
+    "KSV050": {
+      "id": "KSV050",
+      "avdId": "AVD-KSV-0050",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "Critical",
+      "title": "Manage Kubernetes RBAC resources"
+    },
+    "KSV051": {
+      "id": "KSV051",
+      "avdId": "AVD-KSV-0051",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "High",
+      "title": "Do not allow role binding creation and association with privileged role/clusterrole"
+    },
+    "KSV052": {
+      "id": "KSV052",
+      "avdId": "AVD-KSV-0052",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "High",
+      "title": "Do not allow role to create ClusterRoleBindings and association with privileged role"
+    },
+    "KSV053": {
+      "id": "KSV053",
+      "avdId": "AVD-KSV-0053",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "High",
+      "title": "Exec into Pods"
+    },
+    "KSV054": {
+      "id": "KSV054",
+      "avdId": "AVD-KSV-0054",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "High",
+      "title": "Do not allow attaching to shell on pods"
+    },
+    "KSV055": {
+      "id": "KSV055",
+      "avdId": "AVD-KSV-0055",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "Low",
+      "title": "Do not allow users in a rolebinding to add other users to their rolebindings"
+    },
+    "KSV056": {
+      "id": "KSV056",
+      "avdId": "AVD-KSV-0056",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "High",
+      "title": "Manage Kubernetes networking"
+    },
+    "KSV1010": {
+      "id": "KSV1010",
+      "avdId": "AVD-KSV-01010",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "ConfigMap"
+      ],
+      "severity": "Medium",
+      "title": "ConfigMap with sensitive content"
+    },
+    "KSV1011": {
+      "id": "KSV1011",
+      "avdId": "AVD-KSV-01011",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "RoleBinding",
+        "ClusterRoleBinding"
+      ],
+      "severity": "Critical",
+      "title": "system:authenticate group access binding"
+    },
+    "KSV102": {
+      "id": "KSV102",
+      "avdId": "AVD-KSV-0102",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Critical",
+      "title": "Tiller Is Deployed"
+    },
+    "KSV103": {
+      "id": "KSV103",
+      "avdId": "AVD-KSV-0103",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Medium",
+      "title": "Access to host process"
+    },
+    "KSV104": {
+      "id": "KSV104",
+      "avdId": "AVD-KSV-0104",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Medium",
+      "title": "Seccomp policies disabled"
+    },
+    "KSV105": {
+      "id": "KSV105",
+      "avdId": "AVD-KSV-0105",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "Containers must not set runAsUser to 0"
+    },
+    "KSV106": {
+      "id": "KSV106",
+      "avdId": "AVD-KSV-0106",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "Container capabilities must only include NET_BIND_SERVICE"
+    },
+    "KSV108": {
+      "id": "KSV108",
+      "avdId": "AVD-KSV-0108",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Service"
+      ],
+      "severity": "High",
+      "title": "Service with External IP"
+    },
+    "KSV109": {
+      "id": "KSV109",
+      "avdId": "AVD-KSV-0109",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "ConfigMap"
+      ],
+      "severity": "High",
+      "title": "ConfigMap with secrets"
+    },
+    "KSV110": {
+      "id": "KSV110",
+      "avdId": "AVD-KSV-0110",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "scopeNamespaces": [
+        "default"
+      ],
+      "severity": "Low",
+      "title": "Workloads in the default namespace"
+    },
+    "KSV111": {
+      "id": "KSV111",
+      "avdId": "AVD-KSV-0111",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "RoleBinding",
+        "ClusterRoleBinding"
+      ],
+      "severity": "Medium",
+      "title": "User with admin access"
+    },
+    "KSV112": {
+      "id": "KSV112",
+      "avdId": "AVD-KSV-0112",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role"
+      ],
+      "severity": "Critical",
+      "title": "Manage all resources at the namespace"
+    },
+    "KSV113": {
+      "id": "KSV113",
+      "avdId": "AVD-KSV-0113",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role"
+      ],
+      "severity": "Medium",
+      "title": "Manage namespace secrets"
+    },
+    "KSV114": {
+      "id": "KSV114",
+      "avdId": "AVD-KSV-0114",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "Critical",
+      "title": "Manage webhookconfigurations"
+    },
+    "KSV115": {
+      "id": "KSV115",
+      "avdId": "AVD-KSV-0115",
+      "reportFamily": "rbac",
+      "kinds": [
+        "Role",
+        "ClusterRole"
+      ],
+      "severity": "Critical",
+      "title": "Manage EKS IAM Auth ConfigMap"
+    },
+    "KSV116": {
+      "id": "KSV116",
+      "avdId": "AVD-KSV-0116",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "Runs with a root primary or supplementary GID"
+    },
+    "KSV117": {
+      "id": "KSV117",
+      "avdId": "AVD-KSV-0117",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Medium",
+      "title": "Prevent binding to privileged ports"
+    },
+    "KSV118": {
+      "id": "KSV118",
+      "avdId": "AVD-KSV-0118",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "High",
+      "title": "Default security context configured"
+    },
+    "KSV119": {
+      "id": "KSV119",
+      "avdId": "AVD-KSV-0119",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "High",
+      "title": "NET_RAW capability added"
+    },
+    "KSV120": {
+      "id": "KSV120",
+      "avdId": "AVD-KSV-0120",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "High",
+      "title": "SYS_MODULE capability added"
+    },
+    "KSV121": {
+      "id": "KSV121",
+      "avdId": "AVD-KSV-0121",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "High",
+      "title": "Kubernetes resource with disallowed volumes mounted"
+    },
+    "KSV122": {
+      "id": "KSV122",
+      "avdId": "AVD-KSV-0122",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "RoleBinding",
+        "ClusterRoleBinding"
+      ],
+      "severity": "Critical",
+      "title": "Anonymous user access binding"
+    },
+    "KSV123": {
+      "id": "KSV123",
+      "avdId": "AVD-KSV-0123",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "RoleBinding",
+        "ClusterRoleBinding"
+      ],
+      "severity": "Critical",
+      "title": "system:masters group access binding"
+    },
+    "KSV124": {
+      "id": "KSV124",
+      "avdId": "AVD-KSV-0124",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "High",
+      "title": "Gatekeeper repo reference is ambiguously open-ended",
+      "legacyId": "KSV-0124"
+    }
+  }
+}

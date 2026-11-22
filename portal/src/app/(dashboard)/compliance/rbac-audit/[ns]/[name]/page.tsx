@@ -106,6 +106,12 @@ export default async function RbacAuditDetailPage({ params }: Props) {
           <h2 className="text-sm font-semibold">{t(locale, "compliance.detail.checks")} ({sorted.length})</h2>
         </div>
         <div className="divide-y">
+          {failCount === 0 && sorted.length === 0 && (
+            <div className="p-4 text-xs text-muted-foreground space-y-1">
+              <p className="font-medium text-foreground">{t(locale, "compliance.check.allPassed")}</p>
+              <p>{t(locale, "compliance.check.allPassedHint")}</p>
+            </div>
+          )}
           {sorted.map((check) => (
             <div
               key={check.id}

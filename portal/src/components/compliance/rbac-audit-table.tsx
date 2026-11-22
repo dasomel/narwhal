@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
+import { fetchComplianceJson } from "./fetch-json"
 import type { RbacAuditRow, RbacAuditDetail, Severity } from "@/types/compliance"
 
 type SortKey = "namespace" | "kind" | "name" | "Critical" | "High" | "Medium" | "Low"
@@ -76,12 +77,12 @@ export function ExpandedRbacPanel({
   const t = useT()
   const locale = useLocale()
 
-  const { data: detail, isLoading } = useQuery<RbacAuditDetail>({
+  const { data: detail, isLoading, isError, refetch } = useQuery<RbacAuditDetail>({
     queryKey: ["compliance-rbac-detail", namespace, name],
     queryFn: () =>
-      fetch(
-        `/api/compliance/rbac-audit?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}`
-      ).then((r) => r.json()),
+      fetchComplianceJson<RbacAuditDetail>(
+        `/api/compliance/rbac-audit?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}`,
+      ),
     enabled: true,
     staleTime: 60_000,
   })
@@ -103,6 +104,8 @@ export function ExpandedRbacPanel({
     <div className="px-6 py-4 bg-muted/10 border-t border-dashed">
       {isLoading ? (
         <span className="text-sm text-muted-foreground animate-pulse">{t("common.loading")}</span>
+      ) : isError ? (
+        <DataState state="unavailable" variant="inline" onRetry={() => { void refetch() }} />
       ) : detail ? (
         <div className="space-y-3">
           {top5Failed.length === 0 ? (
@@ -182,7 +185,7 @@ export function RbacAuditTable() {
 
   const { data: rows = [], isLoading, isError, refetch } = useQuery<RbacAuditRow[]>({
     queryKey: ["compliance-rbac-audit", severity, namespace],
-    queryFn: () => fetch(`/api/compliance/rbac-audit?${queryParams}`).then((r) => r.json()),
+    queryFn: () => fetchComplianceJson<RbacAuditRow[]>(`/api/compliance/rbac-audit?${queryParams}`),
     staleTime: 60_000,
   })
 

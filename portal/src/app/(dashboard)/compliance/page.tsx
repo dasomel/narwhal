@@ -19,10 +19,13 @@ async function fetchComplianceSummary(): Promise<ComplianceSummary | null> {
   }
 }
 
-const emptySummary: ComplianceSummary = {
+const unavailableSummary: ComplianceSummary = {
   totalConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+  unacceptedLowConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
   lowSeverityConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
   acceptedSystemConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+  droppedConfigAuditReports: 0,
+  droppedConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
   totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
   acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
   totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
@@ -31,7 +34,14 @@ const emptySummary: ComplianceSummary = {
   scannedWorkloads: 0,
   scannedRbacObjects: 0,
   scannedNodes: 0,
-  lastUpdated: new Date().toISOString(),
+  lastUpdated: "",
+  dataUnavailable: true,
+  sources: {
+    configAudit: { status: "unavailable", lastUpdated: null, error: "Compliance summary fetch failed" },
+    rbac: { status: "unavailable", lastUpdated: null, error: "Compliance summary fetch failed" },
+    infra: { status: "unavailable", lastUpdated: null, rebuildIntervalHours: 6, error: "Compliance summary fetch failed" },
+    frameworks: { status: "unavailable", lastUpdated: null, rebuildIntervalHours: 6, error: "Compliance summary fetch failed" },
+  },
 }
 
 export default async function CompliancePage() {
@@ -52,7 +62,7 @@ export default async function CompliancePage() {
 
   const locale = await getLocale()
   const summary = await fetchComplianceSummary()
-  const effectiveSummary = summary ?? emptySummary
+  const effectiveSummary = summary ?? unavailableSummary
 
   return (
     <div className="space-y-6">

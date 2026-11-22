@@ -6,6 +6,7 @@ import { translateAcceptedReason } from "@/lib/i18n"
 import { DataState } from "@/components/ui/data-state"
 import { translateTitle, translateRemediation } from "@/lib/check-translations"
 import { Badge } from "@/components/ui/badge"
+import { fetchComplianceJson } from "./fetch-json"
 import { sumCheckSummary, type InfraAuditRow, type InfraAuditDetail, type Severity } from "@/types/compliance"
 
 const severityBadgeClass: Record<Severity, string> = {
@@ -20,10 +21,10 @@ export function ExpandedInfraPanel({ node }: { node: string }) {
   const t = useT()
   const locale = useLocale()
 
-  const { data: detail, isLoading } = useQuery<InfraAuditDetail>({
+  const { data: detail, isLoading, isError, refetch } = useQuery<InfraAuditDetail>({
     queryKey: ["compliance-infra-detail", node],
     queryFn: () =>
-      fetch(`/api/compliance/infra-audit?node=${encodeURIComponent(node)}`).then((r) => r.json()),
+      fetchComplianceJson<InfraAuditDetail>(`/api/compliance/infra-audit?node=${encodeURIComponent(node)}`),
     enabled: true,
     staleTime: 60_000,
   })
@@ -46,12 +47,14 @@ export function ExpandedInfraPanel({ node }: { node: string }) {
     <div className="mt-3 pt-3 border-t border-dashed space-y-2">
       {isLoading ? (
         <span className="text-xs text-muted-foreground animate-pulse">{t("common.loading")}</span>
+      ) : isError ? (
+        <DataState state="unavailable" variant="inline" onRetry={() => { void refetch() }} />
       ) : detail ? (
         <>
           {top5Failed.length === 0 ? (
-            <div className="rounded-md border border-green-200 bg-green-50/60 dark:bg-green-950/10 dark:border-green-900 p-3 text-xs">
-              <p className="font-medium text-green-700 dark:text-green-400">✓ {t("compliance.check.allPassed")}</p>
-              <p className="text-muted-foreground mt-1">{t("compliance.check.allPassedHint")}</p>
+            <div className="rounded-md border border-slate-200 bg-slate-50/60 dark:bg-slate-900/20 dark:border-slate-800 p-3 text-xs">
+              <p className="font-medium text-foreground">{t("compliance.check.allPassed")}</p>
+              <p className="text-muted-foreground mt-1">{t("compliance.infra.emptyChecksCaveat")}</p>
             </div>
           ) : (
             <>
@@ -111,7 +114,7 @@ export function InfraAuditList() {
 
   const { data: rows = [], isLoading, isError, refetch } = useQuery<InfraAuditRow[]>({
     queryKey: ["compliance-infra-audit"],
-    queryFn: () => fetch("/api/compliance/infra-audit").then((r) => r.json()),
+    queryFn: () => fetchComplianceJson<InfraAuditRow[]>("/api/compliance/infra-audit"),
     staleTime: 60_000,
   })
 
@@ -136,6 +139,7 @@ export function InfraAuditList() {
 
   return (
     <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">{t("compliance.infra.emptyChecksCaveat")}</p>
       {(actionableCount > 0 || acceptedCount > 0) && (
         <div className="text-xs text-muted-foreground">
           {t("compliance.table.infraActionableSummary", {
@@ -210,7 +214,7 @@ export function InfraAuditList() {
                         ? `${actionableFailures} issues`
                         : isAcceptedOnly
                           ? `${rawFailures} ${t("compliance.framework.acceptedShort")}`
-                          : "Clean"}
+                          : t("compliance.framework.noFailureRecordedShort")}
                     </span>
                     <span
                       className="text-muted-foreground text-sm inline-block transition-transform duration-200"

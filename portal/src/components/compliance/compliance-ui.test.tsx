@@ -14,12 +14,16 @@ vi.mock("@/lib/dashboard-access", () => ({
 vi.mock("@/lib/i18n-server", () => ({
   getLocale: mockGetLocale,
 }))
-vi.mock("@/lib/compliance", () => ({
-  getConfigAuditDetail: mockGetConfigAuditDetail,
-  getRbacAuditDetail: mockGetRbacAuditDetail,
-  getInfraAuditDetail: mockGetInfraAuditDetail,
-  getComplianceFrameworkDetail: mockGetComplianceFrameworkDetail,
-}))
+vi.mock("@/lib/compliance", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/compliance")>()
+  return {
+    ...actual,
+    getConfigAuditDetail: mockGetConfigAuditDetail,
+    getRbacAuditDetail: mockGetRbacAuditDetail,
+    getInfraAuditDetail: mockGetInfraAuditDetail,
+    getComplianceFrameworkDetail: mockGetComplianceFrameworkDetail,
+  }
+})
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-query")>()
@@ -73,14 +77,16 @@ describe("Compliance UI accepted exceptions", () => {
 
     const koHtml = renderToStaticMarkup(<FailureCounters summary={summary} locale="ko" />)
     expect(koHtml).toContain("5")
-    expect(koHtml).toContain("위생 40건(LOW) · 수용 45건(시스템/예외)")
+    expect(koHtml).toContain("미수용 LOW 0건 · 위생 40건(LOW 수용) · 수용 45건(시스템/예외)")
     expect(koHtml).toContain("+60 수용(빌트인/업스트림/예외)")
     expect(koHtml).toContain("+1 수용(예외)")
+    expect(koHtml).toContain("80.0%")
 
     const enHtml = renderToStaticMarkup(<FailureCounters summary={summary} locale="en" />)
-    expect(enHtml).toContain("40 low-severity (hygiene) · 45 accepted (system/exception)")
+    expect(enHtml).toContain("0 unaccepted LOW · 40 accepted hygiene (LOW) · 45 accepted (system/exception)")
     expect(enHtml).toContain("+60 accepted (built-in/upstream/exception)")
     expect(enHtml).toContain("+1 accepted (exception)")
+    expect(enHtml).toContain("80.0%")
   })
 
   it("ConfigAuditTable shows accepted badges and keeps accepted rows visible", () => {
@@ -129,7 +135,7 @@ describe("Compliance UI accepted exceptions", () => {
       </LocaleProvider>,
     )
 
-    expect(html).toContain("1 actionable · 0 low-severity (hygiene) · 2 accepted (system/exception)")
+    expect(html).toContain("1 actionable (MEDIUM+) · 0 unaccepted LOW · 0 accepted hygiene (LOW) · 2 accepted (system/exception)")
     expect(html).toContain("falco")
     expect(html).toContain("Risk accepted")
     expect(html).toContain("harbor-core-b569bd8dd")
@@ -174,7 +180,7 @@ describe("Compliance UI accepted exceptions", () => {
 
     const html = renderToStaticMarkup(
       <LocaleProvider locale="en">
-        <ExpandedConfigPanel namespace="devtools" name="narwhal-portal-74b459c658" />
+        <ExpandedConfigPanel scope="namespace" namespace="devtools" kind="ReplicaSet" name="narwhal-portal-74b459c658" />
       </LocaleProvider>,
     )
 
@@ -186,7 +192,7 @@ describe("Compliance UI accepted exceptions", () => {
 
     const koHtml = renderToStaticMarkup(
       <LocaleProvider locale="ko">
-        <ExpandedConfigPanel namespace="devtools" name="narwhal-portal-74b459c658" />
+        <ExpandedConfigPanel scope="namespace" namespace="devtools" kind="ReplicaSet" name="narwhal-portal-74b459c658" />
       </LocaleProvider>,
     )
     expect(koHtml).toContain(ko["compliance.acceptedReason.portalUid1001"])
@@ -328,6 +334,7 @@ describe("Compliance UI accepted exceptions", () => {
 
     const configPageEl = await ConfigAuditDetailPage({
       params: Promise.resolve({ ns: "devtools", name: "narwhal-portal-74b459c658" }),
+      searchParams: Promise.resolve({ scope: "namespace", kind: "ReplicaSet" }),
     })
     const configPageHtml = renderToStaticMarkup(configPageEl)
     expect(configPageHtml).toContain(ko["compliance.acceptedReason.portalUid1001"])
@@ -352,6 +359,9 @@ describe("Compliance UI accepted exceptions", () => {
         id: "k8s-nsa-1.0",
         title: "NSA Kubernetes Hardening",
         passCount: 18,
+        evaluatedPassCount: 18,
+        notEvaluatedCount: 0,
+        evaluatedPassRate: 18 / 27,
         failCount: 9,
         actionableFailCount: 0,
         acceptedFailCount: 9,
@@ -363,6 +373,9 @@ describe("Compliance UI accepted exceptions", () => {
         id: "k8s-cis-1.23",
         title: "CIS Benchmark",
         passCount: 101,
+        evaluatedPassCount: 101,
+        notEvaluatedCount: 0,
+        evaluatedPassRate: 101 / 116,
         failCount: 15,
         actionableFailCount: 2,
         acceptedFailCount: 13,
@@ -387,8 +400,12 @@ describe("Compliance UI accepted exceptions", () => {
       lastUpdated: new Date().toISOString(),
     }
     const countersHtml = renderToStaticMarkup(<FailureCounters summary={summaryWithFw} locale="en" />)
-    expect(countersHtml).toContain("99%")
+    expect(countersHtml).toContain("83.2%")
+    expect(countersHtml).toContain("(119/143)")
+    expect(countersHtml).toContain("Exception-adjusted rate: 98.6% (141/143)")
     expect(countersHtml).toContain("2 actionable · 22 accepted")
+    expect(countersHtml).toContain("No failure recorded (scanner records failures only)")
+    expect(countersHtml).toContain("records failed checks only")
 
     vi.mocked(useQuery).mockReturnValue({
       data: frameworks,
@@ -402,8 +419,8 @@ describe("Compliance UI accepted exceptions", () => {
         <FrameworksGrid />
       </LocaleProvider>,
     )
-    expect(gridEn).toContain("2 actionable controls · 22 accepted (raw failed 24)")
-    expect(gridEn).toContain("100%")
+    expect(gridEn).toContain("2 actionable controls · 22 accepted · 0 not evaluated (raw failed 24)")
+    expect(gridEn).toContain("87.0%")
     expect(gridEn).toContain("+9 accepted (raw 9)")
     expect(gridEn).toContain("+13 accepted (raw 15)")
     expect(gridEn).toContain(COMPLIANCE_EXCEPTIONS_DOC_ANCHOR)
@@ -413,7 +430,7 @@ describe("Compliance UI accepted exceptions", () => {
         <FrameworksGrid />
       </LocaleProvider>,
     )
-    expect(gridKo).toContain("조치가능 컨트롤 2개 · 수용 22개 (원본 실패 24개)")
+    expect(gridKo).toContain("조치가능 컨트롤 2개 · 수용 22개 · 미평가 0개 (원본 실패 24개)")
     expect(gridKo).toContain("위험 수용 예외 문서")
 
     const detail: ComplianceFrameworkDetail = {
@@ -425,6 +442,7 @@ describe("Compliance UI accepted exceptions", () => {
           severity: "High",
           passCount: 0,
           failCount: 3,
+          evaluationState: "failed",
           actionableFailCount: 0,
           acceptedFailCount: 3,
           accepted: true,
@@ -436,6 +454,7 @@ describe("Compliance UI accepted exceptions", () => {
           severity: "High",
           passCount: 0,
           failCount: 158,
+          evaluationState: "failed",
           actionableFailCount: 24,
           acceptedFailCount: 134,
           accepted: false,
@@ -469,10 +488,12 @@ describe("Compliance UI accepted exceptions", () => {
       params: Promise.resolve({ id: "k8s-cis-1.23" }),
     })
     const pageEnHtml = renderToStaticMarkup(pageEnEl)
-    expect(pageEnHtml).toContain("98%")
+    expect(pageEnHtml).toContain("87.0%")
+    expect(pageEnHtml).toContain("Exception-adjusted rate: 98.2%")
+    expect(pageEnHtml).toContain("No failure recorded (scanner records failures only)")
     expect(pageEnHtml).toContain("✗ 2 Failed (actionable)")
     expect(pageEnHtml).toContain("+13 accepted")
-    expect(pageEnHtml).toContain("Raw failed 15 (pass rate 87%)")
+    expect(pageEnHtml).toContain("Raw failed 15 (raw pass rate 87.0%)")
     expect(pageEnHtml).toContain("Accepted exception controls (1)")
     expect(pageEnHtml).toContain("Risk accepted")
     expect(pageEnHtml).toContain(COMPLIANCE_EXCEPTIONS_DOC_ANCHOR)
@@ -482,6 +503,8 @@ describe("Compliance UI accepted exceptions", () => {
       params: Promise.resolve({ id: "k8s-cis-1.23" }),
     })
     const pageKoHtml = renderToStaticMarkup(pageKoEl)
+    expect(pageKoHtml).toContain("실패 기록 없음 (스캐너는 실패만 기록)")
+    expect(pageKoHtml).toContain("실패한 검사만 기록")
     expect(pageKoHtml).toContain("실패 (조치가능)")
     expect(pageKoHtml).toContain("수용된 예외 컨트롤 (1)")
     expect(pageKoHtml).toContain("위험 수용 예외 문서")
@@ -493,6 +516,9 @@ describe("Compliance UI accepted exceptions", () => {
         id: "rs-only",
         title: "Superseded RS Only",
         passCount: 8,
+        evaluatedPassCount: 8,
+        notEvaluatedCount: 0,
+        evaluatedPassRate: 8 / 10,
         failCount: 2,
         actionableFailCount: 0,
         acceptedFailCount: 0,
@@ -518,11 +544,12 @@ describe("Compliance UI accepted exceptions", () => {
     }
 
     const countersEn = renderToStaticMarkup(<FailureCounters summary={summary} locale="en" />)
-    expect(countersEn).toContain("100%")
+    expect(countersEn).toContain("80.0%")
     expect(countersEn).toContain("0 actionable · 0 accepted (raw 2)")
 
     const countersKo = renderToStaticMarkup(<FailureCounters summary={summary} locale="ko" />)
-    expect(countersKo).toContain("조치가능 0건 · 수용 0건 (원본 2)")
+    expect(countersKo).toContain("실패 기록 없음 8 · 미평가 0 · 조치가능 0 · 수용 0 (원본 2)")
+    expect(countersKo).toContain("실패 기록 없음 (스캐너는 실패만 기록)")
 
     vi.mocked(useQuery).mockReturnValue({
       data: frameworks,
@@ -536,7 +563,7 @@ describe("Compliance UI accepted exceptions", () => {
         <FrameworksGrid />
       </LocaleProvider>,
     )
-    expect(gridEn).toContain("0 actionable controls · 0 accepted (raw failed 2)")
+    expect(gridEn).toContain("0 actionable controls · 0 accepted · 0 not evaluated (raw failed 2)")
     expect(gridEn).toContain("raw 2")
     expect(gridEn).not.toContain("+0 accepted")
 
@@ -549,6 +576,7 @@ describe("Compliance UI accepted exceptions", () => {
           severity: "High",
           passCount: 0,
           failCount: 2,
+          evaluationState: "failed",
           actionableFailCount: 0,
           acceptedFailCount: 0,
           accepted: false,
@@ -579,9 +607,112 @@ describe("Compliance UI accepted exceptions", () => {
     })
     const pageHtml = renderToStaticMarkup(pageEl)
     expect(pageHtml).toContain("✗ 0 Failed (actionable)")
-    expect(pageHtml).toContain("Raw failed 2 (pass rate 80%)")
+    expect(pageHtml).toContain("Raw failed 2 (raw pass rate 80.0%)")
     expect(pageHtml).toContain("raw 2")
     expect(pageHtml).not.toContain("+0 accepted")
+  })
+
+  it("renders not-evaluated groups, data-unavailable error states, and per-source timestamps with 6h rebuild note", async () => {
+    const now = new Date().toISOString()
+    const unavailableSummary: ComplianceSummary = {
+      totalConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      unacceptedLowConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 4 },
+      lowSeverityConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 12 },
+      acceptedSystemConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      droppedConfigAuditReports: 3,
+      droppedConfigAuditFailures: { Critical: 0, High: 2, Medium: 1, Low: 5 },
+      totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      frameworks: [
+        {
+          id: "k8s-pss-baseline-0.1",
+          title: "PSS Baseline",
+          passCount: 8,
+          evaluatedPassCount: 2,
+          notEvaluatedCount: 6,
+          failCount: 3,
+          actionableFailCount: 0,
+          acceptedFailCount: 3,
+          totalControls: 11,
+          passRate: 8 / 11,
+          evaluatedPassRate: 2 / 11,
+          effectivePassRate: 5 / 11,
+        },
+      ],
+      scannedWorkloads: 10,
+      scannedRbacObjects: 0,
+      scannedNodes: 1,
+      lastUpdated: now,
+      dataUnavailable: true,
+      sources: {
+        configAudit: { status: "ok", lastUpdated: now, oldestUpdated: now },
+        rbac: { status: "unavailable", lastUpdated: null, error: "HTTP 503" },
+        infra: { status: "ok", lastUpdated: now, rebuildIntervalHours: 6 },
+        frameworks: { status: "ok", lastUpdated: now, rebuildIntervalHours: 6 },
+      },
+    }
+
+    const countersEn = renderToStaticMarkup(<FailureCounters summary={unavailableSummary} locale="en" />)
+    expect(countersEn).toContain("Data unavailable")
+    expect(countersEn).toContain("4 unaccepted LOW · 12 accepted hygiene (LOW)")
+    expect(countersEn).toContain("3 superseded RS dropped (8 checks)")
+    expect(countersEn).toContain("6 not evaluated")
+    expect(countersEn).toContain("6 hours")
+
+    const detailWithNotEval: ComplianceFrameworkDetail = {
+      ...unavailableSummary.frameworks[0],
+      controls: [
+        {
+          id: "1",
+          name: "HostProcess",
+          severity: "High",
+          passCount: 1,
+          failCount: 0,
+          evaluationState: "passed",
+        },
+        {
+          id: "6",
+          name: "Privilege Escalation",
+          severity: "Medium",
+          passCount: 0,
+          failCount: 0,
+          evaluationState: "not_evaluated",
+          notEvaluatedReason: "unlinked_check_id",
+          notEvaluatedDetail: "avd-ksv-0024",
+        },
+      ],
+    }
+
+    mockGetLocale.mockResolvedValue("en")
+    mockGetComplianceFrameworkDetail.mockResolvedValue(detailWithNotEval)
+    const fwPageEl = await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-pss-baseline-0.1" }) })
+    const fwPageHtml = renderToStaticMarkup(fwPageEl)
+    expect(fwPageHtml).toContain("HostProcess")
+    expect(fwPageHtml).toContain("Not evaluated controls (1)")
+    expect(fwPageHtml).toContain("Unlinked spec check ID")
+    expect(fwPageHtml).toContain("avd-ksv-0024")
+    expect(fwPageHtml).toContain("18.1%")
+
+    const unavailableErr = Object.assign(new Error("unavailable"), { name: "ComplianceDataUnavailableError" })
+    mockGetComplianceFrameworkDetail.mockRejectedValueOnce(unavailableErr)
+    const errPageEl = await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-pss-baseline-0.1" }) })
+    const errPageHtml = renderToStaticMarkup(errPageEl)
+    expect(errPageHtml).toContain("Data unavailable")
+
+    vi.mocked(useQuery).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      refetch: vi.fn(),
+    } as never)
+    const gridErr = renderToStaticMarkup(
+      <LocaleProvider locale="en">
+        <FrameworksGrid />
+      </LocaleProvider>,
+    )
+    expect(gridErr).toContain(en["dataState.unavailable"])
   })
 
   it("InfraAuditList, ExpandedInfraPanel, and InfraAuditDetailPage treat failing KCV0056 as actionable while preserving accepted-row UI machinery", async () => {
@@ -689,4 +820,459 @@ describe("Compliance UI accepted exceptions", () => {
     expect(detailHtml).toContain("High")
     expect(detailHtml).toContain("Low")
   })
+
+  it("computes pooled aggregate pass rates with numerator/denominator labels and never prints 100% when any control is not evaluated or actionable", async () => {
+    const frameworks: ComplianceFramework[] = [
+      {
+        id: "k8s-cis-1.23",
+        title: "CIS Benchmark",
+        passCount: 102,
+        evaluatedPassCount: 0,
+        notEvaluatedCount: 102,
+        failCount: 14,
+        actionableFailCount: 1,
+        acceptedFailCount: 13,
+        totalControls: 116,
+        passRate: 102 / 116,
+        evaluatedPassRate: 0,
+        effectivePassRate: 13 / 116,
+      },
+      {
+        id: "k8s-kisa-1.0",
+        title: "KISA",
+        passCount: 3,
+        evaluatedPassCount: 0,
+        notEvaluatedCount: 3,
+        failCount: 4,
+        actionableFailCount: 0,
+        acceptedFailCount: 4,
+        totalControls: 7,
+        passRate: 3 / 7,
+        evaluatedPassRate: 0,
+        effectivePassRate: 4 / 7,
+      },
+      {
+        id: "k8s-nsa-1.0",
+        title: "NSA",
+        passCount: 18,
+        evaluatedPassCount: 0,
+        notEvaluatedCount: 18,
+        failCount: 9,
+        actionableFailCount: 0,
+        acceptedFailCount: 9,
+        totalControls: 27,
+        passRate: 18 / 27,
+        evaluatedPassRate: 0,
+        effectivePassRate: 9 / 27,
+      },
+      {
+        id: "k8s-pss-baseline-0.1",
+        title: "PSS Baseline",
+        passCount: 8,
+        evaluatedPassCount: 0,
+        notEvaluatedCount: 8,
+        failCount: 3,
+        actionableFailCount: 0,
+        acceptedFailCount: 3,
+        totalControls: 11,
+        passRate: 8 / 11,
+        evaluatedPassRate: 0,
+        effectivePassRate: 3 / 11,
+      },
+      {
+        id: "k8s-pss-restricted-0.1",
+        title: "PSS Restricted",
+        passCount: 14,
+        evaluatedPassCount: 0,
+        notEvaluatedCount: 14,
+        failCount: 3,
+        actionableFailCount: 0,
+        acceptedFailCount: 3,
+        totalControls: 17,
+        passRate: 14 / 17,
+        evaluatedPassRate: 0,
+        effectivePassRate: 3 / 17,
+      },
+    ]
+
+    const pooledSummary: ComplianceSummary = {
+      totalConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      lowSeverityConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedSystemConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      frameworks,
+      scannedWorkloads: 183,
+      scannedRbacObjects: 189,
+      scannedNodes: 1,
+      lastUpdated: new Date().toISOString(),
+    }
+
+    const countersHtml = renderToStaticMarkup(<FailureCounters summary={pooledSummary} locale="en" />)
+    // Pooled raw = 145/178 = 81.46% -> 81.4% (not unweighted 70.5%)
+    expect(countersHtml).toContain("81.4% (145/178)")
+    expect(countersHtml).toContain("0.0%")
+    expect(countersHtml).toContain("(0/178)")
+    expect(countersHtml).toContain("17.9% (32/178)")
+    expect(countersHtml).not.toContain("70.5%")
+
+    // 100% leak check: a framework whose raw passCount === totalControls (100% placeholders)
+    // with notEvaluatedCount > 0 MUST NEVER display "100%" in summary, grid, or detail page.
+    const allPlaceholderFw: ComplianceFramework = {
+      id: "all-placeholder",
+      title: "All Placeholder",
+      passCount: 10,
+      evaluatedPassCount: 0,
+      notEvaluatedCount: 10,
+      failCount: 0,
+      actionableFailCount: 0,
+      acceptedFailCount: 0,
+      totalControls: 10,
+      passRate: 1,
+      evaluatedPassRate: 0,
+      effectivePassRate: 0,
+    }
+
+    const leakSummaryHtml = renderToStaticMarkup(
+      <FailureCounters summary={{ ...pooledSummary, frameworks: [allPlaceholderFw] }} locale="en" />,
+    )
+    expect(leakSummaryHtml).toContain("99.9% (10/10)")
+    expect(leakSummaryHtml).not.toContain("100%")
+
+    vi.mocked(useQuery).mockReturnValue({
+      data: [allPlaceholderFw],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never)
+    const leakGridHtml = renderToStaticMarkup(
+      <LocaleProvider locale="en">
+        <FrameworksGrid />
+      </LocaleProvider>,
+    )
+    expect(leakGridHtml).toContain("99.9% (10/10)")
+    expect(leakGridHtml).not.toContain("100%")
+
+    mockGetLocale.mockResolvedValue("en")
+    mockGetComplianceFrameworkDetail.mockResolvedValue({ ...allPlaceholderFw, controls: [] })
+    const leakDetailEl = await FrameworkDetailPage({ params: Promise.resolve({ id: "all-placeholder" }) })
+    const leakDetailHtml = renderToStaticMarkup(leakDetailEl)
+    expect(leakDetailHtml).toContain("99.9% (10/10)")
+    expect(leakDetailHtml).not.toContain("100%")
+  })
+
+  it("renders visible partial-data notice naming failed auxiliary sources", () => {
+    const now = new Date().toISOString()
+    const partialSummary: ComplianceSummary = {
+      totalConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      lowSeverityConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedSystemConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      frameworks: [],
+      scannedWorkloads: 10,
+      scannedRbacObjects: 5,
+      scannedNodes: 1,
+      lastUpdated: now,
+      dataUnavailable: false,
+      partial: true,
+      sources: {
+        configAudit: { status: "ok", lastUpdated: now, partial: true, partialSources: ["replicasets"] },
+        rbac: { status: "ok", lastUpdated: now },
+        infra: { status: "ok", lastUpdated: now, rebuildIntervalHours: 6 },
+        frameworks: {
+          status: "ok",
+          lastUpdated: now,
+          rebuildIntervalHours: 6,
+          partial: true,
+          partialSources: ["deploy/trivy-operator", "cm/trivy-operator-trivy-config"],
+        },
+      },
+    }
+
+    const htmlEn = renderToStaticMarkup(<FailureCounters summary={partialSummary} locale="en" />)
+    expect(htmlEn).toContain("Partial compliance metadata")
+    expect(htmlEn).toContain("Config Audit (replicasets)")
+    expect(htmlEn).toContain("Frameworks (deploy/trivy-operator, cm/trivy-operator-trivy-config)")
+  })
+})
+
+it("G5 old-shape object renders unknown in grid, summary SSR and framework detail", async () => {
+  const old: ComplianceFramework = { id: "old", title: "Old cache", totalControls: 10,
+    passCount: 10, failCount: 0, passRate: 1, effectivePassRate: 1 }
+  vi.mocked(useQuery).mockReturnValue({ data: [old], isLoading: false, isError: false } as never)
+  const grid = renderToStaticMarkup(<LocaleProvider locale="en"><FrameworksGrid /></LocaleProvider>)
+  expect(grid).toContain("10 not evaluated")
+  expect(grid).toContain('title="0/10"')
+  expect(grid).not.toContain("100%")
+  const zero = { Critical: 0, High: 0, Medium: 0, Low: 0 }
+  const summary: ComplianceSummary = {
+    totalConfigAuditFailures: zero, lowSeverityConfigAuditFailures: zero, acceptedSystemConfigAuditFailures: zero,
+    totalRbacFailures: zero, acceptedRbacFailures: zero, totalInfraFailures: zero, acceptedInfraFailures: zero,
+    frameworks: [old], scannedWorkloads: 0, scannedRbacObjects: 0, scannedNodes: 0, lastUpdated: "2026-11-22T00:00:00Z",
+  }
+  const ssr = renderToStaticMarkup(<FailureCounters summary={summary} locale="en" />)
+  expect(ssr).toContain("0/10")
+  expect(ssr).toContain("10 not evaluated")
+  expect(ssr).not.toContain("100%")
+  const detail: ComplianceFrameworkDetail = { ...old, controls: [{ id: "old-control", name: "Old control", severity: "High", passCount: 1, failCount: 0, accepted: false }] }
+  mockGetLocale.mockResolvedValue("en")
+  mockGetComplianceFrameworkDetail.mockResolvedValue(detail)
+  const page = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "old" }) }))
+  expect(page).toContain("Not evaluated")
+  expect(page).toContain("0/10")
+  expect(page).not.toContain("100%")
+  vi.mocked(useQuery).mockReturnValue({ data: detail, isLoading: false, isError: false } as never)
+  const panel = renderToStaticMarkup(<LocaleProvider locale="en"><ExpandedFrameworkPanel id="old" /></LocaleProvider>)
+  expect(panel).toContain("Old control")
+  expect(panel).toContain("Not evaluated")
+  detail.controls.push(
+    { id: "verified", name: "Verified pass stays visible", severity: "High", passCount: 1, failCount: 0, evaluationState: "passed" },
+    { id: "old-failed", name: "Old failure stays visible", severity: "High", passCount: 0, failCount: 1 },
+  )
+  const panelWithEvidence = renderToStaticMarkup(<LocaleProvider locale="en"><ExpandedFrameworkPanel id="old" /></LocaleProvider>)
+  expect(panelWithEvidence).toContain("Verified pass stays visible")
+  expect(panelWithEvidence).toContain("Old failure stays visible")
+  const pageWithEvidence = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "old" }) }))
+  expect(pageWithEvidence).toContain("Verified pass stays visible")
+  expect(pageWithEvidence).toContain("Old failure stays visible")
+})
+
+it("H5/H1: empty failure lists never say All checks passed or 모든 검사 통과 and infra surfaces point to verify-cluster.sh", async () => {
+  const zero = { Critical: 0, High: 0, Medium: 0, Low: 0 }
+  const cleanInfraRow: InfraAuditRow = { node: "narwhal-master-1", summary: zero, actionableSummary: zero, acceptedSummary: zero, accepted: false }
+  const cleanInfraDetail: InfraAuditDetail = { ...cleanInfraRow, checks: [] }
+  const cleanConfigDetail: ConfigAuditDetail = { namespace: "dev", kind: "Deployment", name: "app", summary: zero, accepted: false, checks: [] }
+  const cleanRbacDetail: RbacAuditDetail = { namespace: "dev", kind: "Role", name: "reader", summary: zero, accepted: false, checks: [] }
+
+  for (const locale of ["ko", "en"] as const) {
+    const expectedNoFail = locale === "ko" ? "실패 기록 없음" : "No failure recorded"
+    const forbidden = locale === "ko" ? "모든 검사 통과" : "All checks passed"
+
+    vi.mocked(useQuery).mockReturnValue({ data: [cleanInfraRow], isLoading: false, isError: false, refetch: vi.fn() } as never)
+    const infraListHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><InfraAuditList /></LocaleProvider>)
+    expect(infraListHtml).not.toContain(forbidden)
+    expect(infraListHtml).not.toContain("Clean")
+    expect(infraListHtml).toContain("scripts/test/verify-cluster.sh")
+
+    vi.mocked(useQuery).mockReturnValue({ data: cleanInfraDetail, isLoading: false, isError: false, refetch: vi.fn() } as never)
+    const infraPanelHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><ExpandedInfraPanel node="narwhal-master-1" /></LocaleProvider>)
+    expect(infraPanelHtml).toContain(expectedNoFail)
+    expect(infraPanelHtml).toContain("scripts/test/verify-cluster.sh")
+    expect(infraPanelHtml).not.toContain(forbidden)
+
+    vi.mocked(useQuery).mockReturnValue({ data: cleanConfigDetail, isLoading: false, isError: false, refetch: vi.fn() } as never)
+    const cfgPanelHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><ExpandedConfigPanel scope="namespace" namespace="dev" kind="Deployment" name="app" /></LocaleProvider>)
+    expect(cfgPanelHtml).toContain(expectedNoFail)
+    expect(cfgPanelHtml).not.toContain(forbidden)
+
+    vi.mocked(useQuery).mockReturnValue({ data: cleanRbacDetail, isLoading: false, isError: false, refetch: vi.fn() } as never)
+    const rbacPanelHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><ExpandedRbacPanel namespace="dev" name="reader" /></LocaleProvider>)
+    expect(rbacPanelHtml).toContain(expectedNoFail)
+    expect(rbacPanelHtml).not.toContain(forbidden)
+
+    mockGetLocale.mockResolvedValue(locale)
+    mockGetInfraAuditDetail.mockResolvedValue(cleanInfraDetail)
+    mockGetConfigAuditDetail.mockResolvedValue(cleanConfigDetail)
+    mockGetRbacAuditDetail.mockResolvedValue(cleanRbacDetail)
+
+    const infraPageHtml = renderToStaticMarkup(await InfraAuditDetailPage({ params: Promise.resolve({ node: "narwhal-master-1" }) }))
+    expect(infraPageHtml).toContain(expectedNoFail)
+    expect(infraPageHtml).toContain("scripts/test/verify-cluster.sh")
+    expect(infraPageHtml).not.toContain(forbidden)
+
+    const cfgPageHtml = renderToStaticMarkup(
+      await ConfigAuditDetailPage({
+        params: Promise.resolve({ ns: "dev", name: "app" }),
+        searchParams: Promise.resolve({ scope: "namespace", kind: "Deployment" }),
+      }),
+    )
+    expect(cfgPageHtml).toContain(expectedNoFail)
+    expect(cfgPageHtml).not.toContain(forbidden)
+
+    const rbacPageHtml = renderToStaticMarkup(await RbacAuditDetailPage({ params: Promise.resolve({ ns: "dev", name: "reader" }) }))
+    expect(rbacPageHtml).toContain(expectedNoFail)
+    expect(rbacPageHtml).not.toContain(forbidden)
+
+    // Framework detail page renders infra_no_per_check_evidence reason + verify-cluster.sh page note
+    mockGetComplianceFrameworkDetail.mockResolvedValue({
+      id: "k8s-cis-1.23",
+      title: "CIS",
+      totalControls: 1,
+      passCount: 1,
+      evaluatedPassCount: 0,
+      notEvaluatedCount: 1,
+      failCount: 0,
+      actionableFailCount: 0,
+      acceptedFailCount: 0,
+      passRate: 1,
+      evaluatedPassRate: 0,
+      effectivePassRate: 0,
+      controls: [{
+        id: "1.1.19",
+        name: "PKI ownership",
+        severity: "Critical",
+        passCount: 0,
+        failCount: 0,
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "infra_no_per_check_evidence",
+      }],
+    })
+    const fwDetailHtml = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-cis-1.23" }) }))
+    expect(fwDetailHtml).toContain("scripts/test/verify-cluster.sh")
+    expect(fwDetailHtml).toContain(
+      locale === "ko"
+        ? "노드/컨트롤플레인 검사: 스캐너가 항목별 평가 증거를 남기지 않음"
+        : "Node/control-plane check: the scanner leaves no per-check evidence",
+    )
+  }
+})
+
+it("J1/J2 UI: renders cluster-scoped ConfigAuditRow with visible Cluster scope, actionable counter, _cluster detail link, and no_report_in_scope_namespace reason", async () => {
+  const clusterRow: ConfigAuditRow = {
+    namespace: "",
+    scope: "cluster",
+    kind: "ClusterRoleBinding",
+    name: "custom:cluster-binding",
+    summary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+    actionableSummary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+    acceptedSummary: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    accepted: false,
+  }
+
+  vi.mocked(useQuery).mockReturnValue({
+    data: [clusterRow],
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  } as never)
+
+  const enTableHtml = renderToStaticMarkup(
+    <LocaleProvider locale="en">
+      <ConfigAuditTable />
+    </LocaleProvider>,
+  )
+  expect(enTableHtml).toContain("1 actionable (MEDIUM+)")
+  expect(enTableHtml).toContain("Cluster")
+  expect(enTableHtml).toContain("ClusterRoleBinding")
+  expect(enTableHtml).toContain("custom:cluster-binding")
+
+  const koTableHtml = renderToStaticMarkup(
+    <LocaleProvider locale="ko">
+      <ConfigAuditTable />
+    </LocaleProvider>,
+  )
+  expect(koTableHtml).toContain("클러스터")
+  expect(koTableHtml).toContain("custom:cluster-binding")
+
+  const clusterDetail: ConfigAuditDetail = {
+    ...clusterRow,
+    checks: [{ id: "KSV122", title: "Broad cluster binding", severity: "High", success: false, accepted: false }],
+  }
+  vi.mocked(useQuery).mockReturnValue({
+    data: clusterDetail,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  } as never)
+  vi.mocked(useQuery).mockClear()
+  const panelHtml = renderToStaticMarkup(
+    <LocaleProvider locale="en">
+      <ExpandedConfigPanel scope="cluster" namespace="" kind="ClusterRoleBinding" name="custom:cluster-binding" />
+    </LocaleProvider>,
+  )
+  expect(panelHtml).toContain("KSV122")
+  expect(panelHtml).toContain("/compliance/config-audit/_cluster/custom%3Acluster-binding?scope=cluster&amp;kind=ClusterRoleBinding")
+  const panelQueryOpts = vi.mocked(useQuery).mock.calls[0]?.[0] as { queryKey?: unknown[]; queryFn?: () => Promise<unknown> }
+  expect(panelQueryOpts?.queryKey).toEqual([
+    "compliance-config-audit-detail",
+    "cluster",
+    "",
+    "ClusterRoleBinding",
+    "custom:cluster-binding",
+  ])
+
+  mockGetLocale.mockResolvedValue("en")
+  mockGetConfigAuditDetail.mockReset()
+  mockGetConfigAuditDetail.mockResolvedValue(clusterDetail)
+  const pageHtml = renderToStaticMarkup(
+    await ConfigAuditDetailPage({
+      params: Promise.resolve({ ns: "_cluster", name: "custom%3Acluster-binding" }),
+      searchParams: Promise.resolve({ scope: "cluster", kind: "ClusterRoleBinding" }),
+    }),
+  )
+  expect(mockGetConfigAuditDetail).toHaveBeenCalledWith("cluster", "", "ClusterRoleBinding", "custom:cluster-binding")
+  expect(pageHtml).toContain("Cluster / ClusterRoleBinding / custom:cluster-binding")
+  expect(pageHtml).toContain("KSV122")
+
+  // Missing kind renders explicit ambiguous error without querying or showing clean/no-failure state.
+  mockGetConfigAuditDetail.mockReset()
+  const ambiguousPageHtml = renderToStaticMarkup(
+    await ConfigAuditDetailPage({
+      params: Promise.resolve({ ns: "_cluster", name: "custom%3Acluster-binding" }),
+    }),
+  )
+  expect(mockGetConfigAuditDetail).not.toHaveBeenCalled()
+  expect(ambiguousPageHtml).toContain(en["compliance.detail.ambiguous"])
+  expect(ambiguousPageHtml).not.toContain(en["compliance.check.allPassed"])
+
+  // ComplianceDetailAmbiguousError from lookup renders explicit ambiguous error state.
+  const { ComplianceDetailAmbiguousError } = await import("@/lib/compliance")
+  mockGetConfigAuditDetail.mockRejectedValueOnce(
+    new ComplianceDetailAmbiguousError({
+      scope: "cluster",
+      namespace: "",
+      kind: "ClusterRoleBinding",
+      name: "custom:cluster-binding",
+    }),
+  )
+  const dupAmbiguousHtml = renderToStaticMarkup(
+    await ConfigAuditDetailPage({
+      params: Promise.resolve({ ns: "_cluster", name: "custom%3Acluster-binding" }),
+      searchParams: Promise.resolve({ scope: "cluster", kind: "ClusterRoleBinding" }),
+    }),
+  )
+  expect(dupAmbiguousHtml).toContain(en["compliance.detail.ambiguous"])
+  expect(dupAmbiguousHtml).not.toContain(en["compliance.check.allPassed"])
+
+  // Contradictory scope/namespace renders Not found without querying.
+  mockGetConfigAuditDetail.mockReset()
+  const mismatchPageHtml = renderToStaticMarkup(
+    await ConfigAuditDetailPage({
+      params: Promise.resolve({ ns: "dev", name: "app" }),
+      searchParams: Promise.resolve({ scope: "cluster", kind: "ClusterRole" }),
+    }),
+  )
+  expect(mockGetConfigAuditDetail).not.toHaveBeenCalled()
+  expect(mismatchPageHtml).toContain(en["common.notFound"])
+
+  mockGetComplianceFrameworkDetail.mockResolvedValue({
+    id: "k8s-cis-1.23",
+    title: "CIS",
+    totalControls: 1,
+    passCount: 1,
+    evaluatedPassCount: 0,
+    notEvaluatedCount: 1,
+    failCount: 0,
+    actionableFailCount: 0,
+    acceptedFailCount: 0,
+    passRate: 1,
+    evaluatedPassRate: 0,
+    effectivePassRate: 0,
+    controls: [{
+      id: "5.7.4",
+      name: "The default namespace should not be used",
+      severity: "Low",
+      passCount: 0,
+      failCount: 0,
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "no_report_in_scope_namespace",
+    }],
+  })
+  const fwHtml = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-cis-1.23" }) }))
+  expect(fwHtml).toContain("No report in the namespaces this check applies to")
 })

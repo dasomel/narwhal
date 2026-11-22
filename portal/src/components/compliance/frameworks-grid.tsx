@@ -2,16 +2,19 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useT, useLocale } from "@/lib/i18n-client"
+import { translateNotEvaluatedReason } from "@/lib/i18n"
 import { COMPLIANCE_EXCEPTIONS_DOC_URL } from "@/lib/compliance-accepted"
 import { DataState } from "@/components/ui/data-state"
 import { translateTitle } from "@/lib/check-translations"
 import { Badge } from "@/components/ui/badge"
-import type {
-  AcceptedScope,
-  ComplianceControl,
-  ComplianceFramework,
-  ComplianceFrameworkDetail,
-  Severity,
+import { fetchComplianceJson } from "./fetch-json"
+import {
+  formatPassRatePct,
+  type AcceptedScope,
+  type ComplianceControl,
+  type ComplianceFramework,
+  type ComplianceFrameworkDetail,
+  type Severity,
 } from "@/types/compliance"
 
 const severityBadgeClass: Record<Severity, string> = {
@@ -55,12 +58,16 @@ function ControlPreviewCard({
 }) {
   const actionableFail = ctrl.actionableFailCount ?? ctrl.failCount
   const acceptedFail = ctrl.acceptedFailCount ?? 0
+  const droppedFail = ctrl.droppedFailCount ?? 0
   const isAcceptedOnly = Boolean(ctrl.accepted)
-  const cardBorder = isAcceptedOnly
-    ? "border-slate-200 bg-slate-50/60 dark:bg-slate-900/20 dark:border-slate-800"
-    : actionableFail > 0
-      ? "border-red-200 bg-red-50/60 dark:bg-red-950/10 dark:border-red-900"
-      : "bg-card"
+  const isNotEvaluated = (ctrl.evaluationState === "not_evaluated" || (!ctrl.evaluationState && ctrl.failCount === 0))
+  const cardBorder = isNotEvaluated
+    ? "border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/10 dark:border-amber-900/60"
+    : isAcceptedOnly
+      ? "border-slate-200 bg-slate-50/60 dark:bg-slate-900/20 dark:border-slate-800"
+      : actionableFail > 0
+        ? "border-red-200 bg-red-50/60 dark:bg-red-950/10 dark:border-red-900"
+        : "bg-card"
 
   return (
     <div className={`rounded-md border p-2 text-xs ${cardBorder}`}>
@@ -69,6 +76,14 @@ function ControlPreviewCard({
         <Badge className={`text-xs ${severityBadgeClass[ctrl.severity] ?? severityBadgeClass.Unknown}`}>
           {ctrl.severity}
         </Badge>
+        {isNotEvaluated && (
+          <Badge
+            variant="outline"
+            className="text-[0.65rem] px-1.5 py-0 text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-800"
+          >
+            {t("compliance.framework.notEvaluatedShort")}
+          </Badge>
+        )}
         {isAcceptedOnly && (
           <Badge
             variant="outline"
@@ -81,22 +96,35 @@ function ControlPreviewCard({
       <p className="mt-1 font-medium text-foreground">
         {frameworkId.startsWith("k8s-cis") ? translateTitle("cis", ctrl.id, ctrl.name, locale) : ctrl.name}
       </p>
-      <div className="flex flex-wrap items-center gap-3 mt-1 text-muted-foreground">
-        <span className="text-green-600 font-medium">✓ {ctrl.passCount}</span>
-        <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
-          ✗ {actionableFail}
-        </span>
-        {(acceptedFail > 0 || ctrl.failCount !== actionableFail) && (
-          <Badge
-            variant="outline"
-            className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
-          >
-            {acceptedFail > 0
-              ? `+${acceptedFail} ${t("compliance.framework.acceptedShort")} (${t("compliance.framework.rawChecks", { count: String(ctrl.failCount) })})`
-              : t("compliance.framework.rawChecks", { count: String(ctrl.failCount) })}
-          </Badge>
-        )}
-      </div>
+      {isNotEvaluated ? (
+        <p className="mt-1 text-[0.7rem] text-muted-foreground">
+          {translateNotEvaluatedReason(locale, ctrl.notEvaluatedReason)}
+          {ctrl.notEvaluatedDetail ? ` (${ctrl.notEvaluatedDetail})` : ""}
+        </p>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3 mt-1 text-muted-foreground">
+          <span className="text-green-600 font-medium">✓ {ctrl.passCount}</span>
+          <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+            ✗ {actionableFail}
+          </span>
+          {(acceptedFail > 0 || ctrl.failCount !== actionableFail || droppedFail > 0) && (
+            <Badge
+              variant="outline"
+              className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+            >
+              {[
+                acceptedFail > 0 ? `+${acceptedFail} ${t("compliance.framework.acceptedShort")}` : null,
+                droppedFail > 0 ? t("compliance.framework.droppedShort", { count: String(droppedFail) }) : null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || t("compliance.framework.rawChecks", { count: String(ctrl.failCount) })}
+              {acceptedFail > 0 || droppedFail > 0
+                ? ` (${t("compliance.framework.rawChecks", { count: String(ctrl.failCount) })})`
+                : ""}
+            </Badge>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -105,17 +133,16 @@ export function ExpandedFrameworkPanel({ id }: { id: string }) {
   const t = useT()
   const locale = useLocale()
 
-  const { data: detail, isLoading } = useQuery<ComplianceFrameworkDetail>({
+  const { data: detail, isLoading, isError, refetch } = useQuery<ComplianceFrameworkDetail>({
     queryKey: ["compliance-framework-detail", id],
-    queryFn: () =>
-      fetch(`/api/compliance/frameworks?id=${encodeURIComponent(id)}`).then((r) => r.json()),
+    queryFn: () => fetchComplianceJson<ComplianceFrameworkDetail>(`/api/compliance/frameworks?id=${encodeURIComponent(id)}`),
     enabled: true,
     staleTime: 60_000,
   })
 
   const actionableAndOther = detail?.controls
     ? [...detail.controls]
-        .filter((c) => !c.accepted)
+        .filter((c) => !c.accepted && (c.evaluationState === "passed" || c.evaluationState === "failed" || (!c.evaluationState && c.failCount > 0)))
         .sort((a, b) => {
           const aFail = (a.actionableFailCount ?? a.failCount) > 0 ? 0 : 1
           const bFail = (b.actionableFailCount ?? b.failCount) > 0 ? 0 : 1
@@ -129,14 +156,21 @@ export function ExpandedFrameworkPanel({ id }: { id: string }) {
         .filter((c) => Boolean(c.accepted))
         .sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
     : []
+  const notEvaluatedControls = detail?.controls
+    ? [...detail.controls]
+        .filter((c) => (c.evaluationState === "not_evaluated" || (!c.evaluationState && c.failCount === 0)))
+        .sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
+    : []
 
   return (
     <div className="mt-3 pt-3 border-t border-dashed space-y-2">
       {isLoading ? (
         <span className="text-xs text-muted-foreground animate-pulse">{t("common.loading")}</span>
+      ) : isError ? (
+        <DataState state="unavailable" variant="inline" onRetry={() => { void refetch() }} />
       ) : detail ? (
         <>
-          {top5.length === 0 && acceptedControls.length === 0 ? (
+          {top5.length === 0 && acceptedControls.length === 0 && notEvaluatedControls.length === 0 ? (
             <span className="text-xs text-muted-foreground">{t("common.notFound")}</span>
           ) : (
             <>
@@ -165,6 +199,18 @@ export function ExpandedFrameworkPanel({ id }: { id: string }) {
                   </div>
                 </details>
               )}
+              {notEvaluatedControls.length > 0 && (
+                <details className="rounded-md border border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/10 dark:border-amber-900/60 p-2 text-xs">
+                  <summary className="cursor-pointer font-medium text-amber-700 dark:text-amber-400 select-none">
+                    {t("compliance.framework.notEvaluatedControlsGroup", { count: String(notEvaluatedControls.length) })}
+                  </summary>
+                  <div className="mt-2 space-y-1.5">
+                    {notEvaluatedControls.map((ctrl) => (
+                      <ControlPreviewCard key={ctrl.id} ctrl={ctrl} frameworkId={id} locale={locale} t={t} />
+                    ))}
+                  </div>
+                </details>
+              )}
             </>
           )}
           <a className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-[0.8rem] font-medium hover:bg-muted transition-colors" href={`/compliance/frameworks/${encodeURIComponent(id)}`}>
@@ -184,7 +230,7 @@ export function FrameworksGrid() {
 
   const { data: frameworks = [], isLoading, isError, refetch } = useQuery<ComplianceFramework[]>({
     queryKey: ["compliance-frameworks"],
-    queryFn: () => fetch("/api/compliance/frameworks").then((r) => r.json()),
+    queryFn: () => fetchComplianceJson<ComplianceFramework[]>("/api/compliance/frameworks"),
     staleTime: 60_000,
   })
 
@@ -197,16 +243,28 @@ export function FrameworksGrid() {
 
   const totalActionable = frameworks.reduce((acc, f) => acc + (f.actionableFailCount ?? f.failCount), 0)
   const totalAccepted = frameworks.reduce((acc, f) => acc + (f.acceptedFailCount ?? 0), 0)
+  const totalNotEvaluated = frameworks.reduce((acc, f) => acc + (f.notEvaluatedCount ?? Math.max(0, f.totalControls - f.failCount)), 0)
   const totalRaw = frameworks.reduce((acc, f) => acc + f.failCount, 0)
+  const anyCoverageUnknown = frameworks.some((f) => (Boolean(f.coverageUnknown) || f.evaluatedPassCount === undefined || f.notEvaluatedCount === undefined))
 
   return (
     <div className="space-y-3">
-      {(totalActionable > 0 || totalAccepted > 0 || totalRaw > 0) && (
+      {anyCoverageUnknown && (
+        <div
+          role="status"
+          className="rounded-md border border-amber-300/80 bg-amber-50/70 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300"
+        >
+          {t("compliance.framework.coverageUnknownNotice")}
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">{t("compliance.framework.failureOnlyNote")}</p>
+      {(totalActionable > 0 || totalAccepted > 0 || totalNotEvaluated > 0 || totalRaw > 0) && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>
             {t("compliance.framework.actionableSummary", {
               actionable: String(totalActionable),
               accepted: String(totalAccepted),
+              notEvaluated: String(totalNotEvaluated),
               raw: String(totalRaw),
             })}
           </span>
@@ -225,8 +283,28 @@ export function FrameworksGrid() {
           const isExpanded = expandedId === fw.id
           const actionableFail = fw.actionableFailCount ?? fw.failCount
           const acceptedFail = fw.acceptedFailCount ?? 0
-          const displayPassRate = fw.effectivePassRate ?? fw.passRate
-          const rawPct = Math.round(fw.passRate * 100)
+          const notEvaluated = fw.notEvaluatedCount ?? Math.max(0, fw.totalControls - fw.failCount)
+          const evaluatedPass = fw.evaluatedPassCount ?? 0
+          const droppedChecks = fw.droppedCheckCount ?? 0
+          const droppedControls = fw.droppedFailCount ?? 0
+          const evaluatedRate = fw.evaluatedPassRate ?? 0
+          const effectiveRate = (fw.evaluatedPassCount === undefined || fw.notEvaluatedCount === undefined ? 0 : fw.effectivePassRate ?? 0)
+          const effectivePassNum = Math.round(effectiveRate * fw.totalControls)
+          const hasActionable = actionableFail > 0
+          const hasNotEval = notEvaluated > 0 || (Boolean(fw.coverageUnknown) || fw.evaluatedPassCount === undefined || fw.notEvaluatedCount === undefined)
+          const evaluatedPctText = formatPassRatePct(evaluatedRate, {
+            hasActionableFail: hasActionable,
+            hasNotEvaluated: hasNotEval,
+          })
+          const rawPctText = formatPassRatePct(fw.passRate, {
+            hasActionableFail: fw.failCount > 0 || hasActionable,
+            hasNotEvaluated: hasNotEval,
+          })
+          const effectivePctText = formatPassRatePct(effectiveRate, {
+            hasActionableFail: hasActionable,
+            hasNotEvaluated: hasNotEval,
+          })
+
           return (
             <div key={fw.id} className="rounded-lg border bg-card p-4">
               <button
@@ -242,15 +320,16 @@ export function FrameworksGrid() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span
+                      title={`${evaluatedPass}/${fw.totalControls}`}
                       className={`text-sm font-bold ${
-                        displayPassRate >= 0.8
+                        evaluatedRate >= 0.8
                           ? "text-green-600"
-                          : displayPassRate >= 0.5
+                          : evaluatedRate >= 0.5
                           ? "text-amber-600"
                           : "text-red-600"
                       }`}
                     >
-                      {Math.round(displayPassRate * 100)}%
+                      {evaluatedPctText}
                     </span>
                     <span
                       className="text-muted-foreground text-sm inline-block transition-transform duration-200"
@@ -261,24 +340,41 @@ export function FrameworksGrid() {
                     </span>
                   </div>
                 </div>
-                <PassRateBar rate={displayPassRate * 100} />
+                <PassRateBar rate={evaluatedRate * 100} />
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 text-[0.7rem] text-muted-foreground">
+                  <span>{t("compliance.framework.rawPassRate")}: {rawPctText} ({fw.passCount}/{fw.totalControls})</span>
+                  <span>{t("compliance.framework.effectivePassRate")}: {effectivePctText} ({effectivePassNum}/{fw.totalControls})</span>
+                </div>
                 <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground">
-                  <span className="text-green-600 font-medium">✓ {fw.passCount}</span>
+                  <span className="text-green-600 font-medium" title={t("compliance.framework.noFailureRecordedLabel")}>
+                    ✓ {evaluatedPass} {t("compliance.framework.noFailureRecordedShort")}
+                  </span>
                   <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
                     ✗ {actionableFail}
                   </span>
-                  {(acceptedFail > 0 || fw.failCount !== actionableFail) && (
+                  {notEvaluated > 0 && (
+                    <Badge
+                      variant="outline"
+                      className="text-[0.65rem] px-1.5 py-0 text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-800"
+                    >
+                      ? {notEvaluated} {t("compliance.framework.notEvaluatedShort")}
+                    </Badge>
+                  )}
+                  {(acceptedFail > 0 || fw.failCount !== actionableFail || droppedChecks > 0 || droppedControls > 0) && (
                     <Badge
                       variant="outline"
                       className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
-                      title={t("compliance.framework.rawSummary", {
-                        fail: String(fw.failCount),
-                        rate: String(rawPct),
-                      })}
                     >
-                      {acceptedFail > 0
-                        ? `+${acceptedFail} ${t("compliance.framework.acceptedShort")} (${t("compliance.framework.rawChecks", { count: String(fw.failCount) })})`
-                        : t("compliance.framework.rawChecks", { count: String(fw.failCount) })}
+                      {[
+                        acceptedFail > 0 ? `+${acceptedFail} ${t("compliance.framework.acceptedShort")}` : null,
+                        droppedChecks > 0 || droppedControls > 0
+                          ? t("compliance.framework.droppedShort", { count: String(droppedChecks || droppedControls) })
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || t("compliance.framework.rawChecks", { count: String(fw.failCount) })}
+                      {(acceptedFail > 0 || droppedChecks > 0 || droppedControls > 0) &&
+                        ` (${t("compliance.framework.rawChecks", { count: String(fw.failCount) })})`}
                     </Badge>
                   )}
                 </div>

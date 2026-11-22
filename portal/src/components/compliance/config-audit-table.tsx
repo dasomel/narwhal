@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
+import { fetchComplianceJson } from "./fetch-json"
 import type { ConfigAuditRow, ConfigAuditDetail, Severity } from "@/types/compliance"
 
 const PAGE_SIZE = 20
@@ -67,21 +68,26 @@ function SeverityMini({ severity, count }: { severity: Severity; count: number }
 }
 
 export function ExpandedConfigPanel({
+  scope,
   namespace,
+  kind,
   name,
 }: {
+  scope: "cluster" | "namespace"
   namespace: string
+  kind: string
   name: string
 }) {
   const t = useT()
   const locale = useLocale()
+  const resolvedNs = scope === "cluster" ? "" : namespace
 
-  const { data: detail, isLoading } = useQuery<ConfigAuditDetail>({
-    queryKey: ["compliance-config-audit-detail", namespace, name],
+  const { data: detail, isLoading, isError, refetch } = useQuery<ConfigAuditDetail>({
+    queryKey: ["compliance-config-audit-detail", scope, resolvedNs, kind, name],
     queryFn: () =>
-      fetch(
-        `/api/compliance/config-audit?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}`
-      ).then((r) => r.json()),
+      fetchComplianceJson<ConfigAuditDetail>(
+        `/api/compliance/config-audit?scope=${encodeURIComponent(scope)}&namespace=${encodeURIComponent(resolvedNs)}&kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}`,
+      ),
     enabled: true,
     staleTime: 60_000,
   })
@@ -103,6 +109,8 @@ export function ExpandedConfigPanel({
     <div className="px-6 py-4 bg-muted/10 border-t border-dashed">
       {isLoading ? (
         <span className="text-sm text-muted-foreground animate-pulse">{t("common.loading")}</span>
+      ) : isError ? (
+        <DataState state="unavailable" variant="inline" onRetry={() => { void refetch() }} />
       ) : detail ? (
         <div className="space-y-3">
           {top5Failed.length === 0 ? (
@@ -152,7 +160,7 @@ export function ExpandedConfigPanel({
                 ))}
               </div>
               <div>
-                <a className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-[0.8rem] font-medium hover:bg-muted transition-colors" href={`/compliance/config-audit/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`}>
+                <a className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-[0.8rem] font-medium hover:bg-muted transition-colors" href={`/compliance/config-audit/${encodeURIComponent(scope === "cluster" ? "_cluster" : (namespace || "_cluster"))}/${encodeURIComponent(name)}?scope=${encodeURIComponent(scope)}&kind=${encodeURIComponent(kind)}`}>
                     {t("common.viewFullDetails")}
                   </a>
               </div>
@@ -178,24 +186,30 @@ export function ConfigAuditTable() {
 
   const queryParams = new URLSearchParams()
   if (severity !== "all") queryParams.set("severity", severity)
-  if (namespace !== "all") queryParams.set("namespace", namespace)
+  if (namespace !== "all" && namespace !== "__cluster__") queryParams.set("namespace", namespace)
 
   const { data: rows = [], isLoading, isError, refetch } = useQuery<ConfigAuditRow[]>({
     queryKey: ["compliance-config-audit", severity, namespace],
-    queryFn: () => fetch(`/api/compliance/config-audit?${queryParams}`).then((r) => r.json()),
+    queryFn: () => fetchComplianceJson<ConfigAuditRow[]>(`/api/compliance/config-audit?${queryParams}`),
     staleTime: 60_000,
   })
 
-  const allNamespaces = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.namespace))).sort(),
+  const hasClusterScoped = useMemo(
+    () => rows.some((r) => r.scope === "cluster" || r.namespace === ""),
     [rows]
   )
 
-  // Three-tier split: accepted (system-namespace or all non-LOW checks covered by reviewed
-  // allowlist) takes priority; remaining rows with actionable Critical/High/Medium count as
-  // actionable, and LOW-only non-system rows are broken out as hygiene.
-  const { actionableCount, lowSeverityCount, acceptedCount } = useMemo(() => {
+  const allNamespaces = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.namespace).filter(Boolean))).sort(),
+    [rows]
+  )
+
+  // Four-tier split: accepted (system-namespace or all non-LOW checks covered by reviewed
+  // allowlist), actionable (unaccepted Critical/High/Medium), unaccepted LOW (no allowlist rule),
+  // and accepted LOW hygiene.
+  const { actionableCount, unacceptedLowCount, lowSeverityCount, acceptedCount } = useMemo(() => {
     let actionableCount = 0
+    let unacceptedLowCount = 0
     let lowSeverityCount = 0
     let acceptedCount = 0
     for (const r of rows) {
@@ -208,16 +222,32 @@ export function ConfigAuditTable() {
       const actionable = r.actionableSummary ?? r.summary
       const hasActionableSeverity = actionable.Critical + actionable.High + actionable.Medium > 0
       if (hasActionableSeverity) actionableCount++
+      else if (actionable.Low > 0) unacceptedLowCount++
       else if (r.summary.Low > 0) lowSeverityCount++
     }
-    return { actionableCount, lowSeverityCount, acceptedCount }
+    return { actionableCount, unacceptedLowCount, lowSeverityCount, acceptedCount }
   }, [rows])
 
+  const clusterScopeLabel = t("compliance.table.clusterScope")
+
   const filtered = useMemo(() => {
-    if (!nameSearch.trim()) return rows
+    const scopeFiltered =
+      namespace === "__cluster__"
+        ? rows.filter((r) => r.scope === "cluster" || r.namespace === "")
+        : namespace !== "all"
+          ? rows.filter((r) => r.namespace === namespace)
+          : rows
+    if (!nameSearch.trim()) return scopeFiltered
     const q = nameSearch.toLowerCase()
-    return rows.filter((r) => r.name.toLowerCase().includes(q) || r.namespace.toLowerCase().includes(q))
-  }, [rows, nameSearch])
+    return scopeFiltered.filter((r) => {
+      const isCluster = r.scope === "cluster" || r.namespace === ""
+      return (
+        r.name.toLowerCase().includes(q) ||
+        r.namespace.toLowerCase().includes(q) ||
+        (isCluster && (clusterScopeLabel.toLowerCase().includes(q) || "cluster".includes(q)))
+      )
+    })
+  }, [rows, namespace, nameSearch, clusterScopeLabel])
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -233,8 +263,18 @@ export function ConfigAuditTable() {
     const copy = [...filtered]
     copy.sort((a, b) => {
       if (sortKey === "namespace" || sortKey === "kind" || sortKey === "name") {
-        const av = sortKey === "namespace" ? a.namespace : sortKey === "kind" ? a.kind : a.name
-        const bv = sortKey === "namespace" ? b.namespace : sortKey === "kind" ? b.kind : b.name
+        const av =
+          sortKey === "namespace"
+            ? (a.scope === "cluster" || !a.namespace ? clusterScopeLabel : a.namespace)
+            : sortKey === "kind"
+              ? a.kind
+              : a.name
+        const bv =
+          sortKey === "namespace"
+            ? (b.scope === "cluster" || !b.namespace ? clusterScopeLabel : b.namespace)
+            : sortKey === "kind"
+              ? b.kind
+              : b.name
         return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av)
       }
       const av = a.summary[sortKey]
@@ -244,7 +284,7 @@ export function ConfigAuditTable() {
       return 0
     })
     return copy
-  }, [filtered, sortKey, sortDir])
+  }, [filtered, sortKey, sortDir, clusterScopeLabel])
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -263,13 +303,14 @@ export function ConfigAuditTable() {
 
   return (
     <>
-      {(actionableCount > 0 || lowSeverityCount > 0 || acceptedCount > 0) && (
+      {(actionableCount > 0 || unacceptedLowCount > 0 || lowSeverityCount > 0 || acceptedCount > 0) && (
         <p
           className="text-xs text-muted-foreground mb-2"
-          title={`${t("compliance.table.lowSeverityHint")} · ${t("compliance.table.acceptedHint")}`}
+          title={`${t("compliance.table.unacceptedLowHint")} · ${t("compliance.table.lowSeverityHint")} · ${t("compliance.table.acceptedHint")}`}
         >
           {t("compliance.table.actionableSummary", {
             actionable: String(actionableCount),
+            unacceptedLow: String(unacceptedLowCount),
             low: String(lowSeverityCount),
             accepted: String(acceptedCount),
           })}
@@ -294,6 +335,9 @@ export function ConfigAuditTable() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t("compliance.filter.allNamespaces")}</SelectItem>
+            {hasClusterScoped && (
+              <SelectItem value="__cluster__">{clusterScopeLabel}</SelectItem>
+            )}
             {allNamespaces.map((ns) => (
               <SelectItem key={ns} value={ns}>{ns}</SelectItem>
             ))}
@@ -332,7 +376,9 @@ export function ConfigAuditTable() {
               </thead>
               <tbody>
                 {pageRows.map((row) => {
-                  const rowKey = `${row.namespace}|${row.kind}|${row.name}`
+                  const rowScope: "cluster" | "namespace" =
+                    row.scope === "cluster" || row.namespace === "" ? "cluster" : "namespace"
+                  const rowKey = `${rowScope}|${row.namespace}|${row.kind}|${row.name}`
                   const isExpanded = expandedKey === rowKey
                   return (
                     <Fragment key={rowKey}>
@@ -347,7 +393,13 @@ export function ConfigAuditTable() {
                           </button>
                         </td>
                         <td className="px-4 py-2.5 text-muted-foreground">
-                          <span>{row.namespace}</span>
+                          {row.scope === "cluster" || !row.namespace ? (
+                            <Badge variant="secondary" className="text-[0.65rem] px-1.5 py-0 font-normal">
+                              {clusterScopeLabel}
+                            </Badge>
+                          ) : (
+                            <span>{row.namespace}</span>
+                          )}
                           {row.accepted && (
                             <Badge
                               variant="outline"
@@ -366,13 +418,23 @@ export function ConfigAuditTable() {
                             </Badge>
                           )}
                           {!row.accepted && row.summary.Critical + row.summary.High + row.summary.Medium === 0 && row.summary.Low > 0 && (
-                            <Badge
-                              variant="outline"
-                              className="ml-2 text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
-                              title={t("compliance.table.lowSeverityHint")}
-                            >
-                              {t("compliance.table.lowSeverity")}
-                            </Badge>
+                            (row.actionableSummary?.Low ?? 0) > 0 ? (
+                              <Badge
+                                variant="outline"
+                                className="ml-2 text-[0.65rem] px-1.5 py-0 text-amber-700 border-amber-300 dark:text-amber-400 dark:border-amber-800"
+                                title={t("compliance.table.unacceptedLowHint")}
+                              >
+                                {t("compliance.table.unacceptedLow")}
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="ml-2 text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+                                title={t("compliance.table.lowSeverityHint")}
+                              >
+                                {t("compliance.table.lowSeverity")}
+                              </Badge>
+                            )
                           )}
                         </td>
                         <td className="px-4 py-2.5 text-xs text-muted-foreground">{row.kind}</td>
@@ -385,7 +447,12 @@ export function ConfigAuditTable() {
                       {isExpanded && (
                         <tr>
                           <td colSpan={COL_COUNT + 1} className="p-0">
-                            <ExpandedConfigPanel namespace={row.namespace} name={row.name} />
+                            <ExpandedConfigPanel
+                              scope={rowScope}
+                              namespace={row.namespace}
+                              kind={row.kind}
+                              name={row.name}
+                            />
                           </td>
                         </tr>
                       )}

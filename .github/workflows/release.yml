@@ -9,10 +9,14 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
+    # D1: Scope writes to this job; keep all inherited scopes (job maps replace defaults).
+    # Cost: duplicated read scopes; escape: revise this map if the job gains new operations.
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

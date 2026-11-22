@@ -632,6 +632,8 @@ vagrant ssh master-1 -c "kubectl delete pod narwhal-db-1 -n database"
 
 cert-manager가 self-signed CA로 wildcard 인증서를 자동 관리합니다.
 
+OpenBao 전용 `storage/openbao-tls`는 365일 유효·30일 전 갱신이며 bootstrap이 소유합니다. Secret 갱신과 listener 반영은 별개입니다. [OpenBao TLS runbook](../runbooks/openbao-tls.md)의 SIGHUP 복구·자동 reload·served/Secret 검증 절차를 따릅니다.
+
 ### 인증서 목록 확인
 
 ```bash

@@ -253,19 +253,22 @@ export default async function FrameworkDetailPage({ params }: Props) {
   const acceptedControlsFail = detail.acceptedFailCount ?? acceptedControls.length
   const evaluatedPass = detail.evaluatedPassCount ?? detail.passCount
   const notEvaluated = detail.notEvaluatedCount ?? notEvaluatedControls.length
+  const effectivePassNum = Math.round(effectiveRate * detail.totalControls)
   const droppedControls = detail.droppedFailCount ?? 0
   const droppedChecks = detail.droppedCheckCount ?? 0
+  const hasNotEval = notEvaluated > 0 || Boolean(detail.coverageUnknown)
 
   const evaluatedPctText = formatPassRatePct(evaluatedRate, {
     hasActionableFail: actionableControlsFail > 0,
-    hasNotEvaluated: notEvaluated > 0,
+    hasNotEvaluated: hasNotEval,
   })
   const effectivePctText = formatPassRatePct(effectiveRate, {
     hasActionableFail: actionableControlsFail > 0,
-    hasNotEvaluated: notEvaluated > 0,
+    hasNotEvaluated: hasNotEval,
   })
   const rawPctText = formatPassRatePct(detail.passRate, {
-    hasActionableFail: detail.failCount > 0,
+    hasActionableFail: detail.failCount > 0 || actionableControlsFail > 0,
+    hasNotEvaluated: hasNotEval,
   })
   const evaluatedWidthPct = Math.min(100, Math.max(0, evaluatedRate * (evaluatedRate <= 1 ? 100 : 1)))
   const barColor =
@@ -279,13 +282,22 @@ export default async function FrameworkDetailPage({ params }: Props) {
         <div>
           <h1 className="text-xl font-bold text-foreground">{detail.title}</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {t(locale, "compliance.framework.evaluatedPassRate")}: {evaluatedPctText} &middot;{" "}
+            {t(locale, "compliance.framework.evaluatedPassRate")}: {evaluatedPctText} ({evaluatedPass}/{detail.totalControls}) &middot;{" "}
             {t(locale, "compliance.framework.rawPassRate")}: {rawPctText} ({detail.passCount}/{detail.totalControls}) &middot;{" "}
-            {t(locale, "compliance.framework.effectivePassRate")}: {effectivePctText} &middot;{" "}
+            {t(locale, "compliance.framework.effectivePassRate")}: {effectivePctText} ({effectivePassNum}/{detail.totalControls}) &middot;{" "}
             {t(locale, "compliance.framework.controls", { count: detail.totalControls })}
           </p>
         </div>
       </div>
+
+      {detail.coverageUnknown && (
+        <div
+          role="status"
+          className="rounded-md border border-amber-300/80 bg-amber-50/70 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300"
+        >
+          {t(locale, "compliance.framework.coverageUnknownNotice")}
+        </div>
+      )}
 
       {/* Pass rate bar + counters */}
       <div className="rounded-lg border bg-card p-4 space-y-3">

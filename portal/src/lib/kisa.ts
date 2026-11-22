@@ -85,17 +85,14 @@ async function checkCfg01(): Promise<{ status: KisaStatus; detail: string }> {
     return { status: "manual", detail: "프레임워크 데이터 없음" }
   }
 
-  // D: `getComplianceFrameworks()` derives `actionableFailCount` / `effectivePassRate` from
-  // `status.detailReport.results[].checks` (`checkID` + `target`) when `reportType=all`,
-  // while `checkCfg01()` intentionally keeps evaluating the raw cluster-wide `f.passRate`
-  // (consistent with how CIS/NSA benchmarks are scored) so accepted exceptions do not shift
-  // KISA CFG-01 thresholds. As a transparency aid, we still surface the actionable-vs-accepted
-  // split of the underlying raw config-audit findings (same Trivy scan, namespace-attributed)
-  // alongside the verdict so a low framework score isn't read as "N actionable issues" when it's
-  // largely system-namespace noise.
-  // Actionable excludes LOW severity too — KSV020/021 UID/GID and KSV011/015/016/018 resource
-  // limit checks are risk-accepted hygiene per narwhal/docs/compliance-hardening.md, same tiering
-  // as getComplianceSummary's totalConfigAuditFailures/lowSeverityConfigAuditFailures split.
+  // D-CFG01-EVALUATED: `getComplianceFrameworks()` derives `actionableFailCount` and
+  // `notEvaluatedCount` from `status.detailReport.results[].checks`
+  // (`checkID` + `target`) when `reportType=all` plus positive per-check report evidence.
+  // Do NOT grade CFG-01 on raw `f.passRate` (or exception-adjusted rate thresholds), because Trivy emits placeholder passes
+  // when controls were never evaluated. Rule: any actionable failure -> fail; otherwise any
+  // not-evaluated control (or unknown coverage) -> warn with count; pass ONLY when every control
+  // is evaluated and zero actionable failures remain. Escape hatch: restore threshold grading only
+  // after positive check evidence covers 100% of framework controls.
   const { SYSTEM_NAMESPACES } = await import("./compliance")
   const systemNs = new Set<string>(SYSTEM_NAMESPACES)
   let actionableFailures = 0
@@ -114,21 +111,29 @@ async function checkCfg01(): Promise<{ status: KisaStatus; detail: string }> {
   }
   const breakdown = `(config-audit 조치가능 ${actionableFailures}건, 위생 ${lowSeverityFailures}건, 수용 ${acceptedFailures}건)`
 
-  const failing = frameworks.filter((f) => f.passRate < 0.6)
-  const warning = frameworks.filter((f) => f.passRate >= 0.6 && f.passRate < 0.9)
-  if (failing.length > 0) {
+  const totalControls = frameworks.reduce((acc, f) => acc + f.totalControls, 0)
+  const actionableControls = frameworks.reduce((acc, f) => acc + (f.actionableFailCount ?? f.failCount), 0)
+  const notEvaluatedControls = frameworks.reduce((acc, f) => acc + (f.notEvaluatedCount ?? 0), 0)
+  const acceptedControls = frameworks.reduce((acc, f) => acc + (f.acceptedFailCount ?? 0), 0)
+  const evaluatedPassControls = frameworks.reduce((acc, f) => acc + (f.evaluatedPassCount ?? 0), 0)
+  const hasUnknownCoverage = frameworks.some((f) => Boolean(f.coverageUnknown))
+
+  if (actionableControls > 0) {
     return {
       status: "fail",
-      detail: `통과율 60% 미만 ${failing.length}건 (최저 ${Math.round(Math.min(...failing.map((f) => f.passRate)) * 100)}%) ${breakdown}`,
+      detail: `조치가능 프레임워크 컨트롤 실패 ${actionableControls}건 (평가 통과 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 미평가 ${notEvaluatedControls}) ${breakdown}`,
     }
   }
-  if (warning.length > 0) {
+  if (notEvaluatedControls > 0 || hasUnknownCoverage) {
     return {
       status: "warn",
-      detail: `통과율 90% 미만 ${warning.length}건 ${breakdown}`,
+      detail: `미평가 프레임워크 컨트롤 ${notEvaluatedControls}건 (평가 통과 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 조치가능 0건) ${breakdown}`,
     }
   }
-  return { status: "pass", detail: `전 프레임워크 통과율 90% 이상 ${breakdown}` }
+  return {
+    status: "pass",
+    detail: `전 프레임워크 ${totalControls}개 컨트롤 평가 완료·조치가능 실패 없음 (평가 통과 ${evaluatedPassControls}, 수용 ${acceptedControls}) ${breakdown}`,
+  }
 }
 
 async function checkTls02(): Promise<{ status: KisaStatus; detail: string }> {

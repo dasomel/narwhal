@@ -245,9 +245,18 @@ export function FrameworksGrid() {
   const totalAccepted = frameworks.reduce((acc, f) => acc + (f.acceptedFailCount ?? 0), 0)
   const totalNotEvaluated = frameworks.reduce((acc, f) => acc + (f.notEvaluatedCount ?? 0), 0)
   const totalRaw = frameworks.reduce((acc, f) => acc + f.failCount, 0)
+  const anyCoverageUnknown = frameworks.some((f) => Boolean(f.coverageUnknown))
 
   return (
     <div className="space-y-3">
+      {anyCoverageUnknown && (
+        <div
+          role="status"
+          className="rounded-md border border-amber-300/80 bg-amber-50/70 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300"
+        >
+          {t("compliance.framework.coverageUnknownNotice")}
+        </div>
+      )}
       {(totalActionable > 0 || totalAccepted > 0 || totalNotEvaluated > 0 || totalRaw > 0) && (
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>
@@ -279,14 +288,16 @@ export function FrameworksGrid() {
           const droppedControls = fw.droppedFailCount ?? 0
           const evaluatedRate = fw.evaluatedPassRate ?? fw.passRate
           const effectiveRate = fw.effectivePassRate ?? fw.passRate
+          const effectivePassNum = Math.round(effectiveRate * fw.totalControls)
           const hasActionable = actionableFail > 0
-          const hasNotEval = notEvaluated > 0
+          const hasNotEval = notEvaluated > 0 || Boolean(fw.coverageUnknown)
           const evaluatedPctText = formatPassRatePct(evaluatedRate, {
             hasActionableFail: hasActionable,
             hasNotEvaluated: hasNotEval,
           })
           const rawPctText = formatPassRatePct(fw.passRate, {
-            hasActionableFail: fw.failCount > 0,
+            hasActionableFail: fw.failCount > 0 || hasActionable,
+            hasNotEvaluated: hasNotEval,
           })
           const effectivePctText = formatPassRatePct(effectiveRate, {
             hasActionableFail: hasActionable,
@@ -308,6 +319,7 @@ export function FrameworksGrid() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span
+                      title={`${evaluatedPass}/${fw.totalControls}`}
                       className={`text-sm font-bold ${
                         evaluatedRate >= 0.8
                           ? "text-green-600"
@@ -330,7 +342,7 @@ export function FrameworksGrid() {
                 <PassRateBar rate={evaluatedRate * 100} />
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 text-[0.7rem] text-muted-foreground">
                   <span>{t("compliance.framework.rawPassRate")}: {rawPctText} ({fw.passCount}/{fw.totalControls})</span>
-                  <span>{t("compliance.framework.effectivePassRate")}: {effectivePctText}</span>
+                  <span>{t("compliance.framework.effectivePassRate")}: {effectivePctText} ({effectivePassNum}/{fw.totalControls})</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground">
                   <span className="text-green-600 font-medium">✓ {evaluatedPass}</span>

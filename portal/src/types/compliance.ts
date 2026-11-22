@@ -120,6 +120,8 @@ export type ControlNotEvaluatedReason =
   | "scanner_disabled"
   | "summary_only"
   | "empty_checks"
+  | "no_evidence_in_report"
+  | "absent_from_report"
   | "coverage_unknown"
 
 export interface ComplianceFramework {
@@ -193,8 +195,10 @@ export interface ComplianceSourceStatus {
   oldestUpdated?: string | null
   /** Scheduled rebuild cadence in hours (e.g. 6 for ClusterComplianceReport 6-hour cron). */
   rebuildIntervalHours?: number
-  /** True when auxiliary metadata (e.g. ReplicaSets or operator config) failed to load. */
+  /** True when auxiliary metadata (e.g. ReplicaSets, Nodes, operator Deploy/ConfigMap) failed to load. */
   partial?: boolean
+  /** Names of failed auxiliary K8s resources when `partial` is true. */
+  partialSources?: string[]
   /** Sanitized error summary when status is "unavailable". */
   error?: string
 }
@@ -237,6 +241,15 @@ export interface ComplianceSummary {
   lastUpdated: string
   /** Per-source availability and freshness metadata. */
   sources?: Record<ComplianceSourceKey, ComplianceSourceStatus>
-  /** True when at least one compliance data source failed to load from Kubernetes. */
+  /**
+   * True when at least one primary compliance source (`configAudit`, `rbac`, `infra`, `frameworks`)
+   * failed to load (`sources[key].status === "unavailable"`). Auxiliary-only failures (e.g. 403 on
+   * `replicasets`, `nodes`, `deploy/trivy-operator`, or `cm/trivy-operator-trivy-config`) set
+   * `partial: true` and `sources[key].partial: true` rather than `dataUnavailable` so callers can
+   * distinguish missing primary data from degraded coverage/metadata; when ALL four primary sources
+   * fail, `GET /api/compliance/summary` returns HTTP 503 `{ unavailable: true }`.
+   */
   dataUnavailable?: boolean
+  /** True when at least one source loaded with failed auxiliary metadata reads (never cached). */
+  partial?: boolean
 }

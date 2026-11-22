@@ -235,8 +235,9 @@ interface RawSpecControl {
   name: string
   severity: string
   description?: string
+  nodeType?: string
   checks?: Array<{ id?: string }>
-  commands?: Array<{ id?: string }>
+  commands?: Array<{ id?: string; nodeType?: string }>
 }
 
 interface RawComplianceReport {
@@ -808,6 +809,7 @@ interface ConfigAuditListWithMeta {
   lastUpdated: string | null
   oldestUpdated: string | null
   partial: boolean
+  partialSources: string[]
 }
 
 async function fetchConfigAuditListWithMeta(): Promise<ConfigAuditListWithMeta> {
@@ -851,6 +853,7 @@ async function fetchConfigAuditListWithMeta(): Promise<ConfigAuditListWithMeta> 
     lastUpdated: newest,
     oldestUpdated: oldest,
     partial: rsMap === null,
+    partialSources: rsMap === null ? ["replicasets"] : [],
   }
 }
 
@@ -1243,14 +1246,6 @@ const CONTROL_PLANE_CHECK_IDS = new Set([
   ...Array.from({ length: 47 }, (_, i) => `KCV${String(i + 1).padStart(4, "0")}`),
   "KSV037",
 ])
-const MASTER_NODE_CHECK_IDS = new Set(
-  Array.from({ length: 21 }, (_, i) => `KCV${String(i + 48).padStart(4, "0")}`),
-)
-const WORKER_NODE_CHECK_IDS = new Set(
-  Array.from({ length: 24 }, (_, i) => `KCV${String(i + 69).padStart(4, "0")}`),
-)
-const MASTER_COMMAND_RE = /^CMD-00(?:0[1-9]|1[0-9]|2[01]|4[6-9]|50)$/
-const WORKER_COMMAND_RE = /^CMD-00(?:2[2-9]|3[0-9]|4[0-5])$/
 const BINDING_CONFIG_AUDIT_CHECK_IDS = new Set(["KSV111"])
 const RBAC_ASSESSMENT_CHECK_IDS = new Set([
   ...Array.from({ length: 16 }, (_, i) => `KSV${String(i + 41).padStart(3, "0")}`),
@@ -1261,7 +1256,6 @@ const RBAC_ASSESSMENT_CHECK_IDS = new Set([
 interface FrameworkEvalContext {
   kubeSystemExcluded: boolean | "unknown"
   supportedConfigAuditKinds: ReadonlySet<string> | "unknown"
-  hasRoleBindingReports: boolean
   configAuditScannerEnabled: boolean | "unknown"
   rbacScannerEnabled: boolean | "unknown"
   infraScannerEnabled: boolean | "unknown"
@@ -1270,7 +1264,16 @@ interface FrameworkEvalContext {
   hasConfigAuditReports: boolean | "unknown"
   hasRbacReports: boolean | "unknown"
   hasInfraReports: boolean | "unknown"
+  configAuditPassedCheckIds: ReadonlySet<string>
+  kubeSystemPassedCheckIds: ReadonlySet<string>
+  bindingPassedCheckIds: ReadonlySet<string>
+  rbacPassedCheckIds: ReadonlySet<string>
+  infraPassedCheckIds: ReadonlySet<string>
+  infraMasterPassedCheckIds: ReadonlySet<string>
+  infraWorkerPassedCheckIds: ReadonlySet<string>
+  operatorConfigError: boolean
   hasHttpError: boolean
+  failedAuxSources: string[]
 }
 
 function parseCsvSet(raw: string | undefined): Set<string> {
@@ -1289,6 +1292,26 @@ function isControlPlaneNodeLabels(labels: Record<string, string> | undefined): b
     Object.hasOwn(labels, "node-role.kubernetes.io/control-plane") ||
     Object.hasOwn(labels, "node-role.kubernetes.io/master")
   )
+}
+
+function collectPassedCheckIds(items: readonly RawAuditReport[]): Set<string> {
+  const ids = new Set<string>()
+  for (const item of items) {
+    for (const check of item.report?.checks ?? []) {
+      if (check.success === true && typeof check.checkID === "string" && check.checkID.trim().length > 0) {
+        ids.add(normalizeCheckId(check.checkID))
+      }
+    }
+  }
+  return ids
+}
+
+function normalizeNodeType(raw: string | undefined): "master" | "worker" | null {
+  if (typeof raw !== "string") return null
+  const lower = raw.trim().toLowerCase()
+  if (lower === "master" || lower === "control-plane") return "master"
+  if (lower === "worker") return "worker"
+  return null
 }
 
 function buildFrameworkEvalContext(opts: {
@@ -1314,16 +1337,19 @@ function buildFrameworkEvalContext(opts: {
     rsOk,
   } = opts
 
-  const hasHttpError =
-    !rsOk ||
-    !configRes.ok ||
-    !rbacNsRes.ok ||
-    !rbacClusterRes.ok ||
-    !infraNsRes.ok ||
-    !infraClusterRes.ok ||
-    !nodesRes.ok ||
-    !operatorDeployRes.ok ||
-    !trivyConfigRes.ok
+  const failedAuxSources: string[] = []
+  if (!rsOk) failedAuxSources.push("replicasets")
+  if (!configRes.ok) failedAuxSources.push("configauditreports")
+  if (!rbacNsRes.ok) failedAuxSources.push("rbacassessmentreports")
+  if (!rbacClusterRes.ok) failedAuxSources.push("clusterrbacassessmentreports")
+  if (!infraNsRes.ok) failedAuxSources.push("infraassessmentreports")
+  if (!infraClusterRes.ok) failedAuxSources.push("clusterinfraassessmentreports")
+  if (!nodesRes.ok) failedAuxSources.push("nodes")
+  if (!operatorDeployRes.ok) failedAuxSources.push("deploy/trivy-operator")
+  if (!trivyConfigRes.ok) failedAuxSources.push("cm/trivy-operator-trivy-config")
+
+  const operatorConfigError = !operatorDeployRes.ok || !trivyConfigRes.ok
+  const hasHttpError = failedAuxSources.length > 0
 
   const configItems = configRes.ok ? configRes.data.items ?? [] : []
   const rbacItems = [
@@ -1349,7 +1375,7 @@ function buildFrameworkEvalContext(opts: {
     const targeted = parseCsvSet(operatorEnv.get("OPERATOR_TARGET_NAMESPACES"))
     kubeSystemExcluded =
       excluded.has("kube-system") || (targeted.size > 0 && !targeted.has("kube-system"))
-  } else if (configRes.ok) {
+  } else if (operatorDeployRes.ok && configRes.ok) {
     const hasKubeSystemReport = configItems.some((i) => i.metadata.namespace === "kube-system")
     kubeSystemExcluded = hasKubeSystemReport ? false : "unknown"
   }
@@ -1376,26 +1402,58 @@ function buildFrameworkEvalContext(opts: {
         )
       : "unknown"
 
-  const hasRoleBindingReports = configItems.some((i) => {
-    const kind = i.metadata.labels?.["trivy-operator.resource.kind"] ?? ""
-    return kind === "RoleBinding" || kind === "ClusterRoleBinding"
-  })
-
-  // Derive node role presence from /api/v1/nodes (current RBAC).
+  // Derive node roles and per-node-type mapping from /api/v1/nodes (current RBAC).
   let hasMasterNodes: boolean | "unknown" = "unknown"
   let hasWorkerNodes: boolean | "unknown" = "unknown"
-  if (nodesRes.ok && (nodesRes.data.items?.length ?? 0) > 0) {
-    const nodes = nodesRes.data.items!
-    const masterCount = nodes.filter((n) => isControlPlaneNodeLabels(n.metadata?.labels)).length
-    const workerCount = nodes.length - masterCount
+  const nodeRoleByName = new Map<string, "master" | "worker">()
+  if (nodesRes.ok && Array.isArray(nodesRes.data.items)) {
+    const nodes = nodesRes.data.items
+    let masterCount = 0
+    let workerCount = 0
+    for (const n of nodes) {
+      const role: "master" | "worker" = isControlPlaneNodeLabels(n.metadata?.labels) ? "master" : "worker"
+      if (role === "master") masterCount++
+      else workerCount++
+      if (typeof n.metadata?.name === "string" && n.metadata.name.length > 0) {
+        nodeRoleByName.set(n.metadata.name, role)
+      }
+    }
     hasMasterNodes = masterCount > 0
     hasWorkerNodes = workerCount > 0
   }
 
+  // D-HONEST-EVIDENCE: Positive per-check-ID evaluation evidence from each report kind and scope.
+  // Cost: one linear pass over report checks[]; Escape hatch: if trivy-operator enables
+  // report.recordFailedChecksOnly=false, passing checks populate checks[] automatically and
+  // flip verified controls to `passed` without changing portal code.
+  const configAuditPassedCheckIds = collectPassedCheckIds(configItems)
+  const kubeSystemPassedCheckIds = collectPassedCheckIds(
+    configItems.filter((i) => i.metadata.namespace === "kube-system"),
+  )
+  const bindingPassedCheckIds = collectPassedCheckIds(
+    configItems.filter((i) => {
+      const kind = i.metadata.labels?.["trivy-operator.resource.kind"] ?? ""
+      return kind === "RoleBinding" || kind === "ClusterRoleBinding"
+    }),
+  )
+  const rbacPassedCheckIds = collectPassedCheckIds(rbacItems)
+  const infraPassedCheckIds = collectPassedCheckIds(infraItems)
+  const infraMasterPassedCheckIds = collectPassedCheckIds(
+    infraItems.filter((i) => {
+      const nodeName = i.metadata.labels?.["trivy-operator.resource.name"] ?? ""
+      return nodeRoleByName.get(nodeName) === "master"
+    }),
+  )
+  const infraWorkerPassedCheckIds = collectPassedCheckIds(
+    infraItems.filter((i) => {
+      const nodeName = i.metadata.labels?.["trivy-operator.resource.name"] ?? ""
+      return nodeRoleByName.get(nodeName) === "worker"
+    }),
+  )
+
   return {
     kubeSystemExcluded,
     supportedConfigAuditKinds,
-    hasRoleBindingReports,
     configAuditScannerEnabled: parseScannerFlag("OPERATOR_CONFIG_AUDIT_SCANNER_ENABLED"),
     rbacScannerEnabled: parseScannerFlag("OPERATOR_RBAC_ASSESSMENT_SCANNER_ENABLED"),
     infraScannerEnabled: parseScannerFlag("OPERATOR_INFRA_ASSESSMENT_SCANNER_ENABLED"),
@@ -1404,7 +1462,16 @@ function buildFrameworkEvalContext(opts: {
     hasConfigAuditReports: configRes.ok ? configItems.length > 0 : "unknown",
     hasRbacReports: rbacNsRes.ok && rbacClusterRes.ok ? rbacItems.length > 0 : "unknown",
     hasInfraReports: infraNsRes.ok && infraClusterRes.ok ? infraItems.length > 0 : "unknown",
+    configAuditPassedCheckIds,
+    kubeSystemPassedCheckIds,
+    bindingPassedCheckIds,
+    rbacPassedCheckIds,
+    infraPassedCheckIds,
+    infraMasterPassedCheckIds,
+    infraWorkerPassedCheckIds,
+    operatorConfigError,
     hasHttpError,
+    failedAuxSources,
   }
 }
 
@@ -1419,14 +1486,6 @@ function classifyNonFailingControl(
   notEvaluatedDetail?: string
 } {
   const checks = resultControl.checks ?? []
-  // Explicit passing check with a real non-empty checkID is direct evidence of evaluation.
-  const hasExplicitPassCheck = checks.some(
-    (k) => k.success === true && typeof k.checkID === "string" && k.checkID.trim().length > 0,
-  )
-  if (hasExplicitPassCheck) {
-    return { evaluationState: "passed" }
-  }
-
   if (checks.length === 0) {
     return {
       evaluationState: "not_evaluated",
@@ -1435,19 +1494,38 @@ function classifyNonFailingControl(
     }
   }
 
+  // Explicit passing check IDs emitted directly in detailReport.results[].checks[].
+  // Note: Trivy emits `{ checkID: "", success: true }` placeholders for non-failing controls;
+  // empty checkIDs are NEVER positive evidence.
+  const explicitPassedIds = new Set<string>()
+  for (const k of checks) {
+    if (k.success === true && typeof k.checkID === "string" && k.checkID.trim().length > 0) {
+      explicitPassedIds.add(normalizeCheckId(k.checkID))
+    }
+  }
+
   if (!specControl) {
+    if (explicitPassedIds.size > 0 && !evalCtx.operatorConfigError) {
+      return { evaluationState: "passed" }
+    }
     return {
       evaluationState: "not_evaluated",
       notEvaluatedReason: "coverage_unknown",
-      notEvaluatedDetail: "spec.compliance.controls[] metadata unavailable",
+      notEvaluatedDetail: evalCtx.operatorConfigError
+        ? "auxiliary operator config lookup failed"
+        : "spec.compliance.controls[] metadata unavailable",
     }
   }
 
   // Kubernetes YAML serialization (`omitempty`) drops empty `checks` on manual controls
   // (e.g. CIS 3.1.1, NSA 3.0). When other controls in the same benchmark carry spec checks
   // and this control has neither checks nor commands, classify it as `manual` rather than
-  // `coverage_unknown`; if no control carries `spec.checks` (trimmed fixture), fail closed.
+  // `coverage_unknown`; if no control carries `spec.checks` (trimmed fixture), fail closed
+  // unless detailReport.results[].checks carried explicit non-empty passing check IDs.
   if (!Array.isArray(specControl.checks)) {
+    if (explicitPassedIds.size > 0 && !evalCtx.operatorConfigError) {
+      return { evaluationState: "passed" }
+    }
     const hasCommands = Array.isArray(specControl.commands) && specControl.commands.length > 0
     if (specHasAutomatedChecks && !hasCommands) {
       return {
@@ -1459,7 +1537,9 @@ function classifyNonFailingControl(
     return {
       evaluationState: "not_evaluated",
       notEvaluatedReason: "coverage_unknown",
-      notEvaluatedDetail: "spec.compliance.controls[].checks metadata unavailable",
+      notEvaluatedDetail: evalCtx.operatorConfigError
+        ? "auxiliary operator config lookup failed"
+        : "spec.compliance.controls[].checks metadata unavailable",
     }
   }
 
@@ -1490,42 +1570,71 @@ function classifyNonFailingControl(
     }
   }
 
-  const cmdIds = (specControl.commands ?? []).map((c) => (c.id ?? "").trim().toUpperCase()).filter(Boolean)
+  const cmdList = specControl.commands ?? []
+  const cmdIds = cmdList.map((c) => (c.id ?? "").trim().toUpperCase()).filter(Boolean)
   const normIds = rawIds.map(normalizeCheckId)
 
-  // Check node-level commands/IDs (Case b).
-  const isWorkerNodeCtrl =
-    cmdIds.some((id) => WORKER_COMMAND_RE.test(id)) || normIds.some((id) => WORKER_NODE_CHECK_IDS.has(id))
-  const isMasterNodeCtrl =
-    cmdIds.some((id) => MASTER_COMMAND_RE.test(id)) || normIds.some((id) => MASTER_NODE_CHECK_IDS.has(id))
+  const checkEvidence = (
+    reportPassedIds: ReadonlySet<string>,
+    reportKindLabel: string,
+  ): {
+    evaluationState: ControlEvaluationState
+    notEvaluatedReason?: ControlNotEvaluatedReason
+    notEvaluatedDetail?: string
+  } => {
+    const missing = normIds.filter((id) => !reportPassedIds.has(id) && !explicitPassedIds.has(id))
+    if (missing.length === 0) {
+      return { evaluationState: "passed" }
+    }
+    return {
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "no_evidence_in_report",
+      notEvaluatedDetail: `no evidence in ${reportKindLabel} for ${missing.join(", ")}`,
+    }
+  }
 
-  if (isWorkerNodeCtrl) {
+  // Node / Infra controls: identified by collector commands[] or non-control-plane KCV IDs.
+  // D-NODE-APPLICABILITY: Never infer worker-only vs master-only from CIS section numbers
+  // (e.g. 4.1.5 / KCV0073 applies to control-plane nodes too). Apply node-type gating ONLY when
+  // explicit `nodeType` metadata is present on spec/command data (or when the cluster has zero
+  // nodes); otherwise fall back to positive per-check evidence in InfraAssessmentReport.
+  const isNodeInfraCtrl =
+    cmdIds.length > 0 || normIds.some((id) => /^KCV\d+$/.test(id) && !CONTROL_PLANE_CHECK_IDS.has(id))
+
+  if (isNodeInfraCtrl) {
     if (evalCtx.infraScannerEnabled === false) {
       return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "infraAssessmentScannerEnabled=false" }
     }
-    if (evalCtx.hasWorkerNodes === false) {
+    const declaredNodeTypes = new Set<"master" | "worker">()
+    const ctrlNodeType = normalizeNodeType(specControl.nodeType)
+    if (ctrlNodeType) declaredNodeTypes.add(ctrlNodeType)
+    for (const cmd of cmdList) {
+      const nt = normalizeNodeType(cmd.nodeType)
+      if (nt) declaredNodeTypes.add(nt)
+    }
+
+    if (evalCtx.hasMasterNodes === false && evalCtx.hasWorkerNodes === false) {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type", notEvaluatedDetail: "no nodes on cluster" }
+    }
+    if (declaredNodeTypes.size === 1 && declaredNodeTypes.has("worker") && evalCtx.hasWorkerNodes === false) {
       return { evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type", notEvaluatedDetail: "no worker nodes on cluster" }
     }
-    if (evalCtx.hasWorkerNodes === "unknown" || evalCtx.hasInfraReports !== true) {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "worker node / infra report coverage unknown" }
-    }
-    return { evaluationState: "passed" }
-  }
-
-  if (isMasterNodeCtrl) {
-    if (evalCtx.infraScannerEnabled === false) {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "infraAssessmentScannerEnabled=false" }
-    }
-    if (evalCtx.hasMasterNodes === false) {
+    if (declaredNodeTypes.size === 1 && declaredNodeTypes.has("master") && evalCtx.hasMasterNodes === false) {
       return { evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type", notEvaluatedDetail: "no control-plane nodes on cluster" }
     }
-    if (evalCtx.hasMasterNodes === "unknown" || evalCtx.hasInfraReports !== true) {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "control-plane node / infra report coverage unknown" }
+    if (evalCtx.operatorConfigError || evalCtx.hasInfraReports === "unknown" || evalCtx.hasMasterNodes === "unknown") {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "node / infra report or operator config lookup failed" }
     }
-    return { evaluationState: "passed" }
+    const scopedInfraIds =
+      declaredNodeTypes.size === 1 && declaredNodeTypes.has("worker")
+        ? evalCtx.infraWorkerPassedCheckIds
+        : declaredNodeTypes.size === 1 && declaredNodeTypes.has("master")
+          ? evalCtx.infraMasterPassedCheckIds
+          : evalCtx.infraPassedCheckIds
+    return checkEvidence(scopedInfraIds, "InfraAssessmentReport")
   }
 
-  // Case (a): excluded namespaces (kube-system control-plane static pods KCV0001..0047 & KSV037).
+  // Control-plane static pods in kube-system (KCV0001..0047 & KSV037).
   const needsKubeSystem = normIds.some((id) => CONTROL_PLANE_CHECK_IDS.has(id))
   if (needsKubeSystem) {
     if (evalCtx.configAuditScannerEnabled === false) {
@@ -1534,13 +1643,13 @@ function classifyNonFailingControl(
     if (evalCtx.kubeSystemExcluded === true) {
       return { evaluationState: "not_evaluated", notEvaluatedReason: "excluded_namespace", notEvaluatedDetail: "kube-system excluded by OPERATOR_EXCLUDE_NAMESPACES" }
     }
-    if (evalCtx.kubeSystemExcluded === "unknown" || evalCtx.hasConfigAuditReports === "unknown") {
+    if (evalCtx.operatorConfigError || evalCtx.kubeSystemExcluded === "unknown" || evalCtx.hasConfigAuditReports === "unknown") {
       return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "kube-system ConfigAudit coverage unknown" }
     }
-    return { evaluationState: "passed" }
+    return checkEvidence(evalCtx.kubeSystemPassedCheckIds, "kube-system ConfigAuditReport")
   }
 
-  // Case (a): unsupported ConfigAudit resource kinds (e.g. RoleBinding / ClusterRoleBinding for KSV111).
+  // Binding ConfigAudit checks (RoleBinding / ClusterRoleBinding for KSV111).
   const needsBindings = normIds.some((id) => BINDING_CONFIG_AUDIT_CHECK_IDS.has(id))
   if (needsBindings) {
     if (evalCtx.configAuditScannerEnabled === false) {
@@ -1557,37 +1666,37 @@ function classifyNonFailingControl(
           notEvaluatedDetail: "RoleBinding/ClusterRoleBinding omitted from trivy.supportedConfigAuditKinds",
         }
       }
-      return { evaluationState: "passed" }
     }
-    if (!evalCtx.hasRoleBindingReports) {
+    if (evalCtx.operatorConfigError || evalCtx.supportedConfigAuditKinds === "unknown" || evalCtx.hasConfigAuditReports === "unknown") {
       return {
         evaluationState: "not_evaluated",
-        notEvaluatedReason: "unsupported_kind",
-        notEvaluatedDetail: "no RoleBinding/ClusterRoleBinding ConfigAuditReport present (config unknown)",
+        notEvaluatedReason: "coverage_unknown",
+        notEvaluatedDetail: "RoleBinding/ClusterRoleBinding ConfigAudit coverage unknown",
       }
     }
-    return { evaluationState: "passed" }
+    return checkEvidence(evalCtx.bindingPassedCheckIds, "RoleBinding/ClusterRoleBinding ConfigAuditReport")
   }
 
-  // Remaining RBAC checks (Role / ClusterRole) vs ConfigAudit checks (Workload/NetworkPolicy/LimitRange/ResourceQuota).
+  // RBAC checks (Role / ClusterRole).
   const isRbacCtrl = normIds.every((id) => RBAC_ASSESSMENT_CHECK_IDS.has(id))
   if (isRbacCtrl) {
     if (evalCtx.rbacScannerEnabled === false) {
       return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "rbacAssessmentScannerEnabled=false" }
     }
-    if (evalCtx.hasRbacReports !== true) {
-      return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "RBAC assessment report coverage unknown" }
+    if (evalCtx.operatorConfigError || evalCtx.hasRbacReports === "unknown") {
+      return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "RBAC assessment report or operator config lookup failed" }
     }
-    return { evaluationState: "passed" }
+    return checkEvidence(evalCtx.rbacPassedCheckIds, "RbacAssessmentReport")
   }
 
+  // General ConfigAudit checks (and any unknown check IDs such as AVD-KSV-9999).
   if (evalCtx.configAuditScannerEnabled === false) {
     return { evaluationState: "not_evaluated", notEvaluatedReason: "scanner_disabled", notEvaluatedDetail: "configAuditScannerEnabled=false" }
   }
-  if (evalCtx.hasConfigAuditReports !== true) {
-    return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "ConfigAudit report coverage unknown" }
+  if (evalCtx.operatorConfigError || evalCtx.hasConfigAuditReports === "unknown") {
+    return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "ConfigAudit report or operator config lookup failed" }
   }
-  return { evaluationState: "passed" }
+  return checkEvidence(evalCtx.configAuditPassedCheckIds, "ConfigAuditReport")
 }
 
 function buildComplianceFrameworkData(
@@ -1671,6 +1780,27 @@ function buildComplianceFrameworkData(
         description: c.description,
       }
     })
+    // Materialise any spec control omitted from status.detailReport.results so it stays visible
+    // in the UI and in notEvaluatedCount instead of silently disappearing.
+    const detailControlIds = new Set(detailControls.map((c) => c.id))
+    for (const sc of specControls) {
+      if (detailControlIds.has(sc.id)) continue
+      controls.push({
+        id: sc.id,
+        name: sc.name,
+        severity: mapSeverity(sc.severity),
+        passCount: 0,
+        failCount: 0,
+        actionableFailCount: 0,
+        acceptedFailCount: 0,
+        droppedFailCount: 0,
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "absent_from_report",
+        notEvaluatedDetail: "absent from status.detailReport.results",
+        accepted: false,
+        description: sc.description,
+      })
+    }
   } else {
     controls = specControls.map((c) => ({
       id: c.id,
@@ -1697,7 +1827,7 @@ function buildComplianceFrameworkData(
   let notEvaluatedCount: number
   let unaccountedFailTotal = 0
 
-  const totalControls = specControls.length || controls.length || passCount + failCount
+  const totalControls = Math.max(controls.length, specControls.length) || passCount + failCount
 
   if (detailControls.length > 0) {
     const detailFailControls = controls.filter((c) => c.failCount > 0).length
@@ -1834,6 +1964,7 @@ interface FrameworksWithMeta {
   lastUpdated: string | null
   oldestUpdated: string | null
   partial: boolean
+  partialSources: string[]
 }
 
 async function fetchComplianceFrameworksWithMeta(): Promise<FrameworksWithMeta> {
@@ -1853,6 +1984,7 @@ async function fetchComplianceFrameworksWithMeta(): Promise<FrameworksWithMeta> 
     lastUpdated: newest,
     oldestUpdated: oldest,
     partial: evalCtx.hasHttpError,
+    partialSources: evalCtx.failedAuxSources,
   }
 }
 
@@ -1929,7 +2061,9 @@ export async function getComplianceSummary(): Promise<ComplianceSummary> {
             status: "ok",
             lastUpdated: carRes.value.lastUpdated,
             oldestUpdated: carRes.value.oldestUpdated,
-            ...(carRes.value.partial ? { partial: true } : {}),
+            ...(carRes.value.partial
+              ? { partial: true, partialSources: carRes.value.partialSources }
+              : {}),
           }
         : {
             status: "unavailable",
@@ -1969,7 +2103,9 @@ export async function getComplianceSummary(): Promise<ComplianceSummary> {
             lastUpdated: fwRes.value.lastUpdated,
             oldestUpdated: fwRes.value.oldestUpdated,
             rebuildIntervalHours: 6,
-            ...(fwRes.value.partial ? { partial: true } : {}),
+            ...(fwRes.value.partial
+              ? { partial: true, partialSources: fwRes.value.partialSources }
+              : {}),
           }
         : {
             status: "unavailable",
@@ -2065,6 +2201,7 @@ export async function getComplianceSummary(): Promise<ComplianceSummary> {
     lastUpdated,
     sources,
     dataUnavailable,
+    ...(hasPartial ? { partial: true } : {}),
   }
 
   // Never cache failed or partial results as a valid snapshot (cache-keys contract: cachesPartial=false).

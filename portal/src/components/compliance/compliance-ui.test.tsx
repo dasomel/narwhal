@@ -389,8 +389,9 @@ describe("Compliance UI accepted exceptions", () => {
       lastUpdated: new Date().toISOString(),
     }
     const countersHtml = renderToStaticMarkup(<FailureCounters summary={summaryWithFw} locale="en" />)
-    expect(countersHtml).toContain("76.8%")
-    expect(countersHtml).toContain("Exception-adjusted pass rate: 99.1%")
+    expect(countersHtml).toContain("83.2%")
+    expect(countersHtml).toContain("(119/143)")
+    expect(countersHtml).toContain("Exception-adjusted pass rate: 98.6% (141/143)")
     expect(countersHtml).toContain("2 actionable · 22 accepted")
 
     vi.mocked(useQuery).mockReturnValue({
@@ -794,5 +795,184 @@ describe("Compliance UI accepted exceptions", () => {
     expect(detailHtml).not.toContain("Accepted (upstream)")
     expect(detailHtml).toContain("High")
     expect(detailHtml).toContain("Low")
+  })
+
+  it("computes pooled aggregate pass rates with numerator/denominator labels and never prints 100% when any control is not evaluated or actionable", async () => {
+    const frameworks: ComplianceFramework[] = [
+      {
+        id: "k8s-cis-1.23",
+        title: "CIS Benchmark",
+        passCount: 102,
+        evaluatedPassCount: 0,
+        notEvaluatedCount: 102,
+        failCount: 14,
+        actionableFailCount: 1,
+        acceptedFailCount: 13,
+        totalControls: 116,
+        passRate: 102 / 116,
+        evaluatedPassRate: 0,
+        effectivePassRate: 13 / 116,
+      },
+      {
+        id: "k8s-kisa-1.0",
+        title: "KISA",
+        passCount: 3,
+        evaluatedPassCount: 0,
+        notEvaluatedCount: 3,
+        failCount: 4,
+        actionableFailCount: 0,
+        acceptedFailCount: 4,
+        totalControls: 7,
+        passRate: 3 / 7,
+        evaluatedPassRate: 0,
+        effectivePassRate: 4 / 7,
+      },
+      {
+        id: "k8s-nsa-1.0",
+        title: "NSA",
+        passCount: 18,
+        evaluatedPassCount: 0,
+        notEvaluatedCount: 18,
+        failCount: 9,
+        actionableFailCount: 0,
+        acceptedFailCount: 9,
+        totalControls: 27,
+        passRate: 18 / 27,
+        evaluatedPassRate: 0,
+        effectivePassRate: 9 / 27,
+      },
+      {
+        id: "k8s-pss-baseline-0.1",
+        title: "PSS Baseline",
+        passCount: 8,
+        evaluatedPassCount: 0,
+        notEvaluatedCount: 8,
+        failCount: 3,
+        actionableFailCount: 0,
+        acceptedFailCount: 3,
+        totalControls: 11,
+        passRate: 8 / 11,
+        evaluatedPassRate: 0,
+        effectivePassRate: 3 / 11,
+      },
+      {
+        id: "k8s-pss-restricted-0.1",
+        title: "PSS Restricted",
+        passCount: 14,
+        evaluatedPassCount: 0,
+        notEvaluatedCount: 14,
+        failCount: 3,
+        actionableFailCount: 0,
+        acceptedFailCount: 3,
+        totalControls: 17,
+        passRate: 14 / 17,
+        evaluatedPassRate: 0,
+        effectivePassRate: 3 / 17,
+      },
+    ]
+
+    const pooledSummary: ComplianceSummary = {
+      totalConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      lowSeverityConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedSystemConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      frameworks,
+      scannedWorkloads: 183,
+      scannedRbacObjects: 189,
+      scannedNodes: 1,
+      lastUpdated: new Date().toISOString(),
+    }
+
+    const countersHtml = renderToStaticMarkup(<FailureCounters summary={pooledSummary} locale="en" />)
+    // Pooled raw = 145/178 = 81.46% -> 81.4% (not unweighted 70.5%)
+    expect(countersHtml).toContain("81.4% (145/178)")
+    expect(countersHtml).toContain("0.0%")
+    expect(countersHtml).toContain("(0/178)")
+    expect(countersHtml).toContain("17.9% (32/178)")
+    expect(countersHtml).not.toContain("70.5%")
+
+    // 100% leak check: a framework whose raw passCount === totalControls (100% placeholders)
+    // with notEvaluatedCount > 0 MUST NEVER display "100%" in summary, grid, or detail page.
+    const allPlaceholderFw: ComplianceFramework = {
+      id: "all-placeholder",
+      title: "All Placeholder",
+      passCount: 10,
+      evaluatedPassCount: 0,
+      notEvaluatedCount: 10,
+      failCount: 0,
+      actionableFailCount: 0,
+      acceptedFailCount: 0,
+      totalControls: 10,
+      passRate: 1,
+      evaluatedPassRate: 0,
+      effectivePassRate: 0,
+    }
+
+    const leakSummaryHtml = renderToStaticMarkup(
+      <FailureCounters summary={{ ...pooledSummary, frameworks: [allPlaceholderFw] }} locale="en" />,
+    )
+    expect(leakSummaryHtml).toContain("99.9% (10/10)")
+    expect(leakSummaryHtml).not.toContain("100%")
+
+    vi.mocked(useQuery).mockReturnValue({
+      data: [allPlaceholderFw],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never)
+    const leakGridHtml = renderToStaticMarkup(
+      <LocaleProvider locale="en">
+        <FrameworksGrid />
+      </LocaleProvider>,
+    )
+    expect(leakGridHtml).toContain("99.9% (10/10)")
+    expect(leakGridHtml).not.toContain("100%")
+
+    mockGetLocale.mockResolvedValue("en")
+    mockGetComplianceFrameworkDetail.mockResolvedValue({ ...allPlaceholderFw, controls: [] })
+    const leakDetailEl = await FrameworkDetailPage({ params: Promise.resolve({ id: "all-placeholder" }) })
+    const leakDetailHtml = renderToStaticMarkup(leakDetailEl)
+    expect(leakDetailHtml).toContain("99.9% (10/10)")
+    expect(leakDetailHtml).not.toContain("100%")
+  })
+
+  it("renders visible partial-data notice naming failed auxiliary sources", () => {
+    const now = new Date().toISOString()
+    const partialSummary: ComplianceSummary = {
+      totalConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      lowSeverityConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedSystemConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      acceptedInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+      frameworks: [],
+      scannedWorkloads: 10,
+      scannedRbacObjects: 5,
+      scannedNodes: 1,
+      lastUpdated: now,
+      dataUnavailable: false,
+      partial: true,
+      sources: {
+        configAudit: { status: "ok", lastUpdated: now, partial: true, partialSources: ["replicasets"] },
+        rbac: { status: "ok", lastUpdated: now },
+        infra: { status: "ok", lastUpdated: now, rebuildIntervalHours: 6 },
+        frameworks: {
+          status: "ok",
+          lastUpdated: now,
+          rebuildIntervalHours: 6,
+          partial: true,
+          partialSources: ["deploy/trivy-operator", "cm/trivy-operator-trivy-config"],
+        },
+      },
+    }
+
+    const htmlEn = renderToStaticMarkup(<FailureCounters summary={partialSummary} locale="en" />)
+    expect(htmlEn).toContain("Partial compliance metadata")
+    expect(htmlEn).toContain("Config Audit (replicasets)")
+    expect(htmlEn).toContain("Frameworks (deploy/trivy-operator, cm/trivy-operator-trivy-config)")
   })
 })

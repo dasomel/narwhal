@@ -952,7 +952,10 @@ export const ko = {
   "compliance.framework.notEvaluatedReason.scanner_disabled": "해당 Trivy 스캐너 비활성화",
   "compliance.framework.notEvaluatedReason.summary_only": "요약 전용 리포트 (컨트롤별 결과 없음)",
   "compliance.framework.notEvaluatedReason.empty_checks": "점검 결과 비어 있음",
+  "compliance.framework.notEvaluatedReason.no_evidence_in_report": "리포트 내 개별 평가 증거 없음 (checks[]에 해당 검사 ID 통과 기록 부재)",
+  "compliance.framework.notEvaluatedReason.absent_from_report": "리포트 결과 누락 (스펙에 정의되었으나 detailReport.results에 없음)",
   "compliance.framework.notEvaluatedReason.coverage_unknown": "커버리지 확인 불가 (설정·노드·리포트 조회 실패 또는 스펙 누락)",
+  "compliance.framework.coverageUnknownNotice": "보조 메타데이터(오퍼레이터 설정·노드·리포트) 일부 조회 실패로 미확인 컨트롤이 미평가 처리되었습니다.",
   "compliance.framework.rawSummary": "원본 실패 {fail} (원본 통과율 {rate}%)",
   "compliance.framework.rawChecks": "원본 {count}",
   "compliance.framework.exceptionsDocLink": "위험 수용 예외 문서",
@@ -995,6 +998,8 @@ export const ko = {
   "compliance.summary.lastUpdated": "마지막 업데이트",
   "compliance.summary.rebuildNote": "컴플라이언스 프레임워크·인프라 리포트는 6시간마다 재집계됩니다.",
   "compliance.summary.sourceUnavailable": "조회 불가",
+  "compliance.summary.sourcePartial": "부분 조회",
+  "compliance.summary.partialNotice": "일부 보조 메타데이터 조회 실패로 결과가 부분 상태입니다(캐시 안 됨): {sources}",
   "compliance.summary.sourceEmpty": "리포트 없음",
   "compliance.summary.ageRange": "{newest} (최장 {oldest})",
   "compliance.detail.title": "감사 상세",
@@ -2469,7 +2474,10 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.framework.notEvaluatedReason.scanner_disabled": "Scanner disabled in trivy-operator config",
   "compliance.framework.notEvaluatedReason.summary_only": "Summary-only report (no per-control results)",
   "compliance.framework.notEvaluatedReason.empty_checks": "Control checks array is empty",
+  "compliance.framework.notEvaluatedReason.no_evidence_in_report": "No evidence in report (check ID not listed as evaluated in checks[])",
+  "compliance.framework.notEvaluatedReason.absent_from_report": "Absent from report (present in spec, missing from detailReport.results)",
   "compliance.framework.notEvaluatedReason.coverage_unknown": "Coverage unknown (config/node/report lookup failed or spec missing)",
+  "compliance.framework.coverageUnknownNotice": "Some auxiliary metadata (operator config/nodes/reports) failed to load; unverified controls are marked not evaluated.",
   "compliance.framework.rawSummary": "Raw failed {fail} (raw pass rate {rate}%)",
   "compliance.framework.rawChecks": "raw {count}",
   "compliance.framework.exceptionsDocLink": "Risk-accepted exceptions doc",
@@ -2512,6 +2520,8 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.summary.lastUpdated": "Last updated",
   "compliance.summary.rebuildNote": "Compliance framework & infra reports rebuild every 6 hours.",
   "compliance.summary.sourceUnavailable": "Unavailable",
+  "compliance.summary.sourcePartial": "Partial",
+  "compliance.summary.partialNotice": "Partial compliance metadata (not cached) — auxiliary lookup failed for: {sources}",
   "compliance.summary.sourceEmpty": "No reports",
   "compliance.summary.ageRange": "{newest} (oldest {oldest})",
   "compliance.detail.title": "Audit Detail",
@@ -3077,6 +3087,10 @@ export function translateNotEvaluatedReason(locale: Locale, reason?: string): st
       return t(locale, "compliance.framework.notEvaluatedReason.summary_only")
     case "empty_checks":
       return t(locale, "compliance.framework.notEvaluatedReason.empty_checks")
+    case "no_evidence_in_report":
+      return t(locale, "compliance.framework.notEvaluatedReason.no_evidence_in_report")
+    case "absent_from_report":
+      return t(locale, "compliance.framework.notEvaluatedReason.absent_from_report")
     default:
       return t(locale, "compliance.framework.notEvaluatedReason.coverage_unknown")
   }

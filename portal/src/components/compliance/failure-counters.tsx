@@ -20,10 +20,9 @@ function relativeTime(iso: string, locale: Locale): string {
   return t(locale, "audit.daysAgo", { days })
 }
 
-function avgRate(frameworks: ComplianceSummary["frameworks"], pick: (f: ComplianceSummary["frameworks"][number]) => number): number {
-  if (!frameworks.length) return 0
-  const sum = frameworks.reduce((acc, f) => acc + pick(f), 0)
-  return sum / frameworks.length
+function pooledRatio(numerator: number, denominator: number): number {
+  if (denominator <= 0) return 0
+  return Math.max(0, Math.min(1, numerator / denominator))
 }
 
 const counterConfig = [
@@ -102,24 +101,41 @@ export function FailureCounters({ summary, locale }: Props) {
     0,
   )
 
+  const totalControlsAll = summary.frameworks.reduce((acc, f) => acc + f.totalControls, 0)
+  const rawPassTotal = summary.frameworks.reduce((acc, f) => acc + f.passCount, 0)
+  const effectivePassTotal = summary.frameworks.reduce(
+    (acc, f) => acc + Math.round((f.effectivePassRate ?? f.passRate) * f.totalControls),
+    0,
+  )
+  const hasCoverageUnknown = summary.frameworks.some((f) => Boolean(f.coverageUnknown))
+
   const hasActionableControls = actionableControlsTotal > 0
-  const hasNotEvaluatedControls = notEvaluatedTotal > 0
+  const hasNotEvaluatedControls = notEvaluatedTotal > 0 || hasCoverageUnknown
 
-  const evaluatedAvg = avgRate(summary.frameworks, (f) => f.evaluatedPassRate ?? f.passRate)
-  const rawAvg = avgRate(summary.frameworks, (f) => f.passRate)
-  const effectiveAvg = avgRate(summary.frameworks, (f) => f.effectivePassRate ?? f.passRate)
+  const evaluatedPooled = pooledRatio(evaluatedPassTotal, totalControlsAll)
+  const rawPooled = pooledRatio(rawPassTotal, totalControlsAll)
+  const effectivePooled = pooledRatio(effectivePassTotal, totalControlsAll)
 
-  const evaluatedPassRateText = formatPassRatePct(evaluatedAvg, {
+  const evaluatedPassRateText = formatPassRatePct(evaluatedPooled, {
     hasActionableFail: hasActionableControls,
     hasNotEvaluated: hasNotEvaluatedControls,
   })
-  const rawPassRateText = formatPassRatePct(rawAvg, {
-    hasActionableFail: rawControlsTotal > 0,
+  const rawPassRateText = formatPassRatePct(rawPooled, {
+    hasActionableFail: rawControlsTotal > 0 || hasActionableControls,
+    hasNotEvaluated: hasNotEvaluatedControls,
   })
-  const effectivePassRateText = formatPassRatePct(effectiveAvg, {
+  const effectivePassRateText = formatPassRatePct(effectivePooled, {
     hasActionableFail: hasActionableControls,
     hasNotEvaluated: hasNotEvaluatedControls,
   })
+
+  const partialSourceLabels: string[] = sources
+    ? SOURCE_KEYS.filter((k) => Boolean(sources[k]?.partial)).map((k) => {
+        const label = sourceLabelText(k, locale)
+        const details = sources[k]?.partialSources
+        return details && details.length > 0 ? `${label} (${details.join(", ")})` : label
+      })
+    : []
 
   const values: Record<(typeof counterConfig)[number]["key"], string> = {
     configAudit: isUnavailable("configAudit")
@@ -158,8 +174,16 @@ export function FailureCounters({ summary, locale }: Props) {
           const unavailable = isUnavailable(key)
           return (
             <div key={key} className={`rounded-lg border p-4 ${bg}`}>
-              <div className={`${unavailable ? "text-base text-destructive" : `text-2xl ${color}`} font-bold`}>
+              <div
+                className={`${unavailable ? "text-base text-destructive" : `text-2xl ${color}`} font-bold`}
+                title={!unavailable && key === "frameworks" ? `${evaluatedPassTotal}/${totalControlsAll}` : undefined}
+              >
                 {values[key]}
+                {!unavailable && key === "frameworks" && totalControlsAll > 0 && (
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                    ({evaluatedPassTotal}/{totalControlsAll})
+                  </span>
+                )}
               </div>
               <div className="text-xs font-medium text-muted-foreground mt-1">{t(locale, labelKey)}</div>
               {!unavailable && key === "configAudit" && (unacceptedLowTotal > 0 || acceptedLowTotal > 0 || acceptedSystemTotal > 0 || droppedReports > 0) && (
@@ -198,8 +222,13 @@ export function FailureCounters({ summary, locale }: Props) {
               {!unavailable && key === "frameworks" && (
                 <div className="text-[0.7rem] text-muted-foreground/80 mt-0.5 space-y-0.5">
                   <div>
-                    {t(locale, "compliance.counter.frameworksRawRate")}: {rawPassRateText} ·{" "}
-                    {t(locale, "compliance.counter.frameworksEffectiveRate")}: {effectivePassRateText}
+                    <span title={`${rawPassTotal}/${totalControlsAll}`}>
+                      {t(locale, "compliance.counter.frameworksRawRate")}: {rawPassRateText} ({rawPassTotal}/{totalControlsAll})
+                    </span>{" "}
+                    ·{" "}
+                    <span title={`${effectivePassTotal}/${totalControlsAll}`}>
+                      {t(locale, "compliance.counter.frameworksEffectiveRate")}: {effectivePassRateText} ({effectivePassTotal}/{totalControlsAll})
+                    </span>
                   </div>
                   {(acceptedControlsTotal > 0 || rawControlsTotal !== actionableControlsTotal || notEvaluatedTotal > 0) && (
                     <div>
@@ -269,6 +298,11 @@ export function FailureCounters({ summary, locale }: Props) {
                 >
                   {text}
                 </span>
+                {src.partial && (
+                  <span className="ml-1 text-amber-700 dark:text-amber-400">
+                    ({t(locale, "compliance.summary.sourcePartial")})
+                  </span>
+                )}
               </span>
             )
           })}
@@ -283,6 +317,16 @@ export function FailureCounters({ summary, locale }: Props) {
             </span>
           </span>
           <span className="text-muted-foreground/80">{t(locale, "compliance.summary.rebuildNote")}</span>
+        </div>
+      )}
+      {(partialSourceLabels.length > 0 || summary.partial) && (
+        <div
+          role="status"
+          className="rounded-md border border-amber-300/80 bg-amber-50/70 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-300"
+        >
+          {t(locale, "compliance.summary.partialNotice", {
+            sources: partialSourceLabels.join(", ") || sourceLabelText("frameworks", locale),
+          })}
         </div>
       )}
     </div>

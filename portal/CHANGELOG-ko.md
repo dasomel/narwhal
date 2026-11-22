@@ -11,11 +11,11 @@
 
 ### 변경
 
-- **Compliance 정직한 3-상태 판정 및 조회 실패 구분 표시 (`src/lib/compliance.ts`, `src/types/compliance.ts`, `src/components/compliance/*`, `src/app/api/compliance/*`, `src/app/(dashboard)/compliance/*`, `src/lib/i18n.ts`):**
-  - Trivy가 미실행 컨트롤에 남기는 `{ checkID: "", success: true }` 플레이스홀더를 무조건 통과로 집계하던 문제를 수정해 `passed` / `failed` / `not_evaluated` 3-상태로 분리하고, 현행 RBAC 내 `nodes`·`deploy/trivy-operator`·`cm/trivy-operator-trivy-config`·리포트 목록을 근거로 사유(`excluded_namespace`, `unsupported_kind`, `missing_node_type`, `unlinked_check_id`, `manual`, `scanner_disabled`, `summary_only`, `empty_checks`, `coverage_unknown`)를 fail-closed로 표시합니다.
-  - `formatPassRatePct`를 도입해 잔여 조치가능 실패나 미평가 컨트롤이 있을 때 통과율을 소수 1자리 버림·상한 `99.9%`로 제한하고, 평가 통과율(`evaluatedPassRate`)·원본 통과율(`passRate`)·`예외 반영 통과율`(`effectivePassRate`)·`notEvaluatedCount`를 함께 노출합니다.
+- **Compliance 정직한 3-상태 판정 및 조회 실패 구분 표시 (`src/lib/compliance.ts`, `src/lib/kisa.ts`, `src/types/compliance.ts`, `src/components/compliance/*`, `src/app/api/compliance/*`, `src/app/(dashboard)/compliance/*`, `src/lib/i18n.ts`):**
+  - Trivy가 미실행 컨트롤에 남기는 `{ checkID: "", success: true }` 플레이스홀더를 통과로 집계하던 문제를 수정해 `passed` / `failed` / `not_evaluated` 3-상태로 분리하고, 해당 리포트 종류·범위의 `checks[]` 양성 통과 증거가 모든 검사 ID에 존재할 때만 `passed`를 허용합니다(`no_evidence_in_report`, `absent_from_report`, `coverage_unknown`, `excluded_namespace`, `unsupported_kind`, 스펙 `nodeType` 기반 `missing_node_type`, `unlinked_check_id`, `manual`, `scanner_disabled`, `summary_only`, `empty_checks`).
+  - 요약 프레임워크 통과율을 분자/분모 라벨 포함 풀링 비율로 계산하고 모든 `formatPassRatePct` 호출(원본 통과율 포함)에 `hasNotEvaluated`를 전달해 `100%` 누수를 차단했으며, KISA `CFG-01`이 조치가능 실패 시 `fail`, 미평가 잔존 시 `warn`, 전수 평가·조치가능 0건일 때만 `pass`가 되도록 변경했습니다.
   - Config Audit에서 미수용 MEDIUM+(`totalConfigAuditFailures`)와 별도로 미수용 LOW(`unacceptedLowConfigAuditFailures`) 및 수용 위생 LOW(`lowSeverityConfigAuditFailures`)를 분리 표시하고, 제외된 구 ReplicaSet 수(`droppedConfigAuditReports`·`droppedConfigAuditFailures`·`droppedFailCount`·`droppedCheckCount`)를 대조할 수 있게 했습니다.
-  - Kubernetes API 목록 조회 오류를 `0`이나 빈 배열로 숨기거나 캐시하지 않고 API `503 { unavailable: true, source }` 및 요약 카드별 `데이터 없음` 상태·소스별 타임스탬프(`status.updateTimestamp` 우선)·6시간 재집계 주기 안내를 표시합니다.
+  - Kubernetes API 목록 조회 오류를 `0`이나 빈 배열로 숨기거나 실패·부분 응답을 캐시하지 않고 API `503 { unavailable: true }`(전 소스 실패 시 `/api/compliance/summary` 포함), 부분 조회 알림 배너(`partial`/`partialSources`), 소스별 타임스탬프(`status.updateTimestamp` 우선)·6시간 재집계 주기 안내를 표시합니다.
 - **`KCV0056` 인프라 수용 규칙 제거 (`src/lib/compliance-accepted.ts`, `src/lib/i18n.ts`):**
   - `gitops/charts/narwhal-apps/templates/trivy-operator.yaml`에서 호스트 `/etc/cni/net.d/`를 컨테이너 `/etc/cni`로 마운트해(`D-NODE-COLLECTOR-CNI-MOUNT`) `node-collector` `CMD-0009`(`stat -c %a /*/cni/*`)가 `700` 디렉터리가 아닌 내부 CNI 파일을 검사하도록 수정됨에 따라 `ACCEPTED_INFRA_RULES`에서 `KCV0056` 수용 규칙을 제거하고 `compliance.acceptedReason.infraCniDirGlob` ko/en i18n 키를 삭제했습니다. fail-closed 인프라/프레임워크 수용·조치가능 분리 구조는 유지하므로 실패한 `KCV0056`은 다시 조치가능으로 표시되며 향후 데이터 전용 규칙 추가도 계속 지원합니다.
 

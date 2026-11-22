@@ -43,50 +43,19 @@ harden_joined_node() {
   fi
 }
 
-# D-HARBOR-NODE-CA (KISA-IMG-01): synchronize Harbor containerd CA trust for late-joining
-# nodes (nodes added after Phase 2 08-6-tls-routes.sh already ran). During initial Phase 1
-# bring-up the CA does not exist on master-1 yet, so absence is a clean skip (08-6 will push
-# it later). Once present on master-1 (or pre-staged at /tmp/harbor-ca.crt on Kakao), failure
-# to install/validate is fatal so a late-joining worker never ends up unable to verify Harbor.
-sync_harbor_containerd_ca() {
-  local domain="${DOMAIN:-local.narwhal.internal}"
-  local node_script="${STAGE_DIR:-/home/vagrant}/scripts/cluster/08-6b-harbor-containerd-tls-node.sh"
-  if [ ! -f "${node_script}" ]; then
-    node_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/08-6b-harbor-containerd-tls-node.sh"
-  fi
-  local harbor_ca_remote="/etc/containerd/certs.d/harbor.${domain}/ca.crt"
-  local tmp_ca=""
-  if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
-    if [ -f /tmp/harbor-ca.crt ]; then
-      tmp_ca="/tmp/harbor-ca.crt"
-    else
-      echo "PROVIDER=kakao: /tmp/harbor-ca.crt not staged (initial Phase 1 join; Phase 2 apply-harbor-ca-kakao.sh will configure Harbor CA)"
-      return 0
-    fi
-  else
-    if ! sshpass -p "vagrant" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-      "vagrant@${MASTER_IP}" "test -s '${harbor_ca_remote}'" 2>/dev/null; then
-      echo "Harbor CA not yet provisioned on master-1 (${harbor_ca_remote}); 08-6-tls-routes.sh will distribute it in Phase 2"
-      return 0
-    fi
-    tmp_ca="$(mktemp /tmp/harbor-ca.XXXXXX)"
-    if ! sshpass -p "vagrant" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-      "vagrant@${MASTER_IP}:${harbor_ca_remote}" "${tmp_ca}" 2>/dev/null; then
-      rm -f "${tmp_ca}"
-      echo "ERROR: Harbor CA exists on master-1 (${harbor_ca_remote}) but could not be copied to this worker" >&2
-      return 1
-    fi
-  fi
-  if [ ! -f "${node_script}" ]; then
-    [ "${PROVIDER:-vagrant}" = "kakao" ] || rm -f "${tmp_ca}"
-    echo "ERROR: ${node_script} missing; cannot install Harbor containerd CA" >&2
-    return 1
-  fi
-  local rc=0
-  sudo env DOMAIN="${domain}" bash "${node_script}" "${tmp_ca}" "${domain}" || rc=$?
-  rm -f "${tmp_ca}"
-  return "${rc}"
-}
+# D-HARBOR-NODE-CA (KISA-IMG-01): synchronize Harbor containerd CA trust for late-joining nodes
+# via shared scripts/common/lib-harbor-ca.sh (Vagrant runs this script from /tmp/vagrant-shell,
+# so resolve the guest /home/vagrant path first and fail loudly if missing).
+HARBOR_CA_LIB="${STAGE_DIR:-/home/vagrant}/scripts/common/lib-harbor-ca.sh"
+if [ ! -r "${HARBOR_CA_LIB}" ]; then
+  HARBOR_CA_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../common" 2>/dev/null && pwd || true)/lib-harbor-ca.sh"
+fi
+if [ ! -r "${HARBOR_CA_LIB}" ]; then
+  echo "ERROR: lib-harbor-ca.sh not readable at ${HARBOR_CA_LIB}" >&2
+  exit 1
+fi
+# shellcheck source=scripts/common/lib-harbor-ca.sh
+source "${HARBOR_CA_LIB}"
 
 # D17: idempotency guard — up.sh's node-readiness loop can call `vagrant
 # provision <vm>` on a worker that already joined (e.g. if a transient
@@ -98,7 +67,7 @@ sync_harbor_containerd_ca() {
 if [[ -f /etc/kubernetes/kubelet.conf ]]; then
   echo "Node already joined (kubelet.conf present) — skipping kubeadm join"
   harden_joined_node
-  sync_harbor_containerd_ca
+  sync_harbor_containerd_ca "${MASTER_IP}"
   echo "=== Cluster Join Done (already joined) ==="
   exit 0
 fi
@@ -151,6 +120,6 @@ sudo bash /tmp/join-command.sh --node-name "${NODE_NAME}"
 
 # Harden node file permissions after join (re-uses harden_joined_node above).
 harden_joined_node
-sync_harbor_containerd_ca
+sync_harbor_containerd_ca "${MASTER_IP}"
 
 echo "=== Cluster Join Done ==="

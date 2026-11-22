@@ -90,14 +90,21 @@ else
   CA_SRC="${TMP_CA}"
 fi
 
-# Fail closed before touching /etc/containerd/certs.d: validate every PEM block and reject
-# empty, non-PEM, or unparseable input so a bad CA cannot overwrite a working trust anchor.
-if ! grep -q "BEGIN CERTIFICATE" "${CA_SRC}"; then
-  echo "ERROR: Harbor CA input does not contain a PEM certificate block: ${CA_SRC}" >&2
+HARBOR_CA_LIB="${STAGE_DIR:-/home/vagrant}/scripts/common/lib-harbor-ca.sh"
+if [ ! -r "${HARBOR_CA_LIB}" ]; then
+  HARBOR_CA_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../common" 2>/dev/null && pwd || true)/lib-harbor-ca.sh"
+fi
+if [ ! -r "${HARBOR_CA_LIB}" ]; then
+  echo "ERROR: lib-harbor-ca.sh not readable at ${HARBOR_CA_LIB}" >&2
   exit 1
 fi
-if ! openssl x509 -in "${CA_SRC}" -noout -subject >/dev/null 2>&1; then
-  echo "ERROR: Harbor CA input is not a valid X.509 certificate: ${CA_SRC}" >&2
+# shellcheck source=scripts/common/lib-harbor-ca.sh
+source "${HARBOR_CA_LIB}"
+
+# Fail closed before touching /etc/containerd/certs.d: validate every PEM block (no expired,
+# not-yet-valid, private key, foreign PEM block, or trailing garbage) so a bad CA cannot
+# overwrite a working trust anchor.
+if ! validate_harbor_ca_bundle "${CA_SRC}"; then
   exit 1
 fi
 CA_FP="$(openssl x509 -in "${CA_SRC}" -noout -fingerprint -sha256 | sed 's/^.*=//')"
@@ -129,6 +136,9 @@ ca_changed=0
 if [ ! -f "${CA_DEST}" ] || ! cmp -s "${CA_SRC}" "${CA_DEST}"; then
   tmp_ca_dest="${HARBOR_DIR}/.ca.crt.tmp.$$"
   run_priv cp "${CA_SRC}" "${tmp_ca_dest}"
+  if [ "$(id -u)" -eq 0 ] || [ -n "${SUDO_CMD}" ]; then
+    run_priv chown root:root "${tmp_ca_dest}"
+  fi
   run_priv chmod 0644 "${tmp_ca_dest}"
   run_priv mv -f "${tmp_ca_dest}" "${CA_DEST}"
   ca_changed=1
@@ -140,6 +150,9 @@ printf '%s\n' "${DESIRED_HOSTS}" > "${tmp_hosts_src}"
 if [ ! -f "${HOSTS_DEST}" ] || ! cmp -s "${tmp_hosts_src}" "${HOSTS_DEST}"; then
   tmp_hosts_dest="${HARBOR_DIR}/.hosts.toml.tmp.$$"
   run_priv cp "${tmp_hosts_src}" "${tmp_hosts_dest}"
+  if [ "$(id -u)" -eq 0 ] || [ -n "${SUDO_CMD}" ]; then
+    run_priv chown root:root "${tmp_hosts_dest}"
+  fi
   run_priv chmod 0644 "${tmp_hosts_dest}"
   run_priv mv -f "${tmp_hosts_dest}" "${HOSTS_DEST}"
   hosts_changed=1

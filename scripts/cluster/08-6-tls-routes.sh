@@ -125,10 +125,26 @@ if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
   echo "PROVIDER=kakao: skipping node-to-node SSH; propagate Harbor CA to remaining nodes from the operator host via: ./scripts/cloud/apply-harbor-ca-kakao.sh"
 else
   # Propagate to all other cluster nodes (masters and workers) over Vagrant sshpass, matching
-  # 11-4-keycloak-apiserver.sh's local-lab channel. Fail loudly if any node fails so no node
-  # silently keeps skip_verify = true or a stale CA after rotation.
-  LOCAL_IPS=" $(hostname -I 2>/dev/null || true) "
-  CLUSTER_NODE_IPS="$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' 2>/dev/null || true)"
+  # 11-4-keycloak-apiserver.sh's local-lab channel. Fail loudly on node-enumeration failure or
+  # any per-node copy/apply failure so no node silently keeps skip_verify = true or a stale CA.
+  # Residual trust risk (D5): no universally node-readable K8s copy of Narwhal Root CA exists
+  # (kube-public/{cluster-info,kube-root-ca.crt} carry only the K8s API CA and are blocked to
+  # system:nodes by NodeAuthorizer; devtools/narwhal-ca-cert is only readable on nodes hosting
+  # pods that mount it). Vagrant local-lab SSH shares the existing join/OIDC trust boundary
+  # (D-JOIN-OIDC-CA-HASH); Kakao Cloud pins host keys via scripts/cloud/lib-ssh.sh.
+  if ! LOCAL_RAW="$(hostname -I)"; then
+    echo "ERROR: failed to determine local node IP addresses via hostname -I." >&2
+    exit 1
+  fi
+  LOCAL_IPS=" ${LOCAL_RAW} "
+  if ! CLUSTER_NODE_IPS="$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}')"; then
+    echo "ERROR: failed to enumerate cluster nodes for Harbor containerd CA propagation." >&2
+    exit 1
+  fi
+  if [ -z "${CLUSTER_NODE_IPS//[[:space:]]/}" ]; then
+    echo "ERROR: kubectl get nodes returned no InternalIPs for Harbor containerd CA propagation." >&2
+    exit 1
+  fi
   HARBOR_PROP_FAILED=0
   while IFS= read -r node_ip; do
     [ -n "${node_ip}" ] || continue

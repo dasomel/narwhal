@@ -45,17 +45,27 @@ case "${SSH_KEY}" in /*) ;; *) SSH_KEY="${TF_DIR}/${SSH_KEY#./}" ;; esac
 
 # shellcheck source=scripts/cloud/lib-ssh.sh
 source scripts/cloud/lib-ssh.sh
+# shellcheck source=scripts/common/lib-harbor-ca.sh
+source scripts/common/lib-harbor-ca.sh
 
 read_ips() {
   printf '%s' "$1" | python3 -c 'import json,sys
-for ip in json.load(sys.stdin): print(ip)'
+data = json.load(sys.stdin)
+if not isinstance(data, list) or any(not isinstance(ip, str) or not ip for ip in data):
+    sys.stderr.write("ERROR: expected JSON list of non-empty IP strings\n")
+    sys.exit(1)
+for ip in data:
+    print(ip)'
 }
 
+masters_json="$(cd "${TF_DIR}" && tofu output -json master_private_ips)"
+masters_lines="$(read_ips "${masters_json}")"
+workers_json="$(cd "${TF_DIR}" && tofu output -json worker_private_ips)"
+workers_lines="$(read_ips "${workers_json}")"
+
 MASTERS=(); WORKERS=()
-while IFS= read -r _ip; do [ -n "${_ip}" ] && MASTERS+=("${_ip}"); done \
-  < <(read_ips "$(cd "${TF_DIR}" && tofu output -json master_private_ips)")
-while IFS= read -r _ip; do [ -n "${_ip}" ] && WORKERS+=("${_ip}"); done \
-  < <(read_ips "$(cd "${TF_DIR}" && tofu output -json worker_private_ips)")
+while IFS= read -r _ip; do [ -n "${_ip}" ] && MASTERS+=("${_ip}"); done <<< "${masters_lines}"
+while IFS= read -r _ip; do [ -n "${_ip}" ] && WORKERS+=("${_ip}"); done <<< "${workers_lines}"
 
 if [ "${#MASTERS[@]}" -eq 0 ]; then
   echo "ERROR: master_private_ips is empty" >&2
@@ -87,8 +97,8 @@ if ! ssh_node "${MASTER1}" "sudo cat '${HARBOR_CA_PATH}'" > "${tmp}/harbor-ca.cr
   echo "ERROR: ${HARBOR_CA_PATH} missing or empty on master-1 (${MASTER1}) — has 08-6-tls-routes.sh finished?" >&2
   exit 1
 fi
-if ! openssl x509 -in "${tmp}/harbor-ca.crt" -noout -subject >/dev/null 2>&1; then
-  echo "ERROR: ${HARBOR_CA_PATH} on master-1 (${MASTER1}) is not a valid X.509 certificate" >&2
+if ! validate_harbor_ca_bundle "${tmp}/harbor-ca.crt"; then
+  echo "ERROR: ${HARBOR_CA_PATH} on master-1 (${MASTER1}) failed CA bundle validation" >&2
   exit 1
 fi
 echo "  harbor-ca.crt ($(wc -c < "${tmp}/harbor-ca.crt" | tr -d ' ') bytes)"

@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-workflow-permission-scoping-768",
+  "task": "Raise OpenSSF Scorecard Token-Permissions (0 to 10) and Pinned-Dependencies (5 to 6) without changing what workflows can do: move contents: write from top level to the single job in cleanup-merged-branch.yml, portal-release.yml and release.yml, and pin node:22-slim and alpine:3.21 by digest in portal/Dockerfile.dev and portal/deploy/tuning-job.Dockerfile",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-workflow-permission-scoping.json",
+      ".github/workflows/cleanup-merged-branch.yml",
+      ".github/workflows/portal-release.yml",
+      ".github/workflows/release.yml",
+      "portal/Dockerfile.dev",
+      "portal/deploy/tuning-job.Dockerfile"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Implemented by Codex gpt-6.1-sol (medium), orchestrated and reviewed by Claude. Touched only the three workflow permissions blocks (effective per-job permissions identical before and after), the two Dockerfile base-image pins, and lessons-log rows. Did not change workflow steps, triggers, or image tags. A real release, release asset upload, GHCR lookup, and branch deletion were not exercised."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "OpenSSF Scorecard finding before the change: Token-Permissions 0/10 (top-level contents: write in the three workflows) and Pinned-Dependencies 5/10 (node:22-slim and alpine:3.21 base images not pinned by digest). This is a supply-chain posture finding, not a runtime defect.",
+      "evidence": [
+        "runtime:scorecard --local . v5.7.0 before change -> Token-Permissions 0, Pinned-Dependencies 5"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Moved contents: write from top level to the single job in cleanup-merged-branch.yml, portal-release.yml and release.yml (effective per-job permissions identical), and pinned node:22-slim and alpine:3.21 by digest in portal/Dockerfile.dev and portal/deploy/tuning-job.Dockerfile."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Static lint of the three edited workflows (cleanup-merged-branch.yml, portal-release.yml, release.yml)",
+      "summary": "actionlint on the three workflows exited 0.",
+      "evidence": [
+        "test:actionlint cleanup-merged-branch.yml portal-release.yml release.yml -> exit 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Digest pins in portal/Dockerfile.dev and portal/deploy/tuning-job.Dockerfile compared with the registry digests of the same tags",
+      "summary": "crane digest node:22-slim = sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee and crane digest alpine:3.21 = sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab, both matching the pins in the Dockerfiles.",
+      "evidence": [
+        "runtime:crane digest node:22-slim -> sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee (matches portal/Dockerfile.dev)",
+        "runtime:crane digest alpine:3.21 -> sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab (matches portal/deploy/tuning-job.Dockerfile)"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "OpenSSF Scorecard Token-Permissions and Pinned-Dependencies checks on the working tree",
+      "summary": "Local scorecard --local . v5.7.0: Token-Permissions 0 to 10, Pinned-Dependencies 5 to 6.",
+      "evidence": [
+        "runtime:scorecard --local . v5.7.0 -> Token-Permissions 10/10, Pinned-Dependencies 6/10"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Independent review of the PR head commits 7ffac70a and 262c019b by a separate Claude reviewer",
+      "summary": "Separate Claude reviewer returned PASS on 7ffac70a and on 262c019b.",
+      "evidence": [
+        "policy:independent review PASS on 7ffac70a and 262c019b"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "Workflow permissions scoped per job and base images pinned by digest, verified by actionlint, registry digest comparison, local Scorecard and independent review. Known gaps, not caused by this change: make validate gave 495 passed / 1 failed (pre-existing R292, files untouched by this PR) and make lint fails on pre-existing GitOps YAML line length. Not exercised: a real release, asset upload, GHCR lookup, branch deletion."
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified for the scoped change; pre-existing make validate (R292) and make lint failures are outside this PR and reported, not fixed."
+    }
+  ]
+}

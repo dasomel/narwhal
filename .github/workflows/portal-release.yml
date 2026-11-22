@@ -67,11 +67,16 @@ on:
     types: [completed]
 
 permissions:
-  contents: write
+  contents: read
   packages: read # to inspect the published manifest before releasing
 
 jobs:
   release:
+    # D10: Scope writes to this job; keep all inherited scopes (job maps replace defaults).
+    # Cost: duplicated read scopes; escape: revise this map if the job gains new operations.
+    permissions:
+      contents: write
+      packages: read
     name: publish release notes
     runs-on: ubuntu-latest
     # Only a successful container publish on an actual version tag may produce

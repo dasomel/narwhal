@@ -9,14 +9,9 @@
 # nsenter (from util-linux) in at BUILD time instead, so no package fetch happens at
 # job runtime.
 #
-# ── digest pin (운영 배포 필수) ──────────────────────────────────
-# 아직 미고정 상태. 운영 배포 전 아래 명령으로 digest 확인 후 이 줄을 교체:
-#
-#   docker pull alpine:3.21
-#   docker images --digests alpine | grep 3.21
-#   FROM alpine:3.21@sha256:<64자 hex digest>
-# ─────────────────────────────────────────────────────────────────
-FROM alpine:3.21
+# D1: Pin the registry index for repeatable base selection; refresh manually (no Docker bot).
+# Cost: no automatic base updates; escape: resolve the same tag with crane digest on refresh.
+FROM alpine:3.21@sha256:bc21487101ae47172509130ee1092cc273a831968d64b617776d1f69c81e42ab
 
 # util-linux provides /usr/bin/nsenter. `apk add util-linux` alone floats to whatever
 # the mirror serves at BUILD time (still better than the old runtime fetch, but not

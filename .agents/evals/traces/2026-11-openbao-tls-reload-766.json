@@ -1,7 +1,7 @@
 {
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
-  "traceId": "narwhal-openbao-tls-reload-766-20261122",
+  "traceId": "narwhal-openbao-tls-reload-766-r2-20261123",
   "task": "Issue #766: explicit OpenBao leaf validity and renewed certificate uptake without a server restart.",
   "changeContext": {
     "paths": [
@@ -11,8 +11,6 @@
       "scripts/test/lib/check-openbao-tls.py",
       "scripts/test/verify-openbao-tls.sh",
       "docs/runbooks/openbao-tls.md",
-      "docs/runbooks/openbao-snapshot-backup.md",
-      "docs/vagrant/operations.md",
       "docs/common/lessons-log.md",
       ".agents/evals/traces/2026-11-openbao-tls-reload-766.json"
     ]
@@ -21,43 +19,46 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Plan: retain bootstrap Certificate ownership, synchronize OpenBao Helm values, add mounted/live comparison + same-UID HUP sidecar, verifier, R390, runbook and lesson; verify offline then commit without push. No portal, live cluster, RBAC, image inventory, raft/seal/auth or unrelated lint changes."
+      "summary": "Round 2 plan: remove rejected same-UID sidecar, shareProcessNamespace and extra volume; synchronize in-container watcher across bootstrap and GitOps; retain bootstrap Certificate ownership and 8760h/720h. Fix external verifier, R390, runbook, lesson and trace; run lint/validate/test then commit locally without push. No live cluster, RBAC, seal/storage configuration or image changes."
     },
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Orchestrator-measured 2026-11-22 (not remeasured here): Secret revision 4 serial 5CCB... expires 2027-02-20; running listener serial 44E5... expires 2027-02-15. Repository inspection: Certificate had no duration/renewBefore and exists only in bootstrap; no renewal reload mechanism. OpenBao 2.5.4 is pinned, Shamir restart seals, auto-unseal schedule */2. Upstream v2.5.4 TCP docs/server.go and chart openbao-0.28.3 values/StatefulSet were read with web tooling; shell curl failed DNS."
+      "summary": "Reviewer/orchestrator measured (not repeated here): shared-PID same-UID sidecar could read bao environ and proc/root including TLS key, raft and SA token; PID 1 is wrapper shell, dumb-init PID 11, bao server PID 12. HUP of actual bao server on 2.5.4 served renewed serial, Sealed=false, restarts=0. Repository reproduction: both values contained rejected sidecar; verifier exec targeted its absent future OpenSSL. Read pinned 0.28.3 args helper and StatefulSet source: shell wrapper appends extraArgs verbatim. Reviewer exact Helm render succeeded; current sandbox Helm fetch fails DNS. Earlier DNS claim applies only to that sandbox, not chart compatibility."
     },
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "D-BAO-VALIDITY: 8760h/720h matches platform leaf convention; duration update reissues once, no ownership migration. D-BAO-HUP: 30s local handshake compares mounted public leaf and served SHA256, signals only bao server on mismatch, retries by measuring actual served state; existing digest-pinned OpenSSL image, uid 100 matching server, cert-only directory mount, shared Pod PID namespace, ALL drop, non-root, read-only rootfs, RuntimeDefault, bounded resources; no new RBAC. OnDelete avoids automatic rollout reseal. D-BAO-WINDOW: explicit-kubeconfig verifier fails persistent 180s mismatch/API/parse/connect failures. Compared rollout and unconditional HUP in runbook; no suitable existing metric, no exporter/alert invented."
+      "summary": "D-BAO-HUP: extraArgs backgrounds the unchanged docker-entrypoint bao server command, saves its PID, starts an independent watcher subshell and waits for server exit status. Watcher initializes mounted certificate hash then hashes every 30s; changed hash sends one HUP to comm=bao and argv[1]=server, explicitly excluding PID 1. Hash advances only after successful signal; missing PID/denied signal logs ERROR and retries next tick. No extra container, image, volume, shared PID or postStart. Folded scalar keeps extraArgs a single logical line because the pinned helper does not indent inserted newlines; a literal multiline value would break rendered YAML. Watcher failure cannot terminate server. D-BAO-WINDOW: external host OpenSSL through bounded Pod port-forward; seven attempts tolerate transient API/connect errors and fail closed on persistent errors, empty output or mismatch. Runbook covers OnDelete initial and future image/chart delete+unseal."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Passed evidence is scoped to R390 static/behavior/mutation checks, shellcheck, make validate and parent chart render. Live OpenBao/admission/renewal/unseal/clients NOT exercised. Exact upstream 0.28.3 Helm render is blocked by DNS. Full lint has unrelated pre-existing yamllint errors; full test environment failure is recorded separately in e5 and does not establish a full-suite pass.",
+      "scope": "Passed evidence covers offline watcher/verifier fixtures and mutations, shellcheck, make validate, parent chart rendering. Full lint fails on untouched pre-existing YAML errors. Full make test re-run by the orchestrator outside the sandbox: passed 497 failed 0 warnings 3.",
       "evidence": [
-        "test:python3 scripts/test/lib/check-openbao-tls.py --mutation-verify -> R390: 9 mutations rejected; mounted/live convergence and verifier fixtures passed (/bin/bash + bash)",
-        "test:PATH=/tmp/bao-no-helm-bin /tmp/bao-no-helm-bin/python3 scripts/test/lib/check-openbao-tls.py --mutation-verify -> same pass, no helm/promtool on PATH; /bin/bash is 3.2.57, bash is Homebrew 5",
-        "test:make lint -> shellcheck passed; yamllint exit 1 on untouched gitops resources (pre-existing line-length errors)",
-        "test:shellcheck --shell=busybox --severity=warning /tmp/bao-reloader.sh -> exit 0",
+        "test:python3 scripts/test/lib/check-openbao-tls.py --mutation-verify -> R390: 13 mutations rejected; /bin/sh watcher and bash verifier fixtures passed",
+        "test:shellcheck --severity=warning scripts/test/verify-openbao-tls.sh scripts/cluster/08-4-storage.sh -> exit 0",
+        "test:shellcheck --shell=busybox --severity=warning /tmp/bao-r2-full-wrapper.sh -> exit 0",
         "test:make validate -> exit 0; OK: gitops/resources/velero-server-rbac.yaml",
-        "test:helm template narwhal-apps gitops/charts/narwhal-apps -> OpenBao values preserved (parsed/deep-compared)",
+        "test:helm template narwhal-apps gitops/charts/narwhal-apps -> exit 0",
+        "test:make lint -> shellcheck passed; yamllint error line too long in untouched gitops/resources/velero-server-rbac.yaml; make: *** [lint] Error 1",
+        "test:make test (orchestrator, outside the authoring sandbox) -> passed 497 failed 0 warnings 3; the authoring sandbox run showed 4 failures caused by sandbox restrictions (socket bind / temp dirs)",
+        "artifact:/tmp/bao-r2-test.log",
+        "artifact:/tmp/bao-r2-r390.log",
         "repo:docs/runbooks/openbao-tls.md"
       ]
     },
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Repository implementation and targeted offline evidence complete only. No live correctness claim: orchestrator must render upstream 0.28.3 chart, HUP the running server now after mounted/Secret match, patch Certificate validity, deploy OnDelete template, plan initial sidecar Pod replacement + unseal, verify renewed served serial and stable Pod identity. Full suite result pending collection; known R295 sandbox localhost bind PermissionError; make lint yamllint fails on pre-existing untouched files. Shell curl/Helm DNS lookup and ps process enumeration blocked by sandbox."
+      "summary": "Repository implementation and scoped offline verification only: no cluster access, so actual new wrapper on OpenBao image, kubelet projection, renewal, unseal, admission and clients remain for orchestrator. Final exact upstream chart render requires network-enabled environment. R390 is after R388; grep found no R389 entry. Sandbox prohibits .agents edits, so updated trace and its application patch are supplied in /tmp; gate evaluates this candidate, not the unchanged checked-in historical trace."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Completed the authorized repository implementation and scoped offline verification; runtime rollout and evidence deliberately belong to orchestrator. Remaining risk: initial sidecar installation reseals during maintenance replacement; same-UID shared PID namespace exposure; live image/admission/HUP/clients and upstream Helm render unverified. No push."
+      "summary": "Round 2 replaces rejected sidecar design with in-container hash watcher, external retrying verifier, behavioral/mutation coverage and documentation. Remaining risk: watcher crash or listener reload rejection is detected by external verifier; OnDelete needs deliberate initial Pod replacement+unseal and future image/chart changes need the same. No push or live mutation. Protected trace requires orchestrator application; git add and git commit both failed to create the external worktree index.lock with Operation not permitted. Exact commit message and file list are supplied in /tmp. Git checkout of research evidence was likewise denied; tracked generated evidence content was restored via git show HEAD without touching the index."
     }
   ]
 }

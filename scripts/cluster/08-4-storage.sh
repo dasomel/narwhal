@@ -333,12 +333,6 @@ server:
     storageClass: nfs-csi
     size: 5Gi
   volumes:
-    - name: tls-reload-cert
-      secret:
-        secretName: openbao-tls
-        items:
-          - key: tls.crt
-            path: tls.crt
     - name: userconfig-openbao-tls
       secret:
         secretName: openbao-tls
@@ -367,64 +361,37 @@ server:
             - ALL
         seccompProfile:
           type: RuntimeDefault
-  shareProcessNamespace: true
   updateStrategyType: OnDelete
-  extraContainers:
-    - name: tls-reloader
-      image: docker.io/valkey/valkey:8-alpine@sha256:9971099af41c36e887aabdfe22b80c0fe45df949163dfc9cb434febc57cfc3fc
-      command:
-        - /bin/sh
-        - -ec
-        - |-
-          set -eu
-          set -o pipefail
-          while :; do
-            # D-BAO-HUP: compare mounted leaf to live listener, never Secret events.
-            # Cost: one local handshake/30s, shared PID namespace and same uid 100.
-            # Escape hatch: remove this sidecar; retain manual SIGHUP (never restart).
-            if mounted=$(openssl x509 -in /tls/tls.crt -noout -fingerprint -sha256 | sed 's/^.*=//') &&
-               served=$(timeout 10 openssl s_client -connect 127.0.0.1:8200 -servername openbao.storage.svc </dev/null 2>/dev/null |
-                 openssl x509 -noout -fingerprint -sha256 | sed 's/^.*=//') &&
-               [ -n "$mounted" ] && [ -n "$served" ]; then
-              if [ "$mounted" != "$served" ]; then
-                found=false
-                for proc in /proc/[0-9]*; do
-                  [ "$(cat "$proc/comm" 2>/dev/null)" = bao ] || continue
-                  [ "$(tr '\000' '\n' < "$proc/cmdline" 2>/dev/null | sed -n '2p')" = server ] || continue
-                  if kill -HUP "${proc##*/}"; then
-                    found=true
-                    echo "OpenBao TLS mismatch: sent SIGHUP; will recheck served certificate"
-                  fi
-                done
-                [ "$found" = true ] || echo "ERROR: OpenBao server PID missing or SIGHUP denied" >&2
-              fi
-            else
-              echo "ERROR: cannot compare mounted and served OpenBao TLS certificates" >&2
-            fi
-            sleep 30
-          done
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 100
-        runAsGroup: 1000
-        allowPrivilegeEscalation: false
-        readOnlyRootFilesystem: true
-        capabilities:
-          drop:
-            - ALL
-        seccompProfile:
-          type: RuntimeDefault
-      volumeMounts:
-        - name: tls-reload-cert
-          mountPath: /tls
-          readOnly: true
-      resources:
-        requests:
-          cpu: 5m
-          memory: 16Mi
-        limits:
-          cpu: 50m
-          memory: 32Mi
+  # D-BAO-HUP: same-container hash watcher; no shared PID namespace or extra image.
+  # Cost: one hash/30s; escape hatch: remove extraArgs and HUP the server manually.
+  # Fold to one line: chart 0.28.3 interpolates extraArgs without indenting newlines.
+  # Wait only for the original entrypoint: watcher failure must not stop the server.
+  extraArgs: >-
+    & bao_server_pid=$!; (
+    last_hash=$(sha256sum /openbao/tls/tls.crt) || exit 1;
+    last_hash=${last_hash%% *};
+    while sleep 30; do
+    current_hash=$(sha256sum /openbao/tls/tls.crt) || {
+    echo "ERROR: cannot hash OpenBao TLS certificate" >&2;
+    continue;
+    };
+    current_hash=${current_hash%% *};
+    [ "$current_hash" != "$last_hash" ] || continue;
+    found=false;
+    for proc in /proc/[0-9]*; do
+    [ "${proc##*/}" != 1 ] || continue;
+    [ "$(cat "$proc/comm" 2>/dev/null)" = bao ] || continue;
+    [ "$(tr '\000' '\n' < "$proc/cmdline" 2>/dev/null | sed -n '2p')" = server ] || continue;
+    if kill -HUP "${proc##*/}"; then
+    found=true;
+    last_hash=$current_hash;
+    echo "OpenBao TLS certificate changed: sent SIGHUP to ${proc##*/}";
+    fi;
+    break;
+    done;
+    [ "$found" = true ] || echo "ERROR: OpenBao server PID missing or SIGHUP denied; retrying next tick" >&2;
+    done
+    ) & wait "$bao_server_pid"
 injector:
   # In-place rollout: the chart's per-node anti-affinity deadlocks a surge on one node
   # (same setting as gitops/charts/narwhal-apps/templates/openbao.yaml).

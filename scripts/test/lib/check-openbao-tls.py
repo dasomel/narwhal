@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R390: offline ownership/parity/policy checks and bash 3.2 behavioral fixtures."""
+"""R390: in-container watcher behavior, ownership/parity and external verifier."""
 import copy
 import os
 from pathlib import Path
@@ -17,126 +17,162 @@ VERIFY = ROOT / 'scripts/test/verify-openbao-tls.sh'
 
 def inputs():
     app = yaml.safe_load(APP.read_text())['spec']['source']['helm']['valuesObject']['server']
-    boot = BOOT.read_text()
-    values = yaml.safe_load(boot.split("cat > /tmp/openbao-values.yaml <<'EOF'\n")[1].split('\nEOF')[0])['server']
-    cert = yaml.safe_load(boot.split('apiVersion: cert-manager.io/v1\n')[1].split('\nEOF')[0])['spec']
-    return app, values, cert
+    text = BOOT.read_text()
+    boot = yaml.safe_load(text.split("cat > /tmp/openbao-values.yaml <<'EOF'\n")[1].split('\nEOF')[0])['server']
+    cert = yaml.safe_load(text.split('apiVersion: cert-manager.io/v1\n')[1].split('\nEOF')[0])['spec']
+    return app, boot, cert
 
 
 def check(app, boot, cert):
     assert cert['duration'] == '8760h' and cert['renewBefore'] == '720h'
-    for key in ('shareProcessNamespace', 'updateStrategyType', 'extraContainers', 'volumes'):
+    for key in ('extraArgs', 'updateStrategyType', 'volumes', 'volumeMounts'):
         assert app[key] == boot[key], key
-    assert app['shareProcessNamespace'] is True
-    assert app['updateStrategyType'] == 'OnDelete'
-    side, = app['extraContainers']
-    security = side['securityContext']
-    assert security['runAsUser'] == 100 and security['runAsNonRoot']
-    assert security['readOnlyRootFilesystem'] and not security['allowPrivilegeEscalation']
-    assert security['capabilities']['drop'] == ['ALL']
-    assert security['seccompProfile']['type'] == 'RuntimeDefault'
-    assert side['volumeMounts'] == [{'name': 'tls-reload-cert', 'mountPath': '/tls', 'readOnly': True}]
-    volume, = [v for v in app['volumes'] if v['name'] == 'tls-reload-cert']
-    assert volume['secret'] == {'secretName': 'openbao-tls', 'items': [{'key': 'tls.crt', 'path': 'tls.crt'}]}
-    image = yaml.safe_load_all((ROOT / 'gitops/resources/openbao-backup.yaml').read_text())
-    assert side['image'] in str(list(image))  # Existing mirrored, digest-pinned OpenSSL image.
-    script = side['command'][2]
-    for text in ('set -o pipefail', '/tls/tls.crt', 'timeout 10 openssl s_client', '"$mounted" != "$served"',
-                 'kill -HUP', "sed -n '2p'", 'sleep 30'):
-        assert text in script, text
-    assert 'kubectl' not in script and 'tls.key' not in script
+    for values in (app, boot):
+        assert 'shareProcessNamespace' not in values
+        assert not values.get('extraContainers')
+        assert not values.get('postStart')
+        assert values['updateStrategyType'] == 'OnDelete'
+        assert [v['name'] for v in values['volumes']] == ['userconfig-openbao-tls', 'tmp']
+        assert 'valkey' not in str(values) and 'tls-reload-cert' not in str(values)
+    script = app['extraArgs']
+    assert script.startswith('& bao_server_pid=$!; (')
+    assert '\n' not in script  # Pinned chart does not indent interpolated newlines.
+    assert script.endswith('wait "$bao_server_pid"')
+    assert 'openssl' not in script and 'kill -HUP 1' not in script
     return script
 
 
-def run_fixture(shell, script, detector=False):
+def watcher_fixture(script):
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        proc = d / 'proc'
+        proc.mkdir()
+        for pid, comm, argv in [(1, 'bao', b'bao\0server\0'),
+                                (22, 'bao', b'bao\0server\0'),
+                                (13, 'bao', b'bao\0status\0'),
+                                (14, 'sh', b'bao\0server\0')]:
+            p = proc / str(pid)
+            p.mkdir()
+            (p / 'comm').write_text(comm + '\n')
+            (p / 'cmdline').write_bytes(argv)
+        (d / 'old').write_text('certificate A')
+        (d / 'new').write_text('certificate B')
+        env = dict(os.environ, FIXTURE=str(d))
+        body = script.split('bao_server_pid=$!; (', 1)[1].rsplit(') & wait', 1)[0]
+        body = body.replace('/proc/[0-9]*', str(proc) + '/[0-9]*')
+        body = body.replace('/openbao/tls/tls.crt', str(d / 'cert'))
+        prelude = '''tick=0
+kill() {
+  if [ "$MODE" = denied ] && [ "$tick" = 1 ]; then return 1; fi
+  echo "$*" >> "$FIXTURE/signals"
+}
+sleep() {
+  [ "$1" = 30 ] || exit 98
+  tick=$((tick+1))
+  [ "$tick" -le 4 ] || return 1
+  if [ "$MODE" != same ] && [ "$tick" = 1 ]; then
+    ln -s "$FIXTURE/new" "$FIXTURE/next"
+    mv -f "$FIXTURE/next" "$FIXTURE/cert"
+  fi
+  if [ "$MODE" = missing ] && [ "$tick" = 2 ]; then
+    echo bao > "$FIXTURE/proc/22/comm"
+  fi
+}
+'''
+        for mode, expected in [('same', []), ('change', ['-HUP 22']), ('missing', ['-HUP 22']), ('denied', ['-HUP 22'])]:
+            cert = d / 'cert'
+            cert.unlink(missing_ok=True)
+            cert.symlink_to(d / 'old')
+            (d / 'signals').write_text('')
+            (proc / '22/comm').write_text('absent\n' if mode == 'missing' else 'bao\n')
+            result = subprocess.run(['/bin/sh', '-c', prelude + body], env=dict(env, MODE=mode),
+                                    capture_output=True, text=True, timeout=5)
+            signals = (d / 'signals').read_text().splitlines()
+            assert result.returncode == 0, result.stderr
+            assert signals == expected, (mode, signals, expected)
+            assert result.stdout.count('sent SIGHUP') == len(expected)
+            if mode in ('missing', 'denied'):
+                assert 'ERROR: OpenBao server PID missing' in result.stderr
+        # The same wrapper still returns the server status if the watcher crashes.
+        wrapped = 'server() { sleep 0.1; return 17; }\nserver ' + script
+        wrapped = wrapped.replace('sha256sum /openbao/tls/tls.crt', 'false')
+        result = subprocess.run(['/bin/sh', '-ec', wrapped], capture_output=True, timeout=5)
+        assert result.returncode == 17, result
+
+
+def verifier_fixture(shell):
     with tempfile.TemporaryDirectory() as tmp:
         d = Path(tmp)
         def exe(name, body):
             p = d / name
-            p.write_text('#!/bin/sh\nset -eu\n' + body + '\n')
+            p.write_text('#!/bin/sh\n' + body + '\n')
             p.chmod(0o755)
-        exe('openssl', '''if [ "$1" = x509 ]; then
-  case " $* " in *" -in "*) cat "$MOUNTED";; *) cat;; esac
-elif [ "$1" = base64 ]; then cat
-elif [ "$1" = s_client ]; then [ "$MODE" != error ] || exit 1; cat "$SERVED"
-else exit 1; fi''')
-        exe('timeout', 'shift; exec "$@"')
-        exe('sleep', '''n=$(cat "$COUNT"); n=$((n+1)); echo "$n" > "$COUNT"
-if [ "$n" -ge 3 ] && [ "$DETECTOR" = no ]; then exit 73; fi
-if [ "$MODE" = converge ]; then cp "$MOUNTED" "$SERVED"; fi''')
+        exe('sleep', '[ "$1" = 10 ] && exec /bin/sleep 10; exec /bin/sleep 0.01')
         exe('kubectl', '''case " $* " in
-*" get secret "*) cat "$MOUNTED";;
-*" exec "*) if [ "$MODE" = error ]; then exit 1; fi; cat "$SERVED";;
+*" get secret "*)
+ n=$(cat "$FIXTURE/count"); n=$((n+1)); echo "$n" > "$FIXTURE/count"
+ [ "$MODE" != api ] || [ "$n" -gt 1 ] || exit 1
+ echo A;;
+*" port-forward "*)
+ [ "$MODE" != forward ] || [ "$(cat "$FIXTURE/count")" -gt 1 ] || exit 1
+ echo 'Forwarding from 127.0.0.1:18200 -> 8200'; exec /bin/sleep 10;;
 *) exit 1;; esac''')
-        proc = d / 'proc/123'
-        proc.mkdir(parents=True)
-        (proc / 'comm').write_text('bao\n')
-        (proc / 'cmdline').write_bytes(b'/bin/bao\x00server\x00-config=x\x00')
-        other = d / 'proc/124'
-        other.mkdir()
-        (other / 'comm').write_text('bao\n')
-        (other / 'cmdline').write_bytes(b'bao\x00status\x00')
-        env = dict(os.environ, PATH=tmp + ':' + os.environ['PATH'], MOUNTED=str(d/'mounted'),
-                   SERVED=str(d/'served'), COUNT=str(d/'count'), SIGNALS=str(d/'signals'),
-                   DETECTOR='yes' if detector else 'no')
-        code = script if detector else script.replace('/proc/[0-9]*', tmp+'/proc/[0-9]*')
-        # Mock the signal boundary, never send a real signal from a test.
-        if not detector:
-            code = 'kill() { echo "$*" >> "$SIGNALS"; }\n' + code
-        cases = [('same', 'A', 'A', 0), ('stale', 'A', 'B', 1),
-                 ('converge', 'A', 'B', 0), ('empty', '', '', 1), ('error', 'A', 'B', 1)]
-        for mode, mounted, served, want in cases:
-            (d/'mounted').write_text(mounted)
-            (d/'served').write_text(served)
-            (d/'count').write_text('0')
-            (d/'signals').write_text('')
-            env['MODE'] = mode
-            result = subprocess.run([shell, '-c', code, 'fixture', '/explicit/kubeconfig'], env=env,
-                                    capture_output=True, text=True, timeout=10)
-            if detector:
-                assert result.returncode == want, (mode, result.stdout, result.stderr)
-            else:
-                assert result.returncode == 73, (mode, result.stderr)
-                signals = (d/'signals').read_text().splitlines()
-                expected = {'same': 0, 'stale': 3, 'converge': 1, 'empty': 0, 'error': 0}[mode]
-                assert len(signals) == expected, (mode, signals, expected)
-                assert all(s == '-HUP 123' for s in signals)
+        exe('openssl', '''case "$1" in
+base64) cat;;
+x509) if [ "$2" = -in ]; then cat "$3"; else cat; fi;;
+s_client)
+ n=$(cat "$FIXTURE/count")
+ [ "$MODE" != connect ] || [ "$n" -gt 1 ] || exit 1
+ case "$MODE" in empty) :;; stale) echo B;; error) exit 1;; *) echo A;; esac;;
+*) exit 1;; esac''')
+        env = dict(os.environ, PATH=tmp + ':' + os.environ['PATH'], FIXTURE=tmp)
+        for mode, rc, attempts in [('same', 0, 1), ('api', 0, 2), ('connect', 0, 2),
+                                   ('forward', 0, 2), ('stale', 1, 7), ('error', 1, 7), ('empty', 1, 7)]:
+            (d / 'count').write_text('0')
+            result = subprocess.run([shell, str(VERIFY), '/explicit/kubeconfig'],
+                                    env=dict(env, MODE=mode), capture_output=True, timeout=15)
+            assert result.returncode == rc, (mode, result.stdout, result.stderr)
+            assert int((d / 'count').read_text()) == attempts, mode
 
 
 def main():
     app, boot, cert = inputs()
     script = check(app, boot, cert)
-    # R390 intentionally does not call Helm or promtool.
+    watcher_fixture(script)
     for shell in dict.fromkeys(['/bin/bash', 'bash']):
-        run_fixture(shell, script)
-        run_fixture(shell, VERIFY.read_text(), detector=True)
+        verifier_fixture(shell)
     if '--mutation-verify' in sys.argv:
-        mutations = [
-            lambda a, b, c: c.pop('duration'),
-            lambda a, b, c: c.update(renewBefore='1h'),
-            lambda a, b, c: a.update(shareProcessNamespace=False),
-            lambda a, b, c: a.update(updateStrategyType='RollingUpdate'),
-            lambda a, b, c: a['extraContainers'][0]['securityContext'].update(runAsUser=10100),
-            lambda a, b, c: a['extraContainers'][0]['securityContext'].update(readOnlyRootFilesystem=False),
-            lambda a, b, c: a['volumes'][0]['secret'].pop('items'),
-            lambda a, b, c: a['extraContainers'][0]['command'].__setitem__(2, script.replace('kill -HUP', 'kill -TERM')),
-        ]
-        for mutate in mutations:
-            a, b, c = copy.deepcopy((app, boot, cert))
-            mutate(a, b, c)
+        static = [lambda a, b, c: c.pop('duration'),
+                  lambda a, b, c: c.update(renewBefore='1h'),
+                  lambda a, b, c: a.update(shareProcessNamespace=True),
+                  lambda a, b, c: a.update(extraContainers=[{'image': 'valkey'}]),
+                  lambda a, b, c: a.update(updateStrategyType='RollingUpdate'),
+                  lambda a, b, c: b.update(extraArgs='')]
+        for mutate in static:
+            args = copy.deepcopy((app, boot, cert))
+            mutate(*args)
             try:
-                check(a, b, c)
+                check(*args)
             except (AssertionError, KeyError):
                 continue
-            raise AssertionError('mutation survived')
-        # Prove behavioral assertions reject an always-signal implementation too.
-        try:
-            run_fixture('/bin/bash', script.replace('[ "$mounted" != "$served" ]', 'true'))
-        except AssertionError:
-            pass
-        else:
-            raise AssertionError('always-SIGHUP mutation survived')
-        print('R390: 9 mutations rejected; mounted/live convergence and verifier fixtures passed (/bin/bash + bash)')
+            raise AssertionError('static mutation survived')
+        mutations = [
+            ('[ "$current_hash" != "$last_hash" ]', 'true'),
+            ('last_hash=$current_hash', ':'),
+            ('found=false', 'last_hash=$current_hash; found=false'),
+            ('[ "${proc##*/}" != 1 ] || continue', ':'),
+            ('[ "$(cat "$proc/comm" 2>/dev/null)" = bao ] || continue', ':'),
+            ('''[ "$(tr '\\000' '\\n' < "$proc/cmdline" 2>/dev/null | sed -n '2p')" = server ] || continue''', ':'),
+            ('kill -HUP "${proc##*/}"', 'kill -HUP 1'),
+        ]
+        for old, new in mutations:
+            assert old in script, old
+            try:
+                watcher_fixture(script.replace(old, new))
+            except AssertionError:
+                continue
+            raise AssertionError('behavior mutation survived: ' + old)
+        print(f'R390: {len(static) + len(mutations)} mutations rejected; /bin/sh watcher and bash verifier fixtures passed')
     else:
         print('R390: static and behavioral checks passed')
 

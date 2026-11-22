@@ -1,3 +1,8 @@
+// D-P2-7: Bootstrap defaults were verified with BOTH bootstrapping label and
+// autoupdate=true in the review dump. Trivy RBAC reports carry only resource
+// identity, not target labels/annotations; the portal does not fetch Roles.
+// Cost: runtime can enforce exact names/checks only. Escape hatch: if target
+// metadata becomes available, require the bootstrap label before acceptance.
 import { en } from "./i18n"
 import type { AcceptedClass } from "@/types/compliance"
 import {

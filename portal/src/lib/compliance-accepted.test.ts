@@ -164,10 +164,21 @@ describe("exact acceptance (D-P2-1/2/3)", () => {
       ["platform-system", "ReplicaSet", "apisix-ingress-controller-7c95479b49", "KSV021", ["apisix-ingress-controller"]],
       ["monitoring", "DaemonSet", "k8s-monitoring-alloy-logs", "KSV118", []],
       ["platform-system", "DaemonSet", "metallb-speaker", "KSV119", []],
-      ["istio-system", "DaemonSet", "ztunnel", "KSV005", []],
+      ["istio-system", "DaemonSet", "ztunnel", "KSV030", []],
       ["storage", "StatefulSet", "seaweedfs-volume", "KSV012", []],
     ] as const) expect(matchConfigAuditException(ns, kind, name, check, owners)).toBeNull()
     expect(matchConfigAuditException("storage", "ReplicaSet", "velero-dbc67d57", "KSV020", ["velero"])?.reason).toContain("1002")
+  })
+
+  it("accepts verified host integration and bootstrap defaults without extending to lookalikes", () => {
+    expect(matchConfigAuditException("istio-system", "DaemonSet", "ztunnel", "KSV005", [])?.reason).toContain("network namespaces")
+    expect(matchConfigAuditException("kube-system", "DaemonSet", "cilium", "KSV017", [])?.owner).toContain("1.19.4")
+    expect(matchConfigAuditException("kube-system", "DaemonSet", "cilium", "KSV014", [])).toBeNull()
+    expect(matchRbacException("system:controller:deployment-controller", "KSV048", "", "ClusterRole")?.reason).toContain("reconciled by kube-apiserver")
+    expect(matchRbacException("system:controller:deployment-controller-evil", "KSV048", "", "ClusterRole")).toBeNull()
+    expect(matchRbacException("system:controller:deployment-controller", "KSV041", "", "ClusterRole")).toBeNull()
+    expect(matchRbacException("cert-manager-controller-certificates", "KSV041", "", "ClusterRole")?.reason).toContain("issued certificates")
+    expect(matchRbacException("cert-manager-controller-certificates", "KSV048", "", "ClusterRole")).toBeNull()
   })
 
   it("matches RBAC by exact scope/namespace/kind/name AND explicit checks", () => {

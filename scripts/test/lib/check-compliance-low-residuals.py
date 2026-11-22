@@ -170,7 +170,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("openbao-snapshot-holder switched to 10100", "backup", "        runAsUser: 100", "        runAsUser: 10100"),
     ("drop i18n cnpgPoolerUid", "i18n", '"compliance.acceptedReason.cnpgPoolerUid"', '"compliance.acceptedReason.removed"'),
     ("drop i18n openbaoSnapshotUid", "i18n", '"compliance.acceptedReason.openbaoSnapshotUid"', '"compliance.acceptedReason.removed"'),
-    ("stale doc count", "doc", "33 Config Audit rules across 33 workloads", "31 Config Audit rules across 31 workloads"),
+    ("stale doc count", "doc", "45 Config Audit rules across 45 workloads", "31 Config Audit rules across 31 workloads"),
     ("false /etc/pgbouncer claim", "doc", "### Config Audit allowlist", "### Config Audit allowlist /etc/pgbouncer"),
     ("drop exact-match doc note", "doc", "Matching is exact: `database/Pod/narwhal-db-1`", "Matching is loose: `database/Pod/narwhal-db-1`"),
     ("drop R383 wiring", "reg", "check R383 ", "check R9999 "),

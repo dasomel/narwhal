@@ -246,8 +246,8 @@ describe("compliance accepted exceptions", () => {
     const rows = await getConfigAuditList()
     const byName = new Map(rows.map((r) => [r.name, r]))
 
-    expect(byName.get("cilium")?.accepted).toBe(false)
-    expect(byName.get("cilium")?.acceptedScope).toBeUndefined()
+    expect(byName.get("cilium")?.accepted).toBe(true)
+    expect(byName.get("cilium")?.acceptedScope).toBe("accept")
 
     const harborCore = byName.get("harbor-core-99b8c7d6f")!
     expect(harborCore.accepted).toBe(false)
@@ -413,12 +413,12 @@ describe("compliance accepted exceptions", () => {
 
     const summary = await getComplianceSummary()
     // Config audit:
-    // - actionable: narwhal-portal KSV014 (High: 1)
-    // - low hygiene: harbor-core (2) + narwhal-portal (2) = 4 (NOT double counted!)
-    // - accepted: kube-system (High: 1, Low: 1) + harbor-core KSV014 (High: 1) = High: 2, Low: 1
-    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 3, Medium: 0, Low: 0 })
+    // - actionable: harbor-core and narwhal-portal KSV014 (High: 2)
+    // - low hygiene: harbor-core KSV011 (1) + narwhal-portal UID/GID (2) = 3.
+    // - accepted: cilium KSV017 (High: 1); cilium KSV020 remains unaccepted LOW.
+    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 2, Medium: 0, Low: 0 })
     expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 3 })
-    expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+    expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
 
     // RBAC:
     // - actionable: platform-admin KSV042 (Medium: 1) + platform-admin-extra KSV041 (Critical: 1) + velero-ui-custom-role KSV113 (Medium: 1)
@@ -1377,13 +1377,13 @@ describe("compliance framework actionable vs accepted split", () => {
                   { checkID: "AVD-KCV-0059", target: "/node-narwhal-master-1", success: false },
                 ],
               },
-              // 5. All accepted (system namespace + allowlisted workload) -> accepted
+              // 5. Exact Falco acceptance plus uncovered Cilium KSV014 -> actionable
               {
                 id: "C5",
-                name: "Accepted control",
+                name: "Mixed exact accepted and uncovered control",
                 severity: "MEDIUM",
                 checks: [
-                  { checkID: "AVD-KSV-0017", target: "kube-system/daemonset-cilium", success: false },
+                  { checkID: "AVD-KSV-0014", target: "kube-system/daemonset-cilium", success: false },
                   { checkID: "AVD-KSV-0017", target: "security-system/daemonset-falco", success: false },
                 ],
               },
@@ -1590,17 +1590,17 @@ describe("compliance framework actionable vs accepted split", () => {
 
     const detail = await getComplianceFrameworkDetail("rbac-fw")
     expect(detail).not.toBeNull()
-    expect(detail!.actionableFailCount).toBe(4)
-    expect(detail!.acceptedFailCount).toBe(0)
+    expect(detail!.actionableFailCount).toBe(3)
+    expect(detail!.acceptedFailCount).toBe(1)
 
     const byId = new Map(detail!.controls.map((c) => [c.id, c]))
     expect(byId.get("RBAC-OK")?.accepted).toBe(false)
     expect(byId.get("RBAC-OK")?.acceptedScope).toBeUndefined()
     expect(byId.get("RBAC-UNLISTED-CHECK")?.accepted).toBe(false)
     expect(byId.get("RBAC-HASHED-RESOLVED")).toMatchObject({
-      accepted: false,
-      actionableFailCount: 1,
-      acceptedFailCount: 0,
+      accepted: true,
+      actionableFailCount: 0,
+      acceptedFailCount: 1,
     })
     expect(byId.get("RBAC-HASHED-UNRESOLVED")).toMatchObject({
       accepted: false,
@@ -1656,11 +1656,11 @@ describe("compliance framework actionable vs accepted split", () => {
       failCount: 9,
       evaluatedPassCount: 0,
       notEvaluatedCount: 18,
-      actionableFailCount: 8,
-      acceptedFailCount: 1,
+      actionableFailCount: 7,
+      acceptedFailCount: 2,
       coverageUnknown: true,
     })
-    expect(byId.get("k8s-nsa-1.0")!.effectivePassRate).toBeCloseTo(1 / 27)
+    expect(byId.get("k8s-nsa-1.0")!.effectivePassRate).toBeCloseTo(2 / 27)
     expect(byId.get("k8s-pss-baseline-0.1")).toMatchObject({
       passCount: 8,
       failCount: 3,
@@ -1684,8 +1684,8 @@ describe("compliance framework actionable vs accepted split", () => {
       failCount: 15,
       evaluatedPassCount: 0,
       notEvaluatedCount: 101,
-      actionableFailCount: 14,
-      acceptedFailCount: 1,
+      actionableFailCount: 13,
+      acceptedFailCount: 2,
     })
     expect(byId.get("k8s-kisa-1.0")).toMatchObject({
       passCount: 3,
@@ -1701,20 +1701,22 @@ describe("compliance framework actionable vs accepted split", () => {
     const cisActionable = cisDetail!.controls
       .filter((c) => (c.actionableFailCount ?? 0) > 0)
       .map((c) => ({ id: c.id, act: c.actionableFailCount, acc: c.acceptedFailCount }))
-    // Independent fixture inventory: only explicit reviewed tuples are accepted.
+    // Independent fixture inventory: KSV041 additionally covers six cert-manager roles,
+    // admin/edit and system:node; KSV049 additionally covers admin/edit.
+    // Node exporter adds hostPID (5.2.3), hostNetwork (5.2.5), hostPath (5.2.12),
+    // and the two hostNetwork/hostPID findings linked by KISA-POD-01.
     expect(cisActionable).toEqual([
       { id: "1.1.9", act: 1, acc: 0 },
       { id: "1.1.12", act: 1, acc: 0 },
-      { id: "5.1.2", act: 29, acc: 3 },
-      { id: "5.1.3", act: 14, acc: 2 },
+      { id: "5.1.2", act: 20, acc: 12 },
+      { id: "5.1.3", act: 12, acc: 4 },
       { id: "5.1.6", act: 1, acc: 0 },
-      { id: "5.2.3", act: 1, acc: 1 },
-      { id: "5.2.5", act: 2, acc: 0 },
+      { id: "5.2.5", act: 1, acc: 1 },
       { id: "5.2.6", act: 1, acc: 4 },
       { id: "5.2.7", act: 3, acc: 5 },
       { id: "5.2.8", act: 1, acc: 1 },
       { id: "5.2.10", act: 1, acc: 4 },
-      { id: "5.2.12", act: 2, acc: 5 },
+      { id: "5.2.12", act: 1, acc: 6 },
       { id: "5.7.2", act: 1, acc: 0 },
       { id: "5.7.3", act: 139, acc: 19 },
     ])
@@ -1725,10 +1727,10 @@ describe("compliance framework actionable vs accepted split", () => {
       .filter((c) => (c.actionableFailCount ?? 0) > 0)
       .map((c) => ({ id: c.id, act: c.actionableFailCount, acc: c.acceptedFailCount }))
     expect(kisaActionable).toEqual([
-      { id: "KISA-RBAC-01", act: 29, acc: 3 },
-      { id: "KISA-POD-01", act: 7, acc: 13 },
+      { id: "KISA-RBAC-01", act: 20, acc: 12 },
+      { id: "KISA-POD-01", act: 5, acc: 15 },
       { id: "KISA-ADM-01", act: 1, acc: 4 },
-      { id: "KISA-RBAC-02", act: 14, acc: 2 },
+      { id: "KISA-RBAC-02", act: 12, acc: 4 },
     ])
   })
 
@@ -1860,7 +1862,7 @@ describe("compliance framework actionable vs accepted split", () => {
               },
               {
                 id: "C-ACCEPTED",
-                name: "Accepted control",
+                name: "Mixed exact accepted and uncovered control",
                 severity: "HIGH",
                 checks: [{ checkID: "AVD-KSV-0017", target: "security-system/daemonset-falco", success: false }],
               },

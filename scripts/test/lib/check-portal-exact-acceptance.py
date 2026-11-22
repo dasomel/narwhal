@@ -25,6 +25,8 @@ def check(texts):
     targets = set()
     for domain in ('configAudit', 'rbac', 'infra'):
         for rule in data[domain]:
+            if set(rule) - {'id', 'scope', 'namespace', 'kind', 'name', 'checks', 'class', 'reasonKey', 'owner', 'reviewedAt'}:
+                errors.append('unknown selector or rule field')
             for field in ('id', 'scope', 'kind', 'name', 'reasonKey', 'owner', 'reviewedAt'):
                 if not isinstance(rule.get(field), str) or not rule[field].strip():
                     errors.append(f'{domain}: missing {field}')
@@ -86,6 +88,10 @@ def check(texts):
                 errors.append(f'{key}: missing {needle}')
     for name in ('matchConfigAuditException', 'matchRbacException', 'matchInfraException'):
         body = texts['matcher'].split('export function '+name, 1)[1].split('\nexport ', 1)[0]
+        pre_lookup = body.split('const rules =', 1)[0]
+        pre_lookup = re.sub(r'//[^\n]*|/\*[\s\S]*?\*/', '', pre_lookup)
+        if re.search(r'\breturn\s+(?!null\b)', pre_lookup):
+            errors.append(f'{name}: acceptance bypasses exact lookup')
         if 'rule.checks.has(normalizedCheck)' not in body:
             errors.append(f'{name}: no explicit check membership')
         if re.search(r'\.(?:includes|startsWith|endsWith|test|exec|match)\(', body):
@@ -113,7 +119,15 @@ def main():
         data = json.loads(texts['data'])
         data['configAudit'][0][field] = value
         mutations.append((f'wildcard {field}', 'data', json.dumps(data)))
+    for selector in ('namePrefix', 'labels', 'nameRegex'):
+        data = json.loads(texts['data'])
+        data['rbac'][0][selector] = 'system:'
+        mutations.append((f'forbidden {selector}', 'data', json.dumps(data)))
     replacements = [
+        ('prefix acceptance', 'matcher', 'rule.checks.has(normalizedCheck)', 'roleName.startsWith("system:")'),
+        ('regex acceptance', 'matcher', 'rule.checks.has(normalizedCheck)', '/system:/.test(roleName)'),
+        ('label-only acceptance', 'matcher', 'if (kind !== "Role" && kind !== "ClusterRole") return null',
+         'if (labels["kubernetes.io/bootstrapping"]) return fakeMatch;\n  if (kind !== "Role" && kind !== "ClusterRole") return null'),
         ('drop namespace', 'matcher', '${scope}\\0${namespace}\\0${kind}\\0${normalizedName}', '${scope}\\0${kind}\\0${normalizedName}'),
         ('drop kind', 'matcher', '${scope}\\0${namespace}\\0${kind}\\0${roleName}', '${scope}\\0${namespace}\\0${roleName}'),
         ('all checks', 'matcher', 'rule.checks.has(normalizedCheck)', 'true'),

@@ -151,6 +151,9 @@ export default async function InfraAuditDetailPage({ params }: Props) {
                 <div className="mt-2 rounded bg-background/60 p-2 text-xs border border-border text-muted-foreground">
                   <span className="font-medium text-foreground">{t(locale, "compliance.check.acceptedReason")}: </span>
                   {translateAcceptedReason(locale, check.acceptedReasonKey, check.acceptedReason)}
+                        <span className="mt-1 block break-words font-mono">
+                          {check.acceptedRuleId} · {check.acceptedOwner} · {check.acceptedReviewedAt}
+                        </span>
                 </div>
               )}
               {!check.success && check.remediation && (

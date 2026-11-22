@@ -212,6 +212,9 @@ describe("Compliance UI accepted exceptions", () => {
           acceptedClass: "accept",
           acceptedReasonKey: "compliance.acceptedReason.portalUid1001",
           acceptedReason: "Portal image fixes non-root nextjs:nodejs UID/GID 1001 in portal/Dockerfile",
+          acceptedRuleId: "cfg:devtools:ReplicaSet:narwhal-portal:accept",
+          acceptedOwner: "portal/Dockerfile",
+          acceptedReviewedAt: "2026-11-23",
         },
         {
           id: "KSV014",
@@ -361,6 +364,9 @@ describe("Compliance UI accepted exceptions", () => {
           acceptedClass: "accept",
           acceptedReasonKey: "compliance.acceptedReason.portalUid1001",
           acceptedReason: "Portal image fixes non-root nextjs:nodejs UID/GID 1001 in portal/Dockerfile",
+          acceptedRuleId: "cfg:devtools:ReplicaSet:narwhal-portal:accept",
+          acceptedOwner: "portal/Dockerfile",
+          acceptedReviewedAt: "2026-11-23",
         },
       ],
     })
@@ -390,6 +396,9 @@ describe("Compliance UI accepted exceptions", () => {
     })
     const configPageHtml = renderToStaticMarkup(configPageEl)
     expect(configPageHtml).toContain(ko["compliance.acceptedReason.portalUid1001"])
+    expect(configPageHtml).toContain("cfg:devtools:ReplicaSet:narwhal-portal:accept")
+    expect(configPageHtml).toContain("portal/Dockerfile")
+    expect(configPageHtml).toContain("2026-11-23")
     expect(configPageHtml).not.toContain("Portal image fixes non-root")
 
     const rbacPageEl = await RbacAuditDetailPage({

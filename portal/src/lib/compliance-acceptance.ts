@@ -157,6 +157,12 @@ function assertCommonRuleFields(raw: RawRuleEntry, seenIds: Set<string>): {
   reasonKey: AcceptedReasonKey
   reason: string
 } {
+  // D-P2-8: Reject extra selectors rather than silently ignoring a future broad
+  // rule field. Cost: explicit schema updates; escape hatch: review a schema change.
+  const fields = new Set(["id", "scope", "namespace", "kind", "name", "checks", "class", "reasonKey", "owner", "reviewedAt"])
+  if (Object.keys(raw).some((field) => !fields.has(field))) {
+    throw new Error(`Invalid acceptance rule ${raw.id}: unknown rule field`)
+  }
   if (!raw.id || typeof raw.id !== "string" || seenIds.has(raw.id)) {
     throw new Error(`Invalid or duplicate acceptance rule id: ${String(raw.id)}`)
   }

@@ -109,6 +109,37 @@ spec:
                     - ALL
                 seccompProfile:
                   type: RuntimeDefault
+          updateStrategyType: OnDelete
+          # D-BAO-HUP: same-container hash watcher; no shared PID namespace or extra image.
+          # Cost: one hash/30s; escape hatch: remove extraArgs and HUP the server manually.
+          # Fold to one line: chart 0.28.3 interpolates extraArgs without indenting newlines.
+          # Wait only for the original entrypoint: watcher failure must not stop the server.
+          extraArgs: >-
+            & bao_server_pid=$!; (
+            last_hash=$(sha256sum /openbao/tls/tls.crt) || exit 1;
+            last_hash=${last_hash%% *};
+            while sleep 30; do
+            current_hash=$(sha256sum /openbao/tls/tls.crt) || {
+            echo "ERROR: cannot hash OpenBao TLS certificate" >&2;
+            continue;
+            };
+            current_hash=${current_hash%% *};
+            [ "$current_hash" != "$last_hash" ] || continue;
+            found=false;
+            for proc in /proc/[0-9]*; do
+            [ "${proc##*/}" != 1 ] || continue;
+            [ "$(cat "$proc/comm" 2>/dev/null)" = bao ] || continue;
+            [ "$(tr '\000' '\n' < "$proc/cmdline" 2>/dev/null | sed -n '2p')" = server ] || continue;
+            if kill -HUP "${proc##*/}"; then
+            found=true;
+            last_hash=$current_hash;
+            echo "OpenBao TLS certificate changed: sent SIGHUP to ${proc##*/}";
+            fi;
+            break;
+            done;
+            [ "$found" = true ] || echo "ERROR: OpenBao server PID missing or SIGHUP denied; retrying next tick" >&2;
+            done
+            ) & wait "$bao_server_pid"
         injector:
           # The chart's required pod anti-affinity (one injector per node) deadlocks a surge
           # rollout on a single-node cluster: the new pod stays Pending forever (seen live

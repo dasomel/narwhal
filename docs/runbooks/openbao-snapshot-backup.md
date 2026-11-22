@@ -1,5 +1,7 @@
 # Runbook: OpenBao raft snapshot 암호화 백업 활성화·점검·키 교체 (live cluster)
 
+Listener 인증서 갱신·SIGHUP·served/Secret 검증: [OpenBao TLS runbook](openbao-tls.md).
+
 **실행 전 소유자의 명시적 승인이 필요하다.** 공유 클러스터에서 아래 3~5절의 쓰기 단계는 모두 클러스터를 변경한다(OpenBao 롤/정책, ConfigMap, GitOps 배포, Job 생성). 저장소 변경(PR #443)은 정적 검사와 로컬 OpenSSL 실행으로만 확인되었고, **이 문서의 어떤 단계도 실제 클러스터에서 실행·검증된 적이 없다**(8절). 결정 근거는 `docs/common/storage-protection-policy.md` 8절(D-rpo, D-auth, D-cms, D-plaintext, D-fpr, D-oaep, D-image, D-location, D-holder, D-perms)이며, 이 문서는 그 절을 운영 순서로 풀어 쓴 것이다. 두 문서가 다르면 정책 문서와 `gitops/resources/openbao-backup.yaml`이 우선한다.
 
 ## 1. 목적과 범위

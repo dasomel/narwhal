@@ -272,13 +272,10 @@ describe("matchRbacException", () => {
 })
 
 describe("matchInfraException", () => {
-  it("matches exact node check IDs (including AVD-KCV prefix) and fails closed on unlisted or empty inputs", () => {
-    const m = matchInfraException("narwhal-master-1", "KCV0056")
-    expect(m).not.toBeNull()
-    expect(m?.class).toBe("upstream")
-    expect(m?.reason).toContain("CMD-0009")
-
-    expect(matchInfraException("narwhal-master-2", "AVD-KCV-0056")?.class).toBe("upstream")
+  it("keeps ACCEPTED_INFRA_RULES empty and fails closed (KCV0056/KCV0057/KCV0059 stay actionable)", () => {
+    expect(ACCEPTED_INFRA_RULES).toEqual([])
+    expect(matchInfraException("narwhal-master-1", "KCV0056")).toBeNull()
+    expect(matchInfraException("narwhal-master-2", "AVD-KCV-0056")).toBeNull()
     expect(matchInfraException("narwhal-master-1", "KCV0059")).toBeNull()
     expect(matchInfraException("narwhal-master-1", "KCV0057")).toBeNull()
     expect(matchInfraException("", "KCV0056")).toBeNull()

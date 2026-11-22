@@ -13,6 +13,8 @@
 
 ## Mistakes Log (Compounding Engineering)
 
+| 2026-11-23 | Scorecard가 Dockerfile.dev의 node:22-slim과 deploy/tuning-job.Dockerfile의 alpine:3.21을 미고정 base로 탐지했다. 운영 전 고정하라는 주석은 실제 FROM 핀이 아니다. | D1: crane digest로 각 태그와 tag@digest를 직접 조회해 같은 registry index digest임을 확인한 뒤 기존 Dockerfile과 같은 tag@sha256 형식으로 고정했다. Dependabot은 github-actions·npm만 관리하고 Renovate 설정은 없어 base 갱신은 수동이다. 비용: 자동 보안 갱신 없음; 탈출구: 같은 태그 digest를 다시 조회해 별도 검증 후 갱신한다. apt/apk 패키지는 이번 범위에서 미변경이며 base 고정만으로 전체 빌드 재현성을 보장하지 않는다. |
+
 ### Documentation / Release Mistakes
 
 | Date | Mistake | Fix |

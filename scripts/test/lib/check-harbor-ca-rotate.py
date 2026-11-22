@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = (ROOT / 'scripts/cluster/08-6-tls-routes.sh').read_text()
 BLOCK = SCRIPT[SCRIPT.index('CA_CERT=$(kubectl get secret narwhal-wildcard-tls'):
-               SCRIPT.index('\necho "=== TLS Routes and APISIX Routes Installation Complete')]
+               SCRIPT.index('\n#=========================================\n# Configure containerd TLS trust for Harbor')]
 GUARD = re.compile(r'if \[ -n "\$\{CA_BEFORE\}" \] && \[ "\$\{CA_BEFORE\}" != "\$\{CA_AFTER\}" \] \\\n\s+&& ')
 
 

@@ -559,6 +559,53 @@ if [ "${SECONDS}" -ge "${chart_gate_deadline}" ]; then
   exit 1
 fi
 
+# D-PSA-LABELS-14 (KISA-POD-01): strict final PSA convergence pass (--require-all).
+# The earlier call in 08-3-security.sh is tolerant (no --require-all) because security-system,
+# istio-system, iam, dev, and chaos-testing do not exist yet at step 08-3. By this point every
+# Phase 2 namespace exists except GitOps-managed namespaces (dev from dev-namespace, chaos-testing
+# from chaos-mesh), which ArgoCD may still be syncing after the chart-resolution gate clears.
+# Wait boundedly for those GitOps namespaces, then require all 14 namespaces with --require-all.
+# Failure surfacing: 14-gitops-bootstrap.sh is in CRITICAL_SCRIPTS (06-phase2-start.sh), so any
+# missing namespace, label mismatch, API error, or missing helper exits non-zero and aborts
+# Phase 2 loudly (never swallowed).
+# Cost: up to PSA_NS_WAIT_TIMEOUT (default 300s) extra wait when ArgoCD sync lags.
+# Escape hatch: override PSA_NS_WAIT_TIMEOUT / PSA_NS_WAIT_INTERVAL or fix the blocking ArgoCD
+# Application and re-run `bash /home/vagrant/scripts/cluster/lib/apply-psa-labels.sh --require-all`.
+psa_ns_wait_timeout="${PSA_NS_WAIT_TIMEOUT:-300}"
+psa_ns_wait_interval="${PSA_NS_WAIT_INTERVAL:-10}"
+case "${psa_ns_wait_timeout}" in ''|*[!0-9]*) psa_ns_wait_timeout=300 ;; esac
+case "${psa_ns_wait_interval}" in ''|0|*[!0-9]*) psa_ns_wait_interval=10 ;; esac
+
+echo "Waiting up to ${psa_ns_wait_timeout}s for GitOps-managed namespaces (dev, chaos-testing)..."
+psa_ns_deadline=$((SECONDS + psa_ns_wait_timeout))
+while :; do
+  psa_missing_ns=()
+  for ns in dev chaos-testing; do
+    if ! kubectl get namespace "${ns}" -o name >/dev/null 2>&1; then
+      psa_missing_ns+=("${ns}")
+    fi
+  done
+  if [ "${#psa_missing_ns[@]}" -eq 0 ]; then
+    break
+  fi
+  if [ "${SECONDS}" -ge "${psa_ns_deadline}" ]; then
+    echo "WARN: timed out waiting for GitOps-managed namespace(s): ${psa_missing_ns[*]}" >&2
+    break
+  fi
+  echo "  Waiting for GitOps namespace(s): ${psa_missing_ns[*]}..."
+  sleep "${psa_ns_wait_interval}"
+done
+
+PSA_HELPER="/home/vagrant/scripts/cluster/lib/apply-psa-labels.sh"
+if [ ! -f "${PSA_HELPER}" ]; then
+  PSA_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/apply-psa-labels.sh"
+fi
+if [ ! -f "${PSA_HELPER}" ]; then
+  echo "ERROR: ${PSA_HELPER} not found; cannot enforce required 14/14 PSA audit/warn labels" >&2
+  exit 1
+fi
+bash "${PSA_HELPER}" --require-all
+
 echo "=== GitOps Bootstrap Done ==="
 
 echo ""

@@ -197,7 +197,7 @@ export const cacheKeys = {
     join("falco", "events", priority ?? "all", sinceMinutes, limit),
   falcoCritical: () => "falco:critical",
 
-  kisaComplianceList: () => "compliance:kisa:list",
+  kisaComplianceList: () => "compliance:v2:kisa:list",
 
   heroSummary: (scopeFingerprint: string) => join("hero", "summary", scopeFingerprint),
 
@@ -246,15 +246,29 @@ export const cacheKeys = {
 
   alertmanagerActive: () => "alerts:active",
 
-  complianceConfigAuditList: () => "compliance:config-audit:list",
-  complianceConfigAuditDetail: (namespace: string, name: string) => join("compliance", "config-audit", namespace, name),
-  complianceRbacAuditList: () => "compliance:rbac-audit:list",
+  // D-COMPLIANCE-CACHE-V2: Config Audit now includes ClusterConfigAuditReports and scopes detail by
+  // (scope, namespace, kind, name); RBAC/Infra lists stopped caching partial/empty fallback arrays.
+  // Bumping to v2 prevents stale pre-branch entries from hiding real failures or passing KISA CFG-01.
+  // Cost: one cold read after upgrade; escape hatch: advance version on future shape/content changes.
+  complianceConfigAuditList: () => "compliance:v2:config-audit:list",
+  complianceConfigAuditDetail: (
+    scope: "cluster" | "namespace",
+    namespace: string,
+    kind: string,
+    name: string,
+  ) =>
+    // `join` intentionally not used: preserve positional segments (empty namespace for cluster scope)
+    // and URI-encode delimiters so cluster/namespaced reports and names containing `:` never collide.
+    `compliance:v2:config-audit:${scope}:${encodeURIComponent(scope === "cluster" ? "" : namespace)}:${encodeURIComponent(kind)}:${encodeURIComponent(name)}`,
+  complianceRbacAuditList: () => "compliance:v2:rbac-audit:list",
   complianceRbacAuditDetail: (namespace: string, name: string) => join("compliance", "rbac-audit", namespace, name),
-  complianceInfraAuditList: () => "compliance:infra-audit:list",
+  complianceInfraAuditList: () => "compliance:v2:infra-audit:list",
   complianceInfraAuditDetail: (node: string) => join("compliance", "infra-audit", node),
-  complianceFrameworksList: () => "compliance:frameworks:list",
-  complianceFrameworksDetail: (id: string) => join("compliance", "frameworks", id),
-  complianceSummary: () => "compliance:summary",
+  // D4: Evaluation fields changed aggregate semantics; v2 excludes optimistic old entries.
+  // Cost: one cold read after upgrade; escape hatch: advance this version for future shape changes.
+  complianceFrameworksList: () => "compliance:v2:frameworks:list",
+  complianceFrameworksDetail: (id: string) => join("compliance", "v2", "frameworks", id),
+  complianceSummary: () => "compliance:v2:summary",
 
   serviceGraphCluster: (window: string, namespace: string | undefined) => join("graph", "cluster", window, namespace ?? "all"),
   serviceGraphClusterScoped: (scopeFingerprint: string, window: string, namespace: string | undefined) =>
@@ -581,8 +595,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide runtime security events, not per-caller." },
   },
-  "compliance:kisa:list": {
-    example: "compliance:kisa:list",
+  "compliance:v2:kisa:list": {
+    example: "compliance:v2:kisa:list",
     dimensions: [],
     ttlSeconds: 60,
     owner: "src/lib/kisa.ts",
@@ -828,8 +842,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
       detail: "Cluster-wide Alertmanager feed; per-caller filtering happens downstream in alerts/hero/status/my-apps/events via alertVisible.",
     },
   },
-  "compliance:config-audit:list": {
-    example: "compliance:config-audit:list",
+  "compliance:v2:config-audit:list": {
+    example: "compliance:v2:config-audit:list",
     dimensions: [],
     ttlSeconds: 60,
     owner: "src/lib/compliance.ts",
@@ -838,9 +852,9 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide compliance audit data, not per-caller." },
   },
-  "compliance:config-audit:detail": {
-    example: "compliance:config-audit:{namespace}:{name}",
-    dimensions: ["query"],
+  "compliance:v2:config-audit:detail": {
+    example: "compliance:v2:config-audit:{scope}:{namespace}:{kind}:{name}",
+    dimensions: ["namespace", "query"],
     ttlSeconds: 60,
     owner: "src/lib/compliance.ts",
     invalidation: "TTL only",
@@ -848,8 +862,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide compliance audit data, not per-caller." },
   },
-  "compliance:rbac-audit:list": {
-    example: "compliance:rbac-audit:list",
+  "compliance:v2:rbac-audit:list": {
+    example: "compliance:v2:rbac-audit:list",
     dimensions: [],
     ttlSeconds: 60,
     owner: "src/lib/compliance.ts",
@@ -868,8 +882,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide compliance audit data, not per-caller." },
   },
-  "compliance:infra-audit:list": {
-    example: "compliance:infra-audit:list",
+  "compliance:v2:infra-audit:list": {
+    example: "compliance:v2:infra-audit:list",
     dimensions: [],
     ttlSeconds: 60,
     owner: "src/lib/compliance.ts",
@@ -888,8 +902,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide compliance audit data, not per-caller." },
   },
-  "compliance:frameworks:list": {
-    example: "compliance:frameworks:list",
+  "compliance:v2:frameworks:list": {
+    example: "compliance:v2:frameworks:list",
     dimensions: [],
     ttlSeconds: 60,
     owner: "src/lib/compliance.ts",
@@ -898,8 +912,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide compliance audit data, not per-caller." },
   },
-  "compliance:frameworks:detail": {
-    example: "compliance:frameworks:{id}",
+  "compliance:v2:frameworks:detail": {
+    example: "compliance:v2:frameworks:{id}",
     dimensions: ["query"],
     ttlSeconds: 60,
     owner: "src/lib/compliance.ts",
@@ -908,8 +922,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide compliance audit data, not per-caller." },
   },
-  "compliance:summary": {
-    example: "compliance:summary",
+  "compliance:v2:summary": {
+    example: "compliance:v2:summary",
     dimensions: [],
     ttlSeconds: 60,
     owner: "src/lib/compliance.ts",
@@ -1251,7 +1265,7 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
   falcoEvents: { registryKey: "falco:events", ttlSeconds: 30, args: ["Critical", 60, 100], dimensionArgIndex: { query: 0 } },
   falcoCritical: { registryKey: "falco:critical", ttlSeconds: 30, args: [], dimensionArgIndex: {} },
 
-  kisaComplianceList: { registryKey: "compliance:kisa:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
+  kisaComplianceList: { registryKey: "compliance:v2:kisa:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
 
   heroSummary: { registryKey: "hero:summary", ttlSeconds: 10, args: ["fp-1"], dimensionArgIndex: { scope: 0 } },
 
@@ -1294,35 +1308,35 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
 
   alertmanagerActive: { registryKey: "alerts:active", ttlSeconds: 15, args: [], dimensionArgIndex: {} },
 
-  complianceConfigAuditList: { registryKey: "compliance:config-audit:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
+  complianceConfigAuditList: { registryKey: "compliance:v2:config-audit:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   complianceConfigAuditDetail: {
-    registryKey: "compliance:config-audit:detail",
+    registryKey: "compliance:v2:config-audit:detail",
     ttlSeconds: 60,
-    args: ["ns-1", "name-1"],
-    dimensionArgIndex: { query: 0 },
+    args: ["namespace", "ns-1", "Deployment", "name-1"],
+    dimensionArgIndex: { namespace: 1, query: 2 },
   },
-  complianceRbacAuditList: { registryKey: "compliance:rbac-audit:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
+  complianceRbacAuditList: { registryKey: "compliance:v2:rbac-audit:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   complianceRbacAuditDetail: {
     registryKey: "compliance:rbac-audit:detail",
     ttlSeconds: 60,
     args: ["ns-1", "name-1"],
     dimensionArgIndex: { query: 0 },
   },
-  complianceInfraAuditList: { registryKey: "compliance:infra-audit:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
+  complianceInfraAuditList: { registryKey: "compliance:v2:infra-audit:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   complianceInfraAuditDetail: {
     registryKey: "compliance:infra-audit:detail",
     ttlSeconds: 60,
     args: ["node-1"],
     dimensionArgIndex: { query: 0 },
   },
-  complianceFrameworksList: { registryKey: "compliance:frameworks:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
+  complianceFrameworksList: { registryKey: "compliance:v2:frameworks:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   complianceFrameworksDetail: {
-    registryKey: "compliance:frameworks:detail",
+    registryKey: "compliance:v2:frameworks:detail",
     ttlSeconds: 60,
     args: ["id-1"],
     dimensionArgIndex: { query: 0 },
   },
-  complianceSummary: { registryKey: "compliance:summary", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
+  complianceSummary: { registryKey: "compliance:v2:summary", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
 
   // serviceGraphCluster's real TTL is computed at the call site (5s for the "1m"
   // window, 60s otherwise) — not a fixed per-namespace constant, so it's the one

@@ -1,0 +1,308 @@
+{
+  "measuredFullSnapshotAggregates": {
+    "capturedAt": "2026-11-22",
+    "pooledTotalControls": 178,
+    "pooledRawPass": 145,
+    "pooledEvaluatedPass": 0,
+    "pooledEffectivePass": 32,
+    "pooledNotEvaluated": 145,
+    "pooledActionableFail": 1,
+    "pooledAcceptedFail": 32,
+    "frameworks": {
+      "k8s-cis-1.23": { "total": 116, "rawPass": 102, "evaluatedPass": 0, "notEvaluated": 102, "actionableFail": 1, "acceptedFail": 13, "droppedChecks": 10 },
+      "k8s-kisa-1.0": { "total": 7, "rawPass": 3, "evaluatedPass": 0, "notEvaluated": 3, "actionableFail": 0, "acceptedFail": 4 },
+      "k8s-nsa-1.0": { "total": 27, "rawPass": 18, "evaluatedPass": 0, "notEvaluated": 18, "actionableFail": 0, "acceptedFail": 9 },
+      "k8s-pss-baseline-0.1": { "total": 11, "rawPass": 8, "evaluatedPass": 0, "notEvaluated": 8, "actionableFail": 0, "acceptedFail": 3 },
+      "k8s-pss-restricted-0.1": { "total": 17, "rawPass": 14, "evaluatedPass": 0, "notEvaluated": 14, "actionableFail": 0, "acceptedFail": 3 }
+    }
+  },
+  "nodes": {
+    "items": [
+      {
+        "metadata": {
+          "name": "narwhal-master-1",
+          "labels": {
+            "node-role.kubernetes.io/control-plane": ""
+          }
+        }
+      }
+    ]
+  },
+  "trivyOperatorDeployment": {
+    "spec": {
+      "template": {
+        "spec": {
+          "containers": [
+            {
+              "env": [
+                { "name": "OPERATOR_EXCLUDE_NAMESPACES", "value": "kube-system,kube-public,kube-node-lease,trivy-system,istio-system" },
+                { "name": "OPERATOR_TARGET_NAMESPACES", "value": "" },
+                { "name": "OPERATOR_CONFIG_AUDIT_SCANNER_ENABLED", "value": "true" },
+                { "name": "OPERATOR_RBAC_ASSESSMENT_SCANNER_ENABLED", "value": "true" },
+                { "name": "OPERATOR_INFRA_ASSESSMENT_SCANNER_ENABLED", "value": "true" }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "trivyConfigMap": {
+    "data": {
+      "trivy.supportedConfigAuditKinds": "Workload,Service,Role,ClusterRole,NetworkPolicy,Ingress,LimitRange,ResourceQuota"
+    }
+  },
+  "replicasets": {
+    "items": [
+      {
+        "metadata": {
+          "namespace": "devtools",
+          "name": "harbor-core-b569bd8dd",
+          "annotations": { "deployment.kubernetes.io/revision": "2" },
+          "ownerReferences": [{ "kind": "Deployment", "name": "harbor-core" }]
+        },
+        "spec": { "replicas": 1 },
+        "status": { "replicas": 1, "terminatingReplicas": 0 }
+      },
+      {
+        "metadata": {
+          "namespace": "devtools",
+          "name": "argocd-dex-server-b569bd8dd",
+          "annotations": { "deployment.kubernetes.io/revision": "1" },
+          "ownerReferences": [{ "kind": "Deployment", "name": "argocd-dex-server" }]
+        },
+        "spec": { "replicas": 1 },
+        "status": { "replicas": 1, "terminatingReplicas": 0 }
+      },
+      {
+        "metadata": {
+          "namespace": "security-system",
+          "name": "trivy-operator-59c6cc588d",
+          "annotations": { "deployment.kubernetes.io/revision": "3" },
+          "ownerReferences": [{ "kind": "Deployment", "name": "trivy-operator" }]
+        },
+        "spec": { "replicas": 0 },
+        "status": { "replicas": 0, "terminatingReplicas": 0 }
+      },
+      {
+        "metadata": {
+          "namespace": "security-system",
+          "name": "trivy-operator-6d7667c66d",
+          "annotations": { "deployment.kubernetes.io/revision": "6" },
+          "ownerReferences": [{ "kind": "Deployment", "name": "trivy-operator" }]
+        },
+        "spec": { "replicas": 1 },
+        "status": { "replicas": 1, "terminatingReplicas": 0 }
+      }
+    ]
+  },
+  "configauditreports": {
+    "items": [
+      {
+        "metadata": {
+          "namespace": "devtools",
+          "name": "replicaset-harbor-core-b569bd8dd",
+          "creationTimestamp": "2026-11-22T05:00:00Z",
+          "labels": {
+            "trivy-operator.resource.kind": "ReplicaSet",
+            "trivy-operator.resource.name": "harbor-core-b569bd8dd"
+          }
+        },
+        "report": {
+          "summary": { "criticalCount": 0, "highCount": 1, "mediumCount": 0, "lowCount": 1 },
+          "checks": [
+            { "checkID": "KSV014", "title": "Root file system is not read-only", "severity": "HIGH", "success": false },
+            { "checkID": "KSV020", "title": "Runs with UID <= 10000", "severity": "LOW", "success": false }
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "namespace": "devtools",
+          "name": "replicaset-argocd-dex-server-b569bd8dd",
+          "creationTimestamp": "2026-11-18T05:00:00Z",
+          "labels": {
+            "trivy-operator.resource.kind": "ReplicaSet",
+            "trivy-operator.resource.name": "argocd-dex-server-b569bd8dd"
+          }
+        },
+        "report": {
+          "summary": { "criticalCount": 0, "highCount": 0, "mediumCount": 0, "lowCount": 2 },
+          "checks": [
+            { "checkID": "KSV020", "title": "Runs with UID <= 10000", "severity": "LOW", "success": false },
+            { "checkID": "KSV011", "title": "CPU not limited", "severity": "LOW", "success": false }
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "namespace": "security-system",
+          "name": "replicaset-trivy-operator-59c6cc588d",
+          "creationTimestamp": "2026-11-15T05:00:00Z",
+          "labels": {
+            "trivy-operator.resource.kind": "ReplicaSet",
+            "trivy-operator.resource.name": "trivy-operator-59c6cc588d"
+          }
+        },
+        "report": {
+          "summary": { "criticalCount": 0, "highCount": 0, "mediumCount": 0, "lowCount": 2 },
+          "checks": [
+            { "checkID": "KSV020", "title": "Runs with UID <= 10000", "severity": "LOW", "success": false },
+            { "checkID": "KSV021", "title": "Runs with GID <= 10000", "severity": "LOW", "success": false }
+          ]
+        }
+      },
+      {
+        "metadata": {
+          "namespace": "security-system",
+          "name": "daemonset-falco",
+          "creationTimestamp": "2026-11-22T05:30:00Z",
+          "labels": {
+            "trivy-operator.resource.kind": "DaemonSet",
+            "trivy-operator.resource.name": "falco"
+          }
+        },
+        "report": {
+          "summary": { "criticalCount": 0, "highCount": 1, "mediumCount": 1, "lowCount": 0 },
+          "checks": [
+            { "checkID": "KSV017", "title": "Privileged", "severity": "HIGH", "success": false },
+            { "checkID": "KSV104", "title": "Seccomp", "severity": "MEDIUM", "success": false }
+          ]
+        }
+      }
+    ]
+  },
+  "rbacassessmentreports": {
+    "items": [
+      {
+        "metadata": {
+          "namespace": "devtools",
+          "name": "role-narwhal-portal-jobs",
+          "creationTimestamp": "2026-11-22T05:10:00Z",
+          "labels": {
+            "trivy-operator.resource.kind": "Role",
+            "trivy-operator.resource.name": "narwhal-portal-jobs"
+          },
+          "ownerReferences": [{ "kind": "Role", "name": "narwhal-portal-jobs" }]
+        },
+        "report": {
+          "summary": { "criticalCount": 0, "highCount": 0, "mediumCount": 1, "lowCount": 0 },
+          "checks": [
+            { "checkID": "KSV048", "title": "Manage Kubernetes workloads", "severity": "MEDIUM", "success": false }
+          ]
+        }
+      }
+    ]
+  },
+  "clusterrbacassessmentreports": {
+    "items": [
+      {
+        "metadata": {
+          "name": "clusterrole-platform-admin",
+          "creationTimestamp": "2026-11-22T05:15:00Z",
+          "labels": {
+            "trivy-operator.resource.kind": "ClusterRole",
+            "trivy-operator.resource.name": "platform-admin"
+          },
+          "ownerReferences": [{ "kind": "ClusterRole", "name": "platform-admin" }]
+        },
+        "report": {
+          "summary": { "criticalCount": 1, "highCount": 0, "mediumCount": 0, "lowCount": 0 },
+          "checks": [
+            { "checkID": "KSV041", "title": "Manage secrets", "severity": "CRITICAL", "success": false }
+          ]
+        }
+      }
+    ]
+  },
+  "clusterinfraassessmentreports": {
+    "items": [
+      {
+        "metadata": {
+          "name": "node-narwhal-master-1",
+          "creationTimestamp": "2026-11-22T09:24:19Z",
+          "labels": {
+            "trivy-operator.resource.kind": "Node",
+            "trivy-operator.resource.name": "narwhal-master-1"
+          }
+        },
+        "report": {
+          "summary": { "criticalCount": 0, "highCount": 0, "mediumCount": 0, "lowCount": 0 },
+          "checks": []
+        }
+      }
+    ]
+  },
+  "clustercompliancereports": {
+    "items": [
+      {
+        "metadata": { "name": "k8s-cis-1.23", "creationTimestamp": "2026-11-15T06:00:00Z" },
+        "spec": {
+          "compliance": {
+            "id": "k8s-cis-1.23",
+            "title": "CIS Kubernetes Benchmark v1.23",
+            "controls": [
+              { "id": "1.1.1", "name": "API server pod spec perms", "severity": "HIGH", "checks": [{ "id": "AVD-KCV-0048" }], "commands": [{ "id": "CMD-0001" }] },
+              { "id": "1.1.9", "name": "CNI file permissions", "severity": "HIGH", "checks": [{ "id": "AVD-KCV-0056" }], "commands": [{ "id": "CMD-0009" }] },
+              { "id": "1.2.1", "name": "anonymous-auth false", "severity": "HIGH", "checks": [{ "id": "AVD-KCV-0001" }] },
+              { "id": "3.1.1", "name": "Client cert auth (Manual)", "severity": "MEDIUM" },
+              { "id": "4.1.5", "name": "kubelet.conf perms", "severity": "HIGH", "checks": [{ "id": "AVD-KCV-0073" }], "commands": [{ "id": "CMD-0026" }] },
+              { "id": "5.1.1", "name": "cluster-admin role usage", "severity": "HIGH", "checks": [{ "id": "AVD-KSV-0111" }] },
+              { "id": "5.2.2", "name": "Minimize privileged containers", "severity": "HIGH", "checks": [{ "id": "AVD-KSV-0017" }] },
+              { "id": "5.7.3", "name": "Apply Security Context to Pods", "severity": "MEDIUM", "checks": [{ "id": "AVD-KSV-0020" }, { "id": "AVD-KSV-0021" }] }
+            ]
+          }
+        },
+        "status": {
+          "updateTimestamp": "2026-11-22T06:00:00Z",
+          "summary": { "passCount": 5, "failCount": 3 },
+          "detailReport": {
+            "results": [
+              { "id": "1.1.1", "name": "API server pod spec perms", "severity": "HIGH", "checks": [{ "checkID": "", "success": true }] },
+              { "id": "1.1.9", "name": "CNI file permissions", "severity": "HIGH", "checks": [{ "checkID": "AVD-KCV-0056", "target": "/node-narwhal-master-1", "success": false }] },
+              { "id": "1.2.1", "name": "anonymous-auth false", "severity": "HIGH", "checks": [{ "checkID": "", "success": true }] },
+              { "id": "3.1.1", "name": "Client cert auth (Manual)", "severity": "MEDIUM", "checks": [{ "checkID": "", "success": true }] },
+              { "id": "4.1.5", "name": "kubelet.conf perms", "severity": "HIGH", "checks": [{ "checkID": "", "success": true }] },
+              { "id": "5.1.1", "name": "cluster-admin role usage", "severity": "HIGH", "checks": [{ "checkID": "", "success": true }] },
+              { "id": "5.2.2", "name": "Minimize privileged containers", "severity": "HIGH", "checks": [{ "checkID": "AVD-KSV-0017", "target": "security-system/daemonset-falco", "success": false }] },
+              {
+                "id": "5.7.3",
+                "name": "Apply Security Context to Pods",
+                "severity": "MEDIUM",
+                "checks": [
+                  { "checkID": "AVD-KSV-0020", "target": "devtools/replicaset-harbor-core-b569bd8dd", "success": false },
+                  { "checkID": "AVD-KSV-0020", "target": "security-system/replicaset-trivy-operator-59c6cc588d", "success": false }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "metadata": { "name": "k8s-pss-restricted-0.1", "creationTimestamp": "2026-11-15T06:00:00Z" },
+        "spec": {
+          "compliance": {
+            "id": "k8s-pss-restricted-0.1",
+            "title": "Kubernetes Pod Security Standards (Restricted)",
+            "controls": [
+              { "id": "1", "name": "HostProcess", "severity": "HIGH", "checks": [{ "id": "AVD-KSV-0103" }] },
+              { "id": "3", "name": "Privileged Containers", "severity": "HIGH", "checks": [{ "id": "AVD-KSV-0017" }] },
+              { "id": "13", "name": "Privilege Escalation", "severity": "HIGH", "checks": [{ "id": "avd-ksv-0001" }] }
+            ]
+          }
+        },
+        "status": {
+          "updateTimestamp": "2026-11-22T06:00:00Z",
+          "summary": { "passCount": 2, "failCount": 1 },
+          "detailReport": {
+            "results": [
+              { "id": "1", "name": "HostProcess", "severity": "HIGH", "checks": [{ "checkID": "", "success": true }] },
+              { "id": "3", "name": "Privileged Containers", "severity": "HIGH", "checks": [{ "checkID": "AVD-KSV-0017", "target": "security-system/daemonset-falco", "success": false }] },
+              { "id": "13", "name": "Privilege Escalation", "severity": "HIGH", "checks": [{ "checkID": "", "success": true }] }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

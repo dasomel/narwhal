@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth"
 import { roleGateErrorResponse } from "@/lib/role-gate-response"
-import { getRbacAuditList, getRbacAuditDetail } from "@/lib/compliance"
+import { ComplianceDataUnavailableError, getRbacAuditList, getRbacAuditDetail } from "@/lib/compliance"
 
 export const dynamic = "force-dynamic"
 
@@ -23,6 +23,12 @@ export async function GET(req: Request) {
     const rows = await getRbacAuditList()
     return NextResponse.json(rows)
   } catch (err) {
+    if (err instanceof ComplianceDataUnavailableError) {
+      return NextResponse.json(
+        { error: "Data unavailable", unavailable: true, source: err.source },
+        { status: 503 },
+      )
+    }
     console.error("GET /api/compliance/rbac-audit error:", err)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }

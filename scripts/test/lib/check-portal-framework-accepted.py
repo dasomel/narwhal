@@ -86,7 +86,7 @@ def check(texts: dict[str, str]) -> list[str]:
         ):
             if needle not in src:
                 errors.append(f"{label} missing {needle!r}")
-    if "f.effectivePassRate ?? f.passRate" not in counters:
+    if "f.effectivePassRate ?? 0" not in counters:
         errors.append("failure-counters.tsx missing effectivePassRate handling")
 
     # 5. Docs & live fixture test
@@ -119,7 +119,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("allow clusterrole with namespace", "compliance", 'if (namespace !== "") return null', "if (false) return null"),
     ("bypass configAuditMatcher", "compliance", "configAuditMatcher(resolved.namespace, resolved.kind, resolved.name, deploymentOwners)", "(() => ({ accepted: true }))"),
     ("bypass rbacAuditMatcher", "compliance", "rbacAuditMatcher(resolved.namespace, resolved.kind, resolved.name)", "(() => ({ accepted: true }))"),
-    ("drop ReplicaSet lookup", "compliance", "complianceK8sFetch<RawComplianceList>(\"/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports\"),\n    fetchReplicaSetMap(),", "complianceK8sFetch<RawComplianceList>(\"/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports\"),\n    Promise.resolve(null),"),
+    ("drop ReplicaSet lookup", "compliance", "  ] = await Promise.all([\n    fetchReplicaSetMap(),", "  ] = await Promise.all([\n    Promise.resolve(null),"),
     ("mark mixed control accepted", "compliance", "const accepted = ctrlFail > 0 && actionableFailCount === 0 && acceptedFailCount > 0", "const accepted = acceptedFailCount > 0"),
     ("fail open on summary-only report", "compliance", "actionableFailCount = failCount", "actionableFailCount = 0"),
     ("remove doc URL from FrameworksGrid", "grid", "COMPLIANCE_EXCEPTIONS_DOC_URL", "REMOVED_DOC_URL"),

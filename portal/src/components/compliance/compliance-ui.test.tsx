@@ -14,12 +14,16 @@ vi.mock("@/lib/dashboard-access", () => ({
 vi.mock("@/lib/i18n-server", () => ({
   getLocale: mockGetLocale,
 }))
-vi.mock("@/lib/compliance", () => ({
-  getConfigAuditDetail: mockGetConfigAuditDetail,
-  getRbacAuditDetail: mockGetRbacAuditDetail,
-  getInfraAuditDetail: mockGetInfraAuditDetail,
-  getComplianceFrameworkDetail: mockGetComplianceFrameworkDetail,
-}))
+vi.mock("@/lib/compliance", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/compliance")>()
+  return {
+    ...actual,
+    getConfigAuditDetail: mockGetConfigAuditDetail,
+    getRbacAuditDetail: mockGetRbacAuditDetail,
+    getInfraAuditDetail: mockGetInfraAuditDetail,
+    getComplianceFrameworkDetail: mockGetComplianceFrameworkDetail,
+  }
+})
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-query")>()
@@ -176,7 +180,7 @@ describe("Compliance UI accepted exceptions", () => {
 
     const html = renderToStaticMarkup(
       <LocaleProvider locale="en">
-        <ExpandedConfigPanel namespace="devtools" name="narwhal-portal-74b459c658" />
+        <ExpandedConfigPanel scope="namespace" namespace="devtools" kind="ReplicaSet" name="narwhal-portal-74b459c658" />
       </LocaleProvider>,
     )
 
@@ -188,7 +192,7 @@ describe("Compliance UI accepted exceptions", () => {
 
     const koHtml = renderToStaticMarkup(
       <LocaleProvider locale="ko">
-        <ExpandedConfigPanel namespace="devtools" name="narwhal-portal-74b459c658" />
+        <ExpandedConfigPanel scope="namespace" namespace="devtools" kind="ReplicaSet" name="narwhal-portal-74b459c658" />
       </LocaleProvider>,
     )
     expect(koHtml).toContain(ko["compliance.acceptedReason.portalUid1001"])
@@ -330,6 +334,7 @@ describe("Compliance UI accepted exceptions", () => {
 
     const configPageEl = await ConfigAuditDetailPage({
       params: Promise.resolve({ ns: "devtools", name: "narwhal-portal-74b459c658" }),
+      searchParams: Promise.resolve({ scope: "namespace", kind: "ReplicaSet" }),
     })
     const configPageHtml = renderToStaticMarkup(configPageEl)
     expect(configPageHtml).toContain(ko["compliance.acceptedReason.portalUid1001"])
@@ -1061,7 +1066,7 @@ it("H5/H1: empty failure lists never say All checks passed or 모든 검사 통�
     expect(infraPanelHtml).not.toContain(forbidden)
 
     vi.mocked(useQuery).mockReturnValue({ data: cleanConfigDetail, isLoading: false, isError: false, refetch: vi.fn() } as never)
-    const cfgPanelHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><ExpandedConfigPanel namespace="dev" name="app" /></LocaleProvider>)
+    const cfgPanelHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><ExpandedConfigPanel scope="namespace" namespace="dev" kind="Deployment" name="app" /></LocaleProvider>)
     expect(cfgPanelHtml).toContain(expectedNoFail)
     expect(cfgPanelHtml).not.toContain(forbidden)
 
@@ -1080,7 +1085,12 @@ it("H5/H1: empty failure lists never say All checks passed or 모든 검사 통�
     expect(infraPageHtml).toContain("scripts/test/verify-cluster.sh")
     expect(infraPageHtml).not.toContain(forbidden)
 
-    const cfgPageHtml = renderToStaticMarkup(await ConfigAuditDetailPage({ params: Promise.resolve({ ns: "dev", name: "app" }) }))
+    const cfgPageHtml = renderToStaticMarkup(
+      await ConfigAuditDetailPage({
+        params: Promise.resolve({ ns: "dev", name: "app" }),
+        searchParams: Promise.resolve({ scope: "namespace", kind: "Deployment" }),
+      }),
+    )
     expect(cfgPageHtml).toContain(expectedNoFail)
     expect(cfgPageHtml).not.toContain(forbidden)
 
@@ -1169,23 +1179,76 @@ it("J1/J2 UI: renders cluster-scoped ConfigAuditRow with visible Cluster scope, 
     isError: false,
     refetch: vi.fn(),
   } as never)
+  vi.mocked(useQuery).mockClear()
   const panelHtml = renderToStaticMarkup(
     <LocaleProvider locale="en">
-      <ExpandedConfigPanel namespace="" name="custom:cluster-binding" />
+      <ExpandedConfigPanel scope="cluster" namespace="" kind="ClusterRoleBinding" name="custom:cluster-binding" />
     </LocaleProvider>,
   )
   expect(panelHtml).toContain("KSV122")
-  expect(panelHtml).toContain("/compliance/config-audit/_cluster/custom%3Acluster-binding")
+  expect(panelHtml).toContain("/compliance/config-audit/_cluster/custom%3Acluster-binding?scope=cluster&amp;kind=ClusterRoleBinding")
+  const panelQueryOpts = vi.mocked(useQuery).mock.calls[0]?.[0] as { queryKey?: unknown[]; queryFn?: () => Promise<unknown> }
+  expect(panelQueryOpts?.queryKey).toEqual([
+    "compliance-config-audit-detail",
+    "cluster",
+    "",
+    "ClusterRoleBinding",
+    "custom:cluster-binding",
+  ])
 
   mockGetLocale.mockResolvedValue("en")
   mockGetConfigAuditDetail.mockReset()
   mockGetConfigAuditDetail.mockResolvedValue(clusterDetail)
   const pageHtml = renderToStaticMarkup(
-    await ConfigAuditDetailPage({ params: Promise.resolve({ ns: "_cluster", name: "custom%3Acluster-binding" }) }),
+    await ConfigAuditDetailPage({
+      params: Promise.resolve({ ns: "_cluster", name: "custom%3Acluster-binding" }),
+      searchParams: Promise.resolve({ scope: "cluster", kind: "ClusterRoleBinding" }),
+    }),
   )
-  expect(mockGetConfigAuditDetail).toHaveBeenCalledWith("", "custom:cluster-binding")
+  expect(mockGetConfigAuditDetail).toHaveBeenCalledWith("cluster", "", "ClusterRoleBinding", "custom:cluster-binding")
   expect(pageHtml).toContain("Cluster / ClusterRoleBinding / custom:cluster-binding")
   expect(pageHtml).toContain("KSV122")
+
+  // Missing kind renders explicit ambiguous error without querying or showing clean/no-failure state.
+  mockGetConfigAuditDetail.mockReset()
+  const ambiguousPageHtml = renderToStaticMarkup(
+    await ConfigAuditDetailPage({
+      params: Promise.resolve({ ns: "_cluster", name: "custom%3Acluster-binding" }),
+    }),
+  )
+  expect(mockGetConfigAuditDetail).not.toHaveBeenCalled()
+  expect(ambiguousPageHtml).toContain(en["compliance.detail.ambiguous"])
+  expect(ambiguousPageHtml).not.toContain(en["compliance.check.allPassed"])
+
+  // ComplianceDetailAmbiguousError from lookup renders explicit ambiguous error state.
+  const { ComplianceDetailAmbiguousError } = await import("@/lib/compliance")
+  mockGetConfigAuditDetail.mockRejectedValueOnce(
+    new ComplianceDetailAmbiguousError({
+      scope: "cluster",
+      namespace: "",
+      kind: "ClusterRoleBinding",
+      name: "custom:cluster-binding",
+    }),
+  )
+  const dupAmbiguousHtml = renderToStaticMarkup(
+    await ConfigAuditDetailPage({
+      params: Promise.resolve({ ns: "_cluster", name: "custom%3Acluster-binding" }),
+      searchParams: Promise.resolve({ scope: "cluster", kind: "ClusterRoleBinding" }),
+    }),
+  )
+  expect(dupAmbiguousHtml).toContain(en["compliance.detail.ambiguous"])
+  expect(dupAmbiguousHtml).not.toContain(en["compliance.check.allPassed"])
+
+  // Contradictory scope/namespace renders Not found without querying.
+  mockGetConfigAuditDetail.mockReset()
+  const mismatchPageHtml = renderToStaticMarkup(
+    await ConfigAuditDetailPage({
+      params: Promise.resolve({ ns: "dev", name: "app" }),
+      searchParams: Promise.resolve({ scope: "cluster", kind: "ClusterRole" }),
+    }),
+  )
+  expect(mockGetConfigAuditDetail).not.toHaveBeenCalled()
+  expect(mismatchPageHtml).toContain(en["common.notFound"])
 
   mockGetComplianceFrameworkDetail.mockResolvedValue({
     id: "k8s-cis-1.23",

@@ -339,11 +339,16 @@ describe("cacheKeys builders reproduce the pre-existing key strings byte-for-byt
     expect(cacheKeys.scorecardAll(3, undefined)).toBe("scorecard:all:3:")
     expect(cacheKeys.openbaoSecrets()).toBe("openbao:secrets")
     expect(cacheKeys.alertmanagerActive()).toBe("alerts:active")
-    expect(cacheKeys.complianceConfigAuditList()).toBe("compliance:config-audit:list")
-    expect(cacheKeys.complianceConfigAuditDetail("ns", "name")).toBe("compliance:config-audit:ns:name")
-    expect(cacheKeys.complianceRbacAuditList()).toBe("compliance:rbac-audit:list")
+    expect(cacheKeys.complianceConfigAuditList()).toBe("compliance:v2:config-audit:list")
+    expect(cacheKeys.complianceConfigAuditDetail("namespace", "ns", "Deployment", "name")).toBe(
+      "compliance:v2:config-audit:namespace:ns:Deployment:name",
+    )
+    expect(cacheKeys.complianceConfigAuditDetail("cluster", "", "ClusterRoleBinding", "custom:cluster-binding")).toBe(
+      "compliance:v2:config-audit:cluster::ClusterRoleBinding:custom%3Acluster-binding",
+    )
+    expect(cacheKeys.complianceRbacAuditList()).toBe("compliance:v2:rbac-audit:list")
     expect(cacheKeys.complianceRbacAuditDetail("ns", "name")).toBe("compliance:rbac-audit:ns:name")
-    expect(cacheKeys.complianceInfraAuditList()).toBe("compliance:infra-audit:list")
+    expect(cacheKeys.complianceInfraAuditList()).toBe("compliance:v2:infra-audit:list")
     expect(cacheKeys.complianceInfraAuditDetail("node1")).toBe("compliance:infra-audit:node1")
     expect(cacheKeys.complianceFrameworksList()).toBe("compliance:v2:frameworks:list")
     expect(cacheKeys.complianceFrameworksDetail("id1")).toBe("compliance:v2:frameworks:id1")
@@ -364,5 +369,19 @@ describe("cacheKeys builders reproduce the pre-existing key strings byte-for-byt
     expect(cacheKeys.k8sControlPlaneHealth()).toBe("k8s:control-plane-health")
     expect(cacheKeys.k8sNetpol()).toBe("k8s:netpol")
     expect(cacheKeys.k8sNode("node1")).toBe("k8s:node:node1")
+  })
+
+  it("complianceConfigAuditDetail distinguishes scope, namespace, kind, and name without delimiter collisions", () => {
+    const clusterRole = cacheKeys.complianceConfigAuditDetail("cluster", "", "ClusterRole", "shared:name")
+    const clusterBinding = cacheKeys.complianceConfigAuditDetail("cluster", "", "ClusterRoleBinding", "shared:name")
+    const nsDeploy = cacheKeys.complianceConfigAuditDetail("namespace", "dev", "Deployment", "shared:name")
+    const nsService = cacheKeys.complianceConfigAuditDetail("namespace", "dev", "Service", "shared:name")
+    const otherNsDeploy = cacheKeys.complianceConfigAuditDetail("namespace", "prod", "Deployment", "shared:name")
+    const clusterSpoof = cacheKeys.complianceConfigAuditDetail("cluster", "", "Deployment", "shared:name")
+    const keys = [clusterRole, clusterBinding, nsDeploy, nsService, otherNsDeploy, clusterSpoof]
+    expect(new Set(keys).size).toBe(keys.length)
+    expect(cacheKeys.complianceConfigAuditList()).not.toBe("compliance:config-audit:list")
+    expect(cacheKeys.complianceRbacAuditList()).not.toBe("compliance:rbac-audit:list")
+    expect(cacheKeys.complianceInfraAuditList()).not.toBe("compliance:infra-audit:list")
   })
 })

@@ -68,20 +68,25 @@ function SeverityMini({ severity, count }: { severity: Severity; count: number }
 }
 
 export function ExpandedConfigPanel({
+  scope,
   namespace,
+  kind,
   name,
 }: {
+  scope: "cluster" | "namespace"
   namespace: string
+  kind: string
   name: string
 }) {
   const t = useT()
   const locale = useLocale()
+  const resolvedNs = scope === "cluster" ? "" : namespace
 
   const { data: detail, isLoading, isError, refetch } = useQuery<ConfigAuditDetail>({
-    queryKey: ["compliance-config-audit-detail", namespace, name],
+    queryKey: ["compliance-config-audit-detail", scope, resolvedNs, kind, name],
     queryFn: () =>
       fetchComplianceJson<ConfigAuditDetail>(
-        `/api/compliance/config-audit?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(name)}`,
+        `/api/compliance/config-audit?scope=${encodeURIComponent(scope)}&namespace=${encodeURIComponent(resolvedNs)}&kind=${encodeURIComponent(kind)}&name=${encodeURIComponent(name)}`,
       ),
     enabled: true,
     staleTime: 60_000,
@@ -155,7 +160,7 @@ export function ExpandedConfigPanel({
                 ))}
               </div>
               <div>
-                <a className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-[0.8rem] font-medium hover:bg-muted transition-colors" href={`/compliance/config-audit/${encodeURIComponent(namespace || "_cluster")}/${encodeURIComponent(name)}`}>
+                <a className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-[0.8rem] font-medium hover:bg-muted transition-colors" href={`/compliance/config-audit/${encodeURIComponent(scope === "cluster" ? "_cluster" : (namespace || "_cluster"))}/${encodeURIComponent(name)}?scope=${encodeURIComponent(scope)}&kind=${encodeURIComponent(kind)}`}>
                     {t("common.viewFullDetails")}
                   </a>
               </div>
@@ -371,7 +376,9 @@ export function ConfigAuditTable() {
               </thead>
               <tbody>
                 {pageRows.map((row) => {
-                  const rowKey = `${row.namespace}|${row.kind}|${row.name}`
+                  const rowScope: "cluster" | "namespace" =
+                    row.scope === "cluster" || row.namespace === "" ? "cluster" : "namespace"
+                  const rowKey = `${rowScope}|${row.namespace}|${row.kind}|${row.name}`
                   const isExpanded = expandedKey === rowKey
                   return (
                     <Fragment key={rowKey}>
@@ -440,7 +447,12 @@ export function ConfigAuditTable() {
                       {isExpanded && (
                         <tr>
                           <td colSpan={COL_COUNT + 1} className="p-0">
-                            <ExpandedConfigPanel namespace={row.namespace} name={row.name} />
+                            <ExpandedConfigPanel
+                              scope={rowScope}
+                              namespace={row.namespace}
+                              kind={row.kind}
+                              name={row.name}
+                            />
                           </td>
                         </tr>
                       )}

@@ -304,7 +304,7 @@ describe("compliance accepted exceptions", () => {
     expect(argocdServer.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 2 })
 
     // Detail keeps every check and annotates accepted ones with class + reason
-    const portalDetail = await getConfigAuditDetail("devtools", "narwhal-portal-74b459c658")
+    const portalDetail = await getConfigAuditDetail("namespace", "devtools", "ReplicaSet", "narwhal-portal-74b459c658")
     expect(portalDetail).not.toBeNull()
     const ksv014 = portalDetail!.checks.find((c) => c.id === "KSV014")
     const ksv020 = portalDetail!.checks.find((c) => c.id === "KSV020")
@@ -776,8 +776,8 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
     expect(rows.map((r) => r.name)).toEqual(["velero-7b8c9d4f5g"])
 
     // Detail on the superseded revision is also excluded, while active one resolves
-    expect(await getConfigAuditDetail("storage", "velero-6447588f5f")).toBeNull()
-    const activeDetail = await getConfigAuditDetail("storage", "velero-7b8c9d4f5g")
+    expect(await getConfigAuditDetail("namespace", "storage", "ReplicaSet", "velero-6447588f5f")).toBeNull()
+    const activeDetail = await getConfigAuditDetail("namespace", "storage", "ReplicaSet", "velero-7b8c9d4f5g")
     expect(activeDetail).not.toBeNull()
     expect(activeDetail!.checks.find((c) => c.id === "KSV020")?.accepted).toBe(true)
 
@@ -937,9 +937,9 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
     // Scaled-to-zero Deployment's current revision keeps its allowlist matching via ownerRef
     expect(rows.find((r) => r.name === "harbor-core-b569bd8dd")?.accepted).toBe(true)
     // Superseded revision is excluded from detail too
-    expect(await getConfigAuditDetail("devtools", "harbor-core-old11111")).toBeNull()
+    expect(await getConfigAuditDetail("namespace", "devtools", "ReplicaSet", "harbor-core-old11111")).toBeNull()
     // Terminating / standalone / unknown remain visible in detail and actionable summary
-    expect(await getConfigAuditDetail("storage", "velero-terminating")).not.toBeNull()
+    expect(await getConfigAuditDetail("namespace", "storage", "ReplicaSet", "velero-terminating")).not.toBeNull()
 
     const summary = await getComplianceSummary()
     expect(summary.scannedWorkloads).toBe(7)
@@ -1022,19 +1022,19 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
     // First computation: web-rs-a is old/0 -> dropped; web-rs-b is current/1 -> kept
     const firstRows = await getConfigAuditList()
     expect(firstRows.map((r) => r.name)).toEqual(["web-rs-b"])
-    expect(await getConfigAuditDetail("dev", "web-rs-a")).toBeNull()
+    expect(await getConfigAuditDetail("namespace", "dev", "ReplicaSet", "web-rs-a")).toBeNull()
     expect(mockCache.has("compliance:replicasets:list")).toBe(false)
 
     // Rollback happens before any separate RS TTL could expire; simulate report cache expiry
     phase = "rolled_back"
-    mockCache.delete("compliance:config-audit:list")
+    mockCache.delete("compliance:v2:config-audit:list")
 
     // Next computation fetches RS list in the same request path -> web-rs-a is immediately back, web-rs-b is dropped
     const secondRows = await getConfigAuditList()
     expect(secondRows.map((r) => r.name)).toEqual(["web-rs-a"])
-    const restoredDetail = await getConfigAuditDetail("dev", "web-rs-a")
+    const restoredDetail = await getConfigAuditDetail("namespace", "dev", "ReplicaSet", "web-rs-a")
     expect(restoredDetail?.name).toBe("web-rs-a")
-    expect(await getConfigAuditDetail("dev", "web-rs-b")).toBeNull()
+    expect(await getConfigAuditDetail("namespace", "dev", "ReplicaSet", "web-rs-b")).toBeNull()
   })
 
   it("fails safe when ReplicaSet list fails (403/timeout): keeps all reports, logs one warning, and does not cache failure", async () => {
@@ -1221,11 +1221,11 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
 
     expect(byName.get("harbor-core-abc12345")?.accepted).toBe(false)
 
-    const standaloneDetail = await getConfigAuditDetail("devtools", "harbor-core-bcdfg")
+    const standaloneDetail = await getConfigAuditDetail("namespace", "devtools", "ReplicaSet", "harbor-core-bcdfg")
     expect(standaloneDetail?.accepted).toBe(false)
     expect(standaloneDetail?.checks.find((c) => c.id === "KSV014")?.accepted).toBe(false)
 
-    const ownedDetail = await getConfigAuditDetail("devtools", "harbor-core-b569bd8dd")
+    const ownedDetail = await getConfigAuditDetail("namespace", "devtools", "ReplicaSet", "harbor-core-b569bd8dd")
     expect(ownedDetail?.accepted).toBe(true)
     expect(ownedDetail?.checks.find((c) => c.id === "KSV014")?.accepted).toBe(true)
 

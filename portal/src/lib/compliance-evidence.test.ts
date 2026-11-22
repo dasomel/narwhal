@@ -17,11 +17,14 @@ vi.mock("./http-client", () => ({
 }))
 import {
   ComplianceDataUnavailableError,
+  ComplianceDetailAmbiguousError,
   getComplianceFrameworkDetail,
   getComplianceFrameworks,
   getComplianceSummary,
   getConfigAuditDetail,
   getConfigAuditList,
+  getInfraAuditList,
+  getRbacAuditList,
 } from "./compliance"
 import { cacheKeys } from "./cache-keys"
 
@@ -580,7 +583,7 @@ it("J2 (MAJOR 2): ClusterConfigAuditReport ClusterRoleBinding KSV122 appears in 
     actionableSummary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
   })
 
-  const detail = await getConfigAuditDetail("", "custom:cluster-binding")
+  const detail = await getConfigAuditDetail("cluster", "", "ClusterRoleBinding", "custom:cluster-binding")
   expect(detail).not.toBeNull()
   expect(detail).toMatchObject({
     namespace: "",
@@ -607,4 +610,191 @@ it("J2 (MAJOR 2): ClusterConfigAuditReport ClusterRoleBinding KSV122 appears in 
   expect(summary403.dataUnavailable).toBe(true)
   expect(summary403.sources?.configAudit.status).toBe("unavailable")
   expect(cache.size).toBe(0)
+})
+
+it("R6-M1 (cluster): same-name clean ClusterRole and failing ClusterRoleBinding resolve and cache independently", async () => {
+  const routes = setup(["AVD-KSV-0122"])
+  routes[prefix + "clusterconfigauditreports"] = {
+    items: [
+      {
+        metadata: {
+          name: "clusterrole-shared-rbac",
+          creationTimestamp: "2026-11-23T01:00:00Z",
+          labels: { "trivy-operator.resource.kind": "ClusterRole" },
+          ownerReferences: [{ kind: "ClusterRole", name: "shared:rbac" }],
+        },
+        report: {
+          summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0 },
+          checks: [],
+        },
+      },
+      {
+        metadata: {
+          name: "clusterrolebinding-shared-rbac",
+          creationTimestamp: "2026-11-23T01:00:00Z",
+          labels: { "trivy-operator.resource.kind": "ClusterRoleBinding" },
+          ownerReferences: [{ kind: "ClusterRoleBinding", name: "shared:rbac" }],
+        },
+        report: {
+          summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 },
+          checks: [{ checkID: "KSV122", success: false, severity: "HIGH", title: "ClusterRoleBinding broad privileges" }],
+        },
+      },
+    ],
+  }
+
+  // Query clean ClusterRole first to populate its cache entry, then failing ClusterRoleBinding.
+  const roleDetail = await getConfigAuditDetail("cluster", "", "ClusterRole", "shared:rbac")
+  expect(roleDetail).toMatchObject({ scope: "cluster", namespace: "", kind: "ClusterRole", name: "shared:rbac" })
+  expect(roleDetail!.checks).toEqual([])
+
+  const bindingDetail = await getConfigAuditDetail("cluster", "", "ClusterRoleBinding", "shared:rbac")
+  expect(bindingDetail).toMatchObject({ scope: "cluster", namespace: "", kind: "ClusterRoleBinding", name: "shared:rbac" })
+  expect(bindingDetail!.checks).toEqual([
+    expect.objectContaining({ id: "KSV122", success: false, severity: "High", accepted: false }),
+  ])
+
+  // Both entries sit under distinct v2 cache keys.
+  expect(cache.has(cacheKeys.complianceConfigAuditDetail("cluster", "", "ClusterRole", "shared:rbac"))).toBe(true)
+  expect(cache.has(cacheKeys.complianceConfigAuditDetail("cluster", "", "ClusterRoleBinding", "shared:rbac"))).toBe(true)
+
+  // Missing kind or duplicate identical (scope, namespace, kind, name) fails closed as ambiguous, never guessing.
+  await expect(getConfigAuditDetail("cluster", "", "", "shared:rbac")).rejects.toThrowError(ComplianceDetailAmbiguousError)
+  expect(await getConfigAuditDetail("namespace", "", "ClusterRoleBinding", "shared:rbac")).toBeNull()
+  expect(await getConfigAuditDetail("cluster", "dev", "ClusterRoleBinding", "shared:rbac")).toBeNull()
+
+  // Duplicate reports with identical (scope, namespace, kind, name) -> explicit ambiguous error, never cached.
+  cache.clear()
+  const items = (routes[prefix + "clusterconfigauditreports"] as { items: unknown[] }).items
+  items.push({ ...(items[1] as Record<string, unknown>), metadata: { ...(items[1] as { metadata: Record<string, unknown> }).metadata, name: "clusterrolebinding-dup" } })
+  await expect(getConfigAuditDetail("cluster", "", "ClusterRoleBinding", "shared:rbac")).rejects.toThrowError(ComplianceDetailAmbiguousError)
+  expect(cache.size).toBe(0)
+})
+
+it("R6-M1 (namespaced): same-name different-kind resources in a namespace resolve and cache independently", async () => {
+  const routes = setup(["AVD-KSV-0014"])
+  routes[prefix + "configauditreports"] = {
+    items: [
+      {
+        metadata: {
+          name: "deployment-web",
+          namespace: "dev",
+          labels: { "trivy-operator.resource.kind": "Deployment", "trivy-operator.resource.name": "web" },
+        },
+        report: {
+          summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0 },
+          checks: [],
+        },
+      },
+      {
+        metadata: {
+          name: "service-web",
+          namespace: "dev",
+          labels: { "trivy-operator.resource.kind": "Service", "trivy-operator.resource.name": "web" },
+        },
+        report: {
+          summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 },
+          checks: [{ checkID: "KSV014", success: false, severity: "HIGH", title: "Service finding" }],
+        },
+      },
+    ],
+  }
+  routes[prefix + "clusterconfigauditreports"] = {
+    items: [
+      {
+        metadata: {
+          name: "clusterrole-web",
+          labels: { "trivy-operator.resource.kind": "ClusterRole", "trivy-operator.resource.name": "web" },
+        },
+        report: {
+          summary: { criticalCount: 1, highCount: 0, mediumCount: 0, lowCount: 0 },
+          checks: [{ checkID: "KSV122", success: false, severity: "CRITICAL", title: "Cluster finding" }],
+        },
+      },
+    ],
+  }
+
+  const deployDetail = await getConfigAuditDetail("namespace", "dev", "Deployment", "web")
+  expect(deployDetail).toMatchObject({ scope: "namespace", namespace: "dev", kind: "Deployment", name: "web" })
+  expect(deployDetail!.checks).toEqual([])
+
+  const svcDetail = await getConfigAuditDetail("namespace", "dev", "Service", "web")
+  expect(svcDetail).toMatchObject({ scope: "namespace", namespace: "dev", kind: "Service", name: "web" })
+  expect(svcDetail!.checks).toEqual([
+    expect.objectContaining({ id: "KSV014", success: false, severity: "High", accepted: false }),
+  ])
+
+  const clusterDetail = await getConfigAuditDetail("cluster", "", "ClusterRole", "web")
+  expect(clusterDetail).toMatchObject({ scope: "cluster", namespace: "", kind: "ClusterRole", name: "web" })
+  expect(clusterDetail!.checks).toEqual([
+    expect.objectContaining({ id: "KSV122", success: false, severity: "Critical", accepted: false }),
+  ])
+
+  // Non-existent kind in the same namespace returns null, never another kind's checks.
+  expect(await getConfigAuditDetail("namespace", "dev", "StatefulSet", "web")).toBeNull()
+})
+
+it("R6-M2: injected old-key/old-shape compliance caches are never read for ConfigAudit, RBAC, or Infra lists and ConfigAudit detail", async () => {
+  const routes = setup(["AVD-KSV-0122"])
+  routes[prefix + "clusterconfigauditreports"] = {
+    items: [
+      {
+        metadata: {
+          name: "clusterrolebinding-67649766f5",
+          labels: { "trivy-operator.resource.kind": "ClusterRoleBinding" },
+          ownerReferences: [{ kind: "ClusterRoleBinding", name: "custom:cluster-binding" }],
+        },
+        report: {
+          summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 },
+          checks: [{ checkID: "KSV122", success: false, severity: "HIGH", title: "ClusterRoleBinding broad privileges" }],
+        },
+      },
+    ],
+  }
+  routes[prefix + "rbacassessmentreports"] = {
+    items: [report("KSV048", false, "Role", "dev", "app-role")],
+  }
+  routes[prefix + "clusterinfraassessmentreports"] = {
+    items: [
+      {
+        metadata: {
+          name: "node-master-1",
+          labels: { "trivy-operator.resource.kind": "Node", "trivy-operator.resource.name": "master-1" },
+        },
+        report: {
+          summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 },
+          checks: [{ checkID: "KCV0066", success: false, severity: "HIGH", title: "Node check failed" }],
+        },
+      },
+    ],
+  }
+
+  // Poison every pre-branch v1 cache key with empty lists / clean detail.
+  cache.set("compliance:config-audit:list", [])
+  cache.set("compliance:config-audit:custom:cluster-binding", {
+    namespace: "",
+    kind: "ClusterRole",
+    name: "custom:cluster-binding",
+    summary: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    accepted: false,
+    checks: [],
+  })
+  cache.set("compliance:rbac-audit:list", [])
+  cache.set("compliance:infra-audit:list", [])
+
+  const cfgList = await getConfigAuditList()
+  expect(cfgList).toHaveLength(1)
+  expect(cfgList[0]).toMatchObject({ scope: "cluster", kind: "ClusterRoleBinding", name: "custom:cluster-binding" })
+
+  const cfgDetail = await getConfigAuditDetail("cluster", "", "ClusterRoleBinding", "custom:cluster-binding")
+  expect(cfgDetail?.checks).toHaveLength(1)
+  expect(cfgDetail?.checks[0].id).toBe("KSV122")
+
+  const rbacList = await getRbacAuditList()
+  expect(rbacList).toHaveLength(1)
+  expect(rbacList[0].name).toBe("app-role")
+
+  const infraList = await getInfraAuditList()
+  expect(infraList).toHaveLength(1)
+  expect(infraList[0].node).toBe("master-1")
 })

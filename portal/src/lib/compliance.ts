@@ -48,6 +48,48 @@ export class ComplianceDataUnavailableError extends Error {
   }
 }
 
+export type ConfigAuditScope = "cluster" | "namespace"
+
+export interface ConfigAuditTarget {
+  scope: ConfigAuditScope
+  namespace: string
+  kind: string
+  name: string
+}
+
+export class ComplianceDetailAmbiguousError extends Error {
+  readonly scope: ConfigAuditScope
+  readonly namespace: string
+  readonly kind: string
+  readonly resourceName: string
+  readonly candidates: ReadonlyArray<ConfigAuditTarget>
+
+  constructor(
+    target: ConfigAuditTarget,
+    candidates: ReadonlyArray<ConfigAuditTarget> = [],
+    message?: string,
+  ) {
+    const scopeLabel = target.scope === "cluster" ? "cluster" : `namespace "${target.namespace}"`
+    const kindLabel = target.kind ? ` kind "${target.kind}"` : " (missing kind)"
+    const candidateSuffix =
+      candidates.length > 0
+        ? ` (${candidates.length} matches: ${candidates
+            .map((c) => `${c.scope}/${c.namespace || "_cluster"}/${c.kind}/${c.name}`)
+            .join(", ")})`
+        : ""
+    super(
+      message ??
+        `Ambiguous config audit detail lookup for ${scopeLabel}${kindLabel} name "${target.name}"${candidateSuffix}`,
+    )
+    this.name = "ComplianceDetailAmbiguousError"
+    this.scope = target.scope
+    this.namespace = target.namespace
+    this.kind = target.kind
+    this.resourceName = target.name
+    this.candidates = candidates
+  }
+}
+
 async function complianceK8sFetch<T>(path: string): Promise<T> {
   const apiServer = getK8sApiServer()
   const headers: Record<string, string> = { "Content-Type": "application/json" }
@@ -504,7 +546,7 @@ function classifyConfigAuditItem(
   const kind = resolveConfigAuditResourceKind(item)
   const name = resolveConfigAuditResourceName(item)
   const namespace = item.metadata.namespace ?? ""
-  const scopeField = namespace === "" ? { scope: "cluster" as const } : {}
+  const scopeField = namespace === "" ? { scope: "cluster" as const } : { scope: "namespace" as const }
   const matcher = configAuditMatcher(namespace, kind, name, deploymentOwners)
 
   if (isSystemNamespace(namespace)) {
@@ -512,6 +554,7 @@ function classifyConfigAuditItem(
     return {
       row: {
         namespace,
+        ...scopeField,
         kind,
         name,
         summary,
@@ -904,11 +947,27 @@ export async function getConfigAuditList(): Promise<ConfigAuditRow[]> {
 
 // --- getConfigAuditDetail ---
 
+// D-CONFIG-AUDIT-DETAIL-IDENTITY: Identify Config Audit details strictly by
+// (scope, namespace, kind, name) end to end so same-name resources of different kinds
+// (e.g. clean ClusterRole vs failing ClusterRoleBinding, or namespaced Deployment vs Service)
+// never share a cache entry or return another resource's checks. Missing kind or multiple active
+// matches fail closed with ComplianceDetailAmbiguousError.
+// Cost: kind and scope must be passed on every detail lookup; escape hatch: none (guessing hides findings).
 export async function getConfigAuditDetail(
+  scope: ConfigAuditScope,
   namespace: string,
+  kind: string,
   name: string,
 ): Promise<ConfigAuditDetail | null> {
-  const cacheKey = cacheKeys.complianceConfigAuditDetail(namespace, name)
+  if (scope !== "cluster" && scope !== "namespace") return null
+  if (scope === "cluster" && namespace !== "") return null
+  if (scope === "namespace" && namespace === "") return null
+  if (name.trim() === "") return null
+  if (kind.trim() === "") {
+    throw new ComplianceDetailAmbiguousError({ scope, namespace, kind: "", name })
+  }
+
+  const cacheKey = cacheKeys.complianceConfigAuditDetail(scope, namespace, kind, name)
   const cached = await cacheGet<ConfigAuditDetail>(cacheKey)
   if (cached) return cached
 
@@ -926,22 +985,42 @@ export async function getConfigAuditDetail(
   }
 
   const rsMap = await fetchReplicaSetMap()
-  const allItems = [...(namespaced.items ?? []), ...(clustered.items ?? [])]
-  const item = allItems.find((i) => {
-    const rName = resolveConfigAuditResourceName(i)
+  const scopedItems = scope === "cluster" ? (clustered.items ?? []) : (namespaced.items ?? [])
+  const matchedItems = scopedItems.filter((i) => {
     const rNamespace = i.metadata.namespace ?? ""
-    return rNamespace === namespace && rName === name
+    if (scope === "cluster" ? rNamespace !== "" : rNamespace !== namespace) return false
+    const rKind = resolveConfigAuditResourceKind(i)
+    const rName = resolveConfigAuditResourceName(i)
+    return rKind === kind && rName === name
   })
-  if (!item) return null
 
-  const rsState = resolveReplicaSetMetadata(item, rsMap)
-  if (rsState.missingKey) {
-    console.warn(
-      `[compliance] ReplicaSet missing from cluster list, keeping report detail fail-safe: ${rsState.missingKey}`,
+  const activeMatches: Array<{ item: RawAuditReport; rsState: ReturnType<typeof resolveReplicaSetMetadata> }> = []
+  for (const candidate of matchedItems) {
+    const rsState = resolveReplicaSetMetadata(candidate, rsMap)
+    if (rsState.missingKey) {
+      console.warn(
+        `[compliance] ReplicaSet missing from cluster list, keeping report detail fail-safe: ${rsState.missingKey}`,
+      )
+    }
+    if (!rsState.drop) {
+      activeMatches.push({ item: candidate, rsState })
+    }
+  }
+
+  if (activeMatches.length === 0) return null
+  if (activeMatches.length > 1) {
+    throw new ComplianceDetailAmbiguousError(
+      { scope, namespace, kind, name },
+      activeMatches.map(({ item: m }) => ({
+        scope,
+        namespace: m.metadata.namespace ?? "",
+        kind: resolveConfigAuditResourceKind(m),
+        name: resolveConfigAuditResourceName(m),
+      })),
     )
   }
-  if (rsState.drop) return null
 
+  const { item, rsState } = activeMatches[0]
   const { row, matcher } = classifyConfigAuditItem(item, rsState.deploymentOwners)
   const detail: ConfigAuditDetail = {
     ...row,

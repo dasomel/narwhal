@@ -17,18 +17,41 @@ const severityOrder: Severity[] = ["Critical", "High", "Medium", "Low", "Unknown
 
 interface Props {
   params: Promise<{ ns: string; name: string }>
+  searchParams?: Promise<{ scope?: string | string[]; kind?: string | string[] }>
 }
 
-async function fetchDetail(ns: string, name: string): Promise<ConfigAuditDetail | null> {
+type DetailResult =
+  | { status: "ok"; detail: ConfigAuditDetail }
+  | { status: "not_found" }
+  | { status: "ambiguous" }
+  | { status: "unavailable" }
+
+async function fetchDetail(
+  scope: "cluster" | "namespace",
+  ns: string,
+  kind: string,
+  name: string,
+): Promise<DetailResult> {
   try {
-    const { getConfigAuditDetail } = await import("@/lib/compliance")
-    return await getConfigAuditDetail(ns, name)
+    const {
+      ComplianceDataUnavailableError,
+      ComplianceDetailAmbiguousError,
+      getConfigAuditDetail,
+    } = await import("@/lib/compliance")
+    try {
+      const detail = await getConfigAuditDetail(scope, ns, kind, name)
+      return detail ? { status: "ok", detail } : { status: "not_found" }
+    } catch (err) {
+      if (err instanceof ComplianceDetailAmbiguousError) return { status: "ambiguous" }
+      if (err instanceof ComplianceDataUnavailableError) return { status: "unavailable" }
+      return { status: "unavailable" }
+    }
   } catch {
-    return null
+    return { status: "unavailable" }
   }
 }
 
-export default async function ConfigAuditDetailPage({ params }: Props) {
+export default async function ConfigAuditDetailPage({ params, searchParams }: Props) {
   const session = await requireDashboardAccess()
 
   const locale = await getLocale()
@@ -45,13 +68,35 @@ export default async function ConfigAuditDetailPage({ params }: Props) {
   }
 
   const { ns, name } = await params
+  const query = (await searchParams) ?? {}
+  const rawScope = Array.isArray(query.scope) ? query.scope[0] : query.scope
+  const rawKind = Array.isArray(query.kind) ? query.kind[0] : query.kind
   const nsDecoded = decodeURIComponent(ns)
   const resolvedNs = nsDecoded === "_cluster" ? "" : nsDecoded
   const nameDecoded = decodeURIComponent(name)
+  const inferredScope: "cluster" | "namespace" = resolvedNs === "" ? "cluster" : "namespace"
+  const scopeParam = rawScope === undefined ? inferredScope : rawScope
+  const scopeValid =
+    (scopeParam === "cluster" && resolvedNs === "") ||
+    (scopeParam === "namespace" && resolvedNs !== "")
+  const kindDecoded = typeof rawKind === "string" ? rawKind.trim() : ""
 
-  const detail = await fetchDetail(resolvedNs, nameDecoded)
+  let result: DetailResult
+  if (!scopeValid) {
+    result = { status: "not_found" }
+  } else if (!kindDecoded) {
+    result = { status: "ambiguous" }
+  } else {
+    result = await fetchDetail(scopeParam, resolvedNs, kindDecoded, nameDecoded)
+  }
 
-  if (!detail) {
+  if (result.status !== "ok") {
+    const message =
+      result.status === "ambiguous"
+        ? t(locale, "compliance.detail.ambiguous")
+        : result.status === "unavailable"
+          ? t(locale, "compliance.detail.unavailable")
+          : t(locale, "common.notFound")
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -59,11 +104,13 @@ export default async function ConfigAuditDetailPage({ params }: Props) {
           <h1 className="text-xl font-bold">{t(locale, "compliance.detail.title")}</h1>
         </div>
         <div className="rounded-lg border bg-card p-8 text-center text-muted-foreground">
-          {t(locale, "common.notFound")}
+          {message}
         </div>
       </div>
     )
   }
+
+  const detail = result.detail
 
   const sorted = [...detail.checks].sort(
     (a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity)

@@ -194,6 +194,29 @@ describe("OssUpdatesTable", () => {
     expect(html).toContain('rel="noopener noreferrer"')
   })
 
+  it("renders list-truncated reason clearly", () => {
+    const html = render({
+      rows: [
+        row({
+          running: {
+            version: null,
+            rawTag: null,
+            source: "ds/security-system/falco (falco)",
+            chartVersion: null,
+            imageTags: [],
+            siblings: [],
+            reason: "list-truncated",
+            reasonDetail: "pods",
+          },
+          drift: "unknown",
+          driftReason: "list-truncated",
+        }),
+      ],
+    })
+    expect(html).toContain('ossUpdates.reasonListTruncated {&quot;detail&quot;:&quot;pods&quot;}')
+    expect(html).toContain("ossUpdates.reasonListTruncatedShort")
+  })
+
   it("renders the error state with retry instead of an empty table", () => {
     vi.mocked(useQuery).mockReturnValue({ data: undefined, isLoading: false, isError: true, refetch: vi.fn() } as never)
     const html = renderToStaticMarkup(<OssUpdatesTable />)

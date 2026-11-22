@@ -5,6 +5,7 @@ export type OssDrift = "in-sync" | "drift" | "unknown" | "not-applicable"
 export type OssRunningReason =
   | "not-applicable"
   | "no-permission"
+  | "list-truncated"
   | "workload-not-found"
   | "container-not-found"
   | "no-running-pod"

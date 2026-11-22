@@ -59,6 +59,8 @@ function runningReasonText(t: T, reason: OssRunningReason | null, detail?: strin
       return t("ossUpdates.notApplicableCli")
     case "no-permission":
       return detail ? t("ossUpdates.reasonNoPermission", { detail }) : t("ossUpdates.reasonNoPermissionShort")
+    case "list-truncated":
+      return detail ? t("ossUpdates.reasonListTruncated", { detail }) : t("ossUpdates.reasonListTruncatedShort")
     case "workload-not-found":
       return detail ? t("ossUpdates.reasonWorkloadNotFound", { detail }) : t("ossUpdates.reasonWorkloadNotFoundShort")
     case "container-not-found":
@@ -81,6 +83,8 @@ function shortDriftReasonText(t: T, reason: OssRunningReason | null): string | n
   switch (reason) {
     case "no-permission":
       return t("ossUpdates.reasonNoPermissionShort")
+    case "list-truncated":
+      return t("ossUpdates.reasonListTruncatedShort")
     case "workload-not-found":
       return t("ossUpdates.reasonWorkloadNotFoundShort")
     case "container-not-found":

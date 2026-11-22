@@ -4,8 +4,10 @@ import { getArgoAppsOrThrow } from "../argocd"
 import {
   getOssClusterInventory,
   type OssClusterInventory,
-  type OssLabelSelector,
+  type OssOwnerRef,
+  type OssPodContainerSpec,
   type OssPodSpecItem,
+  type OssResourceFetch,
   type OssWorkloadSpecItem,
 } from "../k8s-client"
 import { getWorkloadVulnerabilitiesWithMeta } from "../trivy"
@@ -123,7 +125,8 @@ export function summarizeCvesForArtifacts(
       if (!repoOk) return false
       if (art.rawTag !== null) {
         if (ref.rawTag !== art.rawTag) return false
-        if (art.pinnedDigest && rDigest && rDigest !== art.pinnedDigest) return false
+        const targetDigest = art.pinnedDigest ?? art.effectiveDigest
+        if (targetDigest && rDigest && rDigest !== targetDigest) return false
         return true
       }
       // Digest-only running image: match strictly by digest, never by repo alone or :latest.
@@ -193,38 +196,57 @@ function workloadListFor(k8s: OssClusterInventory, resource: WorkloadKind) {
   return k8s.statefulsets
 }
 
-function matchesSelector(labels: Record<string, string>, selector: OssLabelSelector | undefined): boolean {
-  if (!selector) return false
-  const matchLabels = selector.matchLabels ?? {}
-  const matchExpressions = selector.matchExpressions ?? []
-  const labelEntries = Object.entries(matchLabels)
-  if (labelEntries.length === 0 && matchExpressions.length === 0) return false
+function fetchFailureReason<T>(
+  fetch: OssResourceFetch<T>,
+  fallbackResource: string,
+): { reason: OssRunningReason; reasonDetail: string | null } | null {
+  if (fetch.status === "no-permission") {
+    return { reason: "no-permission", reasonDetail: fetch.resource }
+  }
+  if (fetch.status === "truncated") {
+    return { reason: "list-truncated", reasonDetail: fetch.resource }
+  }
+  if (fetch.status !== "ok") {
+    return { reason: "k8s-unavailable", reasonDetail: null }
+  }
+  if ((fetch as { truncated?: boolean }).truncated) {
+    return { reason: "list-truncated", reasonDetail: fallbackResource }
+  }
+  return null
+}
 
-  for (const [k, v] of labelEntries) {
-    if (labels[k] !== v) return false
-  }
-  for (const expr of matchExpressions) {
-    const hasKey = Object.hasOwn(labels, expr.key)
-    const val = hasKey ? labels[expr.key] : undefined
-    const vals = expr.values ?? []
-    switch (expr.operator) {
-      case "In":
-        if (val === undefined || !vals.includes(val)) return false
-        break
-      case "NotIn":
-        if (val !== undefined && vals.includes(val)) return false
-        break
-      case "Exists":
-        if (!hasKey) return false
-        break
-      case "DoesNotExist":
-        if (hasKey) return false
-        break
-      default:
-        return false
-    }
-  }
-  return true
+// D-OSS-OWNERSHIP: a Pod counts only when owned by the defining workload via
+// metadata.ownerReferences (Deployment -> ReplicaSet -> Pod; DaemonSet/StatefulSet -> Pod).
+// Overlapping label selectors without ownership (e.g. a Job pod) are ignored.
+function isOwnedBy(
+  refs: readonly OssOwnerRef[] | undefined,
+  kind: string,
+  name: string,
+  uid?: string,
+): boolean {
+  if (!refs?.length) return false
+  return refs.some(
+    (r) => r.kind === kind && r.name === name && r.controller !== false && (!uid || r.uid === uid),
+  )
+}
+
+function isActiveRunningPod(pod: OssPodSpecItem): boolean {
+  return pod.phase === "Running" && !pod.terminating
+}
+
+function isMirrorStaticPod(pod: OssPodSpecItem, namespace: string, namePrefix: string): boolean {
+  if (pod.namespace !== namespace || !pod.name.startsWith(namePrefix)) return false
+  if (!pod.mirrorAnnotation || !pod.nodeName) return false
+  if (!pod.ownerReferences?.length) return true
+  return pod.ownerReferences.some(
+    (r) => r.kind === "Node" && r.name === pod.nodeName && r.controller !== false,
+  )
+}
+
+function isContainerRunning(c: OssPodContainerSpec, init: boolean): boolean {
+  if (!c.image) return false
+  if (init) return c.running === true || c.completed === true
+  return c.running === true
 }
 
 interface ContainerInspection {
@@ -237,7 +259,7 @@ interface ContainerInspection {
 }
 
 function inspectContainerAcrossRunningPods(
-  runningPods: OssPodSpecItem[],
+  activePods: OssPodSpecItem[],
   container: string,
   init: boolean,
   allowedSuffixes?: readonly string[],
@@ -251,34 +273,53 @@ function inspectContainerAcrossRunningPods(
   }
 
   const distinct = new Map<string, ObservedImage>()
-  let podsWithContainer = 0
+  let missingContainer = false
+  let runningCount = 0
 
-  for (const pod of runningPods) {
+  for (const pod of activePods) {
     const list = init ? pod.initContainers : pod.containers
     const c = list.find((item) => item.name === container)
-    if (!c) continue
-    podsWithContainer++
+    if (!c) {
+      missingContainer = true
+      continue
+    }
+    if (!isContainerRunning(c, init)) continue
+    runningCount++
     const parsed = extractImageRef(c.image)
     const normRepo = normalizeImageRepo(parsed.repo)
-    const key = `${normRepo}|${parsed.rawTag ?? ""}|${parsed.digest ?? ""}`
+    const effectiveDigest = parsed.digest ?? c.digest ?? null
+    // Dedupe by effective digest as well as repo/tag so same-tag pods running different
+    // digests are surfaced as rollout-mixed drift rather than silently collapsed.
+    const key = `${normRepo}|${parsed.rawTag ?? ""}|${effectiveDigest ?? ""}`
     if (!distinct.has(key)) {
       distinct.set(key, {
         image: c.image,
         repo: parsed.repo,
         rawTag: parsed.rawTag,
         pinnedDigest: parsed.digest,
-        effectiveDigest: parsed.digest ?? c.digest ?? null,
+        effectiveDigest,
       })
     }
   }
 
-  if (podsWithContainer === 0 || podsWithContainer < runningPods.length) {
+  if (missingContainer) {
     return {
       version: null,
       rawTag: null,
       imageTags: [],
       reason: "container-not-found",
       reasonDetail: container,
+      runningArtifacts: [],
+    }
+  }
+
+  if (runningCount === 0) {
+    return {
+      version: null,
+      rawTag: null,
+      imageTags: [],
+      reason: "no-running-pod",
+      reasonDetail: null,
       runningArtifacts: [],
     }
   }
@@ -292,9 +333,20 @@ function inspectContainerAcrossRunningPods(
   }))
 
   if (observed.length > 1) {
-    const displayTags = observed.map((o) => {
-      if (o.rawTag) {
-        return normalizeTag(o.rawTag, allowedSuffixes) ?? o.rawTag
+    const tagCounts = new Map<string, number>()
+    const resolvedTagLabels = observed.map((o) =>
+      o.rawTag ? (normalizeTag(o.rawTag, allowedSuffixes) ?? o.rawTag) : null,
+    )
+    for (const lbl of resolvedTagLabels) {
+      if (lbl !== null) tagCounts.set(lbl, (tagCounts.get(lbl) ?? 0) + 1)
+    }
+    const displayTags = observed.map((o, idx) => {
+      const lbl = resolvedTagLabels[idx]
+      if (lbl !== null) {
+        if ((tagCounts.get(lbl) ?? 0) > 1) {
+          return `${lbl} (${o.effectiveDigest ? shortenDigest(o.effectiveDigest) : "no-digest"})`
+        }
+        return lbl
       }
       return o.effectiveDigest ? shortenDigest(o.effectiveDigest) : o.image
     })
@@ -366,8 +418,9 @@ function resolveWorkloadTarget(
   const source = `${prefix}/${namespace}/${name} (${container})`
   const fetch = workloadListFor(k8s, resource)
 
-  if (fetch.status === "no-permission") {
-    return { source, version: null, rawTag: null, imageTags: [], reason: "no-permission", reasonDetail: fetch.resource, runningArtifacts: [] }
+  const workloadErr = fetchFailureReason(fetch, `${resource.toLowerCase()}s.apps`)
+  if (workloadErr) {
+    return { source, version: null, rawTag: null, imageTags: [], ...workloadErr, runningArtifacts: [] }
   }
   if (fetch.status !== "ok") {
     return { source, version: null, rawTag: null, imageTags: [], reason: "k8s-unavailable", reasonDetail: null, runningArtifacts: [] }
@@ -381,26 +434,51 @@ function resolveWorkloadTarget(
   const templateContainers = init ? workload.initContainers : workload.containers
   const templateHasContainer = templateContainers.some((c) => c.name === container)
 
-  if (k8s.pods.status === "no-permission") {
-    return { source, version: null, rawTag: null, imageTags: [], reason: "no-permission", reasonDetail: k8s.pods.resource, runningArtifacts: [] }
+  let ownedReplicaSets: Array<{ name: string; uid?: string }> = []
+  if (resource === "Deployment") {
+    const rsErr = fetchFailureReason(k8s.replicasets, "replicasets.apps")
+    if (rsErr) {
+      return { source, version: null, rawTag: null, imageTags: [], ...rsErr, runningArtifacts: [] }
+    }
+    if (k8s.replicasets.status !== "ok") {
+      return { source, version: null, rawTag: null, imageTags: [], reason: "k8s-unavailable", reasonDetail: null, runningArtifacts: [] }
+    }
+    ownedReplicaSets = k8s.replicasets.data
+      .filter((rs) => rs.namespace === namespace && isOwnedBy(rs.ownerReferences, "Deployment", workload.name, workload.uid))
+      .map((rs) => ({ name: rs.name, uid: rs.uid }))
+  }
+
+  const podsErr = fetchFailureReason(k8s.pods, "pods")
+  if (podsErr) {
+    return { source, version: null, rawTag: null, imageTags: [], ...podsErr, runningArtifacts: [] }
   }
   if (k8s.pods.status !== "ok") {
     return { source, version: null, rawTag: null, imageTags: [], reason: "k8s-unavailable", reasonDetail: null, runningArtifacts: [] }
   }
 
-  const selectedPods = k8s.pods.data.filter(
-    (p) => p.namespace === namespace && matchesSelector(p.labels, workload.selector),
-  )
-  const runningPods = selectedPods.filter((p) => p.phase === "Running")
+  const ownedPods = k8s.pods.data.filter((p) => {
+    if (p.namespace !== namespace) return false
+    if (resource === "Deployment") {
+      return ownedReplicaSets.some((rs) => isOwnedBy(p.ownerReferences, "ReplicaSet", rs.name, rs.uid))
+    }
+    return isOwnedBy(p.ownerReferences, resource, workload.name, workload.uid)
+  })
+  const activePods = ownedPods.filter(isActiveRunningPod)
 
-  if (runningPods.length === 0) {
+  if (activePods.length === 0) {
     if (!templateHasContainer) {
       return { source, version: null, rawTag: null, imageTags: [], reason: "container-not-found", reasonDetail: container, runningArtifacts: [] }
     }
     return { source, version: null, rawTag: null, imageTags: [], reason: "no-running-pod", reasonDetail: `${prefix}/${namespace}/${name}`, runningArtifacts: [] }
   }
 
-  const inspected = inspectContainerAcrossRunningPods(runningPods, container, init, allowedSuffixes)
+  const inspected = inspectContainerAcrossRunningPods(activePods, container, init, allowedSuffixes)
+  if (inspected.reason === "no-running-pod") {
+    if (!templateHasContainer) {
+      return { source, version: null, rawTag: null, imageTags: [], reason: "container-not-found", reasonDetail: container, runningArtifacts: [] }
+    }
+    return { source, ...inspected, reasonDetail: `${prefix}/${namespace}/${name}` }
+  }
   return { source, ...inspected }
 }
 
@@ -521,31 +599,32 @@ function resolveRunning(
   if (src.kind === "static-pod") {
     const label = `pod/${src.namespace}/${src.namePrefix}* (${src.container})`
     const fetch = k8s.pods
-    if (fetch.status === "no-permission") {
-      return { version: null, rawTag: null, imageTags: [], source: label, reason: "no-permission", reasonDetail: fetch.resource, trivyHint, runningArtifacts: [], siblings }
+    const podsErr = fetchFailureReason(fetch, "pods")
+    if (podsErr) {
+      return { version: null, rawTag: null, imageTags: [], source: label, ...podsErr, trivyHint, runningArtifacts: [], siblings }
     }
     if (fetch.status !== "ok") {
       return { version: null, rawTag: null, imageTags: [], source: label, reason: "k8s-unavailable", reasonDetail: null, trivyHint, runningArtifacts: [], siblings }
     }
-    const matchingPods = fetch.data.filter((p) => p.namespace === src.namespace && p.name.startsWith(src.namePrefix))
+    const matchingPods = fetch.data.filter((p) => isMirrorStaticPod(p, src.namespace, src.namePrefix))
     if (matchingPods.length === 0) {
       return { version: null, rawTag: null, imageTags: [], source: label, reason: "workload-not-found", reasonDetail: `${src.namespace}/${src.namePrefix}*`, trivyHint, runningArtifacts: [], siblings }
     }
-    const runningPods = matchingPods.filter((p) => p.phase === "Running")
-    if (runningPods.length === 0) {
+    const activePods = matchingPods.filter(isActiveRunningPod)
+    if (activePods.length === 0) {
       return { version: null, rawTag: null, imageTags: [], source: label, reason: "no-running-pod", reasonDetail: `${src.namespace}/${src.namePrefix}*`, trivyHint, runningArtifacts: [], siblings }
     }
-    const inspected = inspectContainerAcrossRunningPods(runningPods, src.container, false, c.allowedTagSuffixes)
-    const exactSource = runningPods.length === 1
-      ? `pod/${runningPods[0].namespace}/${runningPods[0].name} (${src.container})`
-      : `pod/${src.namespace}/${src.namePrefix}* (${runningPods.length} pods, ${src.container})`
+    const inspected = inspectContainerAcrossRunningPods(activePods, src.container, false, c.allowedTagSuffixes)
+    const exactSource = activePods.length === 1
+      ? `pod/${activePods[0].namespace}/${activePods[0].name} (${src.container})`
+      : `pod/${src.namespace}/${src.namePrefix}* (${activePods.length} pods, ${src.container})`
     return {
       version: inspected.version,
       rawTag: inspected.rawTag,
       imageTags: inspected.imageTags,
       source: exactSource,
       reason: inspected.reason,
-      reasonDetail: inspected.reasonDetail,
+      reasonDetail: inspected.reason === "no-running-pod" ? `${src.namespace}/${src.namePrefix}*` : inspected.reasonDetail,
       trivyHint: null,
       runningArtifacts: inspected.runningArtifacts,
       siblings,
@@ -568,8 +647,8 @@ function resolveRunning(
 }
 
 function summarizeK8sState(k8s: OssClusterInventory): OssUpdatesResponse["k8s"] {
-  const core = [k8s.serverVersion, k8s.deployments, k8s.daemonsets, k8s.statefulsets, k8s.pods]
-  const okCount = core.filter((r) => r.status === "ok").length
+  const core = [k8s.serverVersion, k8s.deployments, k8s.daemonsets, k8s.statefulsets, k8s.replicasets, k8s.pods]
+  const okCount = core.filter((r) => r.status === "ok" && !(r as { truncated?: boolean }).truncated).length
   if (okCount === core.length) return "ok"
   if (okCount === 0) return "unavailable"
   return "partial"

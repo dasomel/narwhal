@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { WorkloadVulnRow } from "@/types/security"
-import type { OssClusterInventory, OssPodSpecItem, OssWorkloadSpecItem } from "../k8s-client"
+import type { OssClusterInventory, OssOwnerRef, OssPodSpecItem, OssReplicaSetItem, OssWorkloadSpecItem } from "../k8s-client"
 import type { UpstreamRelease } from "./upstream"
 
 vi.mock("server-only", () => ({}))
@@ -32,28 +32,60 @@ const wl = (
   containers: Array<[string, string]>,
   initContainers: Array<[string, string]> = [],
   selector: Record<string, string> = { app: name },
+  uid = `${namespace}-${name}-uid`,
 ): OssWorkloadSpecItem => ({
   namespace,
   name,
+  uid,
   selector: { matchLabels: selector },
   containers: containers.map(([cname, image]) => ({ name: cname, image })),
   initContainers: initContainers.map(([cname, image]) => ({ name: cname, image })),
+})
+const rs = (namespace: string, name: string, deploymentName: string, deploymentUid?: string): OssReplicaSetItem => ({
+  namespace,
+  name,
+  uid: `${namespace}-${name}-uid`,
+  ownerReferences: [{ kind: "Deployment", name: deploymentName, ...(deploymentUid ? { uid: deploymentUid } : {}), controller: true }],
 })
 const pod = (
   namespace: string,
   name: string,
   labels: Record<string, string>,
-  containers: Array<[string, string, string?]>,
-  initContainers: Array<[string, string, string?]> = [],
-  phase = "Running",
-): OssPodSpecItem => ({
-  namespace,
-  name,
-  labels,
-  phase,
-  containers: containers.map(([cname, image, digest]) => ({ name: cname, image, ...(digest ? { digest } : {}) })),
-  initContainers: initContainers.map(([cname, image, digest]) => ({ name: cname, image, ...(digest ? { digest } : {}) })),
-})
+  containers: Array<[string, string, string?, boolean?]>,
+  initContainers: Array<[string, string, string?, boolean?, boolean?]> = [],
+  opts: {
+    phase?: string
+    terminating?: boolean
+    ownerReferences?: OssOwnerRef[]
+    nodeName?: string
+    mirrorAnnotation?: string
+  } | string = {},
+): OssPodSpecItem => {
+  const o = typeof opts === "string" ? { phase: opts } : opts
+  return {
+    namespace,
+    name,
+    labels,
+    phase: o.phase ?? "Running",
+    ...(o.terminating ? { terminating: true } : {}),
+    ...(o.nodeName ? { nodeName: o.nodeName } : {}),
+    ...(o.mirrorAnnotation ? { mirrorAnnotation: o.mirrorAnnotation } : {}),
+    ...(o.ownerReferences ? { ownerReferences: o.ownerReferences } : {}),
+    containers: containers.map(([cname, image, digest, running]) => ({
+      name: cname,
+      image,
+      ...(digest ? { digest } : {}),
+      running: running ?? true,
+    })),
+    initContainers: initContainers.map(([cname, image, digest, running, completed]) => ({
+      name: cname,
+      image,
+      ...(digest ? { digest } : {}),
+      running: running ?? false,
+      completed: completed ?? true,
+    })),
+  }
+}
 
 function emptyUnavailableInventory(): OssClusterInventory {
   return {
@@ -61,6 +93,7 @@ function emptyUnavailableInventory(): OssClusterInventory {
     deployments: { status: "error" },
     daemonsets: { status: "error" },
     statefulsets: { status: "error" },
+    replicasets: { status: "error" },
     pods: { status: "error" },
     gatewayApiCrdAnnotations: { status: "error" },
   }
@@ -95,6 +128,7 @@ function liveClusterInventoryFixture(): OssClusterInventory {
     wl("devtools", "harbor-core", [["core", "ghcr.io/dasomel/goharbor/harbor-core:v2.15.1"]]),
     wl("devtools", "headlamp", [["headlamp", "ghcr.io/headlamp-k8s/headlamp:v0.46.0"]], [["ca-bundle", "ghcr.io/headlamp-k8s/headlamp:v0.46.0"]]),
   ]
+  const replicasets: OssReplicaSetItem[] = deployments.map((d) => rs(d.namespace, `${d.name}-rs`, d.name, d.uid))
   const daemonsets: OssWorkloadSpecItem[] = [
     wl("kube-system", "cilium", [["cilium-agent", "quay.io/cilium/cilium:v1.19.4"]]),
     wl("kube-system", "cilium-envoy", [["cilium-envoy", "quay.io/cilium/cilium-envoy:v1.36.6-1778235340-b87d1e32f522b33bd51701c6476d199326f01496"]]),
@@ -111,16 +145,48 @@ function liveClusterInventoryFixture(): OssClusterInventory {
     wl("monitoring", "tempo", [["tempo", "docker.io/grafana/tempo:2.9.0"]]),
   ]
   const pods: OssPodSpecItem[] = [
-    ...[...deployments, ...daemonsets, ...statefulsets].map((w) =>
+    ...deployments.map((w, idx) =>
       pod(
         w.namespace,
         `${w.name}-pod-1`,
         w.selector?.matchLabels ?? { app: w.name },
         w.containers.map((c) => [c.name, c.image]),
         w.initContainers.map((c) => [c.name, c.image]),
+        { ownerReferences: [{ kind: "ReplicaSet", name: replicasets[idx].name, uid: replicasets[idx].uid, controller: true }] },
       ),
     ),
-    pod("kube-system", "kube-vip-narwhal-master-1", { "k8s-app": "kube-vip" }, [["kube-vip", "ghcr.io/kube-vip/kube-vip:v1.1.2"]]),
+    ...daemonsets.map((w) =>
+      pod(
+        w.namespace,
+        `${w.name}-pod-1`,
+        w.selector?.matchLabels ?? { app: w.name },
+        w.containers.map((c) => [c.name, c.image]),
+        w.initContainers.map((c) => [c.name, c.image]),
+        { ownerReferences: [{ kind: "DaemonSet", name: w.name, uid: w.uid, controller: true }] },
+      ),
+    ),
+    ...statefulsets.map((w) =>
+      pod(
+        w.namespace,
+        `${w.name}-0`,
+        w.selector?.matchLabels ?? { app: w.name },
+        w.containers.map((c) => [c.name, c.image]),
+        w.initContainers.map((c) => [c.name, c.image]),
+        { ownerReferences: [{ kind: "StatefulSet", name: w.name, uid: w.uid, controller: true }] },
+      ),
+    ),
+    pod(
+      "kube-system",
+      "kube-vip-narwhal-master-1",
+      { "k8s-app": "kube-vip" },
+      [["kube-vip", "ghcr.io/kube-vip/kube-vip:v1.1.2"]],
+      [],
+      {
+        nodeName: "narwhal-master-1",
+        mirrorAnnotation: "1ca7f49e21c8f451169e05eb2bfd10b1",
+        ownerReferences: [{ kind: "Node", name: "narwhal-master-1", controller: true }],
+      },
+    ),
   ]
 
   return {
@@ -128,6 +194,7 @@ function liveClusterInventoryFixture(): OssClusterInventory {
     deployments: { status: "ok", data: deployments },
     daemonsets: { status: "ok", data: daemonsets },
     statefulsets: { status: "ok", data: statefulsets },
+    replicasets: { status: "ok", data: replicasets },
     pods: { status: "ok", data: pods },
     gatewayApiCrdAnnotations: { status: "no-permission", resource: "customresourcedefinitions.apiextensions.k8s.io" },
   }
@@ -428,7 +495,7 @@ describe("getOssUpdateStatus — live cluster facts & reviewer reproductions", (
     if (inv.pods.status === "ok") {
       inv.pods.data = inv.pods.data.map((p) =>
         p.namespace === "security-system" && p.labels.app === "falco"
-          ? { ...p, containers: [{ name: "renamed-falco", image: "docker.io/falcosecurity/falco:0.45.1" }] }
+          ? { ...p, containers: [{ name: "renamed-falco", image: "docker.io/falcosecurity/falco:0.45.1", running: true }] }
           : p,
       )
     }
@@ -464,7 +531,14 @@ describe("getOssUpdateStatus — live cluster facts & reviewer reproductions", (
     const inv = liveClusterInventoryFixture()
     if (inv.pods.status === "ok") {
       inv.pods.data.push(
-        pod("security-system", "falco-pod-2", { app: "falco" }, [["falco", "docker.io/falcosecurity/falco:0.45.2"]]),
+        pod(
+          "security-system",
+          "falco-pod-2",
+          { app: "falco" },
+          [["falco", "docker.io/falcosecurity/falco:0.45.2"]],
+          [],
+          { ownerReferences: [{ kind: "DaemonSet", name: "falco", uid: "security-system-falco-uid", controller: true }] },
+        ),
       )
       inv.pods.data = inv.pods.data.filter((p) => !(p.namespace === "monitoring" && p.labels.app === "tempo"))
     }
@@ -492,7 +566,18 @@ describe("getOssUpdateStatus — live cluster facts & reviewer reproductions", (
     const inv = liveClusterInventoryFixture()
     if (inv.pods.status === "ok") {
       inv.pods.data.push(
-        pod("kube-system", "kube-vip-narwhal-master-2", { "k8s-app": "kube-vip" }, [["kube-vip", "ghcr.io/kube-vip/kube-vip:v1.1.1"]]),
+        pod(
+          "kube-system",
+          "kube-vip-narwhal-master-2",
+          { "k8s-app": "kube-vip" },
+          [["kube-vip", "ghcr.io/kube-vip/kube-vip:v1.1.1"]],
+          [],
+          {
+            nodeName: "narwhal-master-2",
+            mirrorAnnotation: "2ca7f49e21c8f451169e05eb2bfd10b2",
+            ownerReferences: [{ kind: "Node", name: "narwhal-master-2", controller: true }],
+          },
+        ),
       )
     }
     getOssClusterInventory.mockResolvedValue(inv)
@@ -517,7 +602,7 @@ describe("getOssUpdateStatus — live cluster facts & reviewer reproductions", (
       if (inv.pods.status === "ok") {
         inv.pods.data = inv.pods.data.map((p) =>
           p.namespace === "platform-system" && p.labels.app === "apisix"
-            ? { ...p, containers: [{ name: "apisix", image: `apache/apisix:${badTag}` }] }
+            ? { ...p, containers: [{ name: "apisix", image: `apache/apisix:${badTag}`, running: true }] }
             : p,
         )
       }
@@ -567,7 +652,7 @@ describe("getOssUpdateStatus — live cluster facts & reviewer reproductions", (
     if (inv.pods.status === "ok") {
       inv.pods.data = inv.pods.data.map((p) =>
         p.namespace === "kube-system" && p.labels.app === "cilium-envoy"
-          ? { ...p, containers: [{ name: "cilium-envoy", image: `quay.io/cilium/cilium-envoy@${dig}` }] }
+          ? { ...p, containers: [{ name: "cilium-envoy", image: `quay.io/cilium/cilium-envoy@${dig}`, running: true }] }
           : p,
       )
     }
@@ -605,16 +690,16 @@ describe("getOssUpdateStatus — live cluster facts & reviewer reproductions", (
     if (inv.pods.status === "ok") {
       inv.pods.data = inv.pods.data.map((p) => {
         if (p.namespace === "kube-system" && p.labels.app === "cilium-envoy") {
-          return { ...p, containers: [{ name: "cilium-envoy", image: "quay.io/cilium/cilium-envoy:v99.0.0-custom" }] }
+          return { ...p, containers: [{ name: "cilium-envoy", image: "quay.io/cilium/cilium-envoy:v99.0.0-custom", running: true }] }
         }
         if (p.namespace === "platform-system" && p.labels.app === "apisix-ingress-controller") {
-          return { ...p, containers: [{ name: "apisix-ingress-controller", image: "apache/apisix-ingress-controller:9.9.9" }] }
+          return { ...p, containers: [{ name: "apisix-ingress-controller", image: "apache/apisix-ingress-controller:9.9.9", running: true }] }
         }
         if (p.namespace === "security-system" && p.labels.app === "falco-falcosidekick") {
-          return { ...p, containers: [{ name: "falcosidekick", image: "docker.io/falcosecurity/falcosidekick:8.8.8" }] }
+          return { ...p, containers: [{ name: "falcosidekick", image: "docker.io/falcosecurity/falcosidekick:8.8.8", running: true }] }
         }
         if (p.namespace === "storage" && p.labels.app === "velero") {
-          return { ...p, initContainers: [{ name: "velero-plugin-for-aws", image: "velero/velero-plugin-for-aws:v0.0.1" }] }
+          return { ...p, initContainers: [{ name: "velero-plugin-for-aws", image: "velero/velero-plugin-for-aws:v0.0.1", running: false, completed: true }] }
         }
         return p
       })
@@ -632,7 +717,20 @@ describe("getOssUpdateStatus — live cluster facts & reviewer reproductions", (
   it("marks unparseable container tag as unknown (tag-unparseable), never in-sync", async () => {
     const inv = emptyUnavailableInventory()
     inv.deployments = { status: "ok", data: [wl("devtools", "gitea", [["gitea", "docker.gitea.com/gitea:latest"]])] }
-    inv.pods = { status: "ok", data: [pod("devtools", "gitea-0", { app: "gitea" }, [["gitea", "docker.gitea.com/gitea:latest"]])] }
+    inv.replicasets = { status: "ok", data: [rs("devtools", "gitea-rs", "gitea", "devtools-gitea-uid")] }
+    inv.pods = {
+      status: "ok",
+      data: [
+        pod(
+          "devtools",
+          "gitea-0",
+          { app: "gitea" },
+          [["gitea", "docker.gitea.com/gitea:latest"]],
+          [],
+          { ownerReferences: [{ kind: "ReplicaSet", name: "gitea-rs", uid: "devtools-gitea-rs-uid", controller: true }] },
+        ),
+      ],
+    }
     getOssClusterInventory.mockResolvedValue(inv)
     const res = await getOssUpdateStatus(NOW)
     const gitea = res.rows.find((r) => r.component === "Gitea")!
@@ -640,6 +738,253 @@ describe("getOssUpdateStatus — live cluster facts & reviewer reproductions", (
       running: { version: null, rawTag: "latest", reason: "tag-unparseable", reasonDetail: "latest" },
       drift: "unknown",
       driftReason: "tag-unparseable",
+    })
+  })
+
+  it("L1 reproduction: ignores Job pod with overlapping labels when no workload-owned pod exists (and for static pods without mirror annotation)", async () => {
+    const inv = emptyUnavailableInventory()
+    inv.deployments = { status: "ok", data: [wl("devtools", "gitea", [["gitea", "docker.gitea.com/gitea:1.26.2-rootless"]])] }
+    inv.replicasets = { status: "ok", data: [rs("devtools", "gitea-rs", "gitea", "devtools-gitea-uid")] }
+    inv.daemonsets = { status: "ok", data: [wl("security-system", "falco", [["falco", "docker.io/falcosecurity/falco:0.45.1"]])] }
+    inv.pods = {
+      status: "ok",
+      data: [
+        // Job pod carrying identical selector labels { app: "gitea" } but owned by a Job, not gitea-rs
+        pod(
+          "devtools",
+          "gitea-smoke-job-xyz",
+          { app: "gitea" },
+          [["gitea", "docker.gitea.com/gitea:1.26.2-rootless"]],
+          [],
+          { ownerReferences: [{ kind: "Job", name: "gitea-smoke", controller: true }] },
+        ),
+        // Unowned pod carrying { app: "falco" }
+        pod("security-system", "falco-stray-pod", { app: "falco" }, [["falco", "docker.io/falcosecurity/falco:0.45.1"]]),
+        // Non-mirror pod pretending to be kube-vip
+        pod("kube-system", "kube-vip-spoof", { "k8s-app": "kube-vip" }, [["kube-vip", "ghcr.io/kube-vip/kube-vip:v1.1.2"]]),
+      ],
+    }
+    getOssClusterInventory.mockResolvedValue(inv)
+
+    const res = await getOssUpdateStatus(NOW)
+    expect(res.rows.find((r) => r.component === "Gitea")).toMatchObject({
+      running: { version: null, reason: "no-running-pod" },
+      drift: "unknown",
+      driftReason: "no-running-pod",
+    })
+    expect(res.rows.find((r) => r.component === "Falco")).toMatchObject({
+      running: { version: null, reason: "no-running-pod" },
+      drift: "unknown",
+      driftReason: "no-running-pod",
+    })
+    expect(res.rows.find((r) => r.component === "kube-vip")).toMatchObject({
+      running: { version: null, reason: "workload-not-found" },
+      drift: "unknown",
+      driftReason: "workload-not-found",
+    })
+  })
+
+  it("L1 RBAC: replicasets no-permission keeps Deployment rows unknown while DaemonSet rows stay in-sync", async () => {
+    const inv = liveClusterInventoryFixture()
+    inv.replicasets = { status: "no-permission", resource: "replicasets.apps" }
+    getOssClusterInventory.mockResolvedValue(inv)
+
+    const res = await getOssUpdateStatus(NOW)
+    expect(res.rows.find((r) => r.component === "Gitea")).toMatchObject({
+      running: { version: null, reason: "no-permission", reasonDetail: "replicasets.apps" },
+      drift: "unknown",
+      driftReason: "no-permission",
+    })
+    expect(res.rows.find((r) => r.component === "Falco")?.drift).toBe("in-sync")
+  })
+
+  it("L2 reproduction: truncated bounded lists mark affected rows unknown (list-truncated), never in-sync", async () => {
+    const inv = liveClusterInventoryFixture()
+    inv.pods = { status: "truncated", resource: "pods" }
+    getOssClusterInventory.mockResolvedValue(inv)
+
+    const res = await getOssUpdateStatus(NOW)
+    expect(res.k8s).toBe("partial")
+    expect(res.rows.find((r) => r.component === "Kubernetes")?.drift).toBe("in-sync")
+    expect(res.rows.find((r) => r.component === "Falco")).toMatchObject({
+      running: { version: null, reason: "list-truncated", reasonDetail: "pods" },
+      drift: "unknown",
+      driftReason: "list-truncated",
+    })
+    expect(res.rows.find((r) => r.component === "kube-vip")).toMatchObject({
+      running: { version: null, reason: "list-truncated", reasonDetail: "pods" },
+      drift: "unknown",
+      driftReason: "list-truncated",
+    })
+
+    // Also when only replicasets is truncated: Deployment rows are unknown, DaemonSet stays in-sync
+    const invRs = liveClusterInventoryFixture()
+    invRs.replicasets = { status: "truncated", resource: "replicasets.apps" }
+    getOssClusterInventory.mockResolvedValue(invRs)
+    const resRs = await getOssUpdateStatus(NOW)
+    expect(resRs.rows.find((r) => r.component === "Gitea")).toMatchObject({
+      running: { version: null, reason: "list-truncated", reasonDetail: "replicasets.apps" },
+      drift: "unknown",
+      driftReason: "list-truncated",
+    })
+    expect(resRs.rows.find((r) => r.component === "Falco")?.drift).toBe("in-sync")
+  })
+
+  it("L3 reproduction: two running pods with the same tag but different imageID digests surface as rollout-mixed drift with both short digests", async () => {
+    const digA = "sha256:aaaaaaaaaaaa" + "0".repeat(52)
+    const digB = "sha256:bbbbbbbbbbbb" + "1".repeat(52)
+    const inv = emptyUnavailableInventory()
+    inv.daemonsets = { status: "ok", data: [wl("security-system", "falco", [["falco", "docker.io/falcosecurity/falco:0.45.1"]])] }
+    inv.pods = {
+      status: "ok",
+      data: [
+        pod(
+          "security-system",
+          "falco-1",
+          { app: "falco" },
+          [["falco", "docker.io/falcosecurity/falco:0.45.1", digA, true]],
+          [],
+          { ownerReferences: [{ kind: "DaemonSet", name: "falco", uid: "security-system-falco-uid", controller: true }] },
+        ),
+        pod(
+          "security-system",
+          "falco-2",
+          { app: "falco" },
+          [["falco", "docker.io/falcosecurity/falco:0.45.1", digB, true]],
+          [],
+          { ownerReferences: [{ kind: "DaemonSet", name: "falco", uid: "security-system-falco-uid", controller: true }] },
+        ),
+      ],
+    }
+    getOssClusterInventory.mockResolvedValue(inv)
+
+    const res = await getOssUpdateStatus(NOW)
+    expect(res.rows.find((r) => r.component === "Falco")).toMatchObject({
+      running: {
+        version: null,
+        imageTags: ["0.45.1 (sha256:aaaaaaaaaaaa)", "0.45.1 (sha256:bbbbbbbbbbbb)"],
+        reason: "rollout-mixed",
+        reasonDetail: "0.45.1 (sha256:aaaaaaaaaaaa), 0.45.1 (sha256:bbbbbbbbbbbb)",
+      },
+      drift: "drift",
+      driftReason: "rollout-mixed",
+    })
+  })
+
+  it("L3 reproduction: CrashLoopBackOff (running: false) is not a running pod; running status-old image contributes its status image", async () => {
+    const invCrash = emptyUnavailableInventory()
+    invCrash.daemonsets = { status: "ok", data: [wl("security-system", "falco", [["falco", "docker.io/falcosecurity/falco:0.45.1"]])] }
+    invCrash.pods = {
+      status: "ok",
+      data: [
+        pod(
+          "security-system",
+          "falco-crash",
+          { app: "falco" },
+          [["falco", "docker.io/falcosecurity/falco:0.45.0", undefined, false]],
+          [],
+          { ownerReferences: [{ kind: "DaemonSet", name: "falco", uid: "security-system-falco-uid", controller: true }] },
+        ),
+      ],
+    }
+    getOssClusterInventory.mockResolvedValue(invCrash)
+    const resCrash = await getOssUpdateStatus(NOW)
+    expect(resCrash.rows.find((r) => r.component === "Falco")).toMatchObject({
+      running: { version: null, reason: "no-running-pod" },
+      drift: "unknown",
+      driftReason: "no-running-pod",
+    })
+
+    // Pod running with old status image while workload template spec is new -> reports status image (drift)
+    if (invCrash.pods.status === "ok") {
+      invCrash.pods.data[0].containers[0].running = true
+    }
+    const resStatusOld = await getOssUpdateStatus(NOW)
+    expect(resStatusOld.rows.find((r) => r.component === "Falco")).toMatchObject({
+      running: { version: "0.45.0", rawTag: "0.45.0", reason: null },
+      drift: "drift",
+    })
+  })
+
+  it("L3 reproduction: only Terminating, Pending, Succeeded, or Failed pods yield unknown (no-running-pod)", async () => {
+    for (const opts of [
+      { phase: "Running", terminating: true },
+      { phase: "Pending" },
+      { phase: "Succeeded" },
+      { phase: "Failed" },
+    ]) {
+      const inv = emptyUnavailableInventory()
+      inv.daemonsets = { status: "ok", data: [wl("security-system", "falco", [["falco", "docker.io/falcosecurity/falco:0.45.1"]])] }
+      inv.pods = {
+        status: "ok",
+        data: [
+          pod(
+            "security-system",
+            "falco-0",
+            { app: "falco" },
+            [["falco", "docker.io/falcosecurity/falco:0.45.1"]],
+            [],
+            { ...opts, ownerReferences: [{ kind: "DaemonSet", name: "falco", uid: "security-system-falco-uid", controller: true }] },
+          ),
+        ],
+      }
+      getOssClusterInventory.mockResolvedValue(inv)
+      const res = await getOssUpdateStatus(NOW)
+      expect(res.rows.find((r) => r.component === "Falco")).toMatchObject({
+        running: { version: null, reason: "no-running-pod" },
+        drift: "unknown",
+        driftReason: "no-running-pod",
+      })
+    }
+  })
+
+  it("L3 healthy single-pod and multi-replica (same tag + same imageID digest) matches return in-sync", async () => {
+    const dig = "sha256:cccccccccccc" + "2".repeat(52)
+    const inv = emptyUnavailableInventory()
+    inv.daemonsets = { status: "ok", data: [wl("security-system", "falco", [["falco", "docker.io/falcosecurity/falco:0.45.1"]])] }
+    inv.deployments = { status: "ok", data: [wl("devtools", "gitea", [["gitea", "docker.gitea.com/gitea:1.26.2-rootless"]])] }
+    inv.replicasets = { status: "ok", data: [rs("devtools", "gitea-rs", "gitea", "devtools-gitea-uid")] }
+    inv.pods = {
+      status: "ok",
+      data: [
+        // Healthy single-pod match
+        pod(
+          "devtools",
+          "gitea-0",
+          { app: "gitea" },
+          [["gitea", "docker.gitea.com/gitea:1.26.2-rootless", dig, true]],
+          [],
+          { ownerReferences: [{ kind: "ReplicaSet", name: "gitea-rs", uid: "devtools-gitea-rs-uid", controller: true }] },
+        ),
+        // Healthy multi-replica match (same tag + same digest)
+        pod(
+          "security-system",
+          "falco-1",
+          { app: "falco" },
+          [["falco", "docker.io/falcosecurity/falco:0.45.1", dig, true]],
+          [],
+          { ownerReferences: [{ kind: "DaemonSet", name: "falco", uid: "security-system-falco-uid", controller: true }] },
+        ),
+        pod(
+          "security-system",
+          "falco-2",
+          { app: "falco" },
+          [["falco", "docker.io/falcosecurity/falco:0.45.1", dig, true]],
+          [],
+          { ownerReferences: [{ kind: "DaemonSet", name: "falco", uid: "security-system-falco-uid", controller: true }] },
+        ),
+      ],
+    }
+    getOssClusterInventory.mockResolvedValue(inv)
+
+    const res = await getOssUpdateStatus(NOW)
+    expect(res.rows.find((r) => r.component === "Gitea")).toMatchObject({
+      running: { version: "1.26.2", rawTag: "1.26.2-rootless", reason: null },
+      drift: "in-sync",
+    })
+    expect(res.rows.find((r) => r.component === "Falco")).toMatchObject({
+      running: { version: "0.45.1", rawTag: "0.45.1", reason: null },
+      drift: "in-sync",
     })
   })
 

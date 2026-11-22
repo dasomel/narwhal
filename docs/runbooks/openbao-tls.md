@@ -28,7 +28,7 @@ k() { kubectl --kubeconfig "$KC" "$@"; }
 k -n storage get certificate openbao-tls -o 'jsonpath={.metadata.annotations.argocd\.argoproj\.io/tracking-id}{"\n"}{.status.notAfter}{"\n"}'
 ```
 
-1. **실행 중인 현재 Pod 즉시 복구, restart 없음.** 먼저 Secret과 mounted 파일 지문이 같은지 확인한다. 다르면 kubelet projection을 기다리고 재확인한다. 개인키는 읽거나 출력하지 않는다.
+**1단계. 실행 중인 현재 Pod 즉시 복구, restart 없음.** 먼저 Secret과 mounted 파일 지문이 같은지 확인한다. 다르면 kubelet projection을 기다리고 재확인한다. 개인키는 읽거나 출력하지 않는다.
 
 ```bash
 k -n storage get secret openbao-tls -o 'jsonpath={.data.tls\.crt}' | openssl base64 -d -A | openssl x509 -noout -fingerprint -sha256 -serial -enddate
@@ -53,7 +53,7 @@ openssl s_client -connect 127.0.0.1:18200 -servername openbao.storage.svc </dev/
 
 `bao status`의 `Sealed false`와 Pod UID/restartCount 불변도 확인한다. skip-verify는 기존 복구 CLI 방식이며 지문 비교가 신뢰 기준이다. TLS handshake는 새 연결로 관측하며 이미 연결된 클라이언트 세션은 계속 동작할 수 있다.
 
-2. **명시적 유효기간 적용.** bootstrap 전체를 재실행하지 않고 기존 bootstrap 소유 리소스만 patch한다. 재발급된 새 Secret을 기다리고 1번 mounted 일치 확인과 HUP·served serial 비교를 반복한다.
+**2단계. 명시적 유효기간 적용.** bootstrap 전체를 재실행하지 않고 기존 bootstrap 소유 리소스만 patch한다. 재발급된 새 Secret을 기다리고 1번 mounted 일치 확인과 HUP·served serial 비교를 반복한다.
 
 ```bash
 k -n storage patch certificate openbao-tls --type=merge -p '{"spec":{"duration":"8760h","renewBefore":"720h"}}'
@@ -61,7 +61,7 @@ k -n storage get certificate openbao-tls -w
 # revision 증가와 발급 완료 후 Ctrl-C. 이전 Ready=True만으로 새 발급 완료라고 판단하지 않는다.
 ```
 
-3. **영구 watcher 배포.** 기존 GitOps 배포 경로(`scripts/gitops/push-to-gitea.sh`, 저장소 루트 직접 push 금지)로 배포한다. StatefulSet은 이미 **OnDelete**이므로 sync만으로 실행 중 Pod가 바뀌지 않는다. template에 추가 컨테이너·공유 PID namespace가 없고 openbao 컨테이너 args에 감시 루프가 있는지 확인한다. **최초 watcher 설치 및 향후 모든 이미지/차트 변경에도 계획된 Pod 삭제와 unseal이 필요하다.** 승인된 유지보수 창에서 아래 순서를 실행한다. 이후 인증서 갱신은 Pod 교체 없이 처리한다.
+**3단계. 영구 watcher 배포.** 기존 GitOps 배포 경로(`scripts/gitops/push-to-gitea.sh`, 저장소 루트 직접 push 금지)로 배포한다. StatefulSet은 이미 **OnDelete**이므로 sync만으로 실행 중 Pod가 바뀌지 않는다. template에 추가 컨테이너·공유 PID namespace가 없고 openbao 컨테이너 args에 감시 루프가 있는지 확인한다. **최초 watcher 설치 및 향후 모든 이미지/차트 변경에도 계획된 Pod 삭제와 unseal이 필요하다.** 승인된 유지보수 창에서 아래 순서를 실행한다. 이후 인증서 갱신은 Pod 교체 없이 처리한다.
 
 ```bash
 k -n storage get statefulset openbao -o yaml
@@ -76,9 +76,9 @@ scripts/test/verify-openbao-tls.sh "$KC"
 k -n storage logs openbao-0 -c openbao --tail=20
 ```
 
-4. **실제 갱신 검증(승인된 경우).** `cmctl --kubeconfig "$KC" renew -n storage openbao-tls` 후 revision/Secret 교체를 확인하고 verifier를 실행한다. mounted 지문·served serial 일치, Sealed=false, Pod UID/restartCount 불변을 확인해야 hot reload 증명이 된다. portal 접근·injector·snapshot 다음 성공도 확인한다. 이 작업자는 라이브 실행하지 않았다.
+**4단계. 실제 갱신 검증(승인된 경우).** `cmctl --kubeconfig "$KC" renew -n storage openbao-tls` 후 revision/Secret 교체를 확인하고 verifier를 실행한다. mounted 지문·served serial 일치, Sealed=false, Pod UID/restartCount 불변을 확인해야 hot reload 증명이 된다. portal 접근·injector·snapshot 다음 성공도 확인한다. 이 작업자는 라이브 실행하지 않았다.
 
-5. **롤백.** 두 values의 `extraArgs`를 제거하고 sync한다. OnDelete이므로 실행 중 감시 루프 제거에는 승인된 Pod 교체+unseal이 필요하다. 그 전에는 수동 HUP 경로를 유지한다. 유효기간 롤백은 bootstrap 소유 Certificate의 명시적 duration을 이전 값으로 복구하고, 재발급 후 mounted 일치를 확인해 수동 HUP한다. 개인키·이전 Secret·raft 데이터를 되돌리지 않는다.
+**5단계. 롤백.** 두 values의 `extraArgs`를 제거하고 sync한다. OnDelete이므로 실행 중 감시 루프 제거에는 승인된 Pod 교체+unseal이 필요하다. 그 전에는 수동 HUP 경로를 유지한다. 유효기간 롤백은 bootstrap 소유 Certificate의 명시적 duration을 이전 값으로 복구하고, 재발급 후 mounted 일치를 확인해 수동 HUP한다. 개인키·이전 Secret·raft 데이터를 되돌리지 않는다.
 
 ## 로컬 증거와 한계
 

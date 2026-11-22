@@ -3537,6 +3537,9 @@ PYEOF'
   # 2026-11-22: portal /compliance three-state controls (positive per-check evidence, no worker over-correction, missing-spec materialisation), pooled rates without 100% leak, KISA CFG-01 evaluated verdict, partial/503 surface, trimmed fixture
   check R387 "portal /compliance requires positive per-check report evidence (no_evidence_in_report/coverage_unknown on 403/unknown IDs), drops CIS-section worker over-correction, materialises absent spec controls, pools aggregate rates with num/den and zero 100% leaks across UI, grades KISA CFG-01 on evaluated state, returns 503 on all-unavailable summary and surfaces partial notices without caching, trims snapshot fixture, and asserts behavioral vitest cases; 16 mutations caught" \
     python3 scripts/test/lib/check-portal-compliance-honest-status.py --mutation-verify
+  check R389 "portal failure-first evidence joins underlying findings before CCR classification, uses infra for KCV and observed RBAC families, fails closed on all auxiliary scope read errors, fails CFG-01 on audit findings, and versions aggregate caches with conservative old-shape UI/SSR defaults; 13 mutations caught" \
+    python3 scripts/test/lib/check-portal-evidence-precedence.py --mutation-verify
+
 }
 
 #=========================================

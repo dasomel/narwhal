@@ -354,6 +354,9 @@ describe("Compliance UI accepted exceptions", () => {
         id: "k8s-nsa-1.0",
         title: "NSA Kubernetes Hardening",
         passCount: 18,
+        evaluatedPassCount: 18,
+        notEvaluatedCount: 0,
+        evaluatedPassRate: 18 / 27,
         failCount: 9,
         actionableFailCount: 0,
         acceptedFailCount: 9,
@@ -365,6 +368,9 @@ describe("Compliance UI accepted exceptions", () => {
         id: "k8s-cis-1.23",
         title: "CIS Benchmark",
         passCount: 101,
+        evaluatedPassCount: 101,
+        notEvaluatedCount: 0,
+        evaluatedPassRate: 101 / 116,
         failCount: 15,
         actionableFailCount: 2,
         acceptedFailCount: 13,
@@ -429,6 +435,7 @@ describe("Compliance UI accepted exceptions", () => {
           severity: "High",
           passCount: 0,
           failCount: 3,
+          evaluationState: "failed",
           actionableFailCount: 0,
           acceptedFailCount: 3,
           accepted: true,
@@ -440,6 +447,7 @@ describe("Compliance UI accepted exceptions", () => {
           severity: "High",
           passCount: 0,
           failCount: 158,
+          evaluationState: "failed",
           actionableFailCount: 24,
           acceptedFailCount: 134,
           accepted: false,
@@ -498,6 +506,9 @@ describe("Compliance UI accepted exceptions", () => {
         id: "rs-only",
         title: "Superseded RS Only",
         passCount: 8,
+        evaluatedPassCount: 8,
+        notEvaluatedCount: 0,
+        evaluatedPassRate: 8 / 10,
         failCount: 2,
         actionableFailCount: 0,
         acceptedFailCount: 0,
@@ -554,6 +565,7 @@ describe("Compliance UI accepted exceptions", () => {
           severity: "High",
           passCount: 0,
           failCount: 2,
+          evaluationState: "failed",
           actionableFailCount: 0,
           acceptedFailCount: 0,
           accepted: false,
@@ -666,6 +678,7 @@ describe("Compliance UI accepted exceptions", () => {
     mockGetComplianceFrameworkDetail.mockResolvedValue(detailWithNotEval)
     const fwPageEl = await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-pss-baseline-0.1" }) })
     const fwPageHtml = renderToStaticMarkup(fwPageEl)
+    expect(fwPageHtml).toContain("HostProcess")
     expect(fwPageHtml).toContain("Not evaluated controls (1)")
     expect(fwPageHtml).toContain("Unlinked spec check ID")
     expect(fwPageHtml).toContain("avd-ksv-0024")
@@ -975,4 +988,45 @@ describe("Compliance UI accepted exceptions", () => {
     expect(htmlEn).toContain("Config Audit (replicasets)")
     expect(htmlEn).toContain("Frameworks (deploy/trivy-operator, cm/trivy-operator-trivy-config)")
   })
+})
+
+it("G5 old-shape object renders unknown in grid, summary SSR and framework detail", async () => {
+  const old: ComplianceFramework = { id: "old", title: "Old cache", totalControls: 10,
+    passCount: 10, failCount: 0, passRate: 1, effectivePassRate: 1 }
+  vi.mocked(useQuery).mockReturnValue({ data: [old], isLoading: false, isError: false } as never)
+  const grid = renderToStaticMarkup(<LocaleProvider locale="en"><FrameworksGrid /></LocaleProvider>)
+  expect(grid).toContain("10 not evaluated")
+  expect(grid).toContain('title="0/10"')
+  expect(grid).not.toContain("100%")
+  const zero = { Critical: 0, High: 0, Medium: 0, Low: 0 }
+  const summary: ComplianceSummary = {
+    totalConfigAuditFailures: zero, lowSeverityConfigAuditFailures: zero, acceptedSystemConfigAuditFailures: zero,
+    totalRbacFailures: zero, acceptedRbacFailures: zero, totalInfraFailures: zero, acceptedInfraFailures: zero,
+    frameworks: [old], scannedWorkloads: 0, scannedRbacObjects: 0, scannedNodes: 0, lastUpdated: "2026-11-22T00:00:00Z",
+  }
+  const ssr = renderToStaticMarkup(<FailureCounters summary={summary} locale="en" />)
+  expect(ssr).toContain("0/10")
+  expect(ssr).toContain("10 not evaluated")
+  expect(ssr).not.toContain("100%")
+  const detail: ComplianceFrameworkDetail = { ...old, controls: [{ id: "old-control", name: "Old control", severity: "High", passCount: 1, failCount: 0, accepted: false }] }
+  mockGetLocale.mockResolvedValue("en")
+  mockGetComplianceFrameworkDetail.mockResolvedValue(detail)
+  const page = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "old" }) }))
+  expect(page).toContain("Not evaluated")
+  expect(page).toContain("0/10")
+  expect(page).not.toContain("100%")
+  vi.mocked(useQuery).mockReturnValue({ data: detail, isLoading: false, isError: false } as never)
+  const panel = renderToStaticMarkup(<LocaleProvider locale="en"><ExpandedFrameworkPanel id="old" /></LocaleProvider>)
+  expect(panel).toContain("Old control")
+  expect(panel).toContain("Not evaluated")
+  detail.controls.push(
+    { id: "verified", name: "Verified pass stays visible", severity: "High", passCount: 1, failCount: 0, evaluationState: "passed" },
+    { id: "old-failed", name: "Old failure stays visible", severity: "High", passCount: 0, failCount: 1 },
+  )
+  const panelWithEvidence = renderToStaticMarkup(<LocaleProvider locale="en"><ExpandedFrameworkPanel id="old" /></LocaleProvider>)
+  expect(panelWithEvidence).toContain("Verified pass stays visible")
+  expect(panelWithEvidence).toContain("Old failure stays visible")
+  const pageWithEvidence = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "old" }) }))
+  expect(pageWithEvidence).toContain("Verified pass stays visible")
+  expect(pageWithEvidence).toContain("Old failure stays visible")
 })

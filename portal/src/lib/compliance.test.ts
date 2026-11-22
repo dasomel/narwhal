@@ -1432,7 +1432,8 @@ describe("compliance framework actionable vs accepted split", () => {
       totalControls: 6,
     })
     expect(frameworks[0].passRate).toBeCloseTo(1 / 6)
-    expect(frameworks[0].effectivePassRate).toBeCloseTo(2 / 6)
+    // C0 has only a CCR pass without spec linkage or matching report evidence.
+    expect(frameworks[0].effectivePassRate).toBeCloseTo(1 / 6)
 
     const detail = await getComplianceFrameworkDetail("test-fw")
     expect(detail).not.toBeNull()
@@ -2199,7 +2200,7 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     expect(detail).not.toBeNull()
     const byId = new Map(detail!.controls.map((c) => [c.id, c]))
 
-    expect(byId.get("CP-EXCL")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "excluded_namespace" })
+    expect(byId.get("CP-EXCL")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "no_evidence_in_report" })
     expect(byId.get("BIND-UNSUP")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "unsupported_kind" })
     expect(byId.get("WORKER-ABS")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type" })
     expect(byId.get("LOWER-CASE")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "unlinked_check_id" })
@@ -2341,7 +2342,7 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
       actionableFailCount: 1,
       acceptedFailCount: 2,
       droppedFailCount: 0,
-      droppedCheckCount: 1,
+      droppedCheckCount: 2,
     })
     expect(byId.get("k8s-cis-1.23")!.evaluatedPassRate).toBe(0)
     expect(byId.get("k8s-cis-1.23")!.effectivePassRate).toBeCloseTo(2 / 8)
@@ -2362,15 +2363,25 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
         return acc
       }, {})
     expect(reasonCounts((await getComplianceFrameworkDetail("k8s-cis-1.23"))!)).toEqual({
-      excluded_namespace: 1,
       manual: 1,
-      no_evidence_in_report: 2,
+      no_evidence_in_report: 3,
       unsupported_kind: 1,
     })
     expect(reasonCounts((await getComplianceFrameworkDetail("k8s-pss-restricted-0.1"))!)).toEqual({
       no_evidence_in_report: 1,
       unlinked_check_id: 1,
     })
+
+    const totals = frameworks.reduce((acc, f) => ({
+      controls: acc.controls + f.totalControls,
+      raw: acc.raw + f.passCount,
+      evaluated: acc.evaluated + (f.evaluatedPassCount ?? 0),
+      notEvaluated: acc.notEvaluated + (f.notEvaluatedCount ?? 0),
+      actionable: acc.actionable + (f.actionableFailCount ?? 0),
+      accepted: acc.accepted + (f.acceptedFailCount ?? 0),
+    }), { controls: 0, raw: 0, evaluated: 0, notEvaluated: 0, actionable: 0, accepted: 0 })
+    expect(totals).toEqual({ controls: 11, raw: 7, evaluated: 0, notEvaluated: 7, actionable: 1, accepted: 3 })
+    console.info("trimmed snapshot replay:", JSON.stringify(totals))
 
     // Pin the measured 2026-11-22 full-snapshot pooled aggregate expectations carried in the trimmed fixture.
     const agg = complianceSnapshot.measuredFullSnapshotAggregates

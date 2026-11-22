@@ -197,7 +197,7 @@ export const cacheKeys = {
     join("falco", "events", priority ?? "all", sinceMinutes, limit),
   falcoCritical: () => "falco:critical",
 
-  kisaComplianceList: () => "compliance:kisa:list",
+  kisaComplianceList: () => "compliance:v2:kisa:list",
 
   heroSummary: (scopeFingerprint: string) => join("hero", "summary", scopeFingerprint),
 
@@ -252,9 +252,11 @@ export const cacheKeys = {
   complianceRbacAuditDetail: (namespace: string, name: string) => join("compliance", "rbac-audit", namespace, name),
   complianceInfraAuditList: () => "compliance:infra-audit:list",
   complianceInfraAuditDetail: (node: string) => join("compliance", "infra-audit", node),
-  complianceFrameworksList: () => "compliance:frameworks:list",
-  complianceFrameworksDetail: (id: string) => join("compliance", "frameworks", id),
-  complianceSummary: () => "compliance:summary",
+  // D4: Evaluation fields changed aggregate semantics; v2 excludes optimistic old entries.
+  // Cost: one cold read after upgrade; escape hatch: advance this version for future shape changes.
+  complianceFrameworksList: () => "compliance:v2:frameworks:list",
+  complianceFrameworksDetail: (id: string) => join("compliance", "v2", "frameworks", id),
+  complianceSummary: () => "compliance:v2:summary",
 
   serviceGraphCluster: (window: string, namespace: string | undefined) => join("graph", "cluster", window, namespace ?? "all"),
   serviceGraphClusterScoped: (scopeFingerprint: string, window: string, namespace: string | undefined) =>
@@ -581,8 +583,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide runtime security events, not per-caller." },
   },
-  "compliance:kisa:list": {
-    example: "compliance:kisa:list",
+  "compliance:v2:kisa:list": {
+    example: "compliance:v2:kisa:list",
     dimensions: [],
     ttlSeconds: 60,
     owner: "src/lib/kisa.ts",
@@ -888,8 +890,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide compliance audit data, not per-caller." },
   },
-  "compliance:frameworks:list": {
-    example: "compliance:frameworks:list",
+  "compliance:v2:frameworks:list": {
+    example: "compliance:v2:frameworks:list",
     dimensions: [],
     ttlSeconds: 60,
     owner: "src/lib/compliance.ts",
@@ -898,8 +900,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide compliance audit data, not per-caller." },
   },
-  "compliance:frameworks:detail": {
-    example: "compliance:frameworks:{id}",
+  "compliance:v2:frameworks:detail": {
+    example: "compliance:v2:frameworks:{id}",
     dimensions: ["query"],
     ttlSeconds: 60,
     owner: "src/lib/compliance.ts",
@@ -908,8 +910,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide compliance audit data, not per-caller." },
   },
-  "compliance:summary": {
-    example: "compliance:summary",
+  "compliance:v2:summary": {
+    example: "compliance:v2:summary",
     dimensions: [],
     ttlSeconds: 60,
     owner: "src/lib/compliance.ts",
@@ -1251,7 +1253,7 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
   falcoEvents: { registryKey: "falco:events", ttlSeconds: 30, args: ["Critical", 60, 100], dimensionArgIndex: { query: 0 } },
   falcoCritical: { registryKey: "falco:critical", ttlSeconds: 30, args: [], dimensionArgIndex: {} },
 
-  kisaComplianceList: { registryKey: "compliance:kisa:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
+  kisaComplianceList: { registryKey: "compliance:v2:kisa:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
 
   heroSummary: { registryKey: "hero:summary", ttlSeconds: 10, args: ["fp-1"], dimensionArgIndex: { scope: 0 } },
 
@@ -1315,14 +1317,14 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
     args: ["node-1"],
     dimensionArgIndex: { query: 0 },
   },
-  complianceFrameworksList: { registryKey: "compliance:frameworks:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
+  complianceFrameworksList: { registryKey: "compliance:v2:frameworks:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   complianceFrameworksDetail: {
-    registryKey: "compliance:frameworks:detail",
+    registryKey: "compliance:v2:frameworks:detail",
     ttlSeconds: 60,
     args: ["id-1"],
     dimensionArgIndex: { query: 0 },
   },
-  complianceSummary: { registryKey: "compliance:summary", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
+  complianceSummary: { registryKey: "compliance:v2:summary", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
 
   // serviceGraphCluster's real TTL is computed at the call site (5s for the "1m"
   // window, 60s otherwise) — not a fixed per-namespace constant, so it's the one

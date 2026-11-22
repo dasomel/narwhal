@@ -79,11 +79,10 @@ async function checkImg03(): Promise<{ status: KisaStatus; detail: string }> {
 }
 
 async function checkCfg01(): Promise<{ status: KisaStatus; detail: string }> {
-  const { getComplianceFrameworks, getConfigAuditList } = await import("./compliance")
-  const [frameworks, configAuditRows] = await Promise.all([getComplianceFrameworks(), getConfigAuditList()])
-  if (frameworks.length === 0) {
-    return { status: "manual", detail: "프레임워크 데이터 없음" }
-  }
+  const { getComplianceFrameworks, getConfigAuditList, getRbacAuditList, getInfraAuditList } = await import("./compliance")
+  const [frameworks, configAuditRows, rbacRows, infraRows] = await Promise.all([
+    getComplianceFrameworks(), getConfigAuditList(), getRbacAuditList(), getInfraAuditList(),
+  ])
 
   // D-CFG01-EVALUATED: `getComplianceFrameworks()` derives `actionableFailCount` and
   // `notEvaluatedCount` from `status.detailReport.results[].checks`
@@ -105,24 +104,32 @@ async function checkCfg01(): Promise<{ status: KisaStatus; detail: string }> {
     }
     const actionable = r.actionableSummary ?? (r.accepted ? { Critical: 0, High: 0, Medium: 0, Low: 0 } : r.summary)
     const accepted = r.acceptedSummary ?? (r.accepted ? r.summary : { Critical: 0, High: 0, Medium: 0, Low: 0 })
-    actionableFailures += actionable.Critical + actionable.High + actionable.Medium
+    actionableFailures += actionable.Critical + actionable.High + actionable.Medium + actionable.Low
     lowSeverityFailures += r.summary.Low
     acceptedFailures += accepted.Critical + accepted.High + accepted.Medium
   }
-  const breakdown = `(config-audit 조치가능 ${actionableFailures}건, 위생 ${lowSeverityFailures}건, 수용 ${acceptedFailures}건)`
+  const auditFailures = [...rbacRows, ...infraRows].reduce((sum, row) => {
+    const counts = row.actionableSummary ?? (row.accepted ? { Critical: 0, High: 0, Medium: 0, Low: 0 } : row.summary)
+    return sum + counts.Critical + counts.High + counts.Medium + counts.Low
+  }, 0)
+  const breakdown = `(config-audit 조치가능 ${actionableFailures}건, 위생 ${lowSeverityFailures}건, 수용 ${acceptedFailures}건; RBAC/infra 조치가능 ${auditFailures}건)`
 
   const totalControls = frameworks.reduce((acc, f) => acc + f.totalControls, 0)
   const actionableControls = frameworks.reduce((acc, f) => acc + (f.actionableFailCount ?? f.failCount), 0)
-  const notEvaluatedControls = frameworks.reduce((acc, f) => acc + (f.notEvaluatedCount ?? 0), 0)
+  const notEvaluatedControls = frameworks.reduce((acc, f) => acc + (f.notEvaluatedCount ?? Math.max(0, f.totalControls - f.failCount)), 0)
   const acceptedControls = frameworks.reduce((acc, f) => acc + (f.acceptedFailCount ?? 0), 0)
   const evaluatedPassControls = frameworks.reduce((acc, f) => acc + (f.evaluatedPassCount ?? 0), 0)
-  const hasUnknownCoverage = frameworks.some((f) => Boolean(f.coverageUnknown))
+  const hasUnknownCoverage = frameworks.some((f) => (Boolean(f.coverageUnknown) || f.evaluatedPassCount === undefined || f.notEvaluatedCount === undefined))
 
-  if (actionableControls > 0) {
+  // D3: Audit findings can precede CCR aggregation. Cost: two list reads; escape: shared snapshot API.
+  if (actionableControls > 0 || actionableFailures > 0 || auditFailures > 0) {
     return {
       status: "fail",
       detail: `조치가능 프레임워크 컨트롤 실패 ${actionableControls}건 (평가 통과 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 미평가 ${notEvaluatedControls}) ${breakdown}`,
     }
+  }
+  if (frameworks.length === 0) {
+    return { status: "manual", detail: `프레임워크 데이터 없음 ${breakdown}` }
   }
   if (notEvaluatedControls > 0 || hasUnknownCoverage) {
     return {

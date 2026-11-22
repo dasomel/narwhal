@@ -60,7 +60,7 @@ function ControlPreviewCard({
   const acceptedFail = ctrl.acceptedFailCount ?? 0
   const droppedFail = ctrl.droppedFailCount ?? 0
   const isAcceptedOnly = Boolean(ctrl.accepted)
-  const isNotEvaluated = ctrl.evaluationState === "not_evaluated"
+  const isNotEvaluated = (ctrl.evaluationState === "not_evaluated" || (!ctrl.evaluationState && ctrl.failCount === 0))
   const cardBorder = isNotEvaluated
     ? "border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/10 dark:border-amber-900/60"
     : isAcceptedOnly
@@ -142,7 +142,7 @@ export function ExpandedFrameworkPanel({ id }: { id: string }) {
 
   const actionableAndOther = detail?.controls
     ? [...detail.controls]
-        .filter((c) => !c.accepted && c.evaluationState !== "not_evaluated")
+        .filter((c) => !c.accepted && (c.evaluationState === "passed" || c.evaluationState === "failed" || (!c.evaluationState && c.failCount > 0)))
         .sort((a, b) => {
           const aFail = (a.actionableFailCount ?? a.failCount) > 0 ? 0 : 1
           const bFail = (b.actionableFailCount ?? b.failCount) > 0 ? 0 : 1
@@ -158,7 +158,7 @@ export function ExpandedFrameworkPanel({ id }: { id: string }) {
     : []
   const notEvaluatedControls = detail?.controls
     ? [...detail.controls]
-        .filter((c) => c.evaluationState === "not_evaluated")
+        .filter((c) => (c.evaluationState === "not_evaluated" || (!c.evaluationState && c.failCount === 0)))
         .sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
     : []
 
@@ -243,9 +243,9 @@ export function FrameworksGrid() {
 
   const totalActionable = frameworks.reduce((acc, f) => acc + (f.actionableFailCount ?? f.failCount), 0)
   const totalAccepted = frameworks.reduce((acc, f) => acc + (f.acceptedFailCount ?? 0), 0)
-  const totalNotEvaluated = frameworks.reduce((acc, f) => acc + (f.notEvaluatedCount ?? 0), 0)
+  const totalNotEvaluated = frameworks.reduce((acc, f) => acc + (f.notEvaluatedCount ?? Math.max(0, f.totalControls - f.failCount)), 0)
   const totalRaw = frameworks.reduce((acc, f) => acc + f.failCount, 0)
-  const anyCoverageUnknown = frameworks.some((f) => Boolean(f.coverageUnknown))
+  const anyCoverageUnknown = frameworks.some((f) => (Boolean(f.coverageUnknown) || f.evaluatedPassCount === undefined || f.notEvaluatedCount === undefined))
 
   return (
     <div className="space-y-3">
@@ -282,15 +282,15 @@ export function FrameworksGrid() {
           const isExpanded = expandedId === fw.id
           const actionableFail = fw.actionableFailCount ?? fw.failCount
           const acceptedFail = fw.acceptedFailCount ?? 0
-          const notEvaluated = fw.notEvaluatedCount ?? 0
-          const evaluatedPass = fw.evaluatedPassCount ?? fw.passCount
+          const notEvaluated = fw.notEvaluatedCount ?? Math.max(0, fw.totalControls - fw.failCount)
+          const evaluatedPass = fw.evaluatedPassCount ?? 0
           const droppedChecks = fw.droppedCheckCount ?? 0
           const droppedControls = fw.droppedFailCount ?? 0
-          const evaluatedRate = fw.evaluatedPassRate ?? fw.passRate
-          const effectiveRate = fw.effectivePassRate ?? fw.passRate
+          const evaluatedRate = fw.evaluatedPassRate ?? 0
+          const effectiveRate = (fw.evaluatedPassCount === undefined || fw.notEvaluatedCount === undefined ? 0 : fw.effectivePassRate ?? 0)
           const effectivePassNum = Math.round(effectiveRate * fw.totalControls)
           const hasActionable = actionableFail > 0
-          const hasNotEval = notEvaluated > 0 || Boolean(fw.coverageUnknown)
+          const hasNotEval = notEvaluated > 0 || (Boolean(fw.coverageUnknown) || fw.evaluatedPassCount === undefined || fw.notEvaluatedCount === undefined)
           const evaluatedPctText = formatPassRatePct(evaluatedRate, {
             hasActionableFail: hasActionable,
             hasNotEvaluated: hasNotEval,

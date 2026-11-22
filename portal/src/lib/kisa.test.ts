@@ -12,10 +12,14 @@ vi.mock("./valkey", () => ({
 }))
 
 const mockGetComplianceFrameworks = vi.fn<() => Promise<ComplianceFramework[]>>()
+const mockGetRbacAuditList = vi.fn(async () => [])
+const mockGetInfraAuditList = vi.fn(async () => [])
 const mockGetConfigAuditList = vi.fn<() => Promise<ConfigAuditRow[]>>()
 
 vi.mock("./compliance", () => ({
   SYSTEM_NAMESPACES: ["kube-system", "kube-public", "kube-node-lease", "istio-system"],
+  getRbacAuditList: () => mockGetRbacAuditList(),
+  getInfraAuditList: () => mockGetInfraAuditList(),
   getComplianceFrameworks: () => mockGetComplianceFrameworks(),
   getConfigAuditList: () => mockGetConfigAuditList(),
 }))
@@ -114,4 +118,34 @@ describe("KISA CFG-01 evaluated verdict", () => {
     expect(cfgPass?.status).toBe("pass")
     expect(cfgPass?.detail).toContain("10개 컨트롤 평가 완료")
   })
+})
+
+it.each(["config", "rbac", "infra"])("G4 KISA CFG-01 fails on actionable %s findings without actionable framework controls", async (family) => {
+  mockCache.clear()
+  mockGetComplianceFrameworks.mockResolvedValue([{
+    id: "clean", title: "Clean", totalControls: 1, passCount: 1, failCount: 0, passRate: 1,
+    evaluatedPassCount: 1, notEvaluatedCount: 0, actionableFailCount: 0,
+  }])
+  const row = { namespace: "dev", summary: { Critical: 0, High: 1, Medium: 0, Low: 0 }, actionableSummary: { Critical: 0, High: 1, Medium: 0, Low: 0 }, accepted: false }
+  mockGetConfigAuditList.mockResolvedValue(family === "config" ? [row] as ConfigAuditRow[] : [])
+  mockGetRbacAuditList.mockResolvedValue(family === "rbac" ? [row] as never[] : [])
+  mockGetInfraAuditList.mockResolvedValue(family === "infra" ? [row] as never[] : [])
+  const cfg = (await getKisaControls()).controls.find((c) => c.id === "KISA-CFG-01")
+  expect(cfg?.status).toBe("fail")
+  expect(cfg?.detail).toContain(family === "config" ? "config-audit 조치가능 1건" : "RBAC/infra 조치가능 1건")
+  expect(cfg?.detail).not.toContain("실패 없음")
+  mockGetRbacAuditList.mockResolvedValue([])
+  mockGetInfraAuditList.mockResolvedValue([])
+})
+
+it("G5 old-shape framework and KISA cache never produce CFG-01 pass", async () => {
+  mockCache.clear()
+  mockCache.set("compliance:kisa:list", { controls: [{ id: "KISA-CFG-01", status: "pass" }] })
+  mockGetConfigAuditList.mockResolvedValue([])
+  mockGetComplianceFrameworks.mockResolvedValue([{
+    id: "old", title: "Old", totalControls: 10, passCount: 10, failCount: 0, passRate: 1,
+  }])
+  const cfg = (await getKisaControls()).controls.find((c) => c.id === "KISA-CFG-01")
+  expect(cfg?.status).toBe("warn")
+  expect(cfg?.detail).toContain("미평가 프레임워크 컨트롤 10건")
 })

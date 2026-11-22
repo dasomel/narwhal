@@ -86,7 +86,7 @@ def check(texts: dict[str, str]) -> list[str]:
         ):
             if needle not in src:
                 errors.append(f"{label} missing {needle!r}")
-    if "f.effectivePassRate ?? f.passRate" not in counters:
+    if "f.effectivePassRate ?? 0" not in counters:
         errors.append("failure-counters.tsx missing effectivePassRate handling")
 
     # 5. Docs & live fixture test

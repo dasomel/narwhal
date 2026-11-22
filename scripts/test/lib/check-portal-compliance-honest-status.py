@@ -54,11 +54,19 @@ FILES = {
     "ui_test": ROOT / "portal/src/components/compliance/compliance-ui.test.tsx",
     "kisa_test": ROOT / "portal/src/lib/kisa.test.ts",
     "summary_route_test": ROOT / "portal/src/app/api/compliance/summary/route.test.ts",
+    "evidence_test": ROOT / "portal/src/lib/compliance-evidence.test.ts",
     "snapshot": ROOT / "portal/src/lib/__fixtures__/compliance-snapshot.json",
     "reg": ROOT / "scripts/test/regression-check-kakao.sh",
 }
 
 REQUIRED_VITEST_CASES: list[tuple[str, str]] = [
+    ("evidence_test", "G1 failure evidence wins over mixed positive evidence and stale CCR placeholder pass"),
+    ("evidence_test", "G2 KCV0007 requires InfraAssessmentReport evidence and rejects ConfigAuditReport evidence"),
+    ("evidence_test", "G2 maps snapshot RBAC KSV041 and KSV048 to RBAC evidence, including mixed-family controls"),
+    ("evidence_test", "G3 auxiliary read failure %s makes positive workload evidence coverage_unknown"),
+    ("kisa_test", "G4 KISA CFG-01 fails on actionable %s findings without actionable framework controls"),
+    ("kisa_test", "G5 old-shape framework and KISA cache never produce CFG-01 pass"),
+    ("ui_test", "G5 old-shape object renders unknown in grid, summary SSR and framework detail"),
     ("unit_test", "never classifies unknown check ID (AVD-KSV-9999) or clean empty-checks infra report as passed"),
     ("unit_test", "fails closed to coverage_unknown and surfaces partial without caching when auxiliary Deployment/ConfigMap read returns 403"),
     ("unit_test", "evaluates 4.1.5 (KCV0073) on control-plane nodes from positive infra report evidence without worker-node over-correction"),
@@ -173,7 +181,7 @@ def check(texts: dict[str, str]) -> list[str]:
     # 4. KISA CFG-01 must not pass on raw rate when controls are unevaluated
     if "f.passRate < 0.6" in kisa or "f.passRate < 0.9" in kisa:
         errors.append("kisa.ts checkCfg01 must not grade CFG-01 on raw f.passRate thresholds")
-    for needle in ("actionableControls", "notEvaluatedControls", "if (actionableControls > 0)", "if (notEvaluatedControls > 0"):
+    for needle in ("actionableControls", "notEvaluatedControls", "if (actionableControls > 0 || actionableFailures > 0 || auditFailures > 0)", "if (notEvaluatedControls > 0"):
         if needle not in kisa:
             errors.append(f"kisa.ts checkCfg01 missing evaluated verdict logic: {needle!r}")
 
@@ -239,7 +247,7 @@ def check(texts: dict[str, str]) -> list[str]:
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("force classifyNonFailingControl to passed", "compliance", "const checks = resultControl.checks ?? []", 'if (true) return { evaluationState: "passed" }\n  const checks = resultControl.checks ?? []'),
-    ("bypass checkEvidence on general ConfigAudit", "compliance", 'return checkEvidence(evalCtx.configAuditPassedCheckIds, "ConfigAuditReport")', 'return { evaluationState: "passed" }'),
+    ("bypass checkEvidence on general ConfigAudit", "compliance", 'return checkEvidence("ConfigAuditReport")', 'return { evaluationState: "passed" }'),
     ("reintroduce hardcoded WORKER_COMMAND_RE over-correction", "compliance", "const CONTROL_PLANE_CHECK_IDS", "const WORKER_COMMAND_RE = /^CMD-0022$/\nconst CONTROL_PLANE_CHECK_IDS"),
     ("drop missing-spec absent_from_report materialisation", "compliance", 'notEvaluatedReason: "absent_from_report"', 'notEvaluatedReason: "removed" as never'),
     ("swallow configAudit error instead of throwing unavailable", "compliance", 'throw new ComplianceDataUnavailableError("configAudit", msg)', "return []"),
@@ -248,7 +256,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("leak 100% on raw formatter in FrameworksGrid", "grid", "const rawPctText = formatPassRatePct(fw.passRate, {\n            hasActionableFail: fw.failCount > 0 || hasActionable,\n            hasNotEvaluated: hasNotEval,\n          })", "const rawPctText = formatPassRatePct(fw.passRate, {\n            hasActionableFail: fw.failCount > 0,\n          })"),
     ("revert pooled ratio to unweighted avgRate", "counters", "function pooledRatio(", "function avgRate("),
     ("drop partial notice from FailureCounters", "counters", "compliance.summary.partialNotice", "compliance.summary.removed"),
-    ("grade KISA CFG-01 on raw passRate thresholds", "kisa", "if (actionableControls > 0) {", "if (frameworks.some((f) => f.passRate < 0.6)) {"),
+    ("grade KISA CFG-01 on raw passRate thresholds", "kisa", "if (actionableControls > 0 || actionableFailures > 0 || auditFailures > 0) {", "if (frameworks.some((f) => f.passRate < 0.6)) {"),
     ("return 200 instead of 503 on summary route when all sources fail", "summary_route", "if (allUnavailable) {", "if (false) {"),
     ("return 200 instead of 503 on unavailable config route", "config_route", "{ status: 503 }", "{ status: 200 }"),
     ("hide unavailableSummary on server error", "page", "dataUnavailable: true", "dataUnavailable: false"),

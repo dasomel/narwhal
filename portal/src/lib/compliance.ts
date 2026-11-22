@@ -1242,10 +1242,7 @@ function classifyFrameworkCheck(
   return { status: "actionable" }
 }
 
-const CONTROL_PLANE_CHECK_IDS = new Set([
-  ...Array.from({ length: 47 }, (_, i) => `KCV${String(i + 1).padStart(4, "0")}`),
-  "KSV037",
-])
+const CONTROL_PLANE_CHECK_IDS = new Set(["KSV037"])
 const BINDING_CONFIG_AUDIT_CHECK_IDS = new Set(["KSV111"])
 const RBAC_ASSESSMENT_CHECK_IDS = new Set([
   ...Array.from({ length: 16 }, (_, i) => `KSV${String(i + 41).padStart(3, "0")}`),
@@ -1264,13 +1261,8 @@ interface FrameworkEvalContext {
   hasConfigAuditReports: boolean | "unknown"
   hasRbacReports: boolean | "unknown"
   hasInfraReports: boolean | "unknown"
-  configAuditPassedCheckIds: ReadonlySet<string>
-  kubeSystemPassedCheckIds: ReadonlySet<string>
-  bindingPassedCheckIds: ReadonlySet<string>
-  rbacPassedCheckIds: ReadonlySet<string>
-  infraPassedCheckIds: ReadonlySet<string>
-  infraMasterPassedCheckIds: ReadonlySet<string>
-  infraWorkerPassedCheckIds: ReadonlySet<string>
+  nodeRoles: ReadonlyMap<string, "master" | "worker">
+  evidenceReports: { config: readonly RawAuditReport[]; rbac: readonly RawAuditReport[]; infra: readonly RawAuditReport[] }
   operatorConfigError: boolean
   hasHttpError: boolean
   failedAuxSources: string[]
@@ -1303,7 +1295,48 @@ function collectPassedCheckIds(items: readonly RawAuditReport[]): Set<string> {
       }
     }
   }
+  for (const item of items) {
+    for (const check of item.report?.checks ?? []) {
+      if (check.success === false) ids.delete(normalizeCheckId(check.checkID))
+    }
+  }
   return ids
+}
+
+// D1: Use the v0.25 report family, including KSV IDs actually emitted by RBAC reports.
+// Cost: linear report lookup; escape hatch: update families when the scanner contract changes.
+function controlEvidenceReports(id: string, spec: RawSpecControl | undefined, ctx: FrameworkEvalContext): readonly RawAuditReport[] {
+  const family = /^KCV\d+$/.test(id) ? "infra"
+    : RBAC_ASSESSMENT_CHECK_IDS.has(id) || ctx.evidenceReports.rbac.some((r) =>
+      r.report?.checks?.some((c) => normalizeCheckId(c.checkID) === id)) ? "rbac" : "config"
+  const nodeTypes = new Set([spec?.nodeType, ...(spec?.commands ?? []).map((c) => c.nodeType)]
+    .map(normalizeNodeType).filter(Boolean))
+  return ctx.evidenceReports[family].filter((r) => {
+    if (family === "infra" && nodeTypes.size === 1) {
+      const name = r.metadata.labels?.["trivy-operator.resource.name"] ?? ""
+      return ctx.nodeRoles.get(name) === nodeTypes.values().next().value
+    }
+    if (family === "config" && id === "KSV037") return r.metadata.namespace === "kube-system"
+    if (family === "config" && BINDING_CONFIG_AUDIT_CHECK_IDS.has(id)) {
+      return ["RoleBinding", "ClusterRoleBinding"].includes(r.metadata.labels?.["trivy-operator.resource.kind"] ?? "")
+    }
+    return true
+  })
+}
+
+function controlEvidenceFailures(spec: RawSpecControl | undefined, ctx: FrameworkEvalContext) {
+  return (spec?.checks ?? []).flatMap(({ id }) => {
+    const normalized = normalizeCheckId(id ?? "")
+    return controlEvidenceReports(normalized, spec, ctx).flatMap((r) =>
+      (r.report?.checks ?? []).filter((c) => c.success === false && normalizeCheckId(c.checkID) === normalized)
+        .map((c) => {
+          const labels = r.metadata.labels ?? {}
+          const owner = r.metadata.ownerReferences?.[0]
+          const kind = labels["trivy-operator.resource.kind"] ?? owner?.kind ?? "Unknown"
+          const name = owner?.name ?? labels["trivy-operator.resource.name"] ?? ""
+          return { ...c, target: `${r.metadata.namespace ?? ""}/${kind.toLowerCase()}-${name}` }
+        }))
+  })
 }
 
 function normalizeNodeType(raw: string | undefined): "master" | "worker" | null {
@@ -1422,36 +1455,9 @@ function buildFrameworkEvalContext(opts: {
     hasWorkerNodes = workerCount > 0
   }
 
-  // D-HONEST-EVIDENCE: Positive per-check-ID evaluation evidence from each report kind and scope.
-  // Cost: one linear pass over report checks[]; Escape hatch: if trivy-operator enables
-  // report.recordFailedChecksOnly=false, passing checks populate checks[] automatically and
-  // flip verified controls to `passed` without changing portal code.
-  const configAuditPassedCheckIds = collectPassedCheckIds(configItems)
-  const kubeSystemPassedCheckIds = collectPassedCheckIds(
-    configItems.filter((i) => i.metadata.namespace === "kube-system"),
-  )
-  const bindingPassedCheckIds = collectPassedCheckIds(
-    configItems.filter((i) => {
-      const kind = i.metadata.labels?.["trivy-operator.resource.kind"] ?? ""
-      return kind === "RoleBinding" || kind === "ClusterRoleBinding"
-    }),
-  )
-  const rbacPassedCheckIds = collectPassedCheckIds(rbacItems)
-  const infraPassedCheckIds = collectPassedCheckIds(infraItems)
-  const infraMasterPassedCheckIds = collectPassedCheckIds(
-    infraItems.filter((i) => {
-      const nodeName = i.metadata.labels?.["trivy-operator.resource.name"] ?? ""
-      return nodeRoleByName.get(nodeName) === "master"
-    }),
-  )
-  const infraWorkerPassedCheckIds = collectPassedCheckIds(
-    infraItems.filter((i) => {
-      const nodeName = i.metadata.labels?.["trivy-operator.resource.name"] ?? ""
-      return nodeRoleByName.get(nodeName) === "worker"
-    }),
-  )
-
   return {
+    nodeRoles: nodeRoleByName,
+    evidenceReports: { config: configItems, rbac: rbacItems, infra: infraItems },
     kubeSystemExcluded,
     supportedConfigAuditKinds,
     configAuditScannerEnabled: parseScannerFlag("OPERATOR_CONFIG_AUDIT_SCANNER_ENABLED"),
@@ -1462,13 +1468,6 @@ function buildFrameworkEvalContext(opts: {
     hasConfigAuditReports: configRes.ok ? configItems.length > 0 : "unknown",
     hasRbacReports: rbacNsRes.ok && rbacClusterRes.ok ? rbacItems.length > 0 : "unknown",
     hasInfraReports: infraNsRes.ok && infraClusterRes.ok ? infraItems.length > 0 : "unknown",
-    configAuditPassedCheckIds,
-    kubeSystemPassedCheckIds,
-    bindingPassedCheckIds,
-    rbacPassedCheckIds,
-    infraPassedCheckIds,
-    infraMasterPassedCheckIds,
-    infraWorkerPassedCheckIds,
     operatorConfigError,
     hasHttpError,
     failedAuxSources,
@@ -1485,8 +1484,11 @@ function classifyNonFailingControl(
   notEvaluatedReason?: ControlNotEvaluatedReason
   notEvaluatedDetail?: string
 } {
+  if (evalCtx.hasHttpError) {
+    return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: evalCtx.failedAuxSources.join(", ") }
+  }
   const checks = resultControl.checks ?? []
-  if (checks.length === 0) {
+  if (checks.length === 0 && !specControl?.checks?.length) {
     return {
       evaluationState: "not_evaluated",
       notEvaluatedReason: "empty_checks",
@@ -1494,20 +1496,7 @@ function classifyNonFailingControl(
     }
   }
 
-  // Explicit passing check IDs emitted directly in detailReport.results[].checks[].
-  // Note: Trivy emits `{ checkID: "", success: true }` placeholders for non-failing controls;
-  // empty checkIDs are NEVER positive evidence.
-  const explicitPassedIds = new Set<string>()
-  for (const k of checks) {
-    if (k.success === true && typeof k.checkID === "string" && k.checkID.trim().length > 0) {
-      explicitPassedIds.add(normalizeCheckId(k.checkID))
-    }
-  }
-
   if (!specControl) {
-    if (explicitPassedIds.size > 0 && !evalCtx.operatorConfigError) {
-      return { evaluationState: "passed" }
-    }
     return {
       evaluationState: "not_evaluated",
       notEvaluatedReason: "coverage_unknown",
@@ -1520,12 +1509,8 @@ function classifyNonFailingControl(
   // Kubernetes YAML serialization (`omitempty`) drops empty `checks` on manual controls
   // (e.g. CIS 3.1.1, NSA 3.0). When other controls in the same benchmark carry spec checks
   // and this control has neither checks nor commands, classify it as `manual` rather than
-  // `coverage_unknown`; if no control carries `spec.checks` (trimmed fixture), fail closed
-  // unless detailReport.results[].checks carried explicit non-empty passing check IDs.
+  // `coverage_unknown`; missing check linkage cannot establish report family or scope.
   if (!Array.isArray(specControl.checks)) {
-    if (explicitPassedIds.size > 0 && !evalCtx.operatorConfigError) {
-      return { evaluationState: "passed" }
-    }
     const hasCommands = Array.isArray(specControl.commands) && specControl.commands.length > 0
     if (specHasAutomatedChecks && !hasCommands) {
       return {
@@ -1575,14 +1560,14 @@ function classifyNonFailingControl(
   const normIds = rawIds.map(normalizeCheckId)
 
   const checkEvidence = (
-    reportPassedIds: ReadonlySet<string>,
     reportKindLabel: string,
   ): {
     evaluationState: ControlEvaluationState
     notEvaluatedReason?: ControlNotEvaluatedReason
     notEvaluatedDetail?: string
   } => {
-    const missing = normIds.filter((id) => !reportPassedIds.has(id) && !explicitPassedIds.has(id))
+    // Each ID uses its own report family; mixed controls cannot borrow another family's pass.
+    const missing = normIds.filter((id) => !collectPassedCheckIds(controlEvidenceReports(id, specControl, evalCtx)).has(id))
     if (missing.length === 0) {
       return { evaluationState: "passed" }
     }
@@ -1593,13 +1578,13 @@ function classifyNonFailingControl(
     }
   }
 
-  // Node / Infra controls: identified by collector commands[] or non-control-plane KCV IDs.
+  // Node / Infra controls: all KCV IDs belong to InfraAssessmentReports (v0.25).
   // D-NODE-APPLICABILITY: Never infer worker-only vs master-only from CIS section numbers
   // (e.g. 4.1.5 / KCV0073 applies to control-plane nodes too). Apply node-type gating ONLY when
   // explicit `nodeType` metadata is present on spec/command data (or when the cluster has zero
   // nodes); otherwise fall back to positive per-check evidence in InfraAssessmentReport.
   const isNodeInfraCtrl =
-    cmdIds.length > 0 || normIds.some((id) => /^KCV\d+$/.test(id) && !CONTROL_PLANE_CHECK_IDS.has(id))
+    cmdIds.length > 0 || normIds.some((id) => /^KCV\d+$/.test(id))
 
   if (isNodeInfraCtrl) {
     if (evalCtx.infraScannerEnabled === false) {
@@ -1625,16 +1610,10 @@ function classifyNonFailingControl(
     if (evalCtx.operatorConfigError || evalCtx.hasInfraReports === "unknown" || evalCtx.hasMasterNodes === "unknown") {
       return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "node / infra report or operator config lookup failed" }
     }
-    const scopedInfraIds =
-      declaredNodeTypes.size === 1 && declaredNodeTypes.has("worker")
-        ? evalCtx.infraWorkerPassedCheckIds
-        : declaredNodeTypes.size === 1 && declaredNodeTypes.has("master")
-          ? evalCtx.infraMasterPassedCheckIds
-          : evalCtx.infraPassedCheckIds
-    return checkEvidence(scopedInfraIds, "InfraAssessmentReport")
+    return checkEvidence("InfraAssessmentReport")
   }
 
-  // Control-plane static pods in kube-system (KCV0001..0047 & KSV037).
+  // KSV037 is a workload/config check scoped to kube-system; KCV IDs use infra above.
   const needsKubeSystem = normIds.some((id) => CONTROL_PLANE_CHECK_IDS.has(id))
   if (needsKubeSystem) {
     if (evalCtx.configAuditScannerEnabled === false) {
@@ -1646,7 +1625,7 @@ function classifyNonFailingControl(
     if (evalCtx.operatorConfigError || evalCtx.kubeSystemExcluded === "unknown" || evalCtx.hasConfigAuditReports === "unknown") {
       return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "kube-system ConfigAudit coverage unknown" }
     }
-    return checkEvidence(evalCtx.kubeSystemPassedCheckIds, "kube-system ConfigAuditReport")
+    return checkEvidence("kube-system ConfigAuditReport")
   }
 
   // Binding ConfigAudit checks (RoleBinding / ClusterRoleBinding for KSV111).
@@ -1674,7 +1653,7 @@ function classifyNonFailingControl(
         notEvaluatedDetail: "RoleBinding/ClusterRoleBinding ConfigAudit coverage unknown",
       }
     }
-    return checkEvidence(evalCtx.bindingPassedCheckIds, "RoleBinding/ClusterRoleBinding ConfigAuditReport")
+    return checkEvidence("RoleBinding/ClusterRoleBinding ConfigAuditReport")
   }
 
   // RBAC checks (Role / ClusterRole).
@@ -1686,7 +1665,7 @@ function classifyNonFailingControl(
     if (evalCtx.operatorConfigError || evalCtx.hasRbacReports === "unknown") {
       return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "RBAC assessment report or operator config lookup failed" }
     }
-    return checkEvidence(evalCtx.rbacPassedCheckIds, "RbacAssessmentReport")
+    return checkEvidence("RbacAssessmentReport")
   }
 
   // General ConfigAudit checks (and any unknown check IDs such as AVD-KSV-9999).
@@ -1696,7 +1675,7 @@ function classifyNonFailingControl(
   if (evalCtx.operatorConfigError || evalCtx.hasConfigAuditReports === "unknown") {
     return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: "ConfigAudit report or operator config lookup failed" }
   }
-  return checkEvidence(evalCtx.configAuditPassedCheckIds, "ConfigAuditReport")
+  return checkEvidence("ConfigAuditReport")
 }
 
 function buildComplianceFrameworkData(
@@ -1710,17 +1689,36 @@ function buildComplianceFrameworkData(
   const failCount = item.status?.summary?.failCount ?? 0
 
   // status.detailReport.results 가 있으면 per-control 사용, 없으면 spec.compliance.controls 폴백.
-  // (Trivy reportType=summary 이면 detailReport 비어있음 — 모든 컨트롤을 not_evaluated 처리.
+  // (Trivy reportType=summary 이면 detailReport 비어있음 — 실패 증거 없는 컨트롤은 not_evaluated.
   //  reportType=all 이면 results[].checks[].success 및 spec/cluster coverage로 3-상태 집계.)
-  const detailControls = item.status?.detailReport?.results ?? []
+  const reportedControls = item.status?.detailReport?.results ?? []
+  const detailControls = [...reportedControls]
   const specControls = item.spec.compliance.controls ?? []
   const specControlMap = new Map(specControls.map((sc) => [sc.id, sc]))
   const specHasAutomatedChecks = specControls.some((sc) => Array.isArray(sc.checks) && sc.checks.length > 0)
 
+  // D2: Underlying failures outrank the 6-hourly CCR, including omitted controls.
+  // Cost: check-ID join; escape hatch: remove once CCR freshness is guaranteed upstream.
+  for (const sc of specControls) {
+    if (!detailControls.some((c) => c.id === sc.id) && controlEvidenceFailures(sc, evalCtx).length > 0) {
+      detailControls.push({ ...sc, checks: [] })
+    }
+  }
   let controls: ComplianceControl[]
   if (detailControls.length > 0) {
     controls = detailControls.map((c) => {
-      const checks = c.checks ?? []
+      const checks = [...(c.checks ?? [])]
+      const specControl = specControlMap.get(c.id)
+      const evidenceSpec = specControl?.checks ? specControl : { ...specControl, ...c, checks: checks.map((k) => ({ id: k.checkID })) }
+      for (const failure of controlEvidenceFailures(evidenceSpec, evalCtx)) {
+        const target = parseComplianceTarget(failure.target)
+        const alreadyReported = checks.some((k) => {
+          const resolved = reportTargetMap.get(k.target ?? "") ?? parseComplianceTarget(k.target)
+          return k.success === false && normalizeCheckId(k.checkID ?? "") === normalizeCheckId(failure.checkID)
+            && resolved?.namespace === target?.namespace && resolved?.kind === target?.kind && resolved?.name === target?.name
+        })
+        if (!alreadyReported) checks.push(failure)
+      }
       let ctrlPass = 0
       let ctrlFail = 0
       let actionableFailCount = 0
@@ -1797,6 +1795,7 @@ function buildComplianceFrameworkData(
         evaluationState: "not_evaluated",
         notEvaluatedReason: "absent_from_report",
         notEvaluatedDetail: "absent from status.detailReport.results",
+        ...(evalCtx.hasHttpError ? { notEvaluatedReason: "coverage_unknown" as const, notEvaluatedDetail: evalCtx.failedAuxSources.join(", ") } : {}),
         accepted: false,
         description: sc.description,
       })
@@ -1814,6 +1813,7 @@ function buildComplianceFrameworkData(
       evaluationState: "not_evaluated" as const,
       notEvaluatedReason: "summary_only" as const,
       notEvaluatedDetail: "ClusterComplianceReport detailReport.results absent (reportType=summary)",
+      ...(evalCtx.hasHttpError ? { notEvaluatedReason: "coverage_unknown" as const, notEvaluatedDetail: evalCtx.failedAuxSources.join(", ") } : {}),
       accepted: false,
       description: c.description,
     }))

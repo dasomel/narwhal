@@ -84,11 +84,11 @@ export function FailureCounters({ summary, locale }: Props) {
     0,
   )
   const evaluatedPassTotal = summary.frameworks.reduce(
-    (acc, f) => acc + (f.evaluatedPassCount ?? f.passCount),
+    (acc, f) => acc + (f.evaluatedPassCount ?? 0),
     0,
   )
   const notEvaluatedTotal = summary.frameworks.reduce(
-    (acc, f) => acc + (f.notEvaluatedCount ?? 0),
+    (acc, f) => acc + (f.notEvaluatedCount ?? Math.max(0, f.totalControls - f.failCount)),
     0,
   )
   const rawControlsTotal = summary.frameworks.reduce((acc, f) => acc + f.failCount, 0)
@@ -104,10 +104,10 @@ export function FailureCounters({ summary, locale }: Props) {
   const totalControlsAll = summary.frameworks.reduce((acc, f) => acc + f.totalControls, 0)
   const rawPassTotal = summary.frameworks.reduce((acc, f) => acc + f.passCount, 0)
   const effectivePassTotal = summary.frameworks.reduce(
-    (acc, f) => acc + Math.round((f.effectivePassRate ?? f.passRate) * f.totalControls),
+    (acc, f) => acc + Math.round(((f.evaluatedPassCount === undefined || f.notEvaluatedCount === undefined ? 0 : f.effectivePassRate ?? 0)) * f.totalControls),
     0,
   )
-  const hasCoverageUnknown = summary.frameworks.some((f) => Boolean(f.coverageUnknown))
+  const hasCoverageUnknown = summary.frameworks.some((f) => (Boolean(f.coverageUnknown) || f.evaluatedPassCount === undefined || f.notEvaluatedCount === undefined))
 
   const hasActionableControls = actionableControlsTotal > 0
   const hasNotEvaluatedControls = notEvaluatedTotal > 0 || hasCoverageUnknown

@@ -89,7 +89,7 @@ function ControlsTable({
             const actionableFail = ctrl.actionableFailCount ?? ctrl.failCount
             const acceptedFail = ctrl.acceptedFailCount ?? 0
             const droppedFail = ctrl.droppedFailCount ?? 0
-            const isNotEvaluated = ctrl.evaluationState === "not_evaluated"
+            const isNotEvaluated = (ctrl.evaluationState === "not_evaluated" || (!ctrl.evaluationState && ctrl.failCount === 0))
             return (
               <tr
                 key={ctrl.id}
@@ -231,7 +231,7 @@ export default async function FrameworkDetailPage({ params }: Props) {
   const { detail } = fetched
 
   const mainControls = [...detail.controls]
-    .filter((c) => !c.accepted && c.evaluationState !== "not_evaluated")
+    .filter((c) => !c.accepted && (c.evaluationState === "passed" || c.evaluationState === "failed" || (!c.evaluationState && c.failCount > 0)))
     .sort((a, b) => {
       const aFail = (a.actionableFailCount ?? a.failCount) > 0 ? 0 : 1
       const bFail = (b.actionableFailCount ?? b.failCount) > 0 ? 0 : 1
@@ -244,19 +244,19 @@ export default async function FrameworkDetailPage({ params }: Props) {
     .sort((a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity))
 
   const notEvaluatedControls = [...detail.controls]
-    .filter((c) => c.evaluationState === "not_evaluated")
+    .filter((c) => (c.evaluationState === "not_evaluated" || (!c.evaluationState && c.failCount === 0)))
     .sort((a, b) => severityOrder.indexOf(a.severity) - severityOrder.indexOf(b.severity))
 
-  const evaluatedRate = detail.evaluatedPassRate ?? detail.passRate
-  const effectiveRate = detail.effectivePassRate ?? detail.passRate
+  const evaluatedRate = detail.evaluatedPassRate ?? 0
+  const effectiveRate = (detail.evaluatedPassCount === undefined || detail.notEvaluatedCount === undefined ? 0 : detail.effectivePassRate ?? 0)
   const actionableControlsFail = detail.actionableFailCount ?? detail.failCount
   const acceptedControlsFail = detail.acceptedFailCount ?? acceptedControls.length
-  const evaluatedPass = detail.evaluatedPassCount ?? detail.passCount
-  const notEvaluated = detail.notEvaluatedCount ?? notEvaluatedControls.length
+  const evaluatedPass = detail.evaluatedPassCount ?? 0
+  const notEvaluated = detail.notEvaluatedCount ?? Math.max(0, detail.totalControls - detail.failCount)
   const effectivePassNum = Math.round(effectiveRate * detail.totalControls)
   const droppedControls = detail.droppedFailCount ?? 0
   const droppedChecks = detail.droppedCheckCount ?? 0
-  const hasNotEval = notEvaluated > 0 || Boolean(detail.coverageUnknown)
+  const hasNotEval = notEvaluated > 0 || (Boolean(detail.coverageUnknown) || detail.evaluatedPassCount === undefined || detail.notEvaluatedCount === undefined)
 
   const evaluatedPctText = formatPassRatePct(evaluatedRate, {
     hasActionableFail: actionableControlsFail > 0,

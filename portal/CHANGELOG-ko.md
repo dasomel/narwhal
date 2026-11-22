@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+## [1.1.24] - 2026-11-23
+
 ### 수정
 
 - **OSS 업데이트 실행 Pod 실측·접미사 허용목록·실행 이미지 CVE 귀속·사유 명시 (`src/lib/oss-updates/catalog.ts`, `src/lib/oss-updates/status.ts`, `src/lib/oss-updates/version.ts`, `src/lib/k8s-client.ts`, `src/lib/trivy.ts`, `src/types/oss-updates.ts`, `src/components/settings/oss-updates-table.tsx`, `src/lib/i18n.ts`):**
@@ -18,15 +20,15 @@
 
 ### 변경
 
-- **Compliance 정확한 예외 수용:** namespace·기본 역할·이름 부분문자열 일괄 수용을 범위·namespace·kind·정확한 이름·검사 ID별 검토 규칙으로 대체했습니다. 근거 미확인 예외를 제거하고 ReplicaSet Deployment 소유 확인, 캐시 버전 갱신, summary API·한영 UI의 미사용 규칙 목록/개수를 추가했습니다(R395).
+- **Compliance 정확한 예외 수용 (`src/data/compliance-acceptance-rules.json`, `src/lib/compliance-acceptance.ts`, `src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, `src/components/compliance/failure-counters.tsx`, `src/lib/i18n.ts`):** namespace·기본 역할·이름 부분문자열 일괄 수용을 범위·namespace·kind·정확한 이름·검사 ID별 검토 규칙으로 대체했습니다(Config Audit 규칙 73->45, RBAC 4->47 [31개 Kubernetes 부트스트랩 역할 포함]). 근거 미확인 예외를 제거하고 ReplicaSet Deployment 소유 확인, 캐시 버전 갱신, summary API·한영 UI의 미사용 규칙 목록/개수를 추가했습니다(`R395`).
 
-- **Compliance 정직한 3-상태 판정 및 조회 실패 구분 표시 (`src/lib/compliance.ts`, `src/lib/kisa.ts`, `src/types/compliance.ts`, `src/components/compliance/*`, `src/app/api/compliance/*`, `src/app/(dashboard)/compliance/*`, `src/lib/i18n.ts`):**
-  - Trivy가 미실행 컨트롤에 남기는 `{ checkID: "", success: true }` 플레이스홀더를 통과로 집계하던 문제를 수정해 `passed` / `failed` / `not_evaluated` 3-상태로 분리하고, 해당 리포트 종류·범위의 `checks[]` 양성 통과 증거가 모든 검사 ID에 존재할 때만 `passed`를 허용합니다(`no_evidence_in_report`, `absent_from_report`, `coverage_unknown`, `excluded_namespace`, `unsupported_kind`, 스펙 `nodeType` 기반 `missing_node_type`, `unlinked_check_id`, `manual`, `scanner_disabled`, `summary_only`, `empty_checks`).
+- **Compliance 정직한 3-상태 판정 및 조회 실패 구분 표시 (`src/lib/compliance.ts`, `src/lib/kisa.ts`, `src/types/compliance.ts`, `src/components/compliance/*`, `src/app/api/compliance/*`, `src/app/(dashboard)/compliance/*`, `src/lib/i18n.ts`, `src/data/trivy-check-catalogue.generated.json`):**
+  - 생성·고정된 158개 점검 카탈로그(`src/data/trivy-check-catalogue.generated.json`) 기반으로 실패 전용 점검을 평가하고, Trivy의 `{ checkID: "", success: true }` 플레이스홀더를 통과로 간주하던 가정을 세 가지 상태(`passed`, `failed`, `not_evaluated`)의 컨트롤 평가로 대체해 `passed`는 해당 종류·범위의 리포트에 그 컨트롤의 카탈로그 점검 ID로 기록된 실패가 없다는 뜻으로만 쓰도록 변경했습니다(스캐너는 실패만 기록하며, 인프라 점검은 `passed`로 표시하지 않음)(`no_evidence_in_report`, `coverage_unknown`, `absent_from_report`, `excluded_namespace`, `unsupported_kind`, 스펙/수집기 `nodeType` 기반 `missing_node_type`, `unlinked_check_id`, `manual`, `scanner_disabled`, `summary_only`, `empty_checks`) (`R387`, `R389`, `R391`, `R392`, `R393`).
   - 요약 프레임워크 통과율을 분자/분모 라벨 포함 풀링 비율로 계산하고 모든 `formatPassRatePct` 호출(원본 통과율 포함)에 `hasNotEvaluated`를 전달해 `100%` 누수를 차단했으며, KISA `CFG-01`이 조치가능 실패 시 `fail`, 미평가 잔존 시 `warn`, 전수 평가·조치가능 0건일 때만 `pass`가 되도록 변경했습니다.
   - Config Audit에서 미수용 MEDIUM+(`totalConfigAuditFailures`)와 별도로 미수용 LOW(`unacceptedLowConfigAuditFailures`) 및 수용 위생 LOW(`lowSeverityConfigAuditFailures`)를 분리 표시하고, 제외된 구 ReplicaSet 수(`droppedConfigAuditReports`·`droppedConfigAuditFailures`·`droppedFailCount`·`droppedCheckCount`)를 대조할 수 있게 했습니다.
   - Kubernetes API 목록 조회 오류를 `0`이나 빈 배열로 숨기거나 실패·부분 응답을 캐시하지 않고 API `503 { unavailable: true }`(전 소스 실패 시 `/api/compliance/summary` 포함), 부분 조회 알림 배너(`partial`/`partialSources`), 소스별 타임스탬프(`status.updateTimestamp` 우선)·6시간 재집계 주기 안내를 표시합니다.
 - **`KCV0056` 인프라 수용 규칙 제거 (`src/lib/compliance-accepted.ts`, `src/lib/i18n.ts`):**
-  - `gitops/charts/narwhal-apps/templates/trivy-operator.yaml`에서 호스트 `/etc/cni/net.d/`를 컨테이너 `/etc/cni`로 마운트해(`D-NODE-COLLECTOR-CNI-MOUNT`) `node-collector` `CMD-0009`(`stat -c %a /*/cni/*`)가 `700` 디렉터리가 아닌 내부 CNI 파일을 검사하도록 수정됨에 따라 `ACCEPTED_INFRA_RULES`에서 `KCV0056` 수용 규칙을 제거하고 `compliance.acceptedReason.infraCniDirGlob` ko/en i18n 키를 삭제했습니다. fail-closed 인프라/프레임워크 수용·조치가능 분리 구조는 유지하므로 실패한 `KCV0056`은 다시 조치가능으로 표시되며 향후 데이터 전용 규칙 추가도 계속 지원합니다.
+  - `gitops/charts/narwhal-apps/templates/trivy-operator.yaml`에서 호스트 `/etc/cni/net.d/`를 컨테이너 `/etc/cni`로 마운트해(`D-NODE-COLLECTOR-CNI-MOUNT`) `node-collector` `CMD-0009`(`stat -c %a /*/cni/*`)가 `700` 디렉터리가 아닌 내부 CNI 파일을 검사하도록 수정됨에 따라 `ACCEPTED_INFRA_RULES`에서 `KCV0056` 수용 규칙을 제거하고 `compliance.acceptedReason.infraCniDirGlob` ko/en i18n keys를 삭제했습니다. fail-closed 인프라/프레임워크 수용·조치가능 분리 구조는 유지하므로 실패한 `KCV0056`은 다시 조치가능으로 표시되며 향후 데이터 전용 규칙 추가도 계속 지원합니다.
 
 ## [1.1.23] - 2026-11-20
 
@@ -944,7 +946,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.23...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.24...HEAD
+[1.1.24]: https://github.com/dasomel/narwhal/compare/portal/v1.1.23...portal/v1.1.24
 [1.1.23]: https://github.com/dasomel/narwhal/compare/portal/v1.1.22...portal/v1.1.23
 [1.1.22]: https://github.com/dasomel/narwhal/compare/portal/v1.1.21...portal/v1.1.22
 [1.1.21]: https://github.com/dasomel/narwhal/compare/portal/v1.1.20...portal/v1.1.21

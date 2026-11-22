@@ -118,7 +118,7 @@ def check(texts: dict[str, str]) -> list[str]:
     # 2. Allowlist entries (exact check sets; openbao-auto-unseal is fixed, not allowlisted)
     rules = _parse_config_rules(texts["accepted"])
     if any(k[2] == "openbao-auto-unseal" for k, _ in rules):
-        errors.append("compliance-accepted.ts must not allowlist fixed workload openbao-auto-unseal")
+        errors.append("compliance-acceptance-rules.json must not allowlist fixed workload openbao-auto-unseal")
 
     # D-P2-2: no repo manifest proves the former CNPG UID/pooler necessity.
     if any(k[2] in ("narwhal-db-1", "narwhal-db-pooler-rw") for k, _ in rules):
@@ -134,10 +134,10 @@ def check(texts: dict[str, str]) -> list[str]:
     for key, want in expected_rules.items():
         matches = [c for k, c in rules if k == key]
         if len(matches) != 1:
-            errors.append(f"compliance-accepted.ts must hold exactly one rule {key} (found {len(matches)})")
+            errors.append(f"compliance-acceptance-rules.json must hold exactly one rule {key} (found {len(matches)})")
         elif matches[0] != want:
             errors.append(
-                f"compliance-accepted.ts rule {key} check set differs: "
+                f"compliance-acceptance-rules.json rule {key} check set differs: "
                 f"missing {sorted(want - matches[0])}, extra {sorted(matches[0] - want)}"
             )
 

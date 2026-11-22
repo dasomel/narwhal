@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R393: Portal Settings > OSS Updates truthful running version, ownership/truncation/status-image/digest/CVE invariants.
+"""R394: Portal Settings > OSS Updates truthful running version, ownership/truncation/status-image/digest/CVE invariants.
 
 Verifies without helm or promtool:
 1. catalog.ts assigns explicit runningSource (server-version, exact workload/container, static-pod,
@@ -19,7 +19,7 @@ Verifies without helm or promtool:
    and narwhal-portal-k8s.yaml ClusterRole is NOT widened (no apiextensions.k8s.io rule).
 5. oss-updates-table.tsx + i18n.ts render not-applicable CLI state, visible/digest-only siblings,
    rollout-mixed drift, list-truncated unknown, and explicit ko/en reasons for every unknown/no-scan state.
-6. scripts/test/regression-check-kakao.sh wires R393 with --mutation-verify.
+6. scripts/test/regression-check-kakao.sh wires R394 with --mutation-verify.
 
 --mutation-verify proves broken copies fail.
 """
@@ -163,8 +163,8 @@ def check(texts: dict[str, str]) -> list[str]:
     if "liveClusterInventoryFixture" not in test:
         errors.append("status.test.ts missing liveClusterInventoryFixture")
 
-    if "check R393 " not in reg or "check-portal-oss-updates-truth.py --mutation-verify" not in reg:
-        errors.append("scripts/test/regression-check-kakao.sh must wire R393 with --mutation-verify")
+    if "check R394 " not in reg or "check-portal-oss-updates-truth.py --mutation-verify" not in reg:
+        errors.append("scripts/test/regression-check-kakao.sh must wire R394 with --mutation-verify")
 
     return errors
 
@@ -189,7 +189,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop 403 no-permission mapping in k8s-client.ts", "k8s", 'if (err instanceof K8sCredentialError) return { status: "no-permission", resource }', 'if (false && err instanceof K8sCredentialError) return { status: "no-permission", resource }'),
     ("widen RBAC in narwhal-portal-k8s.yaml", "rbac", "rules:\n", "rules:\n  - apiGroups: [apiextensions.k8s.io]\n"),
     ("drop CLI N/A label in UI", "table", 'case "not-applicable":\n      return t("ossUpdates.notApplicableCli")', 'case "not-applicable":\n      return t("ossUpdates.unknown")'),
-    ("drop R393 wiring", "reg", "check R393 ", "check R9999 "),
+    ("drop R394 wiring", "reg", "check R394 ", "check R9999 "),
 ]
 
 
@@ -211,9 +211,9 @@ def main() -> int:
             if not check(mutated):
                 print(f"FAIL: mutation '{desc}' was not caught!", file=sys.stderr)
                 return 1
-        print(f"PASS: R393 OSS Updates truth & sibling isolation ({len(MUTATIONS)} mutations rejected)")
+        print(f"PASS: R394 OSS Updates truth & sibling isolation ({len(MUTATIONS)} mutations rejected)")
     else:
-        print("PASS: R393 OSS Updates truth & sibling isolation")
+        print("PASS: R394 OSS Updates truth & sibling isolation")
     return 0
 
 

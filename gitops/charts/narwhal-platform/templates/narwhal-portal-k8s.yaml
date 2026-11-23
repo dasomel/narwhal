@@ -82,6 +82,12 @@ rules:
   - apiGroups: [metrics.k8s.io]
     resources: [nodes, pods]
     verbs: [get, list]
+  # Owner-approved (2026-11-24): read gateway.networking.k8s.io/bundle-version annotation for
+  # Portal Settings > OSS Updates without granting list/watch or access to other CRDs.
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    resourceNames: [gateways.gateway.networking.k8s.io]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -465,6 +471,13 @@ spec:
               value: /var/run/secrets/kubernetes.io/serviceaccount-k8s-api/token
             - name: K8S_TOKEN_AUDIENCE
               value: https://kubernetes.default.svc.cluster.local
+            # D-OSS-UPSTREAM: owner-approved (2026-11-24) live GitHub Releases lookup for
+            # Portal Settings > OSS Updates on connected profiles (omitted/false on airgap kakao).
+            # Cost: unauthenticated GitHub API limit 60 req/h per source IP (~24 catalog repos
+            # cached 6h = 21600s in Valkey; failures cached 10m = 600s as unavailable).
+            # Escape hatch: unset OSS_UPDATES_UPSTREAM (or set provider=kakao).
+            - name: OSS_UPDATES_UPSTREAM
+              value: '{{ if eq .Values.provider "kakao" }}false{{ else }}true{{ end }}'
           # D04: mount the cluster CA bundle so Node trusts in-cluster TLS
           # (Keycloak / ArgoCD / K8s API / OpenBao) via NODE_EXTRA_CA_CERTS instead of
           # NODE_TLS_REJECT_UNAUTHORIZED=0. NODE_EXTRA_CA_CERTS=/etc/ssl/narwhal/ca.crt is

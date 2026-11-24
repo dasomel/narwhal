@@ -83,6 +83,9 @@
       "fast-uri": ">=3.1.2",
       "brace-expansion": ">=5.0.6",
       "minimatch@3.1.5>brace-expansion": "2.1.7",
+      "minimatch@>=7.0.0 <11.0.1": "^11.0.1",
+      "glob@>=9.0.0 <14.0.2": "^14.0.2",
+      "seroval": "~1.6.11",
       "postcss": ">=8.5.10",
       "cookie": ">=0.7.0",
       "ip-address": ">=10.1.1"

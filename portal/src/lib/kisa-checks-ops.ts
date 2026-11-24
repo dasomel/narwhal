@@ -1,7 +1,9 @@
 import "server-only"
 import { matchRbacException } from "./compliance-accepted"
 import { fetchErrorOutcome, makeOutcome, type KisaCheckOutcome } from "./kisa-checks"
+import { parseImageRefStrict } from "./oss-updates/version"
 import type {
+  KisaFetchResult,
   KisaRawAlertmanagerReceiver,
   KisaRawAlertmanagerRoute,
   KisaRawClusterPolicy,
@@ -141,13 +143,10 @@ export async function checkObs01(): Promise<KisaCheckOutcome> {
 // --- KISA-IMG-02: Image tag / signature policy + current PolicyReport violations ---
 
 function isLatestOrUntagged(image: string): boolean {
-  if (!image || image.includes("@sha256:") || image.includes("@sha512:")) return false
-  const lastSlash = image.lastIndexOf("/")
-  const tail = lastSlash >= 0 ? image.slice(lastSlash + 1) : image
-  const colonIdx = tail.indexOf(":")
-  if (colonIdx === -1) return true
-  const tag = tail.slice(colonIdx + 1)
-  return tag === "" || tag === "latest"
+  const parsed = parseImageRefStrict(image)
+  if (!parsed) return true
+  if (parsed.digest) return false
+  return parsed.rawTag === null || parsed.rawTag === "latest"
 }
 
 function globMatchesImage(pattern: string, image: string): boolean {
@@ -214,7 +213,14 @@ function extractVerifyImageRefs(policy: KisaRawClusterPolicy | undefined): strin
   return refs
 }
 
-const FAILED_IMAGE_RE = /failed to verify image ([^\s:]+(?::[^\s:]+)?(?:@sha\d+:[a-fA-F0-9]+)?):/
+const FAILED_IMAGE_PREFIX_RE = /failed to verify image\s+(\S+)/
+
+function extractFailedImageRef(message: string): string | null {
+  const m = FAILED_IMAGE_PREFIX_RE.exec(message)
+  if (!m) return null
+  const candidate = m[1].endsWith(":") ? m[1].slice(0, -1) : m[1]
+  return parseImageRefStrict(candidate) ? candidate : null
+}
 
 export async function checkImg02(): Promise<KisaCheckOutcome> {
   const { getKisaKyvernoClusterPolicies, getKisaPolicyReports, getKisaWorkloadInventory } = await import("./k8s-client")
@@ -256,16 +262,30 @@ export async function checkImg02(): Promise<KisaCheckOutcome> {
     }
   }
 
+  const invChecks: Array<[string, KisaFetchResult<unknown>]> = [
+    ["replicasets", inv.replicasets],
+    ["deployments", inv.deployments],
+    ["statefulsets", inv.statefulsets],
+    ["daemonsets", inv.daemonsets],
+    ["cronjobs", inv.cronjobs],
+  ]
+  const failedInvSources = invChecks
+    .filter(([, res]) => res.status !== "ok")
+    .map(([label, res]) => `${label}(${res.status})`)
+
   if (repRes.status !== "ok") {
     const partialReasonKo = repRes.status === "forbidden" ? "PolicyReport 조회 권한 없음" : `PolicyReport 조회 불가(${repRes.status})`
     const partialReasonEn = repRes.status === "forbidden" ? "PolicyReports read forbidden" : `PolicyReports unavailable (${repRes.status})`
+    const invSuffixKo = failedInvSources.length > 0 ? ` · 조회 불가 소스: ${failedInvSources.join(", ")}` : ""
+    const invSuffixEn = failedInvSources.length > 0 ? `; unavailable source(s): ${failedInvSources.join(", ")}` : ""
     const failLatest = latestOffenders.length > 0 || latestAction !== "Enforce"
+    const partialSources = [`policyreports(${repRes.status})`, ...failedInvSources]
     return makeOutcome(
       failLatest ? "fail" : "warn",
       failLatest ? "compliance.kisa.reason.imgViolations" : "compliance.kisa.reason.imgPolicyReportsNotEvaluated",
-      `:latest ${latestOffenders.length}/${uniqueImages.size}건 · disallow-latest-tag=${latestAction} · verify-image-signatures=${verifyAction} · ${partialReasonKo}`,
-      `:latest ${latestOffenders.length}/${uniqueImages.size}; disallow-latest-tag=${latestAction}; verify-image-signatures=${verifyAction}; ${partialReasonEn}`,
-      { partial: true },
+      `:latest ${latestOffenders.length}/${uniqueImages.size}건 · disallow-latest-tag=${latestAction} · verify-image-signatures=${verifyAction} · ${partialReasonKo}${invSuffixKo}`,
+      `:latest ${latestOffenders.length}/${uniqueImages.size}; disallow-latest-tag=${latestAction}; verify-image-signatures=${verifyAction}; ${partialReasonEn}${invSuffixEn}`,
+      { partial: true, partialSources },
     )
   }
 
@@ -323,8 +343,8 @@ export async function checkImg02(): Promise<KisaCheckOutcome> {
           continue
         }
         if (pol === "verify-image-signatures" && verifyImageRefs.length > 0) {
-          const m = FAILED_IMAGE_RE.exec(r.message ?? "")
-          if (m && !verifyImageRefs.some((pat) => globMatchesImage(pat, m[1]))) {
+          const parsedImg = extractFailedImageRef(r.message ?? "")
+          if (parsedImg !== null && !verifyImageRefs.some((pat) => globMatchesImage(pat, parsedImg))) {
             excludedOutOfScope++
             continue
           }
@@ -341,12 +361,30 @@ export async function checkImg02(): Promise<KisaCheckOutcome> {
   const exclEn = totalExcluded > 0
     ? ` (excluded ${totalExcluded}: ${excludedMissingOrZeroRs} deleted/0-replica RS, ${excludedOutOfScope} stale out-of-scope policy remnants)`
     : ""
+  const partialNoteKo = failedInvSources.length > 0 ? ` · 조회 불가 소스: ${failedInvSources.join(", ")}` : ""
+  const partialNoteEn = failedInvSources.length > 0 ? `; unavailable source(s): ${failedInvSources.join(", ")}` : ""
 
-  const baseKo = `:latest ${latestOffenders.length}/${uniqueImages.size}건 · disallow-latest-tag=${latestAction} · verify-image-signatures=${verifyAction} · 현재 위반 ${currentViolations}건${exclKo}`
-  const baseEn = `:latest ${latestOffenders.length}/${uniqueImages.size}; disallow-latest-tag=${latestAction}; verify-image-signatures=${verifyAction}; current violations ${currentViolations}${exclEn}`
+  const baseKo = `:latest ${latestOffenders.length}/${uniqueImages.size}건 · disallow-latest-tag=${latestAction} · verify-image-signatures=${verifyAction} · 현재 위반 ${currentViolations}건${exclKo}${partialNoteKo}`
+  const baseEn = `:latest ${latestOffenders.length}/${uniqueImages.size}; disallow-latest-tag=${latestAction}; verify-image-signatures=${verifyAction}; current violations ${currentViolations}${exclEn}${partialNoteEn}`
 
   if (latestOffenders.length > 0 || latestAction !== "Enforce" || currentViolations > 0) {
-    return makeOutcome("fail", "compliance.kisa.reason.imgViolations", baseKo, baseEn)
+    return makeOutcome(
+      "fail",
+      "compliance.kisa.reason.imgViolations",
+      baseKo,
+      baseEn,
+      failedInvSources.length > 0 ? { partial: true, partialSources: failedInvSources } : undefined,
+    )
+  }
+
+  if (failedInvSources.length > 0) {
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.imgInventoryNotEvaluated",
+      baseKo,
+      baseEn,
+      { partial: true, partialSources: failedInvSources },
+    )
   }
 
   if (verifyAction !== "Enforce") {
@@ -373,10 +411,8 @@ function isUnavoidableRbacBuiltin(b: { name: string; subjects: Array<{ kind: str
 }
 
 const WRITE_VERBS = new Set(["create", "update", "patch", "delete", "deletecollection"])
-const WORKLOAD_RESOURCES = new Set(["pods", "pods/exec", "deployments", "daemonsets", "statefulsets", "replicasets", "jobs", "cronjobs", "replicationcontrollers"])
-const RBAC_RESOURCES = new Set(["roles", "clusterroles", "rolebindings", "clusterrolebindings"])
-const NET_RESOURCES = new Set(["services", "endpoints", "endpointslices", "ingresses", "networkpolicies"])
-const WEBHOOK_RESOURCES = new Set(["mutatingwebhookconfigurations", "validatingwebhookconfigurations"])
+const RBAC_RESOURCE_LIST = ["roles", "clusterroles", "rolebindings", "clusterrolebindings"] as const
+const IMPERSONATE_CORE_RESOURCES = ["users", "groups", "serviceaccounts", "uids", "impersonate"] as const
 
 export interface RbacRuleEvaluation {
   criticalWildcard: boolean
@@ -396,15 +432,20 @@ export function evaluateRbacRules(rules: ReadonlyArray<{ apiGroups?: string[]; r
   const checkIds = new Set<string>()
 
   for (const r of rules) {
-    const apiGroups = r.apiGroups ?? []
-    const resources = r.resources ?? []
-    const verbs = r.verbs ?? []
-    const verbsLower = verbs.map((v) => v.toLowerCase())
-    const resourcesLower = resources.map((res) => res.toLowerCase())
+    const apiGroupsLower = (r.apiGroups ?? []).map((g) => g.toLowerCase())
+    const resourcesLower = (r.resources ?? []).map((res) => res.toLowerCase())
+    const verbsLower = (r.verbs ?? []).map((v) => v.toLowerCase())
 
-    const hasWildcardVerb = verbs.includes("*")
-    const hasWildcardResource = resources.includes("*")
-    const hasCoreOrWildcardGroup = apiGroups.includes("*") || apiGroups.includes("")
+    const hasWildcardGroup = apiGroupsLower.includes("*")
+    const hasWildcardVerb = verbsLower.includes("*")
+    const hasWildcardResource = resourcesLower.includes("*")
+    const hasCoreOrWildcardGroup = hasWildcardGroup || apiGroupsLower.includes("")
+
+    const matchesGroup = (group: string) => hasWildcardGroup || apiGroupsLower.includes(group)
+    const matchesResource = (target: string) =>
+      hasWildcardResource ||
+      resourcesLower.some((res) => res === target || (res.endsWith("/*") && target.startsWith(res.slice(0, -1))))
+    const matchesVerb = (verb: string) => hasWildcardVerb || verbsLower.includes(verb)
 
     if (hasWildcardVerb || hasWildcardResource) {
       anyWildcard = true
@@ -416,10 +457,10 @@ export function evaluateRbacRules(rules: ReadonlyArray<{ apiGroups?: string[]; r
     if (hasWildcardVerb && hasWildcardResource && hasCoreOrWildcardGroup) {
       criticalWildcard = true
       checkIds.add("KSV046")
-      if (apiGroups.includes("*")) checkIds.add("KSV044")
+      if (hasWildcardGroup) checkIds.add("KSV044")
     }
 
-    if ((resourcesLower.includes("secrets") || hasWildcardResource) && hasCoreOrWildcardGroup) {
+    if (matchesGroup("") && matchesResource("secrets")) {
       secretsAccess = true
       checkIds.add("KSV041")
     }
@@ -427,17 +468,53 @@ export function evaluateRbacRules(rules: ReadonlyArray<{ apiGroups?: string[]; r
     const hasWrite = hasWildcardVerb || verbsLower.some((v) => WRITE_VERBS.has(v))
     if (hasWrite) {
       writeAccess = true
-      if (resourcesLower.some((res) => WORKLOAD_RESOURCES.has(res))) checkIds.add("KSV048")
-      if (resourcesLower.some((res) => RBAC_RESOURCES.has(res))) checkIds.add("KSV049")
-      if (resourcesLower.some((res) => NET_RESOURCES.has(res))) checkIds.add("KSV056")
-      if (resourcesLower.some((res) => WEBHOOK_RESOURCES.has(res))) checkIds.add("KSV114")
+      const writesCoreWorkload =
+        matchesGroup("") && (matchesResource("pods") || matchesResource("pods/exec") || matchesResource("replicationcontrollers"))
+      const writesAppsWorkload =
+        matchesGroup("apps") && ["deployments", "daemonsets", "statefulsets", "replicasets"].some(matchesResource)
+      const writesBatchWorkload =
+        matchesGroup("batch") && ["jobs", "cronjobs"].some(matchesResource)
+      if (writesCoreWorkload || writesAppsWorkload || writesBatchWorkload) {
+        checkIds.add("KSV048")
+      }
+
+      if (matchesGroup("rbac.authorization.k8s.io") && RBAC_RESOURCE_LIST.some(matchesResource)) {
+        checkIds.add("KSV049")
+      }
+
+      const writesCoreNet = matchesGroup("") && (matchesResource("services") || matchesResource("endpoints"))
+      const writesDiscoveryNet = matchesGroup("discovery.k8s.io") && matchesResource("endpointslices")
+      const writesNetworkingNet =
+        matchesGroup("networking.k8s.io") && (matchesResource("ingresses") || matchesResource("networkpolicies"))
+      if (writesCoreNet || writesDiscoveryNet || writesNetworkingNet) {
+        checkIds.add("KSV056")
+      }
+
+      if (
+        matchesGroup("admissionregistration.k8s.io") &&
+        (matchesResource("mutatingwebhookconfigurations") || matchesResource("validatingwebhookconfigurations"))
+      ) {
+        checkIds.add("KSV114")
+      }
     }
 
-    if (verbsLower.includes("bind") || verbsLower.includes("escalate")) {
+    if (
+      matchesGroup("rbac.authorization.k8s.io") &&
+      RBAC_RESOURCE_LIST.some(matchesResource) &&
+      (matchesVerb("bind") || matchesVerb("escalate"))
+    ) {
       escalation = true
       checkIds.add("KSV050")
     }
-    if (verbsLower.includes("impersonate") || resourcesLower.includes("impersonate")) {
+    const impersonatesCore =
+      matchesGroup("") &&
+      IMPERSONATE_CORE_RESOURCES.some(matchesResource) &&
+      (matchesVerb("impersonate") || matchesResource("impersonate"))
+    const impersonatesExtras =
+      matchesGroup("authentication.k8s.io") &&
+      matchesResource("userextras") &&
+      matchesVerb("impersonate")
+    if (impersonatesCore || impersonatesExtras) {
       escalation = true
       checkIds.add("KSV053")
     }

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ComplianceFramework, ConfigAuditRow } from "@/types/compliance"
+import type { KisaWorkloadInventory } from "./k8s-client"
 
 vi.mock("server-only", () => ({}))
 
@@ -28,6 +29,16 @@ vi.mock("./trivy", () => ({
   getSecuritySummary: vi.fn(async () => ({ totals: { Critical: 0, High: 0, Medium: 0, Low: 0 } })),
 }))
 
+const mockGetKisaKyvernoClusterPolicies = vi.fn(async () => ({ status: "ok" as const, data: [] as unknown[] }))
+const mockGetKisaWorkloadInventory = vi.fn<() => Promise<KisaWorkloadInventory>>(async () => ({
+  pods: { status: "ok", data: [] },
+  replicasets: { status: "ok", data: [] },
+  deployments: { status: "ok", data: [] },
+  statefulsets: { status: "ok", data: [] },
+  daemonsets: { status: "ok", data: [] },
+  cronjobs: { status: "ok", data: [] },
+}))
+
 vi.mock("./k8s-client", () => ({
   getCertificates: vi.fn(async () => []),
   getKyvernoPolicies: vi.fn(async () => []),
@@ -45,16 +56,9 @@ vi.mock("./k8s-client", () => ({
   getKisaPeerAuthentications: vi.fn(async () => ({ status: "ok", data: [] })),
   getKisaNotificationConfig: vi.fn(async () => ({ status: "not-found" })),
   getKisaNamespacedPods: vi.fn(async () => ({ status: "ok", data: [] })),
-  getKisaKyvernoClusterPolicies: vi.fn(async () => ({ status: "ok", data: [] })),
+  getKisaKyvernoClusterPolicies: () => mockGetKisaKyvernoClusterPolicies(),
   getKisaPolicyReports: vi.fn(async () => ({ status: "ok", data: [] })),
-  getKisaWorkloadInventory: vi.fn(async () => ({
-    pods: { status: "ok", data: [] },
-    replicasets: { status: "ok", data: [] },
-    deployments: { status: "ok", data: [] },
-    statefulsets: { status: "ok", data: [] },
-    daemonsets: { status: "ok", data: [] },
-    cronjobs: { status: "ok", data: [] },
-  })),
+  getKisaWorkloadInventory: () => mockGetKisaWorkloadInventory(),
   getKisaRbacSnapshot: vi.fn(async () => ({
     clusterRoleBindings: { status: "ok", data: [] },
     roleBindings: { status: "ok", data: [] },
@@ -261,4 +265,39 @@ it("J3 (MAJOR 3): actionable framework failure + infra 403 stays fail and names 
   mockGetConfigAuditList.mockResolvedValue([])
   mockGetRbacAuditList.mockResolvedValue([])
   mockGetInfraAuditList.mockResolvedValue([])
+})
+
+it("skips Valkey caching and marks partialSources when KISA-IMG-02 workload inventory has 403", async () => {
+  mockCache.clear()
+  mockGetComplianceFrameworks.mockResolvedValue([{
+    id: "clean", title: "Clean", totalControls: 1, passCount: 1, failCount: 0, passRate: 1,
+    evaluatedPassCount: 1, notEvaluatedCount: 0, actionableFailCount: 0,
+  }])
+  mockGetConfigAuditList.mockResolvedValue([])
+  mockGetRbacAuditList.mockResolvedValue([])
+  mockGetInfraAuditList.mockResolvedValue([])
+  mockGetKisaKyvernoClusterPolicies.mockResolvedValueOnce({
+    status: "ok",
+    data: [
+      { metadata: { name: "disallow-latest-tag" }, spec: { validationFailureAction: "Enforce" } },
+      { metadata: { name: "verify-image-signatures" }, spec: { validationFailureAction: "Enforce" } },
+    ],
+  })
+  mockGetKisaWorkloadInventory.mockResolvedValueOnce({
+    pods: { status: "ok", data: [] },
+    replicasets: { status: "ok", data: [] },
+    deployments: { status: "forbidden", resource: "deployments.apps" },
+    statefulsets: { status: "ok", data: [] },
+    daemonsets: { status: "ok", data: [] },
+    cronjobs: { status: "ok", data: [] },
+  })
+
+  const res = await getKisaControls()
+  const img02 = res.controls.find((c) => c.id === "KISA-IMG-02")
+  expect(img02?.status).toBe("warn")
+  expect(img02?.partial).toBe(true)
+  expect(img02?.partialSources).toContain("deployments(forbidden)")
+  expect(res.partial).toBe(true)
+  expect(res.partialSources).toContain("deployments(forbidden)")
+  expect(mockCache.size).toBe(0)
 })

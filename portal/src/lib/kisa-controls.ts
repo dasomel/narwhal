@@ -28,9 +28,9 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail" | "det
     severity: "Critical",
     standardRefs: ["NIST SP 800-190 §4.5", "ISMS-P 2.7"],
     evidence:
-      "CronJob storage/openbao-auto-unseal 사양(전용 SA·automountServiceAccountToken=false·BAO_SKIP_VERIFY 미사용)과 storage/openbao-init Secret 메타데이터(velero.io/exclude-from-backup·last-applied-configuration 미존재)를 실시간 점검. 외부 KMS/HSM 없이 인클러스터 자동 unseal 사용 시 잔여 위험(warn)으로 표시.",
+      "CronJob storage/openbao-auto-unseal 사양(전용 SA·automountServiceAccountToken=false·BAO_SKIP_VERIFY 미사용)과 storage/openbao-init Secret 메타데이터(velero.io/exclude-from-backup·last-applied-configuration 미존재)를 실시간 점검. OpenBao 실제 seal 구성(HCL/Secret)은 읽기 전용 API로 검증할 수 없어 pass를 내지 않고 위생 확인 시 warn, CronJob 부재/중지 또는 조회 불가 시 manual(미평가)로 표시.",
     remediation:
-      "외부 KMS/HSM auto-unseal 도입 시 인클러스터 unseal Secret 제거 가능. 온프렘 유지 시 CronJob 최소권한·Secret 백업 제외 라벨·last-applied 주석 제거 상태를 유지.",
+      "외부 KMS/HSM auto-unseal 적용 시 OpenBao 설정에서 직접 확인하고, 온프렘 유지 시 CronJob 최소권한·Secret 백업 제외 라벨·last-applied 주석 제거 상태를 유지.",
   },
   {
     id: "KISA-ETCD-02",

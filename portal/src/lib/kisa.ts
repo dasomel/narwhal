@@ -29,7 +29,7 @@ async function checkImg03(): Promise<{ status: KisaStatus; detail: string }> {
   return { status: "pass", detail: "Critical/High CVE 없음" }
 }
 
-async function checkCfg01(): Promise<{ status: KisaStatus; detail: string; partial?: boolean }> {
+async function checkCfg01(): Promise<{ status: KisaStatus; detail: string; partial?: boolean; partialSources?: string[] }> {
   const { getComplianceFrameworks, getConfigAuditList, getRbacAuditList, getInfraAuditList } =
     await import("./compliance")
   // D-CFG01-ALLSETTLED: Evaluate all 4 compliance sources independently so one unreadable source
@@ -104,6 +104,7 @@ async function checkCfg01(): Promise<{ status: KisaStatus; detail: string; parti
       status: "fail",
       detail: `조치가능 프레임워크 컨트롤 실패 ${actionableControls}건 [실패 소스: ${failingSources.join(", ")}] (실패 기록 없음 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 미평가 ${notEvaluatedControls}) ${breakdown}${unavailableNote}`,
       partial,
+      partialSources: unavailableSources,
     }
   }
   if (notEvaluatedControls > 0 || hasUnknownCoverage || unavailableSources.length > 0) {
@@ -115,6 +116,7 @@ async function checkCfg01(): Promise<{ status: KisaStatus; detail: string; parti
       status: "warn",
       detail: `${lead} (실패 기록 없음 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 조치가능 0건) ${breakdown}${unavailableNote}`,
       partial,
+      partialSources: unavailableSources,
     }
   }
   if (frameworks.length === 0) {
@@ -243,6 +245,7 @@ export async function getKisaControls(): Promise<KisaResponse> {
 
   const controls: KisaControl[] = []
   let hasPartialCheck = false
+  const allPartialSources = new Set<string>()
 
   for (const entry of KISA_CATALOG) {
     if (entry.id === "KISA-IMG-01") {
@@ -263,6 +266,8 @@ export async function getKisaControls(): Promise<KisaResponse> {
     let detail: string | undefined
     let detailLocalized: Localized | undefined
     let reasonKey: KisaReasonKey | undefined
+    let partial = false
+    let partialSources: string[] | undefined
 
     const applyRich = (r: KisaCheckOutcome) => {
       status = r.status
@@ -270,7 +275,14 @@ export async function getKisaControls(): Promise<KisaResponse> {
       detail = r.detail
       detailLocalized = r.detailLocalized
       reasonKey = r.reasonKey
-      if (r.partial) hasPartialCheck = true
+      if (r.partial) {
+        hasPartialCheck = true
+        partial = true
+      }
+      if (r.partialSources && r.partialSources.length > 0) {
+        partialSources = r.partialSources
+        for (const s of r.partialSources) allPartialSources.add(s)
+      }
     }
 
     try {
@@ -314,7 +326,14 @@ export async function getKisaControls(): Promise<KisaResponse> {
         status = r.status
         live = r.status !== "manual"
         detail = r.detail
-        if (r.partial) hasPartialCheck = true
+        if (r.partial) {
+          hasPartialCheck = true
+          partial = true
+        }
+        if (r.partialSources && r.partialSources.length > 0) {
+          partialSources = r.partialSources
+          for (const s of r.partialSources) allPartialSources.add(s)
+        }
       } else if (entry.id === "KISA-TLS-02") {
         const r = await checkTls02()
         status = r.status
@@ -340,6 +359,9 @@ export async function getKisaControls(): Promise<KisaResponse> {
       }
       reasonKey = "compliance.kisa.reason.apiUnavailable"
       hasPartialCheck = true
+      partial = true
+      partialSources = [entry.id]
+      allPartialSources.add(entry.id)
     }
 
     controls.push({
@@ -349,6 +371,8 @@ export async function getKisaControls(): Promise<KisaResponse> {
       detail,
       ...(detailLocalized ? { detailLocalized } : {}),
       ...(reasonKey ? { reasonKey } : {}),
+      ...(partial ? { partial: true } : {}),
+      ...(partialSources && partialSources.length > 0 ? { partialSources } : {}),
     })
   }
 
@@ -361,7 +385,12 @@ export async function getKisaControls(): Promise<KisaResponse> {
     lastUpdated: new Date().toISOString(),
   }
 
-  const result: KisaResponse = { controls, summary }
+  const result: KisaResponse = {
+    controls,
+    summary,
+    ...(hasPartialCheck ? { partial: true } : {}),
+    ...(allPartialSources.size > 0 ? { partialSources: [...allPartialSources] } : {}),
+  }
   if (!hasPartialCheck) {
     await cacheSet(cacheKey, result, cacheTtl("kisaComplianceList"))
   }

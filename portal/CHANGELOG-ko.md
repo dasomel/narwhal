@@ -11,9 +11,9 @@
 
 ### 변경
 
-- **Compliance > KISA 실시간 통제 점검 (`src/lib/kisa.ts`, `src/lib/kisa-checks.ts`, `src/lib/kisa-checks-ops.ts`, `src/lib/kisa-controls.ts`, `src/lib/k8s-client.ts`, `src/types/kisa.ts`, `src/lib/cache-keys.ts`, `src/lib/i18n.ts`, `src/components/compliance/kisa-checklist.tsx`):**
-  - 정적 `STATIC_STATUS` 맵을 제거하고 `KISA-ETCD-02`, `KISA-SEC-01`, `KISA-TLS-01`, `KISA-OBS-01`, `KISA-IMG-02`를 Kubernetes API 실시간 평가로 전환했으며, `KISA-IMG-01`은 호스트 `hosts.toml`을 API로 읽을 수 없고 `#765`가 클러스터 상태 객체를 게시하지 않으므로 노드 확인 명령과 함께 명시적 `manual`로 유지했습니다. API 조회 실패·403 시 통과나 고정 실패를 내지 않고 한영 사유와 함께 `manual`/감쇄 처리하며 비캐시합니다(`D-KISA-LIVE`, 캐시 `compliance:v4:kisa:list`, `R397`).
-  - `KISA-RBAC-02`가 단일 rule 내부의 `apiGroups`·`resources`·`verbs`를 함께 평가하도록 수정(서로 다른 rule 간 `*` 교차 결합 및 CRD 전용 와일드카드 오탐 제거)하고 `compliance-acceptance-rules.json`(`matchRbacException`)과 일관되게 집계했습니다.
+- **Compliance > KISA 실시간 통제 점검 (`src/lib/kisa.ts`, `src/lib/kisa-checks.ts`, `src/lib/kisa-checks-ops.ts`, `src/lib/kisa-controls.ts`, `src/lib/oss-updates/version.ts`, `src/lib/k8s-client.ts`, `src/types/kisa.ts`, `src/lib/cache-keys.ts`, `src/lib/i18n.ts`, `src/components/compliance/kisa-checklist.tsx`):**
+  - 정적 `STATIC_STATUS` 맵을 제거하고 `KISA-ETCD-02`, `KISA-SEC-01`, `KISA-TLS-01`, `KISA-OBS-01`, `KISA-IMG-02`를 Kubernetes API 실시간 평가로 전환했으며, `KISA-IMG-01`은 호스트 `hosts.toml`을 API로 읽을 수 없고 `#765`가 클러스터 상태 객체를 게시하지 않으므로 노드 확인 명령과 함께 명시적 `manual`로 유지했습니다. `KISA-SEC-01`은 환경변수로 외부 KMS를 추론하거나 `pass`를 내지 않으며(seal 구성 API 열람 불가, CronJob 부재·중지 시 `manual`), `KISA-IMG-02`는 `parseImageRefStrict`로 레지스트리 `host:port`·`@sha256`·파싱 불가 참조를 누락 없이 범위 내 유지하고 워크로드 목록을 포함한 의존 소스 실패·403·잘림 시 `partial`/`partialSources`를 기록해 `pass` 없이 감쇄하며 Valkey 캐시를 건너뜁니다(`D-KISA-LIVE`, 캐시 `compliance:v4:kisa:list`, `R397`).
+  - `KISA-RBAC-02`가 단일 rule 내부의 `apiGroups`·`resources`·`verbs` 와일드카드 의미를 함께 평가하도록 수정(서로 다른 rule 간 `*` 교차 결합·타 `apiGroups` 오탐 제거, `rbac.authorization.k8s.io` roles/bindings의 `verbs: ["*"]` 권한상승 및 `*` 서브리소스 포착)하고 `compliance-acceptance-rules.json`(`matchRbacException`)과 일관되게 집계했습니다.
   - `kisa-controls.ts`의 구식 현황 문구(`KISA-CP-01`, `KISA-RBAC-01`, `KISA-NET-01`, `KISA-TLS-01`, `KISA-OBS-01`, `KISA-IMG-01`, `KISA-IMG-02`)를 현행화했습니다.
 - **의존성 업데이트**: `next` 및 `eslint-config-next` 16.4.6(#708), `@opentelemetry/auto-instrumentations-node` 0.83.1, `@opentelemetry/exporter-trace-otlp-http` 및 `@opentelemetry/sdk-node` 0.301.2, `@opentelemetry/resources` 3.1.1(#709), `@playwright/test` 1.65.1, `@vitejs/plugin-react` 6.3.0, `vite` 8.3.8(#710), `zustand` 5.1.0(#711), `@grpc/grpc-js` 1.14.7(#712)로 판올림했습니다.
 

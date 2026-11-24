@@ -15,6 +15,7 @@ export interface KisaCheckOutcome {
   detailLocalized: Localized
   reasonKey: KisaReasonKey
   partial?: boolean
+  partialSources?: string[]
 }
 
 export function makeOutcome(
@@ -22,7 +23,7 @@ export function makeOutcome(
   reasonKey: KisaReasonKey,
   ko: string,
   en: string,
-  opts?: { live?: boolean; partial?: boolean },
+  opts?: { live?: boolean; partial?: boolean; partialSources?: string[] },
 ): KisaCheckOutcome {
   return {
     status,
@@ -31,6 +32,7 @@ export function makeOutcome(
     detailLocalized: { ko, en },
     reasonKey,
     partial: opts?.partial,
+    ...(opts?.partialSources && opts.partialSources.length > 0 ? { partialSources: opts.partialSources } : {}),
   }
 }
 
@@ -45,7 +47,7 @@ export function fetchErrorOutcome(
       "compliance.kisa.reason.apiForbidden",
       `${labelKo} 조회 권한 없음 (${res.resource}) — 평가 불가`,
       `${labelEn} read forbidden (${res.resource}) — not evaluated`,
-      { live: false, partial: true },
+      { live: false, partial: true, partialSources: [res.resource] },
     )
   }
   if (res.status === "truncated") {
@@ -54,7 +56,7 @@ export function fetchErrorOutcome(
       "compliance.kisa.reason.listTruncated",
       `${labelKo} 목록이 잘림 (${res.resource}) — 전체 평가 불가`,
       `${labelEn} list truncated (${res.resource}) — full evaluation unavailable`,
-      { live: false, partial: true },
+      { live: false, partial: true, partialSources: [res.resource] },
     )
   }
   if (res.status === "not-found") {
@@ -71,7 +73,7 @@ export function fetchErrorOutcome(
     "compliance.kisa.reason.apiUnavailable",
     `${labelKo} 조회 실패 (${res.resource}) — 평가 불가`,
     `${labelEn} read failed (${res.resource}) — not evaluated`,
-    { live: false, partial: true },
+    { live: false, partial: true, partialSources: [res.resource] },
   )
 }
 
@@ -238,16 +240,11 @@ export async function checkEtcd02(): Promise<KisaCheckOutcome> {
 }
 
 // --- KISA-SEC-01: OpenBao unseal key isolation ---
-
-const EXTERNAL_KMS_ENV_KEYS = new Set([
-  "BAO_SEAL_TYPE",
-  "VAULT_SEAL_TYPE",
-  "AWS_KMS_KEY_ID",
-  "VAULT_AWSKMS_SEAL_KEY_ID",
-  "VAULT_GCPCKMS_SEAL_CRYPTO_KEY",
-  "VAULT_AZUREKEYVAULT_KEY_NAME",
-  "VAULT_TRANSIT_SEAL_KEY_NAME",
-])
+// D-KISA-SEC01-NO-KMS-INFER: Never infer external KMS from StatefulSet env var names (actual
+// seal config lives in OpenBao HCL/Secret which the portal cannot read with read-only RBAC).
+// SEC-01 can never return "pass" from this code: best case is "warn" with verified CronJob /
+// Secret metadata hygiene facts, and missing/suspended CronJob or unreadable objects degrade
+// to "manual" (not evaluated with reason) unless an exposed Secret already proves "fail".
 
 export async function checkSec01(): Promise<KisaCheckOutcome> {
   const { getKisaCronJob, getKisaStatefulSet, getKisaSecretMetadata } = await import("./k8s-client")
@@ -259,21 +256,8 @@ export async function checkSec01(): Promise<KisaCheckOutcome> {
   if (cjRes.status === "forbidden" || cjRes.status === "error" || cjRes.status === "truncated") {
     return fetchErrorOutcome(cjRes, "CronJob storage/openbao-auto-unseal", "CronJob storage/openbao-auto-unseal")
   }
-  if (stsRes.status === "forbidden" || stsRes.status === "error" || stsRes.status === "truncated") {
+  if (stsRes.status !== "ok") {
     return fetchErrorOutcome(stsRes, "StatefulSet storage/openbao", "StatefulSet storage/openbao")
-  }
-
-  let externalKms = false
-  if (stsRes.status === "ok") {
-    const stsContainers = stsRes.data.spec?.template?.spec?.containers ?? []
-    for (const c of stsContainers) {
-      for (const e of c.env ?? []) {
-        if (!e.name) continue
-        if (EXTERNAL_KMS_ENV_KEYS.has(e.name) && e.value && e.value !== "shamir" && e.value !== "static") {
-          externalKms = true
-        }
-      }
-    }
   }
 
   let secretRefName = "openbao-init"
@@ -319,87 +303,85 @@ export async function checkSec01(): Promise<KisaCheckOutcome> {
   const secRes = await getKisaSecretMetadata("storage", secretRefName)
   const secretMetaNotEvaluated = secRes.status === "forbidden" || secRes.status === "error" || secRes.status === "truncated"
   const secretPartial = secRes.status === "error" || secRes.status === "truncated"
+  const secretPartialSources = secretPartial ? [`secrets/storage/${secretRefName}(${secRes.status})`] : undefined
 
-  if (cjPresent) {
-    if (cjIssuesKo.length > 0) {
+  const secIssuesKo: string[] = []
+  const secIssuesEn: string[] = []
+  if (secRes.status === "ok") {
+    const excludeBackup = secRes.data.labels["velero.io/exclude-from-backup"] === "true"
+    const hasLastApplied = secRes.data.annotationKeys.includes("kubectl.kubernetes.io/last-applied-configuration")
+    if (!excludeBackup) {
+      secIssuesKo.push("velero.io/exclude-from-backup=true 라벨 누락")
+      secIssuesEn.push("velero.io/exclude-from-backup=true label missing")
+    }
+    if (hasLastApplied) {
+      secIssuesKo.push("last-applied-configuration 주석 잔존")
+      secIssuesEn.push("last-applied-configuration annotation present")
+    }
+  }
+
+  if (!cjPresent) {
+    if (secIssuesKo.length > 0) {
       return makeOutcome(
         "fail",
-        "compliance.kisa.reason.secCronJobWeak",
-        `CronJob storage/openbao-auto-unseal 보강 미흡: ${cjIssuesKo.join(", ")}`,
-        `CronJob storage/openbao-auto-unseal hardening defects: ${cjIssuesEn.join(", ")}`,
-        { partial: secretPartial },
+        "compliance.kisa.reason.secSecretExposed",
+        `Secret storage/${secretRefName} 메타데이터 취약: ${secIssuesKo.join(", ")}`,
+        `Secret storage/${secretRefName} metadata issues: ${secIssuesEn.join(", ")}`,
+        { partial: secretPartial, partialSources: secretPartialSources },
       )
     }
-    if (secRes.status === "ok") {
-      const excludeBackup = secRes.data.labels["velero.io/exclude-from-backup"] === "true"
-      const hasLastApplied = secRes.data.annotationKeys.includes("kubectl.kubernetes.io/last-applied-configuration")
-      const secIssuesKo: string[] = []
-      const secIssuesEn: string[] = []
-      if (!excludeBackup) {
-        secIssuesKo.push("velero.io/exclude-from-backup=true 라벨 누락")
-        secIssuesEn.push("velero.io/exclude-from-backup=true label missing")
-      }
-      if (hasLastApplied) {
-        secIssuesKo.push("last-applied-configuration 주석 잔존")
-        secIssuesEn.push("last-applied-configuration annotation present")
-      }
-      if (secIssuesKo.length > 0) {
-        return makeOutcome(
-          "fail",
-          "compliance.kisa.reason.secSecretExposed",
-          `Secret storage/${secretRefName} 메타데이터 취약: ${secIssuesKo.join(", ")}`,
-          `Secret storage/${secretRefName} metadata issues: ${secIssuesEn.join(", ")}`,
-        )
-      }
+    const cjStateKo = cjRes.status === "not-found" ? "CronJob storage/openbao-auto-unseal 없음" : "CronJob storage/openbao-auto-unseal 중지(suspend=true)"
+    const cjStateEn = cjRes.status === "not-found" ? "CronJob storage/openbao-auto-unseal not found" : "CronJob storage/openbao-auto-unseal suspended (suspend=true)"
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.secCronJobNotEvaluated",
+      `${cjStateKo} · OpenBao seal 구성은 API로 읽을 수 없어 외부 KMS 여부 평가 불가`,
+      `${cjStateEn}; OpenBao seal config is not readable via K8s API — external KMS status not evaluated`,
+      { live: false, partial: secretPartial, partialSources: secretPartialSources },
+    )
+  }
+
+  if (cjIssuesKo.length > 0) {
+    return makeOutcome(
+      "fail",
+      "compliance.kisa.reason.secCronJobWeak",
+      `CronJob storage/openbao-auto-unseal 보강 미흡: ${cjIssuesKo.join(", ")}`,
+      `CronJob storage/openbao-auto-unseal hardening defects: ${cjIssuesEn.join(", ")}`,
+      { partial: secretPartial, partialSources: secretPartialSources },
+    )
+  }
+  if (secRes.status === "ok") {
+    if (secIssuesKo.length > 0) {
       return makeOutcome(
-        "warn",
-        "compliance.kisa.reason.secNoExternalKms",
-        `CronJob 보강 확인(SA=${saName}, automount=false, BAO_SKIP_VERIFY 없음) · Secret storage/${secretRefName} 메타데이터 확인(exclude-from-backup=true, last-applied 없음) · 외부 KMS 미적용으로 인클러스터 unseal 키 잔존`,
-        `CronJob hardened (SA=${saName}, automount=false, no BAO_SKIP_VERIFY); Secret storage/${secretRefName} metadata verified (exclude-from-backup=true, no last-applied); no external KMS so in-cluster unseal key remains`,
-      )
-    }
-    if (secretMetaNotEvaluated) {
-      const reasonKo = secRes.status === "forbidden" ? "Secret 메타데이터 미평가(권한 없음)" : "Secret 메타데이터 미평가(조회 실패)"
-      const reasonEn = secRes.status === "forbidden" ? "Secret metadata not evaluated (no read permission)" : "Secret metadata not evaluated (API error)"
-      return makeOutcome(
-        "warn",
-        "compliance.kisa.reason.secSecretMetaNotEvaluated",
-        `CronJob 보강 확인(SA=${saName}, automount=false, BAO_SKIP_VERIFY 없음) · ${reasonKo} · 외부 KMS 미적용으로 인클러스터 unseal 키 잔존`,
-        `CronJob hardened (SA=${saName}, automount=false, no BAO_SKIP_VERIFY); ${reasonEn}; no external KMS so in-cluster unseal key remains`,
-        { partial: secretPartial },
+        "fail",
+        "compliance.kisa.reason.secSecretExposed",
+        `Secret storage/${secretRefName} 메타데이터 취약: ${secIssuesKo.join(", ")}`,
+        `Secret storage/${secretRefName} metadata issues: ${secIssuesEn.join(", ")}`,
       )
     }
     return makeOutcome(
       "warn",
       "compliance.kisa.reason.secNoExternalKms",
-      `CronJob 보강 확인(SA=${saName}, automount=false, BAO_SKIP_VERIFY 없음) · 참조 Secret storage/${secretRefName} 없음 · 외부 KMS 미적용`,
-      `CronJob hardened (SA=${saName}, automount=false, no BAO_SKIP_VERIFY); referenced Secret storage/${secretRefName} not found; no external KMS`,
+      `CronJob 보강 확인(SA=${saName}, automount=false, BAO_SKIP_VERIFY 없음) · Secret storage/${secretRefName} 메타데이터 확인(exclude-from-backup=true, last-applied 없음) · OpenBao seal 구성은 API로 검증 불가`,
+      `CronJob hardened (SA=${saName}, automount=false, no BAO_SKIP_VERIFY); Secret storage/${secretRefName} metadata verified (exclude-from-backup=true, no last-applied); OpenBao seal config not observable via API`,
     )
   }
-
-  if (externalKms && secRes.status === "not-found") {
-    return makeOutcome(
-      "pass",
-      "compliance.kisa.reason.secExternalKms",
-      `외부 KMS 자동 unseal 구성 확인 및 인클러스터 unseal CronJob·Secret storage/${secretRefName} 미존재`,
-      `External KMS auto-unseal configured and no in-cluster unseal CronJob or Secret storage/${secretRefName}`,
-    )
-  }
-  if (externalKms && secretMetaNotEvaluated) {
+  if (secretMetaNotEvaluated) {
+    const reasonKo = secRes.status === "forbidden" ? "Secret 메타데이터 미평가(권한 없음)" : "Secret 메타데이터 미평가(조회 실패)"
+    const reasonEn = secRes.status === "forbidden" ? "Secret metadata not evaluated (no read permission)" : "Secret metadata not evaluated (API error)"
     return makeOutcome(
       "warn",
       "compliance.kisa.reason.secSecretMetaNotEvaluated",
-      `외부 KMS 감지·CronJob 미실행이나 Secret storage/${secretRefName} 미존재 여부를 권한 부재로 미평가`,
-      `External KMS detected and CronJob inactive, but absence of Secret storage/${secretRefName} not evaluated (no permission)`,
-      { partial: secretPartial },
+      `CronJob 보강 확인(SA=${saName}, automount=false, BAO_SKIP_VERIFY 없음) · ${reasonKo} · OpenBao seal 구성 API 검증 불가`,
+      `CronJob hardened (SA=${saName}, automount=false, no BAO_SKIP_VERIFY); ${reasonEn}; OpenBao seal config not observable via API`,
+      { partial: secretPartial, partialSources: secretPartialSources },
     )
   }
   return makeOutcome(
     "warn",
     "compliance.kisa.reason.secNoExternalKms",
-    `openbao-auto-unseal CronJob 미존재/중지 상태이나 외부 KMS 구성이 확인되지 않음 (수동 unseal 또는 외부 KMS 확인 필요)`,
-    `openbao-auto-unseal CronJob absent/suspended, but external KMS seal not detected (verify manual unseal or KMS config)`,
-    { partial: secretPartial },
+    `CronJob 보강 확인(SA=${saName}, automount=false, BAO_SKIP_VERIFY 없음) · 참조 Secret storage/${secretRefName} 없음 · OpenBao seal 구성 API 검증 불가`,
+    `CronJob hardened (SA=${saName}, automount=false, no BAO_SKIP_VERIFY); referenced Secret storage/${secretRefName} not found; OpenBao seal config not observable via API`,
   )
 }
 

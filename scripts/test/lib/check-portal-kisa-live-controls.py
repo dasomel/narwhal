@@ -60,12 +60,57 @@ def check(texts: dict[str, str]) -> list[str]:
     test = texts["test"]
     reg = texts["reg"]
 
-    # 1. Forbid STATIC_STATUS or hard-coded status maps for the 6 controls
+    # 1. Forbid STATIC_STATUS or hard-coded status maps / overrides for the live controls
     if "STATIC_STATUS" in kisa:
         errors.append("kisa.ts must not contain STATIC_STATUS")
-    for cid in LIVE_SIX:
+    for cid in (*LIVE_SIX, "KISA-RBAC-01", "KISA-RBAC-02"):
         if re.search(rf'"{cid}"\s*:\s*"(?:pass|fail|warn)"', kisa):
             errors.append(f"kisa.ts hardcodes a static status for {cid}")
+
+    # Parse getKisaControls() to forbid any constant override (e.g. `applyRich(await checkEtcd02()); status = "pass"`)
+    # or post-branch `status = ...` reassignment outside the check functions.
+    if "export async function getKisaControls()" not in kisa:
+        errors.append("kisa.ts missing export async function getKisaControls()")
+    else:
+        gkc = kisa.split("export async function getKisaControls()", 1)[1]
+        if re.search(r'\bstatus\s*=\s*["\'`](?:pass|fail|warn)["\'`]', gkc):
+            errors.append("kisa.ts getKisaControls() assigns a constant pass/fail/warn status override")
+        branch_specs = [
+            ("KISA-SEC-01", r"applyRich\(await checkSec01\(\)\)"),
+            ("KISA-ETCD-02", r"applyRich\(await checkEtcd02\(\)\)"),
+            ("KISA-TLS-01", r"applyRich\(await checkTls01\(\)\)"),
+            ("KISA-OBS-01", r"applyRich\(await checkObs01\(\)\)"),
+            ("KISA-IMG-02", r"applyRich\(await checkImg02\(\)\)"),
+        ]
+        for cid, expected_stmt in branch_specs:
+            m = re.search(
+                rf'else\s+if\s*\(\s*entry\.id\s*===\s*"{re.escape(cid)}"\s*\)\s*\{{(.*?)\}}',
+                gkc,
+                flags=re.DOTALL,
+            )
+            if not m:
+                errors.append(f"kisa.ts missing exact branch for {cid}")
+            else:
+                body = re.sub(r"//[^\n]*", "", m.group(1)).strip()
+                if not re.fullmatch(expected_stmt + r";?", body):
+                    errors.append(f"kisa.ts {cid} branch must contain only {expected_stmt}, got {body!r}")
+        m_rbac = re.search(
+            r'else\s+if\s*\(\s*entry\.id\s*===\s*"KISA-RBAC-01"\s*\|\|\s*entry\.id\s*===\s*"KISA-RBAC-02"\s*\)\s*\{(.*?)\}',
+            gkc,
+            flags=re.DOTALL,
+        )
+        if not m_rbac:
+            errors.append("kisa.ts missing exact branch for KISA-RBAC-01/02")
+        else:
+            body_rbac = re.sub(r"//[^\n]*", "", m_rbac.group(1)).strip()
+            if not re.fullmatch(r"applyRich\(await checkRbacLive\(entry\.id\)\);?", body_rbac):
+                errors.append(f"kisa.ts RBAC branch must contain only applyRich(await checkRbacLive(entry.id)), got {body_rbac!r}")
+        if "} catch (err) {" in gkc and "controls.push({" in gkc:
+            post_try = gkc.split("} catch (err) {", 1)[1].split("controls.push({", 1)[0]
+            # Inside catch, only the initial `status = "manual"` is permitted; no conditional/post-catch status overrides.
+            other_assigns = [ln.strip() for ln in post_try.splitlines() if re.search(r"\bstatus\s*=", ln) and 'status = "manual"' not in ln]
+            if other_assigns:
+                errors.append(f"kisa.ts has forbidden post-try status reassignment: {other_assigns}")
 
     # 2. Wiring in kisa.ts
     for needle in (
@@ -76,7 +121,8 @@ def check(texts: dict[str, str]) -> list[str]:
         "checkObs01()",
         "checkImg02()",
         "checkRbacLive(entry.id)",
-        "if (r.partial) hasPartialCheck = true",
+        "if (r.partial) {",
+        "if (!hasPartialCheck)",
     ):
         if needle not in kisa:
             errors.append(f"kisa.ts missing {needle!r}")
@@ -89,25 +135,56 @@ def check(texts: dict[str, str]) -> list[str]:
         "velero.io/exclude-from-backup",
         "kubectl.kubernetes.io/last-applied-configuration",
         "compliance.kisa.reason.secSecretMetaNotEvaluated",
+        "compliance.kisa.reason.secCronJobNotEvaluated",
         'makeOutcome(\n    "manual",\n    "compliance.kisa.reason.imgNodeManual"',
         "portLevelMtls",
     ):
         if needle not in checks:
             errors.append(f"kisa-checks.ts missing {needle!r}")
 
+    if "EXTERNAL_KMS_ENV_KEYS" in checks or "externalKms" in checks:
+        errors.append("kisa-checks.ts must not infer external KMS from env vars")
+    if "export async function checkSec01()" not in checks or "export function checkImg01()" not in checks:
+        errors.append("kisa-checks.ts missing checkSec01/checkImg01 boundaries")
+    else:
+        sec01_body = checks.split("export async function checkSec01()", 1)[1].split("export function checkImg01()", 1)[0]
+        if re.search(r'["\'`]pass["\'`]', sec01_body):
+            errors.append("kisa-checks.ts checkSec01() must never return pass")
+
+    if "failed to verify image ([^\\s:]+" in checks_ops:
+        errors.append("kisa-checks-ops.ts must not use the broken FAILED_IMAGE_RE port-truncating regex")
+
+    if "export async function checkImg02()" not in checks_ops or "// --- KISA-RBAC-01" not in checks_ops:
+        errors.append("kisa-checks-ops.ts missing checkImg02 boundaries")
+    else:
+        img02_body = checks_ops.split("export async function checkImg02()", 1)[1].split("// --- KISA-RBAC-01", 1)[0]
+        if "if (failedInvSources.length > 0)" not in img02_body or "makeOutcome(\"pass\"" not in img02_body:
+            errors.append("kisa-checks-ops.ts checkImg02 must guard pass behind failedInvSources.length === 0")
+        elif img02_body.index("if (failedInvSources.length > 0)") > img02_body.index("makeOutcome(\"pass\""):
+            errors.append("kisa-checks-ops.ts checkImg02 failedInvSources guard must precede pass return")
+
     for needle in (
         "routed.has(name)",
+        "parseImageRefStrict",
+        "return parseImageRefStrict(candidate) ? candidate : null",
         "buildSupersededReplicaSetKeys(inv.replicasets.data)",
         "excludedMissingOrZeroRs",
         "excludedOutOfScope",
+        "failedInvSources",
+        "if (failedInvSources.length > 0) {",
+        "compliance.kisa.reason.imgInventoryNotEvaluated",
+        "partial: true, partialSources: failedInvSources",
         "matchRbacException(name, cid, roleNs, kind) !== null",
-        "const hasCoreOrWildcardGroup = apiGroups.includes(\"*\") || apiGroups.includes(\"\")",
+        "const hasCoreOrWildcardGroup = hasWildcardGroup || apiGroupsLower.includes(\"\")",
         "if (hasWildcardVerb && hasWildcardResource && hasCoreOrWildcardGroup)",
+        "const matchesVerb = (verb: string) => hasWildcardVerb || verbsLower.includes(verb)",
+        'matchesGroup("rbac.authorization.k8s.io") &&\n      RBAC_RESOURCE_LIST.some(matchesResource) &&\n      (matchesVerb("bind") || matchesVerb("escalate"))',
     ):
         if needle not in checks_ops:
             errors.append(f"kisa-checks-ops.ts missing {needle!r}")
 
-    # 4. PartialObjectMetadata on Secret metadata read; no secrets rule in ClusterRole narwhal-portal
+    # 4. PartialObjectMetadata on Secret metadata read; no secrets rule in ClusterRole narwhal-portal;
+    # minimal verbs on peerauthentications (list), policyreports (list), cronjobs (get, list).
     if 'Accept: "application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1"' not in k8s:
         errors.append("k8s-client.ts getKisaSecretMetadata must request PartialObjectMetadata")
 
@@ -121,8 +198,16 @@ def check(texts: dict[str, str]) -> list[str]:
         errors.append("narwhal-portal-k8s.yaml missing ClusterRole narwhal-portal")
     else:
         for rule in cr.get("rules") or []:
-            if "secrets" in (rule.get("resources") or []):
+            resources = rule.get("resources") or []
+            verbs = set(rule.get("verbs") or [])
+            if "secrets" in resources:
                 errors.append("ClusterRole narwhal-portal must not grant secrets access")
+            if "peerauthentications" in resources and verbs != {"list"}:
+                errors.append(f"ClusterRole narwhal-portal peerauthentications verbs must be ['list'], got {sorted(verbs)}")
+            if "policyreports" in resources and verbs != {"list"}:
+                errors.append(f"ClusterRole narwhal-portal policyreports verbs must be ['list'], got {sorted(verbs)}")
+            if "cronjobs" in resources and verbs != {"get", "list"}:
+                errors.append(f"ClusterRole narwhal-portal cronjobs verbs must be ['get', 'list'], got {sorted(verbs)}")
 
     # 5. Stale catalog wording removed
     for stale in (
@@ -178,6 +263,15 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("revert KISA cache key to v3", "keys", 'kisaComplianceList: () => "compliance:v4:kisa:list"', 'kisaComplianceList: () => "compliance:v3:kisa:list"'),
     ("drop English i18n entry for obsNoChannel", "i18n", '"compliance.kisa.reason.obsNoChannel": "No notification channel configured (null receiver only)"', '"compliance.kisa.reason.removed": "x"'),
     ("drop detailLocalized rendering in KisaChecklist", "ui", "pick(control.detailLocalized ?? control.detail, locale)", "control.detail"),
+    ("override checkEtcd02 status with constant pass (R397 bypass)", "kisa", "applyRich(await checkEtcd02())", 'applyRich(await checkEtcd02()); status = "pass"'),
+    ("reassign status for KISA-SEC-01 after try/catch", "kisa", "    controls.push({", '    if (entry.id === "KISA-SEC-01") status = "pass"\n    controls.push({'),
+    ("drop parseImageRefStrict in extractFailedImageRef", "checks_ops", "return parseImageRefStrict(candidate) ? candidate : null", "return candidate"),
+    ("ignore failed IMG-02 inventory lists and fall through to pass", "checks_ops", "  if (failedInvSources.length > 0) {\n    return makeOutcome(\n      \"warn\",\n      \"compliance.kisa.reason.imgInventoryNotEvaluated\",\n      baseKo,\n      baseEn,\n      { partial: true, partialSources: failedInvSources },\n    )\n  }", ""),
+    ("return pass from checkSec01 when CronJob is missing", "checks", '      "manual",\n      "compliance.kisa.reason.secCronJobNotEvaluated"', '      "pass",\n      "compliance.kisa.reason.secCronJobNotEvaluated"'),
+    ("ignore verbs:['*'] for bind/escalate in RBAC-02", "checks_ops", "const matchesVerb = (verb: string) => hasWildcardVerb || verbsLower.includes(verb)", "const matchesVerb = (verb: string) => verbsLower.includes(verb)"),
+    ("ignore rbac.authorization.k8s.io apiGroup on bind/escalate", "checks_ops", 'matchesGroup("rbac.authorization.k8s.io") &&\n      RBAC_RESOURCE_LIST.some(matchesResource)', 'true &&\n      RBAC_RESOURCE_LIST.some(matchesResource)'),
+    ("reintroduce unused get verb on peerauthentications", "rbac", "    resources: [peerauthentications]\n    verbs: [list]", "    resources: [peerauthentications]\n    verbs: [get, list]"),
+    ("reintroduce unused get verb on policyreports", "rbac", "    resources: [policyreports]\n    verbs: [list]", "    resources: [policyreports]\n    verbs: [get, list]"),
     ("drop R397 wiring in regression-check-kakao.sh", "reg", "check R397 ", "check R9999 "),
 ]
 

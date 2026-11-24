@@ -12,7 +12,7 @@ export type KisaReasonKey =
   | "compliance.kisa.reason.etcdIsolatedPlainHttp"
   | "compliance.kisa.reason.etcdPolicyMissing"
   | "compliance.kisa.reason.etcdPolicyBroad"
-  | "compliance.kisa.reason.secExternalKms"
+  | "compliance.kisa.reason.secCronJobNotEvaluated"
   | "compliance.kisa.reason.secNoExternalKms"
   | "compliance.kisa.reason.secSecretMetaNotEvaluated"
   | "compliance.kisa.reason.secCronJobWeak"
@@ -29,6 +29,7 @@ export type KisaReasonKey =
   | "compliance.kisa.reason.imgVerifyAudit"
   | "compliance.kisa.reason.imgViolations"
   | "compliance.kisa.reason.imgPolicyReportsNotEvaluated"
+  | "compliance.kisa.reason.imgInventoryNotEvaluated"
   | "compliance.kisa.reason.rbacClean"
   | "compliance.kisa.reason.rbacHighBindings"
   | "compliance.kisa.reason.rbacCriticalBindings"
@@ -46,6 +47,8 @@ export interface KisaControl {
   detail?: string
   detailLocalized?: Localized
   reasonKey?: KisaReasonKey
+  partial?: boolean
+  partialSources?: string[]
 }
 
 export interface KisaSummary {
@@ -60,4 +63,6 @@ export interface KisaSummary {
 export interface KisaResponse {
   controls: KisaControl[]
   summary: KisaSummary
+  partial?: boolean
+  partialSources?: string[]
 }

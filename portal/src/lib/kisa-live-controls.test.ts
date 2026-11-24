@@ -210,16 +210,52 @@ describe("KISA-SEC-01 live evaluation", () => {
     expect(exposed.reasonKey).toBe("compliance.kisa.reason.secSecretExposed")
   })
 
-  it("passes only when external KMS is configured, CronJob absent, and Secret absent", async () => {
+  it("returns manual with reason when CronJob is absent/suspended even if KMS env vars exist (never infers external KMS or returns pass)", async () => {
     mockGetKisaCronJob.mockResolvedValue({ status: "not-found" })
     mockGetKisaStatefulSet.mockResolvedValue({
       status: "ok",
-      data: { spec: { template: { spec: { containers: [{ env: [{ name: "BAO_SEAL_TYPE", value: "awskms" }] }] } } } },
+      data: {
+        spec: {
+          template: {
+            spec: {
+              containers: [{
+                env: [
+                  { name: "BAO_SEAL_TYPE", value: "shamir" },
+                  { name: "AWS_KMS_KEY_ID", value: "alias/unused-kms-key" },
+                ],
+              }],
+            },
+          },
+        },
+      },
     })
     mockGetKisaSecretMetadata.mockResolvedValue({ status: "not-found" })
     const r = await checkSec01()
-    expect(r.status).toBe("pass")
-    expect(r.reasonKey).toBe("compliance.kisa.reason.secExternalKms")
+    expect(r.status).toBe("manual")
+    expect(r.live).toBe(false)
+    expect(r.reasonKey).toBe("compliance.kisa.reason.secCronJobNotEvaluated")
+
+    // Suspended CronJob also degrades to manual (missing/inactive CronJob never improves the result)
+    mockGetKisaCronJob.mockResolvedValue({
+      status: "ok",
+      data: { spec: { suspend: true, jobTemplate: { spec: { template: { spec: { containers: [{ env: [{ name: "BAO_SKIP_VERIFY", value: "true" }] }] } } } } } },
+    })
+    const susp = await checkSec01()
+    expect(susp.status).toBe("manual")
+    expect(susp.live).toBe(false)
+    expect(susp.reasonKey).toBe("compliance.kisa.reason.secCronJobNotEvaluated")
+  })
+
+  it("still fails on exposed Secret metadata even when CronJob is absent", async () => {
+    mockGetKisaCronJob.mockResolvedValue({ status: "not-found" })
+    mockGetKisaStatefulSet.mockResolvedValue({ status: "ok", data: {} })
+    mockGetKisaSecretMetadata.mockResolvedValue({
+      status: "ok",
+      data: { name: "openbao-init", namespace: "storage", labels: {}, annotationKeys: ["kubectl.kubernetes.io/last-applied-configuration"] },
+    })
+    const r = await checkSec01()
+    expect(r.status).toBe("fail")
+    expect(r.reasonKey).toBe("compliance.kisa.reason.secSecretExposed")
   })
 
   it("returns manual when CronJob read is forbidden (403)", async () => {
@@ -369,12 +405,12 @@ describe("KISA-IMG-02 live evaluation", () => {
         {
           metadata: { name: "r1", namespace: "devtools" },
           scope: { kind: "ReplicaSet", name: "portal-old", namespace: "devtools" },
-          results: [{ policy: "verify-image-signatures", result: "fail", message: "failed to verify image ghcr.io/dasomel/narwhal-portal:1.1.18: no sig" }],
+          results: [{ policy: "verify-image-signatures", result: "fail", message: "failed to verify image ghcr.io/dasomel/narwhal-portal:1.1.24: no sig" }],
         },
         {
           metadata: { name: "r2", namespace: "devtools" },
           scope: { kind: "Pod", name: "deleted-pod", namespace: "devtools" },
-          results: [{ policy: "verify-image-signatures", result: "fail", message: "failed to verify image ghcr.io/dasomel/narwhal-portal:1.1.18: no sig" }],
+          results: [{ policy: "verify-image-signatures", result: "fail", message: "failed to verify image ghcr.io/dasomel/narwhal-portal:1.1.24: no sig" }],
         },
         {
           metadata: { name: "r3", namespace: "chaos-testing" },
@@ -429,6 +465,97 @@ describe("KISA-IMG-02 live evaluation", () => {
     mockGetKisaKyvernoClusterPolicies.mockResolvedValue({ status: "forbidden", resource: "clusterpolicies.kyverno.io" })
     expect((await checkImg02()).status).toBe("manual")
   })
+
+  it("parses registry host:port, no-tag, @sha256, and tag@sha256 images in IMG-02 without dropping in-scope violations", async () => {
+    const digest = "sha256:" + "a".repeat(64)
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
+      status: "ok",
+      data: [
+        { metadata: { name: "disallow-latest-tag" }, spec: { validationFailureAction: "Enforce" } },
+        {
+          metadata: { name: "verify-image-signatures" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              verifyImages: [{
+                imageReferences: [
+                  "registry.example:5000/team/*",
+                  "localhost:5000/*",
+                  "repo@*",
+                  "repo:tag@*",
+                ],
+              }],
+            }],
+          },
+        },
+      ],
+    })
+    mockGetKisaWorkloadInventory.mockResolvedValue(makeInv({
+      pods: {
+        status: "ok",
+        data: [
+          { metadata: { name: "app-port", namespace: "default" }, spec: { containers: [{ image: "registry.example:5000/team/app:v1" }] }, status: { phase: "Running" } },
+          { metadata: { name: "app-dig", namespace: "default" }, spec: { containers: [{ image: `repo@${digest}` }] }, status: { phase: "Running" } },
+          { metadata: { name: "app-tagdig", namespace: "default" }, spec: { containers: [{ image: `repo:tag@${digest}` }] }, status: { phase: "Running" } },
+        ],
+      },
+    }))
+
+    // Registry with port: registry.example:5000/team/app:v1 must NOT be misparsed as out-of-scope
+    for (const ref of [
+      "registry.example:5000/team/app:v1",
+      "localhost:5000/app",
+      `repo@${digest}`,
+      `repo:tag@${digest}`,
+      "unparseable::bad@image",
+    ]) {
+      mockGetKisaPolicyReports.mockResolvedValue({
+        status: "ok",
+        data: [{
+          metadata: { name: "rep-1", namespace: "default" },
+          scope: { kind: "Pod", name: "app-port", namespace: "default" },
+          results: [{ policy: "verify-image-signatures", result: "fail", message: `failed to verify image ${ref}: no signature` }],
+        }],
+      })
+      const r = await checkImg02()
+      expect(r.status, `IMG-02 should fail for in-scope/unparseable ${ref}`).toBe("fail")
+      expect(r.detail).toContain("현재 위반 1건")
+    }
+
+    // Untaggable localhost:5000/app on Pod must also trigger :latest/untagged violation (never dropped)
+    mockGetKisaWorkloadInventory.mockResolvedValue(makeInv({
+      pods: {
+        status: "ok",
+        data: [{ metadata: { name: "app-notag", namespace: "default" }, spec: { containers: [{ image: "localhost:5000/app" }] }, status: { phase: "Running" } }],
+      },
+    }))
+    mockGetKisaPolicyReports.mockResolvedValue({ status: "ok", data: [] })
+    const untaggedRes = await checkImg02()
+    expect(untaggedRes.status).toBe("fail")
+    expect(untaggedRes.detail).toContain(":latest 1/1건")
+  })
+
+  it("never returns pass when any IMG-02 workload list is forbidden/error/truncated and names the failing source", async () => {
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
+      status: "ok",
+      data: [
+        { metadata: { name: "disallow-latest-tag" }, spec: { validationFailureAction: "Enforce" } },
+        { metadata: { name: "verify-image-signatures" }, spec: { validationFailureAction: "Enforce" } },
+      ],
+    })
+    mockGetKisaPolicyReports.mockResolvedValue({ status: "ok", data: [] })
+    mockGetKisaWorkloadInventory.mockResolvedValue(makeInv({
+      deployments: { status: "forbidden", resource: "deployments.apps" },
+      cronjobs: { status: "truncated", resource: "cronjobs.batch" },
+    }))
+    const r = await checkImg02()
+    expect(r.status).toBe("warn")
+    expect(r.partial).toBe(true)
+    expect(r.partialSources).toEqual(["deployments(forbidden)", "cronjobs(truncated)"])
+    expect(r.reasonKey).toBe("compliance.kisa.reason.imgInventoryNotEvaluated")
+    expect(r.detail).toContain("deployments(forbidden)")
+    expect(r.detailLocalized.en).toContain("cronjobs(truncated)")
+  })
 })
 
 describe("KISA-RBAC-02 scoring bug fix and exact acceptance consistency", () => {
@@ -451,6 +578,70 @@ describe("KISA-RBAC-02 scoring bug fix and exact acceptance consistency", () => 
       { apiGroups: ["*"], resources: ["*"], verbs: ["*"] },
     ])
     expect(trueCrit.criticalWildcard).toBe(true)
+
+    // verbs: ["*"] on rbac.authorization.k8s.io/roles includes bind/escalate -> escalation Critical
+    const roleStar = evaluateRbacRules([
+      { apiGroups: ["rbac.authorization.k8s.io"], resources: ["roles"], verbs: ["*"] },
+    ])
+    expect(roleStar.escalation).toBe(true)
+    expect(roleStar.triggeredCheckIds).toContain("KSV050")
+    expect(roleStar.triggeredCheckIds).toContain("KSV049")
+
+    // Explicit escalate/bind on rbac.authorization.k8s.io
+    const explicitEsc = evaluateRbacRules([
+      { apiGroups: ["rbac.authorization.k8s.io"], resources: ["clusterroles"], verbs: ["escalate"] },
+    ])
+    expect(explicitEsc.escalation).toBe(true)
+    expect(explicitEsc.triggeredCheckIds).toContain("KSV050")
+    const explicitBind = evaluateRbacRules([
+      { apiGroups: ["rbac.authorization.k8s.io"], resources: ["rolebindings"], verbs: ["bind"] },
+    ])
+    expect(explicitBind.escalation).toBe(true)
+
+    // apiGroups: ["*"] + resources: ["*"] includes subresources like pods/exec and escalation
+    const allGroupStar = evaluateRbacRules([
+      { apiGroups: ["*"], resources: ["*"], verbs: ["create"] },
+    ])
+    expect(allGroupStar.triggeredCheckIds).toContain("KSV048")
+    expect(allGroupStar.triggeredCheckIds).toContain("KSV049")
+
+    // Similar resource/verb name in an unrelated apiGroup must NOT count as RBAC escalation/secrets/workloads
+    const decoyGroup = evaluateRbacRules([
+      { apiGroups: ["custom.example.io"], resources: ["roles", "secrets", "deployments"], verbs: ["*", "bind", "escalate", "impersonate"] },
+    ])
+    expect(decoyGroup.escalation).toBe(false)
+    expect(decoyGroup.secretsAccess).toBe(false)
+    expect(decoyGroup.criticalWildcard).toBe(false)
+    expect(decoyGroup.triggeredCheckIds).not.toContain("KSV041")
+    expect(decoyGroup.triggeredCheckIds).not.toContain("KSV048")
+    expect(decoyGroup.triggeredCheckIds).not.toContain("KSV049")
+    expect(decoyGroup.triggeredCheckIds).not.toContain("KSV050")
+    expect(decoyGroup.triggeredCheckIds).not.toContain("KSV053")
+  })
+
+  it("fails RBAC-02 on a namespaced Role + RoleBinding granting verbs:['*'] on rbac.authorization.k8s.io/roles", async () => {
+    mockGetKisaRbacSnapshot.mockResolvedValue({
+      clusterRoleBindings: { status: "ok", data: [] },
+      roleBindings: {
+        status: "ok",
+        data: [{
+          metadata: { name: "team-rbac-admin", namespace: "dev" },
+          roleRef: { kind: "Role", name: "team-role-star" },
+          subjects: [{ kind: "ServiceAccount", name: "app", namespace: "dev" }],
+        }],
+      },
+      clusterRoles: { status: "ok", data: [] },
+      roles: {
+        status: "ok",
+        data: [{
+          metadata: { name: "team-role-star", namespace: "dev" },
+          rules: [{ apiGroups: ["rbac.authorization.k8s.io"], resources: ["roles"], verbs: ["*"] }],
+        }],
+      },
+    })
+    const res = await checkRbacLive("KISA-RBAC-02")
+    expect(res.status).toBe("fail")
+    expect(res.detail).toContain("dev/team-rbac-admin")
   })
 
   it("uses exact compliance-acceptance-rules.json (pass when only accepted High exists, fail on unaccepted Critical, manual on 403)", async () => {

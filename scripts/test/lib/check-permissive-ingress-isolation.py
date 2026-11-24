@@ -59,7 +59,6 @@ MODES = {"STRICT", "PERMISSIVE", "DISABLE", "UNSET"}
 EXCLUDED = ("scripts/test/fixtures/", "gitops/charts/kubernetes-dashboard/charts/")  # path prefixes
 # Real gaps in the current repo: (namespace, name) -> (count, reason). Remove when fixed.
 KNOWN_ISSUES = {
-    ("monitoring", "monitoring-permissive"): (1, "namespace-wide PERMISSIVE, no ingress default-deny (#126)"),
     ("platform-system", "platform-system-permissive"): (1, "namespace-wide PERMISSIVE, no ingress default-deny (#126)"),
 }
 KIND_RE = re.compile(r"""kind["']?\s*:\s*["']?(PeerAuthentication|\w*NetworkPolicy)\b""")

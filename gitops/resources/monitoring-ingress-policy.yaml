@@ -1,0 +1,479 @@
+---
+# KISA-NET-01 & KISA-TLS-01 (monitoring-permissive compensation): namespace-level
+# ingress default-deny for `monitoring`, paired with per-workload allow policies
+# for Prometheus, Alertmanager, Grafana, Loki, kube-state-metrics,
+# prometheus-operator, and monitoring/waypoint, plus a CiliumNetworkPolicy for
+# kube-apiserver -> prometheus-operator admission webhooks.
+#
+# Ambient mesh & waypoint status: `monitoring` is Istio ambient enrolled with
+# `istio.io/use-waypoint=waypoint` and `PeerAuthentication/monitoring/monitoring-permissive`.
+#   - Every port-limited K8s NetworkPolicy ingress rule below includes TCP 15008
+#     (HBONE) per R200 (`check-ambient-netpol.py`).
+#   - `alloy-logs` and `tempo` keep their existing dedicated policies
+#     (`alloy-logs-ingress-policy`, `tempo-ingress-policy`) and are NOT selected by
+#     any allow policy here (preserving R373 and R377).
+#   - `loki` Service does not opt out of `monitoring/waypoint`, so ambient-enrolled
+#     `alloy-logs` pushes to `loki:3100` via `monitoring/waypoint:15008 -> loki:15008`.
+#     Both hops are allowed narrowly: `monitoring-waypoint-ingress-policy` admits
+#     HBONE 15008 ONLY from same-namespace `alloy-logs` and `loki` (no cross-ns
+#     waypoint hopping), plus Prometheus metrics scrape on :15020.
+#
+# Host-network / probe callers:
+#   - Ambient-enrolled pods (`alertmanager`, `alloy-logs`, `alloy-operator`, `loki`,
+#     `prometheus-operator`, `kube-state-metrics`, `tempo`): kubelet probes arrive
+#     via 169.254.7.127/32 (CCNP `allow-ambient-kubelet-probes`).
+#   - Opted-out pods (`prometheus`, `grafana`, `waypoint`): kubelet probes arrive
+#     locally as Cilium `reserved:host`.
+#   - `kube-apiserver` (hostNetwork) calls `prometheus-stack-kube-prom-admission`
+#     validating/mutating webhooks -> Service :443 -> pod containerPort `10250`.
+#     Handled by pod-scoped CiliumNetworkPolicy `prometheus-operator-webhook-ingress`
+#     with narrow `fromEntities` (`kube-apiserver`, `host`, `remote-node`) on TCP 10250.
+#   - `prometheus-stack-prometheus-node-exporter` runs with `hostNetwork: true`
+#     (:9100); pod-scoped K8s NetworkPolicy does not govern hostNetwork pods on
+#     Cilium without host-firewall (documented limitation, same as tuning-job).
+#   - `k8s-monitoring-alloy-operator` has no inbound callers and stays default-denied.
+#
+# Rollback: `kubectl delete -f gitops/resources/monitoring-ingress-policy.yaml`
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: monitoring-default-deny-ingress
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-ingress-policy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+      prometheus: prometheus-stack-kube-prom-prometheus
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. APISIX gateway (platform-system) -> Prometheus UI/API/remote-write (:9090).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: platform-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apisix
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 15008
+    # 2. Narwhal Portal (devtools) -> Prometheus HTTP API (:9090).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devtools
+          podSelector:
+            matchLabels:
+              app: narwhal-portal
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 15008
+    # 3. Grafana (monitoring) -> Prometheus datasource (:9090).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+              app.kubernetes.io/instance: prometheus-stack
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 15008
+    # 4. Prometheus self-scrape (:9090 + config-reloader :8080).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+              prometheus: prometheus-stack-kube-prom-prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 15008
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: alertmanager-ingress-policy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alertmanager
+      alertmanager: prometheus-stack-kube-prom-alertmanager
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. APISIX gateway (platform-system) -> Alertmanager UI/API (:9093).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: platform-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apisix
+      ports:
+        - protocol: TCP
+          port: 9093
+        - protocol: TCP
+          port: 15008
+    # 2. Narwhal Portal (devtools) -> Alertmanager v2 API (:9093).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devtools
+          podSelector:
+            matchLabels:
+              app: narwhal-portal
+      ports:
+        - protocol: TCP
+          port: 9093
+        - protocol: TCP
+          port: 15008
+    # 3. Falcosidekick (security-system) -> Alertmanager v2 alert push (:9093).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: security-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: falcosidekick
+              app.kubernetes.io/instance: falco
+      ports:
+        - protocol: TCP
+          port: 9093
+        - protocol: TCP
+          port: 15008
+    # 4. Prometheus (monitoring) -> alert delivery (:9093) + metrics scrape (:9093, :8080).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+              prometheus: prometheus-stack-kube-prom-prometheus
+      ports:
+        - protocol: TCP
+          port: 9093
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 15008
+    # 5. Grafana (monitoring) -> Alertmanager datasource (:9093).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+              app.kubernetes.io/instance: prometheus-stack
+      ports:
+        - protocol: TCP
+          port: 9093
+        - protocol: TCP
+          port: 15008
+    # 6. Alertmanager HA cluster gossip mesh (same workload, :9094 TCP/UDP).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alertmanager
+              alertmanager: prometheus-stack-kube-prom-alertmanager
+      ports:
+        - protocol: TCP
+          port: 9094
+        - protocol: UDP
+          port: 9094
+        - protocol: TCP
+          port: 15008
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: grafana-ingress-policy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+      app.kubernetes.io/instance: prometheus-stack
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. APISIX gateway (platform-system) -> Grafana HTTP (Service :80 -> pod :3000).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: platform-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apisix
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 15008
+    # 2. Prometheus (monitoring) -> Grafana /metrics scrape (:3000).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+              prometheus: prometheus-stack-kube-prom-prometheus
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 15008
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: loki-ingress-policy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+      app.kubernetes.io/instance: loki
+      app.kubernetes.io/component: single-binary
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. Alloy logs collector (monitoring) -> Loki push API (:3100).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alloy-logs
+              app.kubernetes.io/instance: k8s-monitoring-alloy-logs
+      ports:
+        - protocol: TCP
+          port: 3100
+        - protocol: TCP
+          port: 15008
+    # 2. monitoring/waypoint -> Loki (:3100, :9095) for ambient-enrolled alloy-logs/loki
+    #    Service traffic (loki Service uses the namespace waypoint; waypoint ingress itself
+    #    is restricted to alloy-logs and loki below).
+    - from:
+        - podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: waypoint
+      ports:
+        - protocol: TCP
+          port: 3100
+        - protocol: TCP
+          port: 9095
+        - protocol: TCP
+          port: 15008
+    # 3. Grafana (monitoring) -> Loki datasource query (:3100).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+              app.kubernetes.io/instance: prometheus-stack
+      ports:
+        - protocol: TCP
+          port: 3100
+        - protocol: TCP
+          port: 15008
+    # 4. Prometheus (monitoring) -> Loki /metrics (:3100).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+              prometheus: prometheus-stack-kube-prom-prometheus
+      ports:
+        - protocol: TCP
+          port: 3100
+        - protocol: TCP
+          port: 15008
+    # 5. Narwhal Portal (devtools) -> Loki LogQL API (:3100).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devtools
+          podSelector:
+            matchLabels:
+              app: narwhal-portal
+      ports:
+        - protocol: TCP
+          port: 3100
+        - protocol: TCP
+          port: 15008
+    # 6. Falcosidekick (security-system) -> Loki JSON event push (:3100).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: security-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: falcosidekick
+              app.kubernetes.io/instance: falco
+      ports:
+        - protocol: TCP
+          port: 3100
+        - protocol: TCP
+          port: 15008
+    # 7. Loki internal self/ring/memberlist traffic (:3100, :9095, :7946).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loki
+              app.kubernetes.io/instance: loki
+      ports:
+        - protocol: TCP
+          port: 3100
+        - protocol: TCP
+          port: 9095
+        - protocol: TCP
+          port: 7946
+        - protocol: TCP
+          port: 15008
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kube-state-metrics-ingress-policy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kube-state-metrics
+      app.kubernetes.io/instance: prometheus-stack
+  policyTypes:
+    - Ingress
+  ingress:
+    # Prometheus (monitoring) -> kube-state-metrics /metrics (:8080).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+              prometheus: prometheus-stack-kube-prom-prometheus
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 15008
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prometheus-operator-ingress-policy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app: kube-prometheus-stack-operator
+      release: prometheus-stack
+  policyTypes:
+    - Ingress
+  ingress:
+    # Prometheus (monitoring) -> prometheus-operator HTTPS /metrics (:10250).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+              prometheus: prometheus-stack-kube-prom-prometheus
+      ports:
+        - protocol: TCP
+          port: 10250
+        - protocol: TCP
+          port: 15008
+---
+# D-KISA-NET01-HOST-WEBHOOK: allow host-network kube-apiserver to reach the
+# prometheus-operator admission webhooks (PrometheusRule validate/mutate and
+# AlertmanagerConfig validate; Service :443 -> pod containerPort :10250) on both
+# single-node and multi-node VXLAN topologies without hardcoding node CIDRs.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: prometheus-operator-webhook-ingress
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  description: Allow kube-apiserver admission webhook calls to prometheus-operator on TCP 10250.
+  endpointSelector:
+    matchLabels:
+      app: kube-prometheus-stack-operator
+      release: prometheus-stack
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  ingress:
+    - fromEntities:
+        - kube-apiserver
+        - host
+        - remote-node
+      toPorts:
+        - ports:
+            - port: "10250"
+              protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: monitoring-waypoint-ingress-policy
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: waypoint
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. Prometheus (monitoring) -> waypoint /stats/prometheus (:15020, PodMonitor istio-waypoints).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+              prometheus: prometheus-stack-kube-prom-prometheus
+      ports:
+        - protocol: TCP
+          port: 15020
+        - protocol: TCP
+          port: 15008
+    # 2. Ambient-enrolled monitoring workloads forwarding to waypoint-fronted Services
+    #    (alloy-logs -> loki:3100, loki -> loki:9095) over HBONE (:15008).
+    #    Cross-namespace callers of monitoring all opt out of ambient (dp=none), so
+    #    no external namespace needs waypoint access here.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alloy-logs
+              app.kubernetes.io/instance: k8s-monitoring-alloy-logs
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loki
+              app.kubernetes.io/instance: loki
+      ports:
+        - protocol: TCP
+          port: 15008

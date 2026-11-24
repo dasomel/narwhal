@@ -201,9 +201,8 @@ def main(group: str) -> int:
             if rc == 0 or want not in err:
                 failures.append(f"{n}: rc={rc} want {want!r} stderr={err!r}")
     elif group == "tree":
-        mon = pa("monitoring").replace("name: p", "name: monitoring-permissive")
-        wide = mon + "---\n" + pa("platform-system").replace("name: p", "name: platform-system-permissive")
-        iso = deny().replace("namespace: t", "namespace: monitoring")
+        wide = pa("platform-system").replace("name: p", "name: platform-system-permissive")
+        iso = deny().replace("namespace: t", "namespace: platform-system")
         drift = "KNOWN_ISSUES drift"
         t_iso = pa("t") + deny()
         nons = np("podSelector: {}\n" + ALLOW_ALL, "labels: {a: b}")
@@ -211,7 +210,7 @@ def main(group: str) -> int:
         warn = "WARN: skipped templated NetworkPolicy file "
         cases = {  # name -> (files, expected rc, stderr substring)
             "control": ({"gitops/a.yaml": wide}, 0, ""),
-            "stale-entry": ({"gitops/a.yaml": mon}, 1, drift),
+            "stale-entry": ({"gitops/a.yaml": ""}, 1, drift),
             "new-violation": ({"gitops/a.yaml": wide + "---\n" + pa("payments")}, 1, NOISO),
             "vendored-excluded": ({"gitops/a.yaml": wide, "gitops/charts/kubernetes-dashboard/charts/k/np.yaml": iso}, 0, ""),
             "dashboard-own-templates-count": ({"gitops/a.yaml": wide, "gitops/charts/kubernetes-dashboard/templates/np.yaml": iso}, 1, drift),

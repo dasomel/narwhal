@@ -19,11 +19,12 @@ Secret key names and channel completeness/routing behavior are defined by the sh
 issue #610 lane contract; this lane does not implement portal API validation or delivery.
 
 D610-6: the explicit portal egress policy allows the exact Alertmanager pods on TCP
-9093 (+15008 HBONE). Existing devtools allow-all egress remains. Read-only inspection
-on 2026-11-09 found only monitoring-egress and no monitoring AuthorizationPolicy.
-`monitoring-permissive` accepts the portal's ambient-opt-out plaintext connection.
-No new AuthorizationPolicy is needed: a new ALLOW policy would deny other existing
-callers by default. This change does not claim to introduce monitoring ingress isolation.
+9093 (+15008 HBONE). Existing devtools allow-all egress remains. `monitoring-permissive`
+accepts the portal's ambient-opt-out plaintext connection, and
+`gitops/resources/monitoring-ingress-policy.yaml` (`monitoring-default-deny-ingress` +
+`alertmanager-ingress-policy`) enforces namespace-level ingress isolation while explicitly
+admitting `devtools/narwhal-portal`, `platform-system/apisix`, `security-system/falcosidekick`,
+and same-namespace Prometheus/Grafana/Alertmanager peers.
 API: `http://prometheus-stack-kube-prom-alertmanager.monitoring.svc:9093/api/v2/alerts`.
 
 ## Existing-cluster rollout (owner executed; not performed by this lane)

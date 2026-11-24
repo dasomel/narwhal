@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-kisa-ingress-default-deny-20261124",
+  "task": "Add namespace-level ingress default-deny NetworkPolicies with evidence-backed per-workload allowlists and host-network CiliumNetworkPolicy webhook rules for iam, storage, and monitoring (KISA-NET-01 and KISA-TLS-01 monitoring-permissive compensation); keep devtools and portal/ untouched",
+  "changeContext": {
+    "paths": [
+      "gitops/resources/iam-ingress-policy.yaml",
+      "gitops/resources/storage-ingress-policy.yaml",
+      "gitops/resources/monitoring-ingress-policy.yaml",
+      "gitops/charts/narwhal-apps/templates/iam-ingress-policy.yaml",
+      "gitops/charts/narwhal-apps/templates/storage-ingress-policy.yaml",
+      "gitops/charts/narwhal-apps/templates/monitoring-ingress-policy.yaml",
+      "gitops/resources/network-policies.yaml",
+      "docs/common/upgrade-waves.json",
+      "docs/common/lessons-log.md",
+      "docs/common/notification-channels.md",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "scripts/test/lib/check-permissive-ingress-isolation.py",
+      "scripts/test/lib/ingress-isolation-probe.py",
+      "scripts/test/lib/check-ambient-netpol.py",
+      "scripts/test/lib/check-kisa-ingress-default-deny.py",
+      "scripts/verify/ambient-netpol-check.sh",
+      "scripts/test/regression-check-kakao.sh",
+      ".agents/evals/traces/2026-11-kisa-ingress-default-deny.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "In scope: namespace-level ingress default-deny policies + per-workload allows + ArgoCD Applications (wave 2) for iam, storage, and monitoring, removing monitoring-permissive from R244 KNOWN_ISSUES, R398 regression check, docs/lessons-log/trace, and untracked .review/{caller-matrix,trial-plan}.md. Out of scope: devtools namespace, egress policies, portal/ code, and live cluster mutations (live cluster inspected read-only without kubectl exec or reading Secret data)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Read-only inspection of the live cluster (narwhal-master-1, K8s v1.35.7, Cilium v1.19.4, VXLAN, kube-proxy-replacement=true) and repository confirmed: (1) Only database had a namespace-wide ingress default-deny (KISA-NET-01 1/5); iam, storage, and monitoring had no podSelector:{} Ingress policy, and monitoring-permissive sat in R244 KNOWN_ISSUES. (2) Exact live callers and containerPorts verified across all pods, Services/targetPorts, ApisixUpstreams, ServiceMonitors/PodMonitors, Prometheus active targets (26/26 UP), ConfigMaps, Velero BSL/kopia jobs, CNPG Cluster, and Validating/MutatingWebhookConfigurations: narwhal-portal calls keycloak-service:8080, openbao:8200, prometheus:9090, alertmanager:9093, loki:3100, and tempo:3200 directly; Velero kopia maintenance Jobs carry only velero.io/repo-name; monitoring/loki uses monitoring/waypoint so ambient alloy-logs pushes via waypoint:15008 -> loki:15008; kube-apiserver (hostNetwork) calls storage/openbao-agent-injector:8080 and monitoring/prometheus-stack-kube-prom-operator:10250; Grafana Service :80 targets containerPort 3000; Prometheus scrapes config-reloader :8080 on prometheus/alertmanager and waypoint :15020. Hubble CLI/gRPC was unavailable on host so Hubble flow data was not used.",
+      "evidence": [
+        "runtime:read-only kubectl get ns --show-labels -> iam non-ambient; storage ambient (no waypoint); monitoring ambient + istio.io/use-waypoint=waypoint",
+        "runtime:read-only kubectl get netpol -A -> database-default-deny-ingress only; iam/storage/monitoring lack podSelector:{} Ingress policy",
+        "runtime:read-only kubectl get validatingwebhookconfigurations,mutatingwebhookconfigurations -> openbao-agent-injector-svc:443 (pod 8080) in storage; prometheus-stack-kube-prom-operator:443 (pod 10250) in monitoring",
+        "runtime:read-only Prometheus /api/v1/targets?state=active -> 26/26 UP incl. monitoring waypoint:15020, kube-state-metrics:8080, grafana:3000, alertmanager:9093+8080, prometheus-operator:10250, prometheus:9090+8080, storage velero:8085",
+        "runtime:read-only kubectl get apisixupstreams -n platform-system -> keycloak-service:8080, openbao:8200, velero-ui:3000, prometheus:9090, alertmanager:9093, grafana:80 (pod 3000)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added gitops/resources/{iam,storage,monitoring}-ingress-policy.yaml and matching ArgoCD Applications under gitops/charts/narwhal-apps/templates/ (sync-wave 2, ServerSideApply, prune+selfHeal, registered in docs/common/upgrade-waves.json). Each file pairs a pure podSelector:{} ingress:[] default-deny NetworkPolicy with per-workload allow NetworkPolicies so existing alloy-logs-ingress-policy, tempo-ingress-policy, and velero-metrics are never widened. Ambient namespaces (storage, monitoring) carry TCP 15008 (HBONE) on every port-limited rule (with baseline_default_deny updated in check-ambient-netpol.py and scripts/verify/ambient-netpol-check.sh); iam stays non-ambient. Host-network kube-apiserver webhook calls are allowed via pod-scoped CiliumNetworkPolicies (enableDefaultDeny: {ingress: false, egress: false}, fromEntities: [kube-apiserver, host, remote-node]) on exact containerPorts (8080 and 10250) for single-node and multi-node VXLAN portability. Removed monitoring-permissive from R244 KNOWN_ISSUES (updating ingress-isolation-probe.py tree test and R244-known label). Bootstrap scripts need no change because 09-istio-ambient.sh applies allow-ambient-kubelet-probes-ccnp.yaml before step 14 wave-2 GitOps sync and no install step deadlocks. Added R398 (check-kisa-ingress-default-deny.py --mutation-verify, 20 mutations) and updated docs and lessons-log."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline static validation (make validate), R398 and R200 --mutation-verify, R244 + ingress-isolation-probe.py, helm template render of narwhal-apps (vagrant and kakao), touched-file shellcheck/yamllint, and full static regression suite (make test). Live cluster rollout (iam -> storage -> monitoring staged trial) has NOT been executed yet (deferred to orchestrator per .review/trial-plan.md).",
+      "summary": "Offline validation, mutation-verified R398 (20 mutations) and R200, R244 (1 remaining known-issue: platform-system-permissive), helm template renders (vagrant/kakao), and make test passed with 0 failures.",
+      "evidence": [
+        "test:make validate -> ruby -c Vagrantfile Syntax OK; all gitops/apps/*.yaml and gitops/resources/*.yaml OK (exit 0)",
+        "test:python3 scripts/test/lib/check-kisa-ingress-default-deny.py --mutation-verify -> PASS: R398 KISA-NET-01 iam/storage/monitoring ingress default-deny (20 mutations rejected)",
+        "test:python3 scripts/test/lib/check-ambient-netpol.py --mutation-verify -> PASS: per-rule HBONE, peer-less HBONE, all-ports semantics, namespace isolation, and probe-CIDR mutations verified",
+        "test:python3 scripts/test/lib/check-permissive-ingress-isolation.py -> PASS: permissive namespaces have ingress isolation; 1 known-issue baseline entry (platform-system/platform-system-permissive)",
+        "test:helm template narwhal-apps gitops/charts/narwhal-apps --set provider=vagrant|kakao -> exit 0 (both providers)",
+        "test:make test -> passed 506 failed 0 warnings 3 (research/evidence restored via git checkout -- research/evidence)",
+        "test:make lint -> shellcheck exit 0; yamllint 0 errors/warnings on touched files, exits non-zero only on pre-existing line-length errors in untouched files (ghost-pod-reaper.yaml, prometheus-alerts.yaml, velero-server-rbac.yaml)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Offline policies, ArgoCD Applications, R200/R244/R398 regression checks, docs, lessons-log, and untracked .review/{caller-matrix,trial-plan}.md are complete and offline-verified. Not yet verified: live cluster rollout (staged iam -> storage -> monitoring apply and runtime probes for SSO, OpenBao unseal, Velero backup, SeaweedFS S3, Prometheus 26/26 targets, Alloy -> waypoint -> Loki, Falco -> falcosidekick, webhook dry-run, and portal widgets)."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Offline implementation and static/render verification complete; staged live cluster trial remains pending orchestrator execution."
+    }
+  ]
+}

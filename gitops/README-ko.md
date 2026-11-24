@@ -269,12 +269,12 @@ Narwhal 관리 포털(Next.js)은 이 IDP 전체를 위한 개발자 대상 UI�
 |---|---|
 | `platform-system` | 공유 인프라 플레인: MetalLB, APISIX, cert-manager, Kyverno (PERMISSIVE mTLS 예외 — 비메시 클라이언트와 통신) |
 | `istio-system` | 서비스 메시 컨트롤 플레인 및 데이터플레인 (istiod, istio-cni, ztunnel) |
-| `monitoring` | 관측성 스택: Prometheus, Grafana, Alertmanager, Loki, Tempo (메시에서 제외된 포털을 위한 PERMISSIVE mTLS 예외) |
-| `storage` | SeaweedFS, OpenBao, Velero, Velero UI |
+| `monitoring` | 관측성 스택: Prometheus, Grafana, Alertmanager, Loki, Tempo (`monitoring-ingress-policy.yaml` 인그레스 기본 차단으로 보상된 PERMISSIVE mTLS 예외) |
+| `storage` | SeaweedFS, OpenBao, Velero, Velero UI (`storage-ingress-policy.yaml` 인그레스 기본 차단 적용) |
 | `security-system` | Trivy Operator, Falco (privileged DaemonSet; Kyverno privileged/host-namespace/host-port 정책에서 제외, PSA는 audit/warn만) |
-| `iam` | Keycloak (의도적으로 메시 미등록) |
+| `iam` | Keycloak (의도적으로 메시 미등록; `iam-ingress-policy.yaml` 인그레스 기본 차단 적용) |
 | `devtools` | ArgoCD, Gitea, Harbor, Headlamp, Narwhal Portal (Harbor의 혼합 등록 워크로드에 한정된 PERMISSIVE mTLS 예외) |
-| `database` | CloudNative-PG PostgreSQL 클러스터 (PERMISSIVE mTLS 예외 — 비메시 Keycloak의 plain-TCP 호출) |
+| `database` | CloudNative-PG PostgreSQL 클러스터 (`database-ingress-policy.yaml` 인그레스 기본 차단으로 보상된 PERMISSIVE mTLS 예외) |
 
 ---
 

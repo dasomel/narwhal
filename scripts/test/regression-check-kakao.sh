@@ -2149,7 +2149,7 @@ PYEOF
     python3 scripts/test/lib/ingress-isolation-probe.py tree
   iso_gaps="$(python3 scripts/test/lib/check-permissive-ingress-isolation.py 2>/dev/null | grep -c '^KNOWN-ISSUE' || true)"
   if [ "${iso_gaps:-0}" -gt 0 ]; then
-    warn R244-known "${iso_gaps} known ingress isolation gaps baselined (Narwhal#126): monitoring and platform-system namespace-wide PERMISSIVE lack an ingress default-deny"
+    warn R244-known "${iso_gaps} known ingress isolation gap baselined (Narwhal#126): platform-system namespace-wide PERMISSIVE lacks an ingress default-deny"
   fi
   # Narwhal#164: a package install must not run the package's own build/lifecycle scripts (a malicious
   # release's build script is the incident); exact pins alone (R50-R54) do not stop that.
@@ -3564,6 +3564,9 @@ PYEOF'
   # 2026-11-24: KISA-ETCD-02 Stage 1 (apisix-etcd NetworkPolicy in resources/app/bootstrap) & KISA-SEC-01 (openbao-auto-unseal SA/TLS + openbao-init trap/umask/Velero exclude & no last-applied-configuration)
   check R396 "KISA-ETCD-02 Stage 1 & KISA-SEC-01: apisix-etcd ingress NetworkPolicy (apps/resources/08-1 bootstrap, apisix-only TCP 2379 + HBONE 15008, no 2380/waypoint/IC) and openbao-auto-unseal dedicated SA/no-automount/CA-verified TLS dialing openbao-tls SAN + openbao-init 077-umask/EXIT trap/Velero exclude and no kubectl apply; 22 mutations caught" \
     python3 scripts/test/lib/check-kisa-etcd-openbao-hardening.py --mutation-verify
+  # 2026-11-24: KISA-NET-01 namespace-level ingress default-deny for iam, storage, and monitoring (and KISA-TLS-01 monitoring-permissive compensation)
+  check R398 "KISA-NET-01: namespace ingress default-deny + per-workload allows for iam, storage, and monitoring in resources and narwhal-apps (wave 2), HBONE 15008 on ambient namespaces, CiliumNetworkPolicy host-network webhook rules, monitoring-permissive removed from R244 KNOWN_ISSUES, devtools untouched; 20 mutations caught" \
+    python3 scripts/test/lib/check-kisa-ingress-default-deny.py --mutation-verify
 }
 
 #=========================================

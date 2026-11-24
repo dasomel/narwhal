@@ -270,12 +270,12 @@ The Narwhal management portal (Next.js) — the developer-facing UI for this ent
 |---|---|
 | `platform-system` | Shared infra plane: MetalLB, APISIX, cert-manager, Kyverno (PERMISSIVE mTLS exception — talks to non-mesh clients) |
 | `istio-system` | Service mesh control plane and dataplane (istiod, istio-cni, ztunnel) |
-| `monitoring` | Observability stack: Prometheus, Grafana, Alertmanager, Loki, Tempo (PERMISSIVE mTLS exception for the opted-out portal) |
-| `storage` | SeaweedFS, OpenBao, Velero, Velero UI |
+| `monitoring` | Observability stack: Prometheus, Grafana, Alertmanager, Loki, Tempo (PERMISSIVE mTLS exception compensated by `monitoring-ingress-policy.yaml` ingress default-deny) |
+| `storage` | SeaweedFS, OpenBao, Velero, Velero UI (ingress default-deny via `storage-ingress-policy.yaml`) |
 | `security-system` | Trivy Operator, Falco (privileged DaemonSet; exempt from the Kyverno privileged/host-namespace/host-port policies, PSA is audit/warn only) |
-| `iam` | Keycloak (intentionally NOT mesh-enrolled) |
+| `iam` | Keycloak (intentionally NOT mesh-enrolled; namespace ingress default-deny via `iam-ingress-policy.yaml`) |
 | `devtools` | ArgoCD, Gitea, Harbor, Headlamp, the Narwhal Portal (PERMISSIVE mTLS exception scoped to Harbor's mixed-enrollment workloads) |
-| `database` | CloudNative-PG PostgreSQL clusters (PERMISSIVE mTLS exception — plain-TCP calls from non-mesh Keycloak) |
+| `database` | CloudNative-PG PostgreSQL clusters (PERMISSIVE mTLS exception compensated by `database-ingress-policy.yaml` ingress default-deny) |
 
 ---
 

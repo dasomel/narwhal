@@ -43,12 +43,12 @@
       "status": "passed",
       "scope": "Fix-round verification: Portal tsc --noEmit, eslint, full Vitest suite (200 files / 2838 tests including compliance-verdict-source.test.ts fixtures a-h + pagination covering multi-check absent-detail and worker-only/out-of-scope pass filtering), read-only live kubectl proxy comparison on port 8072 as system:serviceaccount:devtools:narwhal-portal against portal-sa-1.1.27.json across all 5 frameworks, repo make test (full static regression suite incl. R387/R392/R393 mutation checks), make validate, and markdownlint-changed.py. NOT covered: live cluster running trivy-operator 0.36.1 (Phase 2).",
       "evidence": [
-        "cmd:cd portal && pnpm exec vitest run src/lib/compliance-verdict-source.test.ts (before fix) -> exit 1, 2 failed (reproduced both R1 MAJOR findings in fixtures g and h)",
-        "cmd:cd portal && pnpm exec tsc --noEmit && pnpm lint && pnpm exec vitest run -> exit 0, 200 files passed, 2838 tests passed, 0 failed",
-        "live:K8S_API_SERVER=http://127.0.0.1:8072 (system:serviceaccount:devtools:narwhal-portal) getComplianceFrameworks() vs portal-sa-1.1.27.json -> FRAMEWORKS_COMPARED=5 DIFF_COUNT=0 ALL_COUNT_FIELDS_EQUAL=True across all 5 frameworks (k8s-cis-1.23, k8s-kisa-1.0, k8s-nsa-1.0, k8s-pss-baseline-0.1, k8s-pss-restricted-0.1)",
-        "cmd:make test -> passed 511 failed 0 warnings 3 (R387 16 mutations, R392 12 mutations, R393 12 mutations all PASS)",
-        "cmd:make validate -> exit 0",
-        "cmd:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0"
+        "test:cd portal && pnpm exec vitest run src/lib/compliance-verdict-source.test.ts (before fix) -> exit 1, 2 failed (reproduced both R1 MAJOR findings in fixtures g and h)",
+        "test:cd portal && pnpm exec tsc --noEmit && pnpm lint && pnpm exec vitest run -> exit 0, 200 files passed, 2838 tests passed, 0 failed",
+        "test:live K8S_API_SERVER=http://127.0.0.1:8072 (system:serviceaccount:devtools:narwhal-portal) getComplianceFrameworks() vs portal-sa-1.1.27.json -> FRAMEWORKS_COMPARED=5 DIFF_COUNT=0 ALL_COUNT_FIELDS_EQUAL=True across all 5 frameworks (k8s-cis-1.23, k8s-kisa-1.0, k8s-nsa-1.0, k8s-pss-baseline-0.1, k8s-pss-restricted-0.1)",
+        "test:make test -> passed 511 failed 0 warnings 3 (R387 16 mutations, R392 12 mutations, R393 12 mutations all PASS)",
+        "test:make validate -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0"
       ]
     },
     {

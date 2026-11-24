@@ -293,7 +293,7 @@ describe("kube-bench CIS test records", () => {
     ["1.3.6", "KCV0038", "kube-controller-manager"],
     ["1.3.7", "KCV0039", "kube-controller-manager"],
     ["1.4.2", "KCV0041", "kube-scheduler"],
-  ])("accepts reviewed Trivy resource identity for %s while preserving failed evidence", async (control, check, component) => {
+  ])("keeps 1.3.6 actionable and accepts only reviewed metrics identity for %s", async (control, check, component) => {
     const target = `${component}-narwhal-master-1`
     setupRoutes({
       controls: [{ id: control, name: control, severity: "HIGH", checks: [{ id: check }] }],
@@ -307,7 +307,7 @@ describe("kube-bench CIS test records", () => {
       }],
     })
     const detail = await getComplianceFrameworkDetail("k8s-cis-1.23")
-    expect(detail!.controls[0]).toMatchObject({ evaluationState: "failed", accepted: true, actionableFailCount: 0 })
+    expect(detail!.controls[0]).toMatchObject({ evaluationState: "failed", accepted: control !== "1.3.6", actionableFailCount: control === "1.3.6" ? 1 : 0 })
     expect(detail!.controls[0].benchmarkEvidence?.verdict).toBe(control === "1.3.6" ? "passed" : "failed")
   })
 

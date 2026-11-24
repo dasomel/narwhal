@@ -140,6 +140,8 @@ def check(texts: dict[str, str]) -> list[str]:
         mb_body = matcher.split("export function matchBenchmarkException", 1)[1].split("\nexport ", 1)[0]
         if "benchmarkRuleIndex.get(`${benchmarkId}\\0${controlId}`)" not in mb_body:
             errors.append("matchBenchmarkException must use exact benchmarkRuleIndex lookup")
+        if "r.node === node" not in mb_body:
+            errors.append("matchBenchmarkException must match exact node")
         if re.search(r"\.(?:includes|startsWith|endsWith|test|exec|match)\(", mb_body):
             errors.append("matchBenchmarkException must not use pattern/substring/regex matching")
 
@@ -238,6 +240,7 @@ def check(texts: dict[str, str]) -> list[str]:
 
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("drop benchmark node equality", "matcher", "r.node === node", "true"),
     ("allow stale records (>26h) as valid", "kube_bench", "if (nowMs - finishedMs > BENCHMARK_MAX_AGE_MS) {", "if (false) {"),
     ("allow future finishedAt as valid", "kube_bench", "if (finishedMs > nowMs) {", "if (false) {"),
     ("treat error status as valid", "kube_bench", 'if (parsed.status === "error") {', "if (false) {"),

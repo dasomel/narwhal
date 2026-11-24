@@ -1443,20 +1443,6 @@
   ],
   "infra": [
     {
-      "id": "infra:cluster:Pod:kube-controller-manager-narwhal-master-1:rotation",
-      "scope": "namespace",
-      "namespace": "kube-system",
-      "kind": "Pod",
-      "name": "kube-controller-manager-narwhal-master-1",
-      "checks": [
-        "KCV0038"
-      ],
-      "class": "upstream",
-      "reasonKey": "compliance.acceptedReason.rotationToolDisagreement",
-      "owner": "scripts/cluster/02-init-cluster.sh; docs/common/compliance-hardening.md#risk-accepted-exceptions",
-      "reviewedAt": "2026-11-24"
-    },
-    {
       "id": "infra:cluster:Pod:kube-controller-manager-narwhal-master-1:metrics",
       "scope": "namespace",
       "namespace": "kube-system",

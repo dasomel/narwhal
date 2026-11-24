@@ -11,7 +11,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ### Changed
 
-- Added exact node-scoped CIS exceptions for kubeadm root etcd (1.1.12), off-node secure metrics (1.3.7/1.4.2), and the Trivy-only rotation gate disagreement (1.3.6); no live rollout or new passing-test claim.
+- Added exact node-scoped CIS exceptions for kubeadm root etcd (1.1.12), off-node secure metrics (1.3.7/1.4.2); no live rollout or new passing-test claim.
+- CIS 1.3.6 / KCV0038 stays actionable: the observed kubelets lack serverTLSBootstrap/CSRs and serve self-signed certificates; kube-bench PASS checks only the controller-manager gate.
 
 ## [1.1.26] - 2026-11-24
 

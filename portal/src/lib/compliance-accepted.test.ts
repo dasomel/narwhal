@@ -225,15 +225,17 @@ describe("findUnusedAcceptanceRules (D-P2-4)", () => {
 
 describe("matchInfraException", () => {
   it("accepts only measured exact nodes/checks and fails closed (KCV0056/KCV0057/KCV0059 stay actionable)", () => {
-    expect(ACCEPTED_INFRA_RULES).toHaveLength(3)
-    for (const [target, check] of [["kube-controller-manager-narwhal-master-1", "KCV0038"], ["kube-controller-manager-narwhal-master-1", "KCV0039"], ["kube-scheduler-narwhal-master-1", "KCV0041"]]) {
+    expect(ACCEPTED_INFRA_RULES).toHaveLength(2)
+    for (const [target, check] of [["kube-controller-manager-narwhal-master-1", "KCV0039"], ["kube-scheduler-narwhal-master-1", "KCV0041"]]) {
       expect(matchInfraException(target, check, "Pod", "kube-system")?.reviewedAt).toBe("2026-11-24")
       expect(matchInfraException(target + "0", check, "Pod", "kube-system")).toBeNull()
       expect(matchInfraException(target, check, "Pod", "dev")).toBeNull()
+      expect(matchInfraException(target, check, "Node", "kube-system")).toBeNull()
       expect(matchInfraException(target, check, "Node", "")).toBeNull()
       expect(matchInfraException("narwhal-master-1", check)).toBeNull()
       expect(matchInfraException("narwhal-master-2", check)).toBeNull()
     }
+    expect(matchInfraException("kube-controller-manager-narwhal-master-1", "KCV0038", "Pod", "kube-system")).toBeNull()
     expect(matchInfraException("narwhal-master-1", "KCV0056")).toBeNull()
     expect(matchInfraException("narwhal-master-2", "AVD-KCV-0056")).toBeNull()
     expect(matchInfraException("narwhal-master-1", "KCV0059")).toBeNull()
@@ -244,6 +246,9 @@ describe("matchInfraException", () => {
 })
 
 describe("matchBenchmarkException", () => {
+  it("does not accept the same control on a worker node", () => {
+    expect(matchBenchmarkException("cis-1.23", "1.1.12", "narwhal-worker-1")).toBeNull()
+  })
   it("accepts only reviewed benchmark/control/node triples", () => {
     expect(ACCEPTED_BENCHMARK_RULES).toHaveLength(3)
     for (const control of ["1.1.12", "1.3.7", "1.4.2"]) {

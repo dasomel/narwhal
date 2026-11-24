@@ -330,7 +330,6 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
     targets = {(r.get("kind"), r.get("namespace"), r.get("name"), c)
                for r in rules for c in r.get("checks", [])}
     expected = {
-        ("Pod", "kube-system", "kube-controller-manager-narwhal-master-1", "KCV0038"),
         ("Pod", "kube-system", "kube-controller-manager-narwhal-master-1", "KCV0039"),
         ("Pod", "kube-system", "kube-scheduler-narwhal-master-1", "KCV0041"),
     }
@@ -368,7 +367,7 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
     doc = texts["doc"]
     for needle in (
         "\n### Infra allowlist\n",
-        "**0 Infra rules**",
+        "**2 Infra rules**",
         "## Node collector & CIS 1.1.9 / 1.1.12 resolution",
         "D-NODE-COLLECTOR-PASSWD",
         "D-NODE-COLLECTOR-PASSWD-ROLLOUT",
@@ -426,8 +425,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("revert etc-cni-netd mountPath", "trivy", "            - name: etc-cni-netd\n              mountPath: /etc/cni\n              readOnly: true\n", "            - name: etc-cni-netd\n              mountPath: /etc/cni/net.d/\n              readOnly: true\n"),
     ("mount /etc/shadow", "trivy", "path: /etc/group", "path: /etc/shadow"),
     ("stale nodeCollector checksum annotation", "trivy", "checksum/node-collector-mounts: \"eca6d129ecc1594eb2d9bcc63e2d5b2ea63cc89909a235fa591134bc555d4a70\"", "checksum/node-collector-mounts: \"stale\""),
-    ("allowlist KCV0056", "rules", '"KCV0038"', '"KCV0056"'),
-    ("allowlist KCV0059", "rules", '"KCV0038"', '"KCV0059"'),
+    ("allowlist KCV0056", "rules", '"KCV0039"', '"KCV0056"'),
+    ("allowlist KCV0059", "rules", '"KCV0039"', '"KCV0059"'),
     ("drop KCV normalization", "acceptance", "(?:AVD-(KSV|KCV)-|(KSV|KCV))0*(\\d+)", "(?:AVD-(KSV)-|(KSV))0*(\\d+)"),
     ("drop Node matcher in frameworks", "compliance", 'if (resolved.kind === "Node")', 'if (resolved.kind === "NeverNode")'),
     ("drop mixed-node accepted badge", "infra_list", "{hasActionable && acceptedFailures > 0 && (", "{false && acceptedFailures > 0 && ("),

@@ -194,6 +194,7 @@ def scan(root, mutate=False):
     if runtime_classes != expected:
         problems.append(f"RuntimeClass inventory differs from document: repo={sorted(runtime_classes)}, doc={sorted(expected)}")
 
+    # D3: generated CIS workloads are checked by R401; no checked-in hostPID exception.
     gaps = Counter()
     namespace_workloads = Counter()
     for namespace, kind, name, spec in workloads:

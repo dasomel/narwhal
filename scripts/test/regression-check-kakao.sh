@@ -3570,6 +3570,9 @@ PYEOF'
   # 2026-11-24: KISA-ETCD-02 Stage 1 (apisix-etcd NetworkPolicy in resources/app/bootstrap) & KISA-SEC-01 (openbao-auto-unseal SA/TLS + openbao-init trap/umask/Velero exclude & no last-applied-configuration)
   check R396 "KISA-ETCD-02 Stage 1 & KISA-SEC-01: apisix-etcd ingress NetworkPolicy (apps/resources/08-1 bootstrap, apisix-only TCP 2379 + HBONE 15008, no 2380/waypoint/IC) and openbao-auto-unseal dedicated SA/no-automount/CA-verified TLS dialing openbao-tls SAN + openbao-init 077-umask/EXIT trap/Velero exclude and no kubectl apply; 22 mutations caught" \
     python3 scripts/test/lib/check-kisa-etcd-openbao-hardening.py --mutation-verify
+  # R400 is reserved by fix/kisa-apisix-etcd-tls.
+  check R401 "CIS per-node CronJobs, tokenless hardened scanner, named record RBAC, error records, GitOps data preservation and offline transform" \
+    python3 scripts/test/lib/check-cis-benchmark.py --mutation-verify
   # 2026-11-24: KISA-NET-01 namespace-level ingress default-deny for iam, storage, and monitoring (and KISA-TLS-01 monitoring-permissive compensation)
   check R398 "KISA-NET-01: namespace ingress default-deny + required caller matrix for iam, storage, and monitoring (wave 2), per-rule CNP webhook ports, zero repo/script allow-alls + Keycloak CR spec.networkPolicy.enabled=false, HBONE 15008, R244 monitoring-permissive removed, devtools untouched; 29 mutations caught" \
     python3 scripts/test/lib/check-kisa-ingress-default-deny.py --mutation-verify

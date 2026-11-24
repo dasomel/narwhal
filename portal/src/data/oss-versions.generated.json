@@ -164,6 +164,12 @@
       "chartVersion": "0.28.3"
     },
     {
+      "component": "kube-bench",
+      "section": "Security",
+      "version": "0.16.0",
+      "chartVersion": null
+    },
+    {
       "component": "Kyverno",
       "section": "Security",
       "version": "1.18.1",

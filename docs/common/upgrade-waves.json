@@ -40,6 +40,7 @@
     "openbao-backup": "Raft snapshot CronJob and staging volume owned with OpenBao.",
     "tuning-job-network-policy": "Network policy configuration, not a separately upgraded component.",
     "prometheus-rightsizing-rules": "Prometheus rules owned with the observability stack.",
+    "cis-benchmark": "Daily node benchmark evidence; GitOps per-node CronJobs owned with security tooling.",
     "ghost-pod-reaper": "Maintenance add-on; no component-specific upgrade contract.",
     "trivy-db-refresh": "Trivy DB mirror refresh CronJob owned with trivy-operator; the skopeo image is a pinned helper.",
     "argocd-projects": "Argo CD project configuration, not the Argo CD runtime.",

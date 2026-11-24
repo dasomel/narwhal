@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cis-benchmark-records-20261124",
+  "task": "GitOps daily CIS benchmark records: scheduled kube-bench run that stores per-node test records in ConfigMaps",
+  "changeContext": {
+    "paths": [
+      "VERSIONS.md",
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      "docs/common/upgrade-waves.json",
+      "docs/common/workload-security-profile.md",
+      "scripts/airgap/01-generate-image-list.sh",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "scripts/cluster/14-gitops-bootstrap.sh",
+      "scripts/test/lib/check-sbom-inventory-completeness.py",
+      "scripts/test/lib/check-static-pod-hostpaths.py",
+      "scripts/test/lib/check-workload-runtime-posture.py",
+      "scripts/test/regression-check-kakao.sh",
+      "gitops/charts/narwhal-apps/templates/cis-benchmark.yaml",
+      "gitops/resources/cis-benchmark.yaml",
+      "scripts/ops/cis-benchmark-nodes.json",
+      "scripts/ops/cis-benchmark-record.jq",
+      "scripts/ops/cis-benchmark-recorder.sh",
+      "scripts/ops/render-cis-benchmark.py",
+      "scripts/test/fixtures/cis-benchmark/cis-1.23.json",
+      "scripts/test/lib/check-cis-benchmark.py",
+      "scripts/test/lib/test-cis-benchmark-record.py",
+      "scripts/test/lib/test-cis-benchmark-recorder.py",
+      ".agents/evals/traces/2026-11-cis-benchmark-records.json",
+      "scripts/gitops/push-to-gitea.sh",
+      "scripts/test/lib/check-push-to-gitea-dirs.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Add a GitOps-owned daily kube-bench (CIS 1.23) run per node in security-system that stores a per-node test record in a ConfigMap. No benchmark finding is fixed here and the portal is not changed."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "The Compliance page had no positive test records: with the portal ServiceAccount, 104 of 178 framework controls were not evaluated (CIS 89 of 116) and 16 showed only 'no failure recorded'. A one-off kube-bench v0.16.0 Job on the control-plane node produced real results: PASS 74, FAIL 5, WARN 46.",
+      "evidence": [
+        "artifact:.omc/live/evidence/controls-today.json (orchestrator, portal ServiceAccount, 2026-11-24)",
+        "test:one-off Job kube-bench run --benchmark cis-1.23 --json -> totals pass 74 fail 5 warn 46 info 0; FAIL 1.1.12, 1.2.6, 1.3.7, 1.4.2, 4.2.6"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "CronJob per node rendered from the live node list (standard-library renderer), tokenless scanner container with capabilities drop ALL plus DAC_READ_SEARCH and read-only hostPaths, recorder limited to patching its own named ConfigMap, run metadata on a recorder-only volume, an error record written before the scan, Application without automated prune and generated objects annotated Prune=false,Delete=false, push-to-gitea re-renders this generated file and refuses to publish the unrendered template."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline tests by the author lane and live trials by the orchestrator on the local single-node cluster on 2026-11-24. Worker-node and multi-node runs, fresh-install bootstrap and air-gap mirror delivery are not covered.",
+      "summary": "Targeted checks pass and the scheduled job produced a complete record live. A first live run of the revised code recorded status error with reason 'scanner version mismatch' because kube-bench prints v0.16.0 while the check compared against 0.16.0; that showed the error path working and the comparison was corrected. Delivered through push-to-gitea, ArgoCD created the Application, adopted the per-node objects and left the record byte-identical; a run under ArgoCD ownership completed and the record was unchanged after a hard refresh.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-cis-benchmark.py --mutation-verify -> PASS, 34 mutations rejected",
+        "test:python3 scripts/test/lib/test-cis-benchmark-recorder.py -> PASS, 7 behavioural cases",
+        "test:python3 scripts/test/lib/test-cis-benchmark-record.py -> 125 results, pass 74 fail 5 warn 46",
+        "test:bash scripts/test/lib/check-push-to-gitea-dirs.sh -> R308 ok",
+        "test:kubeconform -strict gitops/resources/*.yaml -> 104 valid, 0 errors",
+        "test:live Job from the CronJob -> status complete, totals pass 74 fail 5 warn 46, record 40674 bytes",
+        "test:kubectl auth can-i as the recorder ServiceAccount -> patch own ConfigMap yes; other ConfigMap, create configmaps, get secrets, list pods no",
+        "test:record sha256 prefix before adoption 1ba7d0a135beb404 == after adoption 1ba7d0a135beb404",
+        "test:job after adoption -> complete 2026-11-24T12:56:20Z {'pass': 74, 'fail': 5, 'warn': 46, 'info': 0}; after hard refresh + 200s -> complete 2026-11-24T12:56:20Z {'pass': 74, 'fail': 5, 'warn': 46, 'info': 0}"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The scheduled benchmark records exist and survive GitOps publication on the single-node cluster. Not claimed: worker and multi-node behaviour, fresh-install bootstrap, air-gap mirror delivery. The image index digest was re-measured with crane on 2026-11-24T11:51:59Z and the upstream repository reports the Apache-2.0 license."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (single-node live trial plus offline tests; no benchmark finding fixed)"
+    }
+  ]
+}

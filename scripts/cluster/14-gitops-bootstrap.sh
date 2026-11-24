@@ -131,8 +131,33 @@ if [ ! -d /home/vagrant/configs/gitops ]; then
   echo "       The Vagrantfile syncs gitops/ there; check the synced_folder." >&2
   exit 1
 fi
+# D8: save the existing inventory before the source template is copied.
+# Cost: one temporary backup; escape hatch: regenerate after discovery recovers.
+CIS_BACKUP=""
+if [[ -f resources/cis-benchmark.yaml ]] && grep -Eq "^kind: [\"']?CronJob" resources/cis-benchmark.yaml; then
+  CIS_BACKUP="$(mktemp)"
+  cp resources/cis-benchmark.yaml "${CIS_BACKUP}"
+fi
 cp -r /home/vagrant/configs/gitops/* .
 bash "/home/vagrant/scripts/gitops/apply-topology.sh" "$PWD"
+
+# D5/D8: publish CIS only after discovery and rendering both succeed.
+# Cost: stale inventory on failure; escape hatch: rerender and push after recovery.
+if ! CIS_NODES_FILE="$(mktemp)" || ! CIS_STAGE="$(mktemp -d)" ||
+  ! mkdir -p "${CIS_STAGE}/resources" "${CIS_STAGE}/charts/narwhal-apps/templates" ||
+  ! kubectl get nodes -o json > "${CIS_NODES_FILE}" ||
+  ! python3 /home/vagrant/scripts/ops/render-cis-benchmark.py \
+    --nodes "${CIS_NODES_FILE}" --output-root "${CIS_STAGE}"; then
+  if [[ -n "${CIS_BACKUP}" ]]; then
+    mv "${CIS_BACKUP}" resources/cis-benchmark.yaml
+  fi
+  echo "WARN: CIS generation failed; existing rendered file retained; Phase 2 continues. Re-render and push CIS resources later." >&2
+else
+  mv "${CIS_STAGE}/resources/cis-benchmark.yaml" resources/cis-benchmark.yaml
+fi
+rm -f "${CIS_NODES_FILE:-}" "${CIS_BACKUP}"
+if [[ -n "${CIS_STAGE:-}" ]]; then rm -rf "${CIS_STAGE}"; fi
+CIS_MANIFEST="$PWD/resources/cis-benchmark.yaml"
 
 # D-FALCO-045 (2026-10-28): falco is staged on every OS. Until then this block removed
 # charts/narwhal-apps/templates/falco.yaml on Ubuntu 26.04 (kernel 7.0) because Falco 0.39.2
@@ -557,6 +582,11 @@ if [ "${SECONDS}" -ge "${chart_gate_deadline}" ]; then
     echo "No child Applications appeared or chart errors did not clear for 60 seconds." >&2
   fi
   exit 1
+fi
+
+# ArgoCD owns the generated tree; seed records without making CIS fatal to Phase 2.
+if ! kubectl apply -f "${CIS_MANIFEST}"; then
+  echo "WARN: CIS resource seed failed; ArgoCD will retry. Phase 2 continues." >&2
 fi
 
 # D-PSA-LABELS-14 (KISA-POD-01): strict final PSA convergence pass (--require-all).

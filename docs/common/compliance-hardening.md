@@ -580,3 +580,156 @@ default. Additional configuration sources declaring disable flags require review
 
 Verify actual API-server command arguments and node admission behavior on the
 cluster separately; passing repository source checks is not runtime evidence.
+
+## Scheduled CIS benchmark test records (2026-11-24, L2)
+
+`gitops/resources/cis-benchmark.yaml` and Application `cis-benchmark` own daily
+02:17 UTC node-specific CronJobs in `security-system`. They re-test node files,
+process arguments and configuration with kube-bench **v0.16.0 / cis-1.23**, rather
+than interpreting an absent scanner failure as a passed test. Docker Hub is used
+because the orchestrator tested the upstream Aqua multi-arch image at the exact
+pinned index digest; no alternative registry image was tested. Mirror that index
+before rollout. No Kyverno exception, PSA label change or portal RBAC change is
+introduced: admission of the one-off trial was measured by the orchestrator;
+admission of this scheduled workload remains a live trial requirement.
+
+D1 (coverage): Phase 2 measures `kubectl get nodes -o json` before its Gitea
+push and generates one node-name-bound CronJob, SA, named Role and record
+ConfigMap per node. The repository carries the renderer and shared script
+ConfigMap template, with no per-cluster inventory. The live list handles
+`NARWHAL_TOPOLOGY=single`, default `ha` (3+3), and Kakao provisioning without
+assuming hostnames. R401 tests 1-node, 3+3 and renamed-node inputs, including
+idempotent CLI rendering without PyYAML (standard-library YAML emitter). Generation
+writes a temporary tree and replaces the destination only on success; failed
+generation retains any existing rendered file. Generation or seed failure warns and continues Phase 2;
+ArgoCD owns the published result. This avoids always-on host-reading DaemonSet
+pods and a fan-out CronJob's node-list/create-Jobs permissions. Cost: new or
+renamed nodes need explicit regeneration; no automatic controller is introduced.
+
+After topology changes, from a checkout with cluster access:
+
+```bash
+kubectl get nodes -o json > /tmp/cis-nodes.json
+python3 scripts/ops/render-cis-benchmark.py --nodes /tmp/cis-nodes.json
+scripts/gitops/push-to-gitea.sh "fix(cis): refresh node coverage" resources/cis-benchmark.yaml
+```
+
+Also publish `charts/narwhal-apps/templates/cis-benchmark.yaml` when upgrading
+from the old named-ignore Application. On a guest, render with
+`--output-root /home/vagrant/configs/gitops` and pass that tree as `GITOPS_DIR`
+to the push helper. The existing `narwhal-master-1` hash/name
+`cis-bench-974178c0082e` and its `-latest` ConfigMap are preserved. Avoid pushing
+the repository's unrendered script-only template over a deployed per-node file.
+The push helper explicitly treats this resource as generated: both whole-tree and
+explicit-file publication re-render from live nodes in a temporary tree, refusing
+the entire push on discovery/render failure. Review that live node list before publishing.
+
+Run this coverage/freshness check after a daily run and after topology changes;
+exit 1 reports each live node lacking a complete record within 26 hours and labeled
+records for removed nodes (including empty/error records):
+
+```bash
+kubectl get nodes -o json > /tmp/cis-nodes.json
+kubectl -n security-system get configmaps -o json > /tmp/cis-records.json
+python3 scripts/ops/render-cis-benchmark.py --check-nodes /tmp/cis-nodes.json --records /tmp/cis-records.json
+```
+
+D7 (retention): the CIS Application has `automated.prune: false`. Every generated
+object carries `argocd.argoproj.io/sync-options: Prune=false,Delete=false`, matching
+the existing OpenBao backup PVC syntax for the pinned ArgoCD v3.4.4
+(`scripts/cluster/13-argocd.sh`). Thus inventory shrinkage and Application deletion
+retain node objects and records. This does not prevent an explicit Kubernetes delete.
+Cost: removed-node objects remain until manual cleanup. After removing the node,
+regenerate/push the live inventory, confirm no active Job for its CronJob, and
+archive its latest record before the following exact cleanup (set the removed name):
+
+```bash
+NODE=removed-node-name
+CJ="cis-bench-$(printf '%s' "$NODE" | sha256sum | cut -c1-12)"
+kubectl -n security-system delete cronjob,serviceaccount,role,rolebinding "$CJ"
+kubectl -n security-system delete configmap "${CJ}-latest"
+```
+
+For existing-cluster adoption, render from live nodes, push both the resource and
+Application through `push-to-gitea.sh`, then verify the delivered Application has
+prune disabled and keeps the record bytes across sync. Offline checks cannot prove
+this ArgoCD behavior; follow `.review/trial-plan-L2.md` for the live trial.
+
+Control-plane nodes target `master,etcd,controlplane,node,policies`; workers target
+`node`. `nodeRoles` records the normalized scheduling role (control-plane or worker);
+unlabeled non-control-plane nodes are treated as workers, not untested control planes; `kubernetesVersion` is the API server's
+runtime `gitVersion`, not a claim about every node's kubelet version.
+
+D2 (ownership/security): each `<cis-bench-hash>-latest` ConfigMap has labels
+`narwhal.io/compliance-tool=kube-bench` and `narwhal.io/benchmark-node=<node>`.
+The sole data key is `record.json`; schemaVersion 1 includes runId (Pod UID), tool,
+toolVersion, pinned image reference, benchmarkId, node, nodeRoles,
+kubernetesVersion, startedAt, finishedAt, totals and per-control results. The
+existing portal SA already reads ConfigMaps; interpretation is a separate lane.
+The recorder's namespaced Role only gets/updates/patches its one precreated named
+ConfigMap. The Application ignores `.data` only for ConfigMaps labeled
+`narwhal.io/compliance-tool=kube-bench`, with `RespectIgnoreDifferences=true` as well as
+selfHeal. All other fields and the script ConfigMap remain GitOps reconciled.
+Cost: runtime evidence data drift is intentional. Escape hatch: remove the ignore
+rule and sync option to reset records. One latest record per node is retained;
+there is no historical archive. Only recorder containers mount an explicit
+short-lived API token and the memory-backed `/tmp` holding run metadata and
+published records. The scanner mounts only its output `/work` volume plus
+read-only hostPaths; metadata identity never comes from `/work`. R401 rejects
+metadata-volume sharing and checks both recorder security contexts. The scanner has hostPID and the trial's read-only host
+mounts, UID 0, read-only root filesystem, no privilege escalation, and exactly
+`drop ALL` + `DAC_READ_SEARCH` (needed for etcd data directory access).
+
+D3 (failure/freshness): record-start first publishes `status: error`, no results,
+null totals/finishedAt and `reason: scan not completed`. The tokenless kube-bench
+initContainer writes JSON and its exit code into memory-backed emptyDir; the
+main recorder replaces the record. Only validated, nonempty, matching-benchmark
+JSON and reported `kube-bench version` equal to `0.16.0` with consistent totals and scanner exit 0 becomes `status: complete`.
+Version/benchmark mismatches carry explicit error reasons. Nonzero exits, bad JSON, mismatched totals and oversized output become `error`
+and fail the Job. An init OOM, image pull failure after record-start, or deadline
+leaves the error placeholder; a failure before record-start leaves an older
+record with its **old** time. Consumers must enforce freshness and complete
+status, never refresh an old pass from Job creation time. API write failure
+cannot guarantee a new error record and must be monitored as Job failure.
+`complete` means the scan ran, not that every control passed. A simultaneous
+manual run bypasses CronJob concurrencyPolicy: operators must not overlap it
+with an active scheduled/manual Job for that node.
+
+The standalone `scripts/ops/cis-benchmark-record.jq` drops audit commands and
+remediation, truncates evidence fields to 400 characters and redacts whole
+fields (including string-validated section) containing token/password/secret/credential/key markers, PEM/JWT material
+or URL userinfo **before** truncation. The measured fixture has repeated process
+arguments with key/token-related options pointing to files and the bootstrap-token-auth boolean; no PEM, JWT or URL
+credentials were found by the offline pattern check. Path evidence is hidden
+conservatively too. Do not publish the raw stdout/stderr; they remain in the
+Pod's memory-backed volume until deletion. Redaction cannot prove arbitrary
+future output is secret-free. The offline test against the full live fixture
+produced 40,667 bytes with fixed test metadata (well below the per-node 900,000
+byte safety limit and the ConfigMap 1 MiB limit); runtime metadata length varies.
+The committed trimmed, pre-redacted fixture is smaller and retains all 125
+control IDs/statuses. Both check the measured totals 74 PASS / 5 FAIL / 46 WARN /
+0 INFO and exact FAIL IDs `1.1.12, 1.2.6, 1.3.7, 1.4.2, 4.2.6`.
+
+WARN/manual is a test record requiring human assessment, **not** a passed control.
+Section 5 contributes 30 manual WARN in the one-off run. The transform preserves
+kube-bench's `manual` type; its empty default type is normalized to `automated`.
+This is a different evaluator from Trivy: Trivy node-collector can lack file or
+process evidence, while its Rego rules and control mapping differ; failed-only
+Trivy reports do not prove success, and a kube-bench PASS does not erase a Trivy
+failure. Kube-bench's explicit benchmark pin is required: the orchestrator
+measured `--version 1.35` selecting cis-1.12 in this build. Do not silently switch
+framework versions or merge controls by similar text. This lane fixes no finding
+and changes no kubelet/control-plane settings. The scheduled Jobs, recorder
+image tools (bash/kubectl/jq), server-version compatibility, API writes,
+selfHeal preservation and both-role live execution still need the trial in
+`.review/trial-plan-L2.md`; the one-off scan alone proves none of those paths.
+
+The recorder reuses the already inventoried `alpine/k8s:1.31.4` bash/kubectl
+convention (`ghost-pod-reaper`). jq availability is inferred, not established by
+an existing job or runtime inspection in this lane; trial it before rollout.
+Workers omit the unused etcd directory mount. Its image is also inline digest-pinned in images.txt/TRANSIENT_IMAGES so the
+bundle preserves the index rather than reserializing only an architecture.
+The upstream repository `aquasecurity/kube-bench` reports the Apache-2.0 license
+(GitHub license API, measured 2026-11-24). The bundle SBOM has no license source
+for this image artifact, so it stays in the SBOM review inventory with that note.
+The image index digest was re-measured with `crane digest` on 2026-11-24T11:51:59Z.

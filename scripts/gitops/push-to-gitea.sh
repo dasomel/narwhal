@@ -306,6 +306,28 @@ else
       fi
     done
   fi
+  # D9: this explicit generated-file list must never publish repository node inventory.
+  # Cost: publishing CIS needs live node access; escape hatch: retry after recovery.
+  CIS_SELECTED=0
+  if [[ ${#PATHS[@]} -eq 0 ]]; then
+    [[ ! -f "${GITOPS_DIR}/resources/cis-benchmark.yaml" ]] || CIS_SELECTED=1
+  else
+    for rel in "${PATHS[@]}"; do
+      norm="$(printf '%s' "${rel}" | tr -s '/')"
+      while [[ "${norm}" == ./* ]]; do norm="${norm#./}"; done
+      while [[ "${norm}" == */ ]]; do norm="${norm%/}"; done
+      [[ "${norm}" != resources/cis-benchmark.yaml ]] || CIS_SELECTED=1
+    done
+  fi
+  if [[ "${CIS_SELECTED}" -eq 1 ]]; then
+    mkdir -p "${WORK}/cis/resources" "${WORK}/cis/charts/narwhal-apps/templates"
+    if ! kubectl get nodes -o json > "${WORK}/cis-nodes.json" ||
+      ! python3 "${REPO_ROOT}/scripts/ops/render-cis-benchmark.py" \
+        --nodes "${WORK}/cis-nodes.json" --output-root "${WORK}/cis"; then
+      die "refusing to publish generated resources/cis-benchmark.yaml: live node render failed; Gitea unchanged"
+    fi
+    mv "${WORK}/cis/resources/cis-benchmark.yaml" resources/cis-benchmark.yaml
+  fi
   bash "${REPO_ROOT}/scripts/gitops/apply-topology.sh" "$PWD"
   git add -A
 fi

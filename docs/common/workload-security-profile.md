@@ -113,3 +113,14 @@ The Helm text-fallback inventory records profile presence only and does not prov
 its effective type or inheritance. Render those templates and inspect the live
 Pod before claiming runtime conformance. Repository ratchets remain offline
 evidence, not proof that the cluster uses the requested seccomp profile.
+
+### CIS evidence scanner (2026-11-24)
+
+The live-NodeList-generated `security-system/cis-bench-<node-hash>` CronJobs
+need hostPID to inspect host process arguments. R401 checks generated 1-node,
+3+3 and renamed-node workloads, their exact read-only hostPaths, scanner
+hardening, metadata/token isolation, both recorder security contexts and named
+recorder RBAC. The checked-in YAML contains only the shared script template;
+R234/R227 need no static CIS workload exceptions. Admission policy and PSA are
+unchanged. Recorders never mount hostPaths. See `compliance-hardening.md` for
+D1–D5 and the topology-change regeneration/coverage commands.

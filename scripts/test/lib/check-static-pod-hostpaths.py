@@ -23,6 +23,8 @@ HOSTPATH_ALLOWLIST = (
     },
 )
 
+# D3: dynamically generated CIS mounts are checked by R401, not a stale file allowlist.
+
 
 def workload_pod_spec(document):
     kind = document.get("kind")
@@ -132,6 +134,18 @@ def check_bootstrap(root):
 
 
 def mutation_check(root):
+    # The self-test scans scripts/airgap only, so it runs against the allowlist entries
+    # that live there; entries for gitops/ are covered by the full scan in main().
+    full_allowlist = HOSTPATH_ALLOWLIST
+    globals()["HOSTPATH_ALLOWLIST"] = tuple(
+        entry for entry in full_allowlist if entry["file"].startswith("scripts/airgap/"))
+    try:
+        _mutation_check(root)
+    finally:
+        globals()["HOSTPATH_ALLOWLIST"] = full_allowlist
+
+
+def _mutation_check(root):
     fixtures = Path(__file__).resolve().parents[1] / "fixtures/static-pod-hostpaths"
     check_gitops([root / "scripts/airgap"])
     original_allowlist = HOSTPATH_ALLOWLIST

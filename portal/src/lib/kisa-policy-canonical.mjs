@@ -15,7 +15,46 @@ export const KYVERNO_ADMISSION_DEFAULTS = [
 export const NETWORK_POLICY_DEFAULTS = [
   "NetworkPolicy spec.ingress (when empty array [])",
   "NetworkPolicy spec.egress (when empty array [])",
+  "CiliumNetworkPolicy/CiliumClusterwideNetworkPolicy specs (when empty array [])",
 ]
+
+/**
+ * Explicit allow-list of non-semantic top-level Kubernetes object fields omitted from
+ * canonical policy digests. Every other top-level field (known policy-bearing fields
+ * and any unknown future field) is hashed so nothing outside metadata/status/type
+ * metadata can be silently ignored.
+ */
+export const NON_SEMANTIC_TOP_LEVEL_FIELDS = [
+  "apiVersion",
+  "kind",
+  "metadata",
+  "status",
+]
+
+const NON_SEMANTIC_TOP_LEVEL_SET = new Set(NON_SEMANTIC_TOP_LEVEL_FIELDS)
+
+export const POLICY_TOP_LEVEL_ALLOWLIST_BY_KIND = {
+  NetworkPolicy: {
+    nonSemantic: NON_SEMANTIC_TOP_LEVEL_FIELDS,
+    knownPolicyFields: ["spec"],
+  },
+  CiliumNetworkPolicy: {
+    nonSemantic: NON_SEMANTIC_TOP_LEVEL_FIELDS,
+    knownPolicyFields: ["spec", "specs"],
+  },
+  CiliumClusterwideNetworkPolicy: {
+    nonSemantic: NON_SEMANTIC_TOP_LEVEL_FIELDS,
+    knownPolicyFields: ["spec", "specs"],
+  },
+  ClusterPolicy: {
+    nonSemantic: NON_SEMANTIC_TOP_LEVEL_FIELDS,
+    knownPolicyFields: ["spec"],
+  },
+  Policy: {
+    nonSemantic: NON_SEMANTIC_TOP_LEVEL_FIELDS,
+    knownPolicyFields: ["spec"],
+  },
+}
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -116,11 +155,6 @@ export function canonicalizeKyvernoPolicySpec(spec) {
   return JSON.parse(canonicalJson(out))
 }
 
-export function computeKyvernoSpecDigest(spec) {
-  const canonical = canonicalizeKyvernoPolicySpec(spec)
-  return createHash("sha256").update(canonicalJson(canonical), "utf8").digest("hex")
-}
-
 /**
  * Strips ONLY Kubernetes networking.k8s.io/v1 NetworkPolicySpec Go `omitempty`
  * empty slices (`spec.ingress: []`, `spec.egress: []`), which the API server omits
@@ -137,9 +171,64 @@ export function canonicalizeNetworkPolicySpec(kind, spec) {
   return JSON.parse(canonicalJson(out))
 }
 
-export function computeNetworkPolicySpecDigest(kind, spec) {
-  const canonical = canonicalizeNetworkPolicySpec(kind, spec)
+/**
+ * Canonicalizes ALL policy-bearing top-level fields of a Kubernetes policy object,
+ * hashing every top-level key outside `NON_SEMANTIC_TOP_LEVEL_SET`
+ * (`apiVersion`, `kind`, `metadata`, `status`).
+ *
+ * - NetworkPolicy: hashes `{ spec, ...anyUnknownTopLevelFields }` (canonicalizing `spec`).
+ * - CiliumNetworkPolicy / CiliumClusterwideNetworkPolicy: hashes `{ spec?, specs?, ...anyUnknownTopLevelFields }`
+ *   (stripping only Go `omitempty` empty `specs: []` or `undefined`/`null` `spec`/`specs`).
+ * - ClusterPolicy / Policy: hashes `{ spec, ...anyUnknownTopLevelFields }` (canonicalizing Kyverno `spec`).
+ */
+export function canonicalizePolicyObject(kind, policyObj) {
+  if (!isRecord(policyObj)) return {}
+  const out = {}
+  for (const key of Object.keys(policyObj)) {
+    if (NON_SEMANTIC_TOP_LEVEL_SET.has(key)) continue
+    const val = policyObj[key]
+    if (val === undefined) continue
+    out[key] = val
+  }
+
+  if (kind === "NetworkPolicy") {
+    out.spec = canonicalizeNetworkPolicySpec("NetworkPolicy", out.spec)
+  } else if (kind === "CiliumNetworkPolicy" || kind === "CiliumClusterwideNetworkPolicy") {
+    if (out.spec === null || out.spec === undefined) {
+      delete out.spec
+    } else {
+      out.spec = canonicalizeNetworkPolicySpec(kind, out.spec)
+    }
+    if (out.specs === null || out.specs === undefined || (Array.isArray(out.specs) && out.specs.length === 0)) {
+      delete out.specs
+    }
+  } else if (kind === "ClusterPolicy" || kind === "Policy") {
+    out.spec = canonicalizeKyvernoPolicySpec(out.spec)
+  }
+
+  return JSON.parse(canonicalJson(out))
+}
+
+export function computePolicyDigest(kind, policyObj) {
+  const canonical = canonicalizePolicyObject(kind, policyObj)
   return createHash("sha256").update(canonicalJson(canonical), "utf8").digest("hex")
+}
+
+export function computeNetworkPolicyDigest(kind, policyObj) {
+  return computePolicyDigest(kind, policyObj)
+}
+
+export function computeKyvernoPolicyDigest(policyObj) {
+  const kind = isRecord(policyObj) && typeof policyObj.kind === "string" ? policyObj.kind : "ClusterPolicy"
+  return computePolicyDigest(kind, policyObj)
+}
+
+export function computeKyvernoSpecDigest(spec) {
+  return computePolicyDigest("ClusterPolicy", { spec: isRecord(spec) ? spec : {} })
+}
+
+export function computeNetworkPolicySpecDigest(kind, spec) {
+  return computePolicyDigest(kind, { spec: isRecord(spec) ? spec : {} })
 }
 
 export function specHasOverrides(spec) {

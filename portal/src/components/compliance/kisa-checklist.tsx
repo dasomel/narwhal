@@ -44,6 +44,7 @@ function kisaReasonLabel(key: KisaReasonKey, t: ReturnType<typeof useT>): string
     case "compliance.kisa.reason.etcdPolicyMissing": return t("compliance.kisa.reason.etcdPolicyMissing")
     case "compliance.kisa.reason.etcdPolicyBroad": return t("compliance.kisa.reason.etcdPolicyBroad")
     case "compliance.kisa.reason.etcdPolicyUnreviewed": return t("compliance.kisa.reason.etcdPolicyUnreviewed")
+    case "compliance.kisa.reason.etcdPolicySelectorMismatch": return t("compliance.kisa.reason.etcdPolicySelectorMismatch")
     case "compliance.kisa.reason.etcdContainerMissing": return t("compliance.kisa.reason.etcdContainerMissing")
     case "compliance.kisa.reason.secCronJobNotEvaluated": return t("compliance.kisa.reason.secCronJobNotEvaluated")
     case "compliance.kisa.reason.secNoExternalKms": return t("compliance.kisa.reason.secNoExternalKms")

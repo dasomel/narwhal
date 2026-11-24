@@ -1,10 +1,11 @@
 import "server-only"
 import policyBaselineData from "@/data/kisa-policy-baseline.json"
-import { computeNetworkPolicySpecDigest } from "./kisa-policy-canonical.mjs"
+import { computeNetworkPolicyDigest } from "./kisa-policy-canonical.mjs"
 import type { Localized } from "./i18n-utils"
 import type { KisaReasonKey, KisaStatus } from "@/types/kisa"
 import type {
   KisaFetchResult,
+  KisaRawCiliumClusterwideNetworkPolicy,
   KisaRawCiliumNetworkPolicy,
   KisaRawDeployment,
   KisaRawNetworkPolicy,
@@ -118,45 +119,137 @@ function hasEnabledFlag(tokens: string[], flag: string): boolean {
   return false
 }
 
-function selectorMatchesLabels(
-  selector: { matchLabels?: Record<string, string>; matchExpressions?: Array<{ key: string; operator: string; values?: string[] }> } | undefined,
-  labels: Record<string, string>,
+export interface K8sLabelSelector {
+  matchLabels?: Record<string, string>
+  matchExpressions?: Array<{ key: string; operator: string; values?: string[] }>
+}
+
+const hasOwn = (obj: Record<string, string>, key: string): boolean =>
+  Object.prototype.hasOwnProperty.call(obj, key)
+
+/**
+ * Evaluates exact Kubernetes `metav1.LabelSelector` semantics against a Pod's label map.
+ * Unknown operators fail closed (return false) so an unrecognized selector never counts as matched.
+ */
+export function matchesLabelSelector(
+  selector: K8sLabelSelector | null | undefined,
+  labels: Record<string, string> | null | undefined,
 ): boolean {
+  const safeLabels = labels && typeof labels === "object" && !Array.isArray(labels) ? labels : {}
   if (!selector) return true
+  if (typeof selector !== "object" || Array.isArray(selector)) return false
   for (const [k, v] of Object.entries(selector.matchLabels ?? {})) {
-    if (labels[k] !== v) return false
+    if (!hasOwn(safeLabels, k) || safeLabels[k] !== v) return false
   }
   for (const expr of selector.matchExpressions ?? []) {
-    const val = labels[expr.key]
-    const vals = expr.values ?? []
-    if (expr.operator === "In" && (!val || !vals.includes(val))) return false
-    if (expr.operator === "NotIn" && val !== undefined && vals.includes(val)) return false
-    if (expr.operator === "Exists" && val === undefined) return false
-    if (expr.operator === "DoesNotExist" && val !== undefined) return false
+    if (!expr || typeof expr.key !== "string" || typeof expr.operator !== "string") return false
+    const present = hasOwn(safeLabels, expr.key)
+    const val = present ? safeLabels[expr.key] : undefined
+    const vals = Array.isArray(expr.values) ? expr.values : []
+    if (expr.operator === "In") {
+      if (!present || vals.length === 0 || !vals.includes(val!)) return false
+    } else if (expr.operator === "NotIn") {
+      if (vals.length === 0) return false
+      if (present && vals.includes(val!)) return false
+    } else if (expr.operator === "Exists") {
+      if (vals.length > 0 || !present) return false
+    } else if (expr.operator === "DoesNotExist") {
+      if (vals.length > 0 || present) return false
+    } else {
+      return false
+    }
   }
   return true
+}
+
+const KNOWN_SELECTOR_OPS = new Set(["In", "NotIn", "Exists", "DoesNotExist"])
+
+function ciliumRuleSelectsLabels(
+  rule: { endpointSelector?: K8sLabelSelector } | undefined,
+  labels: Record<string, string>,
+): boolean {
+  if (!rule || typeof rule !== "object" || Array.isArray(rule)) return false
+  const sel = rule.endpointSelector
+  // Fail-closed for unreviewed Cilium rules with unrecognized selector operators.
+  if (sel?.matchExpressions?.some((e) => !KNOWN_SELECTOR_OPS.has(e?.operator))) return true
+  // Cilium labels can be prefixed with k8s: or any: in endpointSelector.
+  const ciliumLabels: Record<string, string> = { ...labels }
+  for (const [k, v] of Object.entries(labels)) {
+    ciliumLabels[`k8s:${k}`] = v
+    ciliumLabels[`any:${k}`] = v
+  }
+  return matchesLabelSelector(sel, ciliumLabels)
+}
+
+function ciliumPolicySelectsLabels(
+  cpol: KisaRawCiliumNetworkPolicy,
+  labels: Record<string, string>,
+): boolean {
+  if (cpol.spec && ciliumRuleSelectsLabels(cpol.spec, labels)) return true
+  if (Array.isArray(cpol.specs)) {
+    for (const rule of cpol.specs) {
+      if (ciliumRuleSelectsLabels(rule, labels)) return true
+    }
+  }
+  return false
+}
+
+export function evaluateClusterwideNetworkPolicies(
+  ccnps: KisaRawCiliumClusterwideNetworkPolicy[],
+  baseline: KisaPolicyBaseline,
+): string[] {
+  const ccnpBaseline = baseline.clusterwidePolicies ?? {}
+  const unreviewed: string[] = []
+  for (const ccnp of ccnps) {
+    const name = ccnp.metadata?.name ?? "unknown"
+    const key = `CiliumClusterwideNetworkPolicy/${name}`
+    const entry = ccnpBaseline[key]
+    const digest = computeNetworkPolicyDigest("CiliumClusterwideNetworkPolicy", ccnp)
+    if (!entry) {
+      unreviewed.push(key)
+    } else if (digest !== entry.specSha256) {
+      unreviewed.push(`${key}(differs)`)
+    }
+  }
+  return unreviewed.sort()
 }
 
 export async function checkEtcd02(
   baseline: KisaPolicyBaseline = policyBaselineData as KisaPolicyBaseline,
 ): Promise<KisaCheckOutcome> {
+  const etcdPolicyKey = baseline.etcd02PolicyKey ?? "NetworkPolicy/platform-system/apisix-etcd-ingress-policy"
+  const etcdBaselineEntry = baseline.networkPolicies?.[etcdPolicyKey]
+  const etcdWorkload = baseline.etcd02Workload
+  if (!etcdBaselineEntry || !etcdWorkload) {
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.resourceMissing",
+      `기준선 정책(${etcdPolicyKey}) 또는 대상 워크로드 정의 없음 — 평가 불가`,
+      `Baseline policy (${etcdPolicyKey}) or target workload not defined — not evaluated`,
+      { live: false },
+    )
+  }
+
   const {
     getKisaDeployment,
     getKisaNamespacedNetworkPolicies,
     getKisaNamespacedCiliumNetworkPolicies,
+    getKisaCiliumClusterwideNetworkPolicies,
   } = await import("./k8s-client")
-  const [depRes, npRes, cnpRes] = await Promise.all([
-    getKisaDeployment("platform-system", "apisix-etcd"),
-    getKisaNamespacedNetworkPolicies("platform-system"),
-    getKisaNamespacedCiliumNetworkPolicies("platform-system"),
+  const [depRes, npRes, cnpRes, ccnpRes] = await Promise.all([
+    getKisaDeployment(etcdWorkload.namespace, etcdWorkload.name),
+    getKisaNamespacedNetworkPolicies(etcdWorkload.namespace),
+    getKisaNamespacedCiliumNetworkPolicies(etcdWorkload.namespace),
+    getKisaCiliumClusterwideNetworkPolicies(),
   ])
 
-  if (depRes.status !== "ok") return fetchErrorOutcome(depRes, "Deployment platform-system/apisix-etcd", "Deployment platform-system/apisix-etcd")
-  if (npRes.status !== "ok") return fetchErrorOutcome(npRes, "platform-system NetworkPolicy", "platform-system NetworkPolicies")
-  if (cnpRes.status !== "ok") return fetchErrorOutcome(cnpRes, "platform-system CiliumNetworkPolicy", "platform-system CiliumNetworkPolicies")
+  if (depRes.status !== "ok") return fetchErrorOutcome(depRes, `Deployment ${etcdWorkload.namespace}/${etcdWorkload.name}`, `Deployment ${etcdWorkload.namespace}/${etcdWorkload.name}`)
+  if (npRes.status !== "ok") return fetchErrorOutcome(npRes, `${etcdWorkload.namespace} NetworkPolicy`, `${etcdWorkload.namespace} NetworkPolicies`)
+  if (cnpRes.status !== "ok") return fetchErrorOutcome(cnpRes, `${etcdWorkload.namespace} CiliumNetworkPolicy`, `${etcdWorkload.namespace} CiliumNetworkPolicies`)
+  if (ccnpRes.status !== "ok") return fetchErrorOutcome(ccnpRes, "CiliumClusterwideNetworkPolicy", "CiliumClusterwideNetworkPolicies")
 
   const dep: KisaRawDeployment = depRes.data
-  const podLabels = dep.spec?.template?.metadata?.labels ?? { app: "apisix-etcd" }
+  const podLabels = dep.spec?.template?.metadata?.labels ?? {}
   const containers = dep.spec?.template?.spec?.containers ?? []
   // D-KISA-CLOSED-WORLD: inspect ONLY the exact "etcd" container defined in
   // gitops/charts/narwhal-platform/templates/apisix-infra.yaml; never merge args across
@@ -166,8 +259,8 @@ export async function checkEtcd02(
     return makeOutcome(
       "manual",
       "compliance.kisa.reason.etcdContainerMissing",
-      "Deployment platform-system/apisix-etcd에 'etcd' 컨테이너가 없음 — 평가 불가",
-      "Container 'etcd' not found in Deployment platform-system/apisix-etcd — not evaluated",
+      `Deployment ${etcdWorkload.namespace}/${etcdWorkload.name}에 'etcd' 컨테이너가 없음 — 평가 불가`,
+      `Container 'etcd' not found in Deployment ${etcdWorkload.namespace}/${etcdWorkload.name} — not evaluated`,
       { live: false },
     )
   }
@@ -182,22 +275,13 @@ export async function checkEtcd02(
   const hasClientAuth = hasEnabledFlag(tokens, "--client-cert-auth") && extractFlagValues(tokens, "--trusted-ca-file").length > 0
   const tlsAuthEnabled = hasHttpsClient && hasCertFiles && hasClientAuth
 
-  // D-KISA-CLOSED-WORLD: Verify the reviewed baseline apisix-etcd-ingress-policy digest
-  // and ensure no non-baseline (or drifted) NetworkPolicy/CiliumNetworkPolicy selects the etcd pods.
-  const etcdPolicyKey = baseline.etcd02PolicyKey ?? "NetworkPolicy/platform-system/apisix-etcd-ingress-policy"
-  const etcdBaselineEntry = baseline.networkPolicies?.[etcdPolicyKey]
-  if (!etcdBaselineEntry) {
-    return makeOutcome(
-      "manual",
-      "compliance.kisa.reason.resourceMissing",
-      `기준선 정책(${etcdPolicyKey}) 정의 없음 — 평가 불가`,
-      `Baseline policy (${etcdPolicyKey}) not defined — not evaluated`,
-      { live: false },
-    )
-  }
-
+  // D-KISA-CLOSED-WORLD: Verify the reviewed baseline apisix-etcd-ingress-policy digest,
+  // ensure it selects the running etcd workload pods, ensure no non-baseline/drifted
+  // NetworkPolicy or CiliumNetworkPolicy (spec or specs[]) selects the etcd pods, and
+  // ensure every CiliumClusterwideNetworkPolicy matches the reviewed baseline.
   const policies: KisaRawNetworkPolicy[] = npRes.data
   const ciliumPolicies: KisaRawCiliumNetworkPolicy[] = cnpRes.data
+  const clusterwidePolicies: KisaRawCiliumClusterwideNetworkPolicy[] = ccnpRes.data
   const baselinePolicyObj = policies.find((p) => p.metadata?.name === etcdBaselineEntry.name)
   if (!baselinePolicyObj) {
     return makeOutcome(
@@ -209,43 +293,66 @@ export async function checkEtcd02(
   }
 
   const unreviewedOrDrifted: string[] = []
-  const baselineDigest = computeNetworkPolicySpecDigest("NetworkPolicy", baselinePolicyObj.spec ?? {})
+  const baselineDigest = computeNetworkPolicyDigest("NetworkPolicy", baselinePolicyObj)
   if (baselineDigest !== etcdBaselineEntry.specSha256) {
     unreviewedOrDrifted.push(`${etcdPolicyKey}(differs)`)
   }
   for (const pol of policies) {
     const name = pol.metadata?.name ?? "unknown"
-    const key = `NetworkPolicy/platform-system/${name}`
+    const key = `NetworkPolicy/${etcdWorkload.namespace}/${name}`
     if (key === etcdPolicyKey) continue
     const entry = baseline.networkPolicies?.[key]
     const matchesBaseline =
-      Boolean(entry) && computeNetworkPolicySpecDigest("NetworkPolicy", pol.spec ?? {}) === entry!.specSha256
-    if (!matchesBaseline && selectorMatchesLabels(pol.spec?.podSelector, podLabels)) {
+      Boolean(entry) && computeNetworkPolicyDigest("NetworkPolicy", pol) === entry!.specSha256
+    if (!matchesBaseline && matchesLabelSelector(pol.spec?.podSelector, podLabels)) {
       unreviewedOrDrifted.push(entry ? `${key}(differs)` : key)
     }
   }
   for (const cpol of ciliumPolicies) {
     const name = cpol.metadata?.name ?? "unknown"
-    const key = `CiliumNetworkPolicy/platform-system/${name}`
+    const key = `CiliumNetworkPolicy/${etcdWorkload.namespace}/${name}`
     const entry = baseline.networkPolicies?.[key]
     const matchesBaseline =
-      Boolean(entry) && computeNetworkPolicySpecDigest("CiliumNetworkPolicy", cpol.spec ?? {}) === entry!.specSha256
-    if (!matchesBaseline && selectorMatchesLabels(cpol.spec?.endpointSelector, podLabels)) {
+      Boolean(entry) && computeNetworkPolicyDigest("CiliumNetworkPolicy", cpol) === entry!.specSha256
+    if (!matchesBaseline && ciliumPolicySelectsLabels(cpol, podLabels)) {
       unreviewedOrDrifted.push(entry ? `${key}(differs)` : key)
     }
   }
+  const unreviewedClusterwide = evaluateClusterwideNetworkPolicies(clusterwidePolicies, baseline)
 
-  if (unreviewedOrDrifted.length > 0) {
+  if (unreviewedClusterwide.length > 0 || unreviewedOrDrifted.length > 0) {
+    const partsKo: string[] = []
+    const partsEn: string[] = []
+    if (unreviewedOrDrifted.length > 0) {
+      partsKo.push(`apisix-etcd 정책이 검토된 기준선과 다르거나 미검토 정책이 etcd 파드를 선택함 (${unreviewedOrDrifted.join(", ")})`)
+      partsEn.push(`apisix-etcd policy differs from the reviewed baseline or unreviewed policy selects etcd pods (${unreviewedOrDrifted.join(", ")})`)
+    }
+    if (unreviewedClusterwide.length > 0) {
+      partsKo.push(`미검토 클러스터 전역 정책 존재(unreviewed cluster-wide policy present): ${unreviewedClusterwide.join(", ")}`)
+      partsEn.push(`unreviewed cluster-wide policy present: ${unreviewedClusterwide.join(", ")}`)
+    }
     return makeOutcome(
       "warn",
       "compliance.kisa.reason.etcdPolicyUnreviewed",
-      `apisix-etcd 정책이 검토된 기준선과 다르거나 미검토 정책이 etcd 파드를 선택함 (${unreviewedOrDrifted.join(", ")}) · ${tlsAuthEnabled ? "TLS·인증 설정" : "평문 HTTP"}`,
-      `apisix-etcd policy differs from the reviewed baseline or unreviewed policy selects etcd pods (${unreviewedOrDrifted.join(", ")}); ${tlsAuthEnabled ? "TLS/auth configured" : "plain HTTP"}`,
+      `${partsKo.join(" · ")} · ${tlsAuthEnabled ? "TLS·인증 설정" : "평문 HTTP"}`,
+      `${partsEn.join("; ")}; ${tlsAuthEnabled ? "TLS/auth configured" : "plain HTTP"}`,
     )
   }
 
-  const isolationNoteKo = `기준선 NetworkPolicy(${etcdBaselineEntry.name}) SHA-256 일치 및 미검토 etcd 선택 정책 없음`
-  const isolationNoteEn = `Baseline NetworkPolicy (${etcdBaselineEntry.name}) matches SHA-256 with no unreviewed policies selecting etcd pods`
+  const workloadMatchesBaseline =
+    dep.metadata?.namespace === etcdWorkload.namespace &&
+    dep.metadata?.name === etcdWorkload.name
+  if (!workloadMatchesBaseline || !matchesLabelSelector(baselinePolicyObj.spec?.podSelector, podLabels)) {
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.etcdPolicySelectorMismatch",
+      `검토된 정책(${etcdBaselineEntry.name})이 실행 중인 etcd 파드를 선택하지 않음 (${dep.metadata?.namespace ?? "?"}/${dep.metadata?.name ?? "?"}) · ${tlsAuthEnabled ? "TLS·인증 설정" : "평문 HTTP"}`,
+      `reviewed policy does not select the running etcd pods (${etcdBaselineEntry.name} vs ${dep.metadata?.namespace ?? "?"}/${dep.metadata?.name ?? "?"}); ${tlsAuthEnabled ? "TLS/auth configured" : "plain HTTP"}`,
+    )
+  }
+
+  const isolationNoteKo = `기준선 NetworkPolicy(${etcdBaselineEntry.name}) SHA-256·podSelector 일치 및 미검토 정책(클러스터 전역 포함) 없음`
+  const isolationNoteEn = `Baseline NetworkPolicy (${etcdBaselineEntry.name}) matches SHA-256 and selects running etcd pods with zero unreviewed namespaced/cluster-wide policies`
 
   if (tlsAuthEnabled) {
     const generation = dep.metadata?.generation

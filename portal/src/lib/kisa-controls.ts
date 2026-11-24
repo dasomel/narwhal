@@ -39,10 +39,10 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail" | "det
     severity: "High",
     standardRefs: ["CIS", "NSA/CISA"],
     evidence:
-      "Deployment platform-system/apisix-etcd 실행 템플릿·인자(--listen-client-urls TLS·--client-cert-auth, generation==observedGeneration, paused!=true, updated/ready/availableReplicas)와 platform-system NetworkPolicy/CiliumNetworkPolicy의 기준선(kisa-policy-baseline.json) SHA-256 일치를 실시간 점검.",
+      "Deployment platform-system/apisix-etcd 실행 템플릿·인자(--listen-client-urls TLS·--client-cert-auth, generation==observedGeneration, paused!=true, updated/ready/availableReplicas), 기준선 정책 podSelector의 실행 파드 라벨 매칭, 및 platform-system NetworkPolicy·CiliumNetworkPolicy(spec·specs[])·CiliumClusterwideNetworkPolicy(spec·specs[])의 기준선(kisa-policy-baseline.json) SHA-256 일치를 실시간 점검.",
     evidenceLocalized: {
-      ko: "Deployment platform-system/apisix-etcd 실행 템플릿·인자(--listen-client-urls TLS·--client-cert-auth, generation==observedGeneration, paused!=true, updated/ready/availableReplicas)와 platform-system NetworkPolicy/CiliumNetworkPolicy의 기준선(kisa-policy-baseline.json) SHA-256 일치를 실시간 점검.",
-      en: "Verifies running template and flags (--listen-client-urls TLS, --client-cert-auth, generation==observedGeneration, not paused, updated/ready/availableReplicas) on Deployment platform-system/apisix-etcd and baseline SHA-256 parity (kisa-policy-baseline.json) with zero unreviewed policies selecting etcd pods.",
+      ko: "Deployment platform-system/apisix-etcd 실행 템플릿·인자(--listen-client-urls TLS·--client-cert-auth, generation==observedGeneration, paused!=true, updated/ready/availableReplicas), 기준선 정책 podSelector의 실행 파드 라벨 매칭, 및 platform-system NetworkPolicy·CiliumNetworkPolicy(spec·specs[])·CiliumClusterwideNetworkPolicy(spec·specs[])의 기준선(kisa-policy-baseline.json) SHA-256 일치를 실시간 점검.",
+      en: "Verifies running template and flags (--listen-client-urls TLS, --client-cert-auth, generation==observedGeneration, not paused, updated/ready/availableReplicas) on Deployment platform-system/apisix-etcd, podSelector coverage of the running etcd pod labels, and baseline SHA-256 parity (kisa-policy-baseline.json) across NetworkPolicy, CiliumNetworkPolicy (spec+specs[]), and CiliumClusterwideNetworkPolicy (spec+specs[]).",
     },
     remediation:
       "APISIX etcd 인바운드를 APISIX 게이트웨이로만 제한하는 NetworkPolicy 유지 및 클라이언트 TLS·mTLS 인증(--client-cert-auth) 전환.",
@@ -111,10 +111,10 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail" | "det
     severity: "Medium",
     standardRefs: ["CIS 5.3", "NSA/CISA §4", "KISA 망분리"],
     evidence:
-      "대상 네임스페이스(iam·devtools·monitoring·storage·database)의 NetworkPolicy 및 CiliumNetworkPolicy를 기준선(kisa-policy-baseline.json) SHA-256과 대조해 기본 차단 정책 일치 및 미검토/드리프트 정책 부재를 실시간 점검. egress는 현재 전체 허용(egress:[{}]) 상태.",
+      "대상 네임스페이스(iam·devtools·monitoring·storage·database)의 NetworkPolicy·CiliumNetworkPolicy(spec·specs[]) 및 클러스터 전역 CiliumClusterwideNetworkPolicy(spec·specs[])를 기준선(kisa-policy-baseline.json) SHA-256과 대조해 기본 차단 정책 일치 및 미검토/드리프트 정책 부재를 실시간 점검. egress는 현재 전체 허용(egress:[{}]) 상태.",
     evidenceLocalized: {
-      ko: "대상 네임스페이스(iam·devtools·monitoring·storage·database)의 NetworkPolicy 및 CiliumNetworkPolicy를 기준선(kisa-policy-baseline.json) SHA-256과 대조해 기본 차단 정책 일치 및 미검토/드리프트 정책 부재를 실시간 점검. egress는 현재 전체 허용(egress:[{}]) 상태.",
-      en: "Verifies that each target namespace (iam, devtools, monitoring, storage, database) has its baseline default-deny policy and zero unreviewed or drifted NetworkPolicy/CiliumNetworkPolicy objects against kisa-policy-baseline.json.",
+      ko: "대상 네임스페이스(iam·devtools·monitoring·storage·database)의 NetworkPolicy·CiliumNetworkPolicy(spec·specs[]) 및 클러스터 전역 CiliumClusterwideNetworkPolicy(spec·specs[])를 기준선(kisa-policy-baseline.json) SHA-256과 대조해 기본 차단 정책 일치 및 미검토/드리프트 정책 부재를 실시간 점검. egress는 현재 전체 허용(egress:[{}]) 상태.",
+      en: "Verifies that each target namespace (iam, devtools, monitoring, storage, database) has its baseline default-deny policy and zero unreviewed or drifted NetworkPolicy, CiliumNetworkPolicy (spec+specs[]), or CiliumClusterwideNetworkPolicy (spec+specs[]) objects against kisa-policy-baseline.json.",
     },
     remediation: "미적용 네임스페이스에 ingress default-deny + 명시적 허용 정책을 단계 적용하고, egress 최소 허용목록 전환 검토.",
   },

@@ -3,7 +3,8 @@
 //
 // Generates portal/src/data/kisa-policy-baseline.json from the repo's own
 // GitOps Kyverno ClusterPolicy manifest (gitops/resources/kyverno-policies.yaml)
-// and reviewed NetworkPolicy / CiliumNetworkPolicy manifests under gitops/.
+// and reviewed NetworkPolicy / CiliumNetworkPolicy / CiliumClusterwideNetworkPolicy
+// manifests under gitops/.
 //
 // Usage:
 //   node portal/scripts/gen-kisa-policy-baseline.mjs
@@ -17,8 +18,8 @@ import {
   KYVERNO_ADMISSION_DEFAULTS,
   NETWORK_POLICY_DEFAULTS,
   canonicalJson,
-  computeKyvernoSpecDigest,
-  computeNetworkPolicySpecDigest,
+  computeKyvernoPolicyDigest,
+  computeNetworkPolicyDigest,
   specHasOverrides,
 } from "../src/lib/kisa-policy-canonical.mjs"
 
@@ -43,11 +44,34 @@ export const NET01_DEFAULT_DENY_POLICIES = {
 }
 
 export const ETCD02_POLICY_KEY = "NetworkPolicy/platform-system/apisix-etcd-ingress-policy"
+export const ETCD02_WORKLOAD = {
+  kind: "Deployment",
+  namespace: "platform-system",
+  name: "apisix-etcd",
+}
 
-const NETWORK_POLICY_KINDS = new Set(["NetworkPolicy", "CiliumNetworkPolicy"])
+const NAMESPACED_NETWORK_POLICY_KINDS = new Set(["NetworkPolicy", "CiliumNetworkPolicy"])
+const CLUSTERWIDE_NETWORK_POLICY_KINDS = new Set(["CiliumClusterwideNetworkPolicy"])
+const ALL_NETWORK_POLICY_KINDS = new Set([
+  ...NAMESPACED_NETWORK_POLICY_KINDS,
+  ...CLUSTERWIDE_NETWORK_POLICY_KINDS,
+])
 
 function isGlobalImageScopePattern(pattern) {
   return pattern === "*" || pattern === "*:*" || pattern === "*/*" || pattern === "*/*:*"
+}
+
+function isEmptyPodSelector(podSelector) {
+  if (!podSelector || typeof podSelector !== "object" || Array.isArray(podSelector)) return false
+  const allowedKeys = new Set(["matchLabels", "matchExpressions"])
+  for (const key of Object.keys(podSelector)) {
+    if (!allowedKeys.has(key)) return false
+  }
+  const matchLabels = podSelector.matchLabels ?? {}
+  const matchExpressions = podSelector.matchExpressions ?? []
+  if (typeof matchLabels !== "object" || Array.isArray(matchLabels)) return false
+  if (!Array.isArray(matchExpressions)) return false
+  return Object.keys(matchLabels).length === 0 && matchExpressions.length === 0
 }
 
 export function loadRepoNetworkPolicySources(repoRoot = REPO_ROOT) {
@@ -67,11 +91,11 @@ export function loadRepoNetworkPolicySources(repoRoot = REPO_ROOT) {
   return sources
 }
 
-function parseNetworkPoliciesFromSource({ path, text, templated }) {
+function parseNetworkPoliciesFromSource({ text, templated }) {
   const docs = []
   if (!templated) {
     for (const d of yaml.loadAll(text)) {
-      if (d && typeof d === "object" && NETWORK_POLICY_KINDS.has(d.kind)) {
+      if (d && typeof d === "object" && ALL_NETWORK_POLICY_KINDS.has(d.kind)) {
         docs.push(d)
       }
     }
@@ -82,7 +106,7 @@ function parseNetworkPoliciesFromSource({ path, text, templated }) {
   for (const chunk of text.split(/^---\s*$/m)) {
     if (!chunk.trim() || chunk.includes("{{")) continue
     const d = yaml.load(chunk)
-    if (d && typeof d === "object" && NETWORK_POLICY_KINDS.has(d.kind)) {
+    if (d && typeof d === "object" && ALL_NETWORK_POLICY_KINDS.has(d.kind)) {
       docs.push(d)
     }
   }
@@ -91,35 +115,69 @@ function parseNetworkPoliciesFromSource({ path, text, templated }) {
 
 export function buildNetworkPolicyBaselineFromSources(sources) {
   const entries = new Map()
+  const docsByKey = new Map()
+  const clusterwideEntries = new Map()
   const contributingFiles = new Set()
 
   for (const src of sources) {
     const docs = parseNetworkPoliciesFromSource(src)
     for (const doc of docs) {
       const kind = doc.kind
-      const namespace = doc?.metadata?.namespace
       const name = doc?.metadata?.name
-      if (typeof namespace !== "string" || !namespace || typeof name !== "string" || !name) {
-        throw new Error(`${src.path}: ${kind} missing metadata.namespace or metadata.name`)
+      if (typeof name !== "string" || !name) {
+        throw new Error(`${src.path}: ${kind} missing metadata.name`)
+      }
+
+      if (CLUSTERWIDE_NETWORK_POLICY_KINDS.has(kind)) {
+        if (doc?.metadata?.namespace) {
+          throw new Error(`${src.path}: ${kind}/${name} is cluster-scoped and must not set metadata.namespace`)
+        }
+        const key = `${kind}/${name}`
+        if (clusterwideEntries.has(key)) {
+          throw new Error(`Duplicate clusterwide policy ${key} across ${clusterwideEntries.get(key).sourceManifest} and ${src.path}`)
+        }
+        contributingFiles.add(src.path)
+        clusterwideEntries.set(key, {
+          kind,
+          namespace: null,
+          name,
+          sourceManifest: src.path,
+          specSha256: computeNetworkPolicyDigest(kind, doc),
+        })
+        continue
+      }
+
+      const namespace = doc?.metadata?.namespace
+      if (typeof namespace !== "string" || !namespace) {
+        throw new Error(`${src.path}: ${kind}/${name} missing metadata.namespace`)
       }
       const key = `${kind}/${namespace}/${name}`
       if (entries.has(key)) {
         throw new Error(`Duplicate network policy ${key} across ${entries.get(key).sourceManifest} and ${src.path}`)
       }
       contributingFiles.add(src.path)
+      docsByKey.set(key, doc)
       entries.set(key, {
         kind,
         namespace,
         name,
         sourceManifest: src.path,
-        specSha256: computeNetworkPolicySpecDigest(kind, doc.spec ?? {}),
+        specSha256: computeNetworkPolicyDigest(kind, doc),
       })
     }
   }
 
   for (const [ns, key] of Object.entries(NET01_DEFAULT_DENY_POLICIES)) {
-    if (key !== null && !entries.has(key)) {
+    if (key === null) continue
+    if (!entries.has(key)) {
       throw new Error(`Missing required NET-01 default-deny baseline policy ${key} for namespace ${ns}`)
+    }
+    const doc = docsByKey.get(key)
+    if (doc?.kind !== "NetworkPolicy" || !isEmptyPodSelector(doc?.spec?.podSelector)) {
+      throw new Error(`NET-01 default-deny baseline policy ${key} must be a NetworkPolicy with an empty podSelector ({})`)
+    }
+    if (!Array.isArray(doc?.spec?.policyTypes) || !doc.spec.policyTypes.includes("Ingress")) {
+      throw new Error(`NET-01 default-deny baseline policy ${key} must declare policyTypes: [Ingress]`)
     }
   }
   if (!entries.has(ETCD02_POLICY_KEY)) {
@@ -131,11 +189,18 @@ export function buildNetworkPolicyBaselineFromSources(sources) {
     networkPolicies[key] = val
   }
 
+  const clusterwidePolicies = {}
+  for (const [key, val] of [...clusterwideEntries.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    clusterwidePolicies[key] = val
+  }
+
   return {
     networkPolicySourceManifests: [...contributingFiles].sort(),
     net01DefaultDenyByNamespace: { ...NET01_DEFAULT_DENY_POLICIES },
     etcd02PolicyKey: ETCD02_POLICY_KEY,
+    etcd02Workload: { ...ETCD02_WORKLOAD },
     networkPolicies,
+    clusterwidePolicies,
   }
 }
 
@@ -167,7 +232,7 @@ export function buildPolicyBaselineFromManifest(manifestText, networkSources = l
     const spec = doc.spec ?? {}
     const action = spec.validationFailureAction ?? "Audit"
     const hasOverrides = specHasOverrides(spec)
-    const specSha256 = computeKyvernoSpecDigest(spec)
+    const specSha256 = computeKyvernoPolicyDigest(doc)
     const hasValidateOrVerifyRules = (spec.rules ?? []).some(
       (r) => Boolean(r?.validate) || (Array.isArray(r?.verifyImages) && r.verifyImages.length > 0),
     )
@@ -283,6 +348,22 @@ export function validateBaseline(actual, expected) {
   if (actual.etcd02PolicyKey !== ETCD02_POLICY_KEY || !netPols[ETCD02_POLICY_KEY]) {
     errors.push(`missing or mismatched etcd02PolicyKey ${ETCD02_POLICY_KEY}`)
   }
+  if (
+    actual.etcd02Workload?.kind !== ETCD02_WORKLOAD.kind ||
+    actual.etcd02Workload?.namespace !== ETCD02_WORKLOAD.namespace ||
+    actual.etcd02Workload?.name !== ETCD02_WORKLOAD.name
+  ) {
+    errors.push("missing or mismatched etcd02Workload")
+  }
+  const ccnpPols = actual.clusterwidePolicies ?? {}
+  if (Object.keys(ccnpPols).length === 0) {
+    errors.push("missing baseline clusterwidePolicies")
+  }
+  for (const [key, entry] of Object.entries(ccnpPols)) {
+    if (typeof entry?.specSha256 !== "string" || !/^[0-9a-f]{64}$/.test(entry.specSha256)) {
+      errors.push(`${key}: invalid clusterwidePolicy specSha256`)
+    }
+  }
 
   return errors
 }
@@ -307,7 +388,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       process.exit(1)
     }
     console.log(
-      `kisa-policy-baseline.json is in sync (${Object.keys(actual.policies).length} Kyverno, ${Object.keys(actual.networkPolicies).length} Network/Cilium policies)`,
+      `kisa-policy-baseline.json is in sync (${Object.keys(actual.policies).length} Kyverno, ${Object.keys(actual.networkPolicies).length} Network/Cilium policies, ${Object.keys(actual.clusterwidePolicies ?? {}).length} clusterwide policies)`,
     )
     process.exit(0)
   }

@@ -6,6 +6,7 @@ import type {
   KisaFetchResult,
   KisaRawAlertmanagerConfig,
   KisaRawAlertmanagerReceiver,
+  KisaRawCiliumClusterwideNetworkPolicy,
   KisaRawCiliumNetworkPolicy,
   KisaRawClusterPolicy,
   KisaRawCronJob,
@@ -28,6 +29,7 @@ const mockGetKisaCronJob = vi.fn<() => Promise<KisaFetchResult<KisaRawCronJob>>>
 const mockGetKisaSecretMetadata = vi.fn<() => Promise<KisaFetchResult<KisaSecretMetadata>>>()
 const mockGetKisaNamespacedNetworkPolicies = vi.fn<() => Promise<KisaFetchResult<KisaRawNetworkPolicy[]>>>()
 const mockGetKisaNamespacedCiliumNetworkPolicies = vi.fn<() => Promise<KisaFetchResult<KisaRawCiliumNetworkPolicy[]>>>()
+const mockGetKisaCiliumClusterwideNetworkPolicies = vi.fn<() => Promise<KisaFetchResult<KisaRawCiliumClusterwideNetworkPolicy[]>>>()
 const mockGetKisaPeerAuthentications = vi.fn<() => Promise<KisaFetchResult<KisaRawPeerAuthentication[]>>>()
 const mockGetKisaNotificationConfig = vi.fn<() => Promise<KisaFetchResult<KisaRawAlertmanagerConfig>>>()
 const mockGetKisaNamespacedPods = vi.fn<() => Promise<KisaFetchResult<KisaRawPodStatus[]>>>()
@@ -43,6 +45,7 @@ vi.mock("./k8s-client", () => ({
   getKisaSecretMetadata: () => mockGetKisaSecretMetadata(),
   getKisaNamespacedNetworkPolicies: () => mockGetKisaNamespacedNetworkPolicies(),
   getKisaNamespacedCiliumNetworkPolicies: () => mockGetKisaNamespacedCiliumNetworkPolicies(),
+  getKisaCiliumClusterwideNetworkPolicies: () => mockGetKisaCiliumClusterwideNetworkPolicies(),
   getKisaPeerAuthentications: () => mockGetKisaPeerAuthentications(),
   getKisaNotificationConfig: () => mockGetKisaNotificationConfig(),
   getKisaNamespacedPods: () => mockGetKisaNamespacedPods(),
@@ -52,13 +55,14 @@ vi.mock("./k8s-client", () => ({
   getKisaRbacSnapshot: () => mockGetKisaRbacSnapshot(),
 }))
 
-import { checkEtcd02, checkImg01, checkSec01, checkTls01 } from "./kisa-checks"
+import { checkEtcd02, checkImg01, checkSec01, checkTls01, matchesLabelSelector } from "./kisa-checks"
 import { checkImg02, checkObs01, checkRbacLive, evaluateRbacRules, KISA_POLICY_BASELINE, ruleGrants, type KisaPolicyBaseline, type RbacPolicyRule } from "./kisa-checks-ops"
 import { computeKyvernoSpecDigest } from "./kisa-policy-canonical.mjs"
 
 beforeEach(() => {
   vi.clearAllMocks()
   mockGetKisaNamespacedCiliumNetworkPolicies.mockResolvedValue({ status: "ok", data: [] })
+  mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValue({ status: "ok", data: [] })
 })
 
 describe("KISA-ETCD-02 live evaluation", () => {
@@ -102,10 +106,31 @@ describe("KISA-ETCD-02 live evaluation", () => {
   }
   const etcdPolicyPath = path.resolve(__dirname, "../../../gitops/resources/apisix-etcd-ingress-policy.yaml")
   const strictPolicy = yaml.load(fs.readFileSync(etcdPolicyPath, "utf8")) as KisaRawNetworkPolicy
+  const ccnpPolicyPath = path.resolve(__dirname, "../../../gitops/resources/ambient-kubelet-probes-ccnp.yaml")
+  const baselineCcnp = yaml.load(fs.readFileSync(ccnpPolicyPath, "utf8")) as KisaRawCiliumClusterwideNetworkPolicy
 
-  it("passes only when baseline NetworkPolicy matches SHA-256, no unreviewed policy selects etcd, and running template has TLS+auth", async () => {
+  it("matchesLabelSelector implements exact Kubernetes label-selector semantics and fails closed on unknown operators", () => {
+    expect(matchesLabelSelector({}, {})).toBe(true)
+    expect(matchesLabelSelector(undefined, { app: "apisix-etcd" })).toBe(true)
+    expect(matchesLabelSelector({ matchLabels: { app: "apisix-etcd" } }, { app: "apisix-etcd", extra: "1" })).toBe(true)
+    expect(matchesLabelSelector({ matchLabels: { app: "apisix-etcd" } }, { app: "etcd-v2" })).toBe(false)
+    expect(matchesLabelSelector({ matchLabels: { app: "apisix-etcd" } }, {})).toBe(false)
+    expect(matchesLabelSelector({ matchLabels: { empty: "" } }, { empty: "" })).toBe(true)
+    expect(matchesLabelSelector({ matchExpressions: [{ key: "app", operator: "In", values: ["apisix-etcd", "other"] }] }, { app: "apisix-etcd" })).toBe(true)
+    expect(matchesLabelSelector({ matchExpressions: [{ key: "empty", operator: "In", values: [""] }] }, { empty: "" })).toBe(true)
+    expect(matchesLabelSelector({ matchExpressions: [{ key: "app", operator: "NotIn", values: ["apisix-etcd"] }] }, { app: "apisix-etcd" })).toBe(false)
+    expect(matchesLabelSelector({ matchExpressions: [{ key: "app", operator: "NotIn", values: ["apisix-etcd"] }] }, {})).toBe(true)
+    expect(matchesLabelSelector({ matchExpressions: [{ key: "app", operator: "Exists" }] }, { app: "" })).toBe(true)
+    expect(matchesLabelSelector({ matchExpressions: [{ key: "app", operator: "Exists" }] }, {})).toBe(false)
+    expect(matchesLabelSelector({ matchExpressions: [{ key: "app", operator: "DoesNotExist" }] }, {})).toBe(true)
+    expect(matchesLabelSelector({ matchExpressions: [{ key: "app", operator: "DoesNotExist" }] }, { app: "x" })).toBe(false)
+    expect(matchesLabelSelector({ matchExpressions: [{ key: "app", operator: "UnknownOp", values: ["apisix-etcd"] }] }, { app: "apisix-etcd" })).toBe(false)
+  })
+
+  it("passes only when baseline NetworkPolicy matches SHA-256, selects running etcd pods, baseline CCNP matches, no unreviewed policy selects etcd, and running template has TLS+auth", async () => {
     mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: etcdDepTls })
     mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [strictPolicy] })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValue({ status: "ok", data: [baselineCcnp] })
     const r = await checkEtcd02()
     expect(r.status).toBe("pass")
     expect(r.reasonKey).toBe("compliance.kisa.reason.etcdIsolatedTls")
@@ -329,6 +354,87 @@ describe("KISA-ETCD-02 live evaluation", () => {
     const missingRes = await checkEtcd02()
     expect(missingRes.status).toBe("manual")
     expect(missingRes.reasonKey).toBe("compliance.kisa.reason.etcdWorkloadNotReady")
+  })
+
+  it("reproduction (R9): rejects CNP specs[] opening etcd, relabelled/renamed etcd workload, unreviewed/drifted CCNP, and CCNP 403", async () => {
+    mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: etcdDepTls })
+    mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [strictPolicy] })
+
+    // 1. Reproduction (R9 MAJOR 1): CNP spec selects another app while specs[] allows fromEntities:["all"] on apisix-etcd -> warn
+    mockGetKisaNamespacedCiliumNetworkPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [{
+        metadata: { name: "split-spec-cnp", namespace: "platform-system" },
+        spec: { endpointSelector: { matchLabels: { app: "other-app" } } },
+        specs: [{ endpointSelector: { matchLabels: { app: "apisix-etcd" } }, ingress: [{ fromEntities: ["all"] }] }],
+      }],
+    })
+    const specsRes = await checkEtcd02()
+    expect(specsRes.status).toBe("warn")
+    expect(specsRes.reasonKey).toBe("compliance.kisa.reason.etcdPolicyUnreviewed")
+    expect(specsRes.detail).toContain("split-spec-cnp")
+
+    // 2. Reproduction (R9 MAJOR 2): Deployment recreated with app: etcd-v2 template labels -> warn 'reviewed policy does not select the running etcd pods'
+    mockGetKisaNamespacedCiliumNetworkPolicies.mockResolvedValue({ status: "ok", data: [] })
+    const relabelledDep: KisaRawDeployment = {
+      ...etcdDepTls,
+      spec: {
+        ...etcdDepTls.spec,
+        template: {
+          ...etcdDepTls.spec!.template,
+          metadata: { labels: { app: "etcd-v2" } },
+        },
+      },
+    }
+    mockGetKisaDeployment.mockResolvedValueOnce({ status: "ok", data: relabelledDep })
+    const relabelRes = await checkEtcd02()
+    expect(relabelRes.status).toBe("warn")
+    expect(relabelRes.reasonKey).toBe("compliance.kisa.reason.etcdPolicySelectorMismatch")
+    expect(relabelRes.detailLocalized.en).toContain("reviewed policy does not select the running etcd pods")
+
+    // Workload missing template labels -> warn (must never default to { app: "apisix-etcd" })
+    const labellessDep: KisaRawDeployment = {
+      ...etcdDepTls,
+      spec: {
+        ...etcdDepTls.spec,
+        template: {
+          spec: etcdDepTls.spec!.template!.spec,
+        },
+      },
+    }
+    mockGetKisaDeployment.mockResolvedValueOnce({ status: "ok", data: labellessDep })
+    const labellessRes = await checkEtcd02()
+    expect(labellessRes.status).toBe("warn")
+    expect(labellessRes.detailLocalized.en).toContain("reviewed policy does not select the running etcd pods")
+
+    // 3. Reproduction (R9 MAJOR 3): drifted baseline CCNP or unreviewed CCNP -> warn 'unreviewed cluster-wide policy present'
+    mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: etcdDepTls })
+    const driftedCcnp: KisaRawCiliumClusterwideNetworkPolicy = JSON.parse(JSON.stringify(baselineCcnp))
+    ;(driftedCcnp.spec as Record<string, unknown> & { ingress: unknown[] }).ingress.push({ fromEntities: ["all"] })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: [driftedCcnp] })
+    const ccnpDriftRes = await checkEtcd02()
+    expect(ccnpDriftRes.status).toBe("warn")
+    expect(ccnpDriftRes.detailLocalized.en).toContain("unreviewed cluster-wide policy present")
+    expect(ccnpDriftRes.detail).toContain("allow-ambient-kubelet-probes(differs)")
+
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [baselineCcnp, { metadata: { name: "rogue-ccnp" }, spec: { endpointSelector: {}, ingress: [{ fromEntities: ["all"] }] } }],
+    })
+    const ccnpExtraRes = await checkEtcd02()
+    expect(ccnpExtraRes.status).toBe("warn")
+    expect(ccnpExtraRes.detailLocalized.en).toContain("unreviewed cluster-wide policy present")
+    expect(ccnpExtraRes.detail).toContain("rogue-ccnp")
+
+    // CCNP list forbidden -> manual
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({
+      status: "forbidden",
+      resource: "ciliumclusterwidenetworkpolicies.cilium.io",
+    })
+    const ccnpForbRes = await checkEtcd02()
+    expect(ccnpForbRes.status).toBe("manual")
+    expect(ccnpForbRes.partial).toBe(true)
+    expect(ccnpForbRes.reasonKey).toBe("compliance.kisa.reason.apiForbidden")
   })
 })
 

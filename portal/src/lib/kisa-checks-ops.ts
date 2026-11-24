@@ -2,7 +2,7 @@ import "server-only"
 import policyBaselineData from "@/data/kisa-policy-baseline.json"
 import { hasRbacBindingRule, isBootstrapRbacRole, matchRbacBindingException, matchRbacException } from "./compliance-accepted"
 import { fetchErrorOutcome, makeOutcome, type KisaCheckOutcome } from "./kisa-checks"
-import { computeKyvernoSpecDigest, specHasOverrides } from "./kisa-policy-canonical.mjs"
+import { computeKyvernoPolicyDigest, specHasOverrides } from "./kisa-policy-canonical.mjs"
 import { parseImageRefStrict } from "./oss-updates/version"
 import type {
   KisaFetchResult,
@@ -212,8 +212,8 @@ export interface KisaPolicyBaselineEntry {
 }
 
 export interface KisaNetworkPolicyBaselineEntry {
-  kind: "NetworkPolicy" | "CiliumNetworkPolicy" | string
-  namespace: string
+  kind: "NetworkPolicy" | "CiliumNetworkPolicy" | "CiliumClusterwideNetworkPolicy" | string
+  namespace: string | null
   name: string
   sourceManifest: string
   specSha256: string
@@ -228,7 +228,9 @@ export interface KisaPolicyBaseline {
   networkPolicySourceManifests?: string[]
   net01DefaultDenyByNamespace?: Record<string, string | null>
   etcd02PolicyKey?: string
+  etcd02Workload?: { kind: string; namespace: string; name: string }
   networkPolicies?: Record<string, KisaNetworkPolicyBaselineEntry>
+  clusterwidePolicies?: Record<string, KisaNetworkPolicyBaselineEntry>
 }
 
 export const KISA_POLICY_BASELINE: KisaPolicyBaseline = policyBaselineData as KisaPolicyBaseline
@@ -343,7 +345,7 @@ function evaluatePolicyAgainstBaseline(
     }
   }
 
-  const liveDigest = computeKyvernoSpecDigest(pol.spec ?? {})
+  const liveDigest = computeKyvernoPolicyDigest(pol)
   const extraOverrides = !baselineEntry.hasOverrides && specHasOverrides(pol.spec ?? {})
   if (liveDigest !== baselineEntry.specSha256 || extraOverrides) {
     return {

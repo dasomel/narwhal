@@ -8,6 +8,7 @@ import {
   checkImg01,
   checkSec01,
   checkTls01,
+  evaluateClusterwideNetworkPolicies,
   fetchErrorOutcome,
   makeOutcome,
   type KisaCheckOutcome,
@@ -18,7 +19,7 @@ import {
   checkRbacLive,
   type KisaPolicyBaseline,
 } from "./kisa-checks-ops"
-import { computeNetworkPolicySpecDigest } from "./kisa-policy-canonical.mjs"
+import { computeNetworkPolicyDigest } from "./kisa-policy-canonical.mjs"
 import type { Localized } from "./i18n-utils"
 import type { KisaControl, KisaReasonKey, KisaResponse, KisaStatus } from "@/types/kisa"
 
@@ -559,10 +560,15 @@ async function checkPod01(): Promise<KisaCheckOutcome> {
 }
 
 export async function checkNet01(baseline: KisaPolicyBaseline = KISA_ADM_BASELINE): Promise<KisaCheckOutcome> {
-  const { getKisaNetworkPolicies, getKisaCiliumNetworkPolicies } = await import("./k8s-client")
-  const [npRes, cnpRes] = await Promise.all([
+  const {
+    getKisaNetworkPolicies,
+    getKisaCiliumNetworkPolicies,
+    getKisaCiliumClusterwideNetworkPolicies,
+  } = await import("./k8s-client")
+  const [npRes, cnpRes, ccnpRes] = await Promise.all([
     getKisaNetworkPolicies(),
     getKisaCiliumNetworkPolicies(),
+    getKisaCiliumClusterwideNetworkPolicies(),
   ])
   if (npRes.status !== "ok") {
     return fetchErrorOutcome(npRes, "NetworkPolicy 목록", "NetworkPolicy list")
@@ -570,26 +576,32 @@ export async function checkNet01(baseline: KisaPolicyBaseline = KISA_ADM_BASELIN
   if (cnpRes.status !== "ok") {
     return fetchErrorOutcome(cnpRes, "CiliumNetworkPolicy 목록", "CiliumNetworkPolicy list")
   }
+  if (ccnpRes.status !== "ok") {
+    return fetchErrorOutcome(ccnpRes, "CiliumClusterwideNetworkPolicy 목록", "CiliumClusterwideNetworkPolicy list")
+  }
 
   const baselineMap = baseline.networkPolicies ?? {}
   const defaultDenyMap = baseline.net01DefaultDenyByNamespace ?? {}
+  const unreviewedClusterwide = evaluateClusterwideNetworkPolicies(ccnpRes.data, baseline)
 
-  // D-KISA-CLOSED-WORLD (R8): Never interpret arbitrary selector expressions.
+  // D-KISA-CLOSED-WORLD (R8+R9): Never interpret arbitrary selector expressions.
   // A namespace counts as default-deny ONLY when (a) its reviewed baseline default-deny
-  // policy is present with equal canonical spec SHA-256 digest, AND (b) EVERY NetworkPolicy
-  // and CiliumNetworkPolicy present in that namespace is in the baseline with equal digest.
+  // policy is present with equal canonical SHA-256 digest, AND (b) EVERY NetworkPolicy
+  // and CiliumNetworkPolicy (both spec and specs[]) present in that namespace is in the
+  // baseline with equal digest, AND (c) EVERY CiliumClusterwideNetworkPolicy in the cluster
+  // is in the baseline with equal digest.
   const covered: string[] = []
   const uncovered: string[] = []
   const unreviewedByNs: string[] = []
 
   for (const ns of KISA_NET01_NAMESPACES) {
-    const nsPolicies: Array<{ kind: "NetworkPolicy" | "CiliumNetworkPolicy"; name: string; spec: Record<string, unknown> }> = [
+    const nsPolicies: Array<{ kind: "NetworkPolicy" | "CiliumNetworkPolicy"; name: string; raw: unknown }> = [
       ...npRes.data
         .filter((p) => p.metadata?.namespace === ns)
-        .map((p) => ({ kind: "NetworkPolicy" as const, name: p.metadata?.name ?? "unknown", spec: (p.spec ?? {}) as Record<string, unknown> })),
+        .map((p) => ({ kind: "NetworkPolicy" as const, name: p.metadata?.name ?? "unknown", raw: p })),
       ...cnpRes.data
         .filter((c) => c.metadata?.namespace === ns)
-        .map((c) => ({ kind: "CiliumNetworkPolicy" as const, name: c.metadata?.name ?? "unknown", spec: (c.spec ?? {}) as Record<string, unknown> })),
+        .map((c) => ({ kind: "CiliumNetworkPolicy" as const, name: c.metadata?.name ?? "unknown", raw: c })),
     ]
 
     const defaultDenyKey = defaultDenyMap[ns] ?? null
@@ -599,7 +611,7 @@ export async function checkNet01(baseline: KisaPolicyBaseline = KISA_ADM_BASELIN
       const match = nsPolicies.find(
         (p) => p.kind === defaultDenyEntry.kind && p.name === defaultDenyEntry.name,
       )
-      if (match && computeNetworkPolicySpecDigest(match.kind, match.spec) === defaultDenyEntry.specSha256) {
+      if (match && computeNetworkPolicyDigest(match.kind, match.raw) === defaultDenyEntry.specSha256) {
         hasBaselineDefaultDeny = true
       }
     }
@@ -610,7 +622,7 @@ export async function checkNet01(baseline: KisaPolicyBaseline = KISA_ADM_BASELIN
       const entry = baselineMap[key]
       if (!entry) {
         nsUnreviewed.push(`${pol.kind}/${pol.name}`)
-      } else if (computeNetworkPolicySpecDigest(pol.kind, pol.spec) !== entry.specSha256) {
+      } else if (computeNetworkPolicyDigest(pol.kind, pol.raw) !== entry.specSha256) {
         nsUnreviewed.push(`${pol.kind}/${pol.name}(differs)`)
       }
     }
@@ -629,21 +641,25 @@ export async function checkNet01(baseline: KisaPolicyBaseline = KISA_ADM_BASELIN
     unreviewedByNs.length > 0 ? ` · 미검토/불일치 정책 존재(unreviewed policy present): ${unreviewedByNs.join("; ")}` : ""
   const unreviewedNoteEn =
     unreviewedByNs.length > 0 ? `; unreviewed policy present: ${unreviewedByNs.join("; ")}` : ""
+  const clusterwideNoteKo =
+    unreviewedClusterwide.length > 0 ? ` · 미검토 클러스터 전역 정책 존재(unreviewed cluster-wide policy present): ${unreviewedClusterwide.join(", ")}` : ""
+  const clusterwideNoteEn =
+    unreviewedClusterwide.length > 0 ? `; unreviewed cluster-wide policy present: ${unreviewedClusterwide.join(", ")}` : ""
 
-  if (covered.length === KISA_NET01_NAMESPACES.length) {
+  if (covered.length === KISA_NET01_NAMESPACES.length && unreviewedClusterwide.length === 0) {
     return makeOutcome(
       "pass",
       "compliance.kisa.reason.netDenyAll",
-      `대상 네임스페이스 ${KISA_NET01_NAMESPACES.length}건 모두 기준선 default-deny 일치·미검토 정책 없음`,
-      `All ${KISA_NET01_NAMESPACES.length} target namespace(s) match baseline default-deny with zero unreviewed policies`,
+      `대상 네임스페이스 ${KISA_NET01_NAMESPACES.length}건 모두 기준선 default-deny 일치·미검토 정책(클러스터 전역 포함) 없음`,
+      `All ${KISA_NET01_NAMESPACES.length} target namespace(s) match baseline default-deny with zero unreviewed namespaced or cluster-wide policies`,
     )
   }
-  if (covered.length > 0 || unreviewedByNs.length > 0) {
+  if (covered.length > 0 || unreviewedByNs.length > 0 || unreviewedClusterwide.length > 0) {
     return makeOutcome(
       "warn",
       "compliance.kisa.reason.netDenyPartial",
-      `기준선 default-deny 일치 ${covered.length}/${KISA_NET01_NAMESPACES.length}건 (미충족: ${uncovered.join(", ")})${unreviewedNoteKo}`,
-      `baseline default-deny matched in ${covered.length}/${KISA_NET01_NAMESPACES.length} namespace(s) (uncovered: ${uncovered.join(", ")})${unreviewedNoteEn}`,
+      `기준선 default-deny 일치 ${covered.length}/${KISA_NET01_NAMESPACES.length}건 (미충족: ${uncovered.length > 0 ? uncovered.join(", ") : "없음"})${unreviewedNoteKo}${clusterwideNoteKo}`,
+      `baseline default-deny matched in ${covered.length}/${KISA_NET01_NAMESPACES.length} namespace(s) (uncovered: ${uncovered.length > 0 ? uncovered.join(", ") : "none"})${unreviewedNoteEn}${clusterwideNoteEn}`,
     )
   }
   return makeOutcome(

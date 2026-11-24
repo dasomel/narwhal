@@ -13,6 +13,7 @@ export type KisaReasonKey =
   | "compliance.kisa.reason.etcdPolicyMissing"
   | "compliance.kisa.reason.etcdPolicyBroad"
   | "compliance.kisa.reason.etcdPolicyUnreviewed"
+  | "compliance.kisa.reason.etcdPolicySelectorMismatch"
   | "compliance.kisa.reason.etcdContainerMissing"
   | "compliance.kisa.reason.secCronJobNotEvaluated"
   | "compliance.kisa.reason.secNoExternalKms"

@@ -5,7 +5,7 @@ import { assertK8sName, assertK8sNamespace, assertK8sNodeName, safeK8sSegment } 
 import { getK8sApiServer } from "./config"
 import { getK8sBearerToken, invalidateK8sBearerToken } from "./k8s-token"
 import { fetchWithPolicy, readJsonWithPolicy, type RetryOptions } from "./http-client"
-import { computeKyvernoSpecDigest, specHasOverrides } from "./kisa-policy-canonical.mjs"
+import { computeKyvernoPolicyDigest, specHasOverrides } from "./kisa-policy-canonical.mjs"
 
 export type { Localized, MaybeLocalized } from "./i18n-utils"
 export { pick } from "./i18n-utils"
@@ -958,7 +958,7 @@ export function mapPolicy(item: PolicyItem, scope: "cluster" | "namespace"): Kyv
     validationFailureAction: action,
     effectiveEnforcement,
     hasValidateOrVerifyRules,
-    specSha256: computeKyvernoSpecDigest(item.spec ?? {}),
+    specSha256: computeKyvernoPolicyDigest(item),
     hasOverrides: specHasOverrides(item.spec ?? {}),
     ready: item.status?.conditions?.some((c) => c.type === "Ready" && c.status === "True") ?? false,
     rulesCount: rules.length,
@@ -2963,12 +2963,23 @@ export interface KisaRawNetworkPolicy {
   }
 }
 
+export interface KisaCiliumPolicyRule {
+  endpointSelector?: { matchLabels?: Record<string, string>; matchExpressions?: Array<{ key: string; operator: string; values?: string[] }> }
+  [key: string]: unknown
+}
+
 export interface KisaRawCiliumNetworkPolicy {
   metadata?: { name?: string; namespace?: string }
-  spec?: {
-    endpointSelector?: { matchLabels?: Record<string, string>; matchExpressions?: Array<{ key: string; operator: string; values?: string[] }> }
-    [key: string]: unknown
-  }
+  spec?: KisaCiliumPolicyRule
+  specs?: KisaCiliumPolicyRule[]
+  [key: string]: unknown
+}
+
+export interface KisaRawCiliumClusterwideNetworkPolicy {
+  metadata?: { name?: string }
+  spec?: KisaCiliumPolicyRule
+  specs?: KisaCiliumPolicyRule[]
+  [key: string]: unknown
 }
 
 export interface KisaRawPeerAuthentication {
@@ -3227,6 +3238,13 @@ export async function getKisaNamespacedCiliumNetworkPolicies(namespace: string):
   return fetchKisaList<KisaRawCiliumNetworkPolicy>(
     `ciliumnetworkpolicies.cilium.io/${namespace}`,
     `/apis/cilium.io/v2/namespaces/${safeK8sSegment(namespace)}/ciliumnetworkpolicies`,
+  )
+}
+
+export async function getKisaCiliumClusterwideNetworkPolicies(): Promise<KisaFetchResult<KisaRawCiliumClusterwideNetworkPolicy[]>> {
+  return fetchKisaList<KisaRawCiliumClusterwideNetworkPolicy>(
+    "ciliumclusterwidenetworkpolicies.cilium.io",
+    "/apis/cilium.io/v2/ciliumclusterwidenetworkpolicies",
   )
 }
 

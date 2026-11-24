@@ -57,11 +57,18 @@ import { readFileSync } from "node:fs";
 import yaml from "./portal/node_modules/js-yaml/dist/js-yaml.mjs";
 import {
   buildPolicyBaselineFromManifest,
+  buildNetworkPolicyBaselineFromSources,
   validateBaseline,
   MANIFEST_PATH,
   OUT_JSON,
 } from "./portal/scripts/gen-kisa-policy-baseline.mjs";
-import { computeKyvernoSpecDigest, computeNetworkPolicySpecDigest, specHasOverrides } from "./portal/src/lib/kisa-policy-canonical.mjs";
+import {
+  computeKyvernoPolicyDigest,
+  computeKyvernoSpecDigest,
+  computeNetworkPolicyDigest,
+  computeNetworkPolicySpecDigest,
+  specHasOverrides,
+} from "./portal/src/lib/kisa-policy-canonical.mjs";
 
 const manifestText = readFileSync(MANIFEST_PATH, "utf8");
 const expected = buildPolicyBaselineFromManifest(manifestText);
@@ -184,6 +191,84 @@ if (validateBaseline(badNetDigest, expected).length === 0) {
   console.error("validateBaseline failed to reject tampered networkPolicy digest");
   process.exit(1);
 }
+
+// 5. CNP/CCNP {spec, specs} + unknown top-level field canonicalization + empty podSelector generator assertion
+const cnpSpecOnly = {
+  kind: "CiliumNetworkPolicy",
+  metadata: { name: "x", namespace: "platform-system" },
+  spec: { endpointSelector: { matchLabels: { app: "other" } } },
+};
+const cnpWithSpecs = {
+  ...cnpSpecOnly,
+  specs: [{ endpointSelector: { matchLabels: { app: "apisix-etcd" } }, ingress: [{ fromEntities: ["all"] }] }],
+};
+if (computeNetworkPolicyDigest("CiliumNetworkPolicy", cnpSpecOnly) === computeNetworkPolicyDigest("CiliumNetworkPolicy", cnpWithSpecs)) {
+  console.error("CiliumNetworkPolicy specs[] field was ignored by canonicalizer");
+  process.exit(1);
+}
+
+const ccnpFromYaml = yaml.load(readFileSync("./gitops/resources/ambient-kubelet-probes-ccnp.yaml", "utf8"));
+const ccnpBaselineEntry = actual.clusterwidePolicies?.["CiliumClusterwideNetworkPolicy/allow-ambient-kubelet-probes"];
+if (!ccnpBaselineEntry || computeNetworkPolicyDigest("CiliumClusterwideNetworkPolicy", ccnpFromYaml) !== ccnpBaselineEntry.specSha256) {
+  console.error("CCNP allow-ambient-kubelet-probes digest mismatch");
+  process.exit(1);
+}
+const ccnpWithSpecs = { ...clone(ccnpFromYaml), specs: [{ endpointSelector: {}, ingress: [{ fromEntities: ["all"] }] }] };
+if (computeNetworkPolicyDigest("CiliumClusterwideNetworkPolicy", ccnpWithSpecs) === ccnpBaselineEntry.specSha256) {
+  console.error("CiliumClusterwideNetworkPolicy specs[] field was ignored by canonicalizer");
+  process.exit(1);
+}
+
+// Non-semantic fields (metadata/status/apiVersion/kind) do not alter digest; ANY unknown top-level field MUST alter digest
+const ccnpReorderedMeta = { ...clone(ccnpFromYaml), metadata: { name: "other", resourceVersion: "99" }, status: { conditions: [] } };
+if (computeNetworkPolicyDigest("CiliumClusterwideNetworkPolicy", ccnpReorderedMeta) !== ccnpBaselineEntry.specSha256) {
+  console.error("Non-semantic metadata/status altered CCNP digest");
+  process.exit(1);
+}
+for (const [kind, obj] of [
+  ["NetworkPolicy", { spec: iamDenySpecLive }],
+  ["CiliumNetworkPolicy", cnpSpecOnly],
+  ["CiliumClusterwideNetworkPolicy", ccnpFromYaml],
+  ["ClusterPolicy", latest],
+]) {
+  const baseDig = computeNetworkPolicyDigest(kind, obj);
+  const withFutureField = { ...clone(obj), futurePolicyField: { allow: true } };
+  if (computeNetworkPolicyDigest(kind, withFutureField) === baseDig) {
+    console.error(`Unknown top-level policy field was ignored for ${kind}`);
+    process.exit(1);
+  }
+}
+
+// Empty podSelector assertion in generator
+let threwOnNonEmptyDefaultDeny = false;
+try {
+  buildNetworkPolicyBaselineFromSources([
+    {
+      path: "test/non-empty-dd.yaml",
+      templated: false,
+      text: [
+        "apiVersion: networking.k8s.io/v1",
+        "kind: NetworkPolicy",
+        "metadata: { name: iam-default-deny-ingress, namespace: iam }",
+        "spec: { podSelector: { matchLabels: { app: only-one } }, policyTypes: [Ingress], ingress: [] }",
+        "---",
+        readFileSync("./gitops/resources/database-ingress-policy.yaml", "utf8"),
+        "---",
+        readFileSync("./gitops/resources/monitoring-ingress-policy.yaml", "utf8"),
+        "---",
+        readFileSync("./gitops/resources/storage-ingress-policy.yaml", "utf8"),
+        "---",
+        readFileSync("./gitops/resources/apisix-etcd-ingress-policy.yaml", "utf8"),
+      ].join("\\n"),
+    },
+  ]);
+} catch {
+  threwOnNonEmptyDefaultDeny = true;
+}
+if (!threwOnNonEmptyDefaultDeny) {
+  console.error("Generator failed to reject non-empty podSelector on NET-01 default-deny");
+  process.exit(1);
+}
 """
     res2 = subprocess.run(
         ["node", "--input-type=module", "-e", probe],
@@ -225,6 +310,7 @@ def check(texts: dict[str, str]) -> list[str]:
     for req_np_default in (
         "NetworkPolicy spec.ingress (when empty array [])",
         "NetworkPolicy spec.egress (when empty array [])",
+        "CiliumNetworkPolicy/CiliumClusterwideNetworkPolicy specs (when empty array [])",
     ):
         if req_np_default not in net_defaults:
             errors.append(f"baseline normalizedOutNetworkPolicyDefaults missing {req_np_default!r}")
@@ -232,12 +318,21 @@ def check(texts: dict[str, str]) -> list[str]:
     net_pols = base.get("networkPolicies") or {}
     if len(net_pols) < 33:
         errors.append(f"expected >=33 baselined NetworkPolicy/CiliumNetworkPolicy entries, got {len(net_pols)}")
+    ccnp_pols = base.get("clusterwidePolicies") or {}
+    if "CiliumClusterwideNetworkPolicy/allow-ambient-kubelet-probes" not in ccnp_pols:
+        errors.append("baseline clusterwidePolicies missing CiliumClusterwideNetworkPolicy/allow-ambient-kubelet-probes")
+    for key, entry in ccnp_pols.items():
+        if not re.fullmatch(r"[0-9a-f]{64}", str(entry.get("specSha256") or "")):
+            errors.append(f"{key}: invalid clusterwidePolicy specSha256 {entry.get('specSha256')!r}")
     for ns, dd_key in (base.get("net01DefaultDenyByNamespace") or {}).items():
         if ns != "devtools" and (not dd_key or dd_key not in net_pols):
             errors.append(f"missing net01DefaultDenyByNamespace entry for {ns}: {dd_key!r}")
     etcd_key = base.get("etcd02PolicyKey")
     if etcd_key != "NetworkPolicy/platform-system/apisix-etcd-ingress-policy" or etcd_key not in net_pols:
         errors.append(f"missing or invalid etcd02PolicyKey: {etcd_key!r}")
+    etcd_wl = base.get("etcd02Workload") or {}
+    if etcd_wl.get("kind") != "Deployment" or etcd_wl.get("namespace") != "platform-system" or etcd_wl.get("name") != "apisix-etcd":
+        errors.append(f"missing or invalid etcd02Workload: {etcd_wl!r}")
     for key, entry in net_pols.items():
         if not re.fullmatch(r"[0-9a-f]{64}", str(entry.get("specSha256") or "")):
             errors.append(f"{key}: invalid networkPolicy specSha256 {entry.get('specSha256')!r}")
@@ -279,10 +374,18 @@ def check(texts: dict[str, str]) -> list[str]:
     for needle in (
         "KYVERNO_ADMISSION_DEFAULTS",
         "NETWORK_POLICY_DEFAULTS",
+        "NON_SEMANTIC_TOP_LEVEL_FIELDS",
+        "POLICY_TOP_LEVEL_ALLOWLIST_BY_KIND",
+        "if (NON_SEMANTIC_TOP_LEVEL_SET.has(key)) continue",
+        "for (const key of Object.keys(policyObj))",
         "if (out.admission === true) delete out.admission",
         "if (out.signatureAlgorithm === \"sha256\") delete out.signatureAlgorithm",
         "if (Array.isArray(out.ingress) && out.ingress.length === 0) delete out.ingress",
         "if (Array.isArray(out.egress) && out.egress.length === 0) delete out.egress",
+        "if (out.specs === null || out.specs === undefined || (Array.isArray(out.specs) && out.specs.length === 0))",
+        "export function canonicalizePolicyObject(",
+        "export function computeNetworkPolicyDigest(",
+        "export function computeKyvernoPolicyDigest(",
         "export function computeKyvernoSpecDigest(",
         "export function computeNetworkPolicySpecDigest(",
         "export function specHasOverrides(",
@@ -290,19 +393,22 @@ def check(texts: dict[str, str]) -> list[str]:
         if needle not in texts["canon"]:
             errors.append(f"kisa-policy-canonical.mjs missing {needle!r}")
 
+    if 'if (doc?.kind !== "NetworkPolicy" || !isEmptyPodSelector(doc?.spec?.podSelector))' not in texts["gen"]:
+        errors.append("gen-kisa-policy-baseline.mjs missing isEmptyPodSelector assertion for NET-01 default-deny")
+
     for needle in (
         "export const KISA_POLICY_BASELINE: KisaPolicyBaseline",
         "checkImg02(baseline: KisaPolicyBaseline = KISA_POLICY_BASELINE)",
-        "computeKyvernoSpecDigest",
+        "computeKyvernoPolicyDigest",
         "specHasOverrides",
         "isPolicyReady",
     ):
         if needle not in texts["checks_ops"]:
             errors.append(f"kisa-checks-ops.ts missing {needle!r}")
 
-    if "computeNetworkPolicySpecDigest" not in texts["kisa"] or "baseline.net01DefaultDenyByNamespace" not in texts["kisa"]:
+    if "computeNetworkPolicyDigest" not in texts["kisa"] or "baseline.net01DefaultDenyByNamespace" not in texts["kisa"]:
         errors.append("kisa.ts must verify NET-01 against kisa-policy-baseline.json networkPolicies")
-    if "computeNetworkPolicySpecDigest" not in texts["checks"] or "baseline.etcd02PolicyKey" not in texts["checks"]:
+    if "computeNetworkPolicyDigest" not in texts["checks"] or "baseline.etcd02PolicyKey" not in texts["checks"]:
         errors.append("kisa-checks.ts must verify ETCD-02 against kisa-policy-baseline.json networkPolicies")
 
     if "reproduction (R5):" not in texts["test"]:
@@ -320,7 +426,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop admission=true guard in canonicalizer (would strip admission=false)", "canon", "if (out.admission === true) delete out.admission", "delete out.admission"),
     ("drop sha256 value guard in signatureAlgorithm stripper", "canon", 'if (out.signatureAlgorithm === "sha256") delete out.signatureAlgorithm', "delete out.signatureAlgorithm"),
     ("drop empty-array guard on NetworkPolicy ingress stripper", "canon", "if (Array.isArray(out.ingress) && out.ingress.length === 0) delete out.ingress", "delete out.ingress"),
+    ("ignore policy-bearing fields (specs/future fields) by iterating only spec in canonicalizePolicyObject", "canon", "for (const key of Object.keys(policyObj))", 'for (const key of ["spec"])'),
+    ("drop empty-array guard on Cilium specs[] stripper", "canon", "if (out.specs === null || out.specs === undefined || (Array.isArray(out.specs) && out.specs.length === 0))", "if (true)"),
+    ("drop isEmptyPodSelector assertion in baseline generator", "gen", "if (doc?.kind !== \"NetworkPolicy\" || !isEmptyPodSelector(doc?.spec?.podSelector))", "if (false)"),
     ("tamper NetworkPolicy baseline digest", "baseline", '"name": "apisix-etcd-ingress-policy",\n      "sourceManifest": "gitops/resources/apisix-etcd-ingress-policy.yaml",\n      "specSha256": "', '"name": "apisix-etcd-ingress-policy",\n      "sourceManifest": "gitops/resources/apisix-etcd-ingress-policy.yaml",\n      "specSha256": "invalid'),
+    ("tamper CCNP baseline digest", "baseline", '"name": "allow-ambient-kubelet-probes",\n      "sourceManifest": "gitops/resources/ambient-kubelet-probes-ccnp.yaml",\n      "specSha256": "', '"name": "allow-ambient-kubelet-probes",\n      "sourceManifest": "gitops/resources/ambient-kubelet-probes-ccnp.yaml",\n      "specSha256": "invalid'),
+    ("tamper etcd02Workload name in baseline", "baseline", '"name": "apisix-etcd"\n  },', '"name": "etcd-v2"\n  },'),
     ("drop KISA_POLICY_BASELINE default in checkImg02", "checks_ops", "checkImg02(baseline: KisaPolicyBaseline = KISA_POLICY_BASELINE)", "checkImg02(baseline: KisaPolicyBaseline = { schemaVersion: 2, sourceManifest: '', normalizedOutServerDefaults: [], policies: {} })"),
     ("drop R399 wiring in regression-check-kakao.sh", "reg", "check R399 ", "check R9999 "),
 ]
@@ -349,7 +460,7 @@ def main() -> int:
             if not check(mutated):
                 print(f"FAIL: mutation not rejected: {name}", file=sys.stderr)
                 return 1
-        print(f"PASS: R399 portal KISA Kyverno policy baseline sync ({len(MUTATIONS)} mutations + 9 behavioral checks rejected)")
+        print(f"PASS: R399 portal KISA Kyverno policy baseline sync ({len(MUTATIONS)} mutations + 16 behavioral checks rejected)")
         return 0
 
     print("PASS: R399 portal KISA Kyverno policy baseline sync")

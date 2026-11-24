@@ -4,7 +4,7 @@ import yaml from "js-yaml"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ComplianceFramework, ConfigAuditRow } from "@/types/compliance"
 import type { SecuritySummary } from "@/types/security"
-import type { KisaFetchResult, KisaRawCiliumNetworkPolicy, KisaRawNetworkPolicy, KisaWorkloadInventory } from "./k8s-client"
+import type { KisaFetchResult, KisaRawCiliumClusterwideNetworkPolicy, KisaRawCiliumNetworkPolicy, KisaRawNetworkPolicy, KisaWorkloadInventory } from "./k8s-client"
 
 vi.mock("server-only", () => ({}))
 
@@ -50,6 +50,7 @@ const mockGetKisaApiServerPods = vi.fn<() => Promise<KisaFetchResult<unknown[]>>
 const mockGetKisaNamespaces = vi.fn<() => Promise<KisaFetchResult<unknown[]>>>(async () => ({ status: "ok", data: [] }))
 const mockGetKisaNetworkPolicies = vi.fn<() => Promise<KisaFetchResult<KisaRawNetworkPolicy[]>>>(async () => ({ status: "ok", data: [] }))
 const mockGetKisaCiliumNetworkPolicies = vi.fn<() => Promise<KisaFetchResult<KisaRawCiliumNetworkPolicy[]>>>(async () => ({ status: "ok", data: [] }))
+const mockGetKisaCiliumClusterwideNetworkPolicies = vi.fn<() => Promise<KisaFetchResult<KisaRawCiliumClusterwideNetworkPolicy[]>>>(async () => ({ status: "ok", data: [] }))
 
 vi.mock("./trivy", () => ({
   getSecuritySummary: () => mockGetSecuritySummary(),
@@ -70,6 +71,7 @@ vi.mock("./k8s-client", () => ({
   getKisaNamespaces: () => mockGetKisaNamespaces(),
   getKisaNetworkPolicies: () => mockGetKisaNetworkPolicies(),
   getKisaCiliumNetworkPolicies: () => mockGetKisaCiliumNetworkPolicies(),
+  getKisaCiliumClusterwideNetworkPolicies: () => mockGetKisaCiliumClusterwideNetworkPolicies(),
   getKisaDeployment: vi.fn(async () => ({ status: "not-found" })),
   getKisaStatefulSet: vi.fn(async () => ({ status: "not-found" })),
   getKisaCronJob: vi.fn(async () => ({ status: "not-found" })),
@@ -446,6 +448,7 @@ describe("KISA sweep closed-world invariants (D-KISA-CLOSED-WORLD)", () => {
     ]
     const netPols = repoDocs.filter((d) => d.kind === "NetworkPolicy") as unknown as KisaRawNetworkPolicy[]
     const ciliumPols = repoDocs.filter((d) => d.kind === "CiliumNetworkPolicy") as unknown as KisaRawCiliumNetworkPolicy[]
+    const baselineCcnp = loadYamlDocs("gitops/resources/ambient-kubelet-probes-ccnp.yaml")[0] as unknown as KisaRawCiliumClusterwideNetworkPolicy
 
     // Simulate Kubernetes API server omitting empty ingress: [] on readback
     const liveSimulatedNetPols = netPols.map((p) => {
@@ -486,7 +489,7 @@ describe("KISA sweep closed-world invariants (D-KISA-CLOSED-WORLD)", () => {
     expect(fourOfFive?.detail).toContain("4/5")
     expect(fourOfFive?.detail).toContain("devtools")
 
-    // 3. Baseline-equal across all 5 target namespaces (custom baseline adding devtools default-deny) -> pass
+    // 3. Baseline-equal across all 5 target namespaces (custom baseline adding devtools default-deny) + baseline CCNP -> pass
     const repoBaseline = policyBaselineData as KisaPolicyBaseline
     const customBaseline: KisaPolicyBaseline = {
       ...repoBaseline,
@@ -497,9 +500,62 @@ describe("KISA sweep closed-world invariants (D-KISA-CLOSED-WORLD)", () => {
     }
     mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
     mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: [baselineCcnp] })
     const allClean = await checkNet01(customBaseline)
     expect(allClean.status).toBe("pass")
     expect(allClean.reasonKey).toBe("compliance.kisa.reason.netDenyAll")
+
+    // 3b. Reproduction (R9 MAJOR 1): baseline CNP with extra specs[] entry -> warn (not satisfied)
+    const cnpWithSpecs = ciliumPols.map((c) => {
+      if (c.metadata?.namespace === "monitoring" && c.metadata?.name === "prometheus-operator-webhook-ingress") {
+        return {
+          ...JSON.parse(JSON.stringify(c)),
+          specs: [{ endpointSelector: {}, ingress: [{ fromEntities: ["all"] }] }],
+        }
+      }
+      return c
+    })
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: cnpWithSpecs })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: [baselineCcnp] })
+    const cnpSpecsRes = await checkNet01(customBaseline)
+    expect(cnpSpecsRes.status).toBe("warn")
+    expect(cnpSpecsRes.detailLocalized.en).toContain("unreviewed policy present")
+    expect(cnpSpecsRes.detail).toContain("prometheus-operator-webhook-ingress(differs)")
+
+    // 3c. Reproduction (R9 MAJOR 3): unreviewed or drifted CCNP -> warn 'unreviewed cluster-wide policy present'
+    const driftedCcnp: KisaRawCiliumClusterwideNetworkPolicy = JSON.parse(JSON.stringify(baselineCcnp))
+    ;(driftedCcnp.spec as Record<string, unknown> & { ingress: unknown[] }).ingress.push({ fromEntities: ["all"] })
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: [driftedCcnp] })
+    const ccnpDriftRes = await checkNet01(customBaseline)
+    expect(ccnpDriftRes.status).toBe("warn")
+    expect(ccnpDriftRes.detailLocalized.en).toContain("unreviewed cluster-wide policy present")
+    expect(ccnpDriftRes.detail).toContain("allow-ambient-kubelet-probes(differs)")
+
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [baselineCcnp, { metadata: { name: "open-all-ccnp" }, spec: { endpointSelector: {}, ingress: [{ fromEntities: ["all"] }] } }],
+    })
+    const ccnpExtraRes = await checkNet01(customBaseline)
+    expect(ccnpExtraRes.status).toBe("warn")
+    expect(ccnpExtraRes.detailLocalized.en).toContain("unreviewed cluster-wide policy present")
+    expect(ccnpExtraRes.detail).toContain("open-all-ccnp")
+
+    // 3d. CCNP list forbidden -> manual
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({
+      status: "forbidden",
+      resource: "ciliumclusterwidenetworkpolicies.cilium.io",
+    })
+    const ccnpForb = await checkNet01(customBaseline)
+    expect(ccnpForb.status).toBe("manual")
+    expect(ccnpForb.partial).toBe(true)
+    expect(ccnpForb.reasonKey).toBe("compliance.kisa.reason.apiForbidden")
 
     // 4. One-field deviation on a baseline policy -> warn (never pass)
     const driftedNetPols = liveSimulatedNetPols.map((p) => {

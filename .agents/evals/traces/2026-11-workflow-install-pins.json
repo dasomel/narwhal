@@ -13,7 +13,8 @@
       ".github/workflows/markdown-changed.yml",
       ".github/workflows/portal-research-evidence.yml",
       ".github/workflows/research-evidence.yml",
-      "docs/common/lessons-log.md"
+      "docs/common/lessons-log.md",
+      ".github/dependabot.yml"
     ]
   },
   "events": [

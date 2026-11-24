@@ -415,12 +415,15 @@ export interface RbacPolicyRule {
   resources?: string[]
   verbs?: string[]
   resourceNames?: string[]
+  nonResourceURLs?: string[]
 }
 
 const WRITE_VERBS = ["create", "update", "patch", "delete", "deletecollection"] as const
 const WRITE_VERB_SET = new Set<string>(WRITE_VERBS)
 const SECRET_ACCESS_VERBS = ["get", "list", "watch", ...WRITE_VERBS] as const
-const RBAC_ESCALATION_RESOURCES = ["roles", "clusterroles", "rolebindings", "clusterrolebindings"] as const
+// Upstream pkg/registry/rbac/escalation_check.go: bind/escalate apply only to roles/clusterroles.
+const RBAC_ESCALATION_RESOURCES = ["roles", "clusterroles"] as const
+const RBAC_WRITE_RESOURCES = ["roles", "clusterroles", "rolebindings", "clusterrolebindings"] as const
 const CORE_WORKLOAD_RESOURCES = ["pods", "pods/exec", "replicationcontrollers"] as const
 const APPS_WORKLOAD_RESOURCES = ["deployments", "daemonsets", "statefulsets", "replicasets"] as const
 const BATCH_WORKLOAD_RESOURCES = ["jobs", "cronjobs"] as const
@@ -431,8 +434,10 @@ const CORE_IMPERSONATE_RESOURCES = ["users", "groups", "serviceaccounts"] as con
 
 // Evaluates Kubernetes RBAC PolicyRule matching within a single rule:
 // (apiGroup in apiGroups or '*') && (verb in verbs or '*') && (resource matches resources).
-// Subresources follow Kubernetes ResourceMatches (exact, '*', 'res/*', '*/sub'), and a
-// 'parent/*' query matches any concrete 'parent/<key>' grant (e.g. 'userextras/scopes').
+// Concrete subresources follow Kubernetes pkg/apis/rbac/v1/evaluation_helpers.go ResourceMatches
+// (only '*', exact 'resource/subresource', or '*/subresource' — never 'resource/*').
+// A 'parent/*' query is used internally by evaluateRbacRules to detect any concrete
+// 'parent/<key>' grant (e.g. 'userextras/scopes', '*', or '*/scopes').
 // resourceNames is intentionally not exempted (fail-closed: a named privileged target
 // such as 'system:admin' or 'cluster-admin' still confers the dangerous capability).
 export function ruleGrants(
@@ -463,8 +468,7 @@ export function ruleGrants(
     return resources.some(
       (res) =>
         res === "*" ||
-        res === targetResource ||
-        (res.startsWith(`${parent}/`) && res.length > parent.length + 1) ||
+        (res.startsWith(`${parent}/`) && res.length > parent.length + 1 && res !== `${parent}/*`) ||
         (res.startsWith("*/") && res.length > 2 && res !== "*/*"),
     )
   }
@@ -473,7 +477,6 @@ export function ruleGrants(
     (res) =>
       res === "*" ||
       res === targetResource ||
-      res === `${parent}/*` ||
       res === `*/${sub}`,
   )
 }
@@ -509,6 +512,11 @@ export function evaluateRbacRules(rules: ReadonlyArray<RbacPolicyRule>): RbacRul
     const resourcesLower = (r.resources ?? []).map((res) => res.toLowerCase())
     const verbsLower = (r.verbs ?? []).map((v) => v.toLowerCase())
 
+    // Rules without both apiGroups and resources (e.g. nonResourceURLs-only rules such as
+    // { nonResourceURLs: ["/healthz"], verbs: ["*"] }) match zero Kubernetes API resources
+    // and must not feed resource-based categories (anyWildcard, writeAccess, escalation).
+    if (apiGroupsLower.length === 0 || resourcesLower.length === 0) continue
+
     const hasWildcardGroup = apiGroupsLower.includes("*")
     const hasWildcardVerb = verbsLower.includes("*")
     const hasWildcardResource = resourcesLower.includes("*")
@@ -541,7 +549,7 @@ export function evaluateRbacRules(rules: ReadonlyArray<RbacPolicyRule>): RbacRul
       ) {
         checkIds.add("KSV048")
       }
-      if (grantsAnyVerb(r, "rbac.authorization.k8s.io", RBAC_ESCALATION_RESOURCES, WRITE_VERBS)) {
+      if (grantsAnyVerb(r, "rbac.authorization.k8s.io", RBAC_WRITE_RESOURCES, WRITE_VERBS)) {
         checkIds.add("KSV049")
       }
       if (

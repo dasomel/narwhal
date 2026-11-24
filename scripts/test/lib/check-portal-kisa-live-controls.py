@@ -154,6 +154,9 @@ def check(texts: dict[str, str]) -> list[str]:
     if "failed to verify image ([^\\s:]+" in checks_ops:
         errors.append("kisa-checks-ops.ts must not use the broken FAILED_IMAGE_RE port-truncating regex")
 
+    if "res === `${parent}/*`" in checks_ops:
+        errors.append("kisa-checks-ops.ts must not match resource/* as a subresource wildcard (Kubernetes ResourceMatches allows only *, exact, */sub)")
+
     if "export async function checkImg02()" not in checks_ops or "// --- KISA-RBAC-01" not in checks_ops:
         errors.append("kisa-checks-ops.ts missing checkImg02 boundaries")
     else:
@@ -179,6 +182,9 @@ def check(texts: dict[str, str]) -> list[str]:
         "const hasCoreOrWildcardGroup = hasWildcardGroup || apiGroupsLower.includes(\"\")",
         "if (hasWildcardVerb && hasWildcardResource && hasCoreOrWildcardGroup)",
         "if (!verbs.includes(\"*\") && !verbs.includes(targetVerb)) return false",
+        'const RBAC_ESCALATION_RESOURCES = ["roles", "clusterroles"] as const',
+        'const RBAC_WRITE_RESOURCES = ["roles", "clusterroles", "rolebindings", "clusterrolebindings"] as const',
+        'if (apiGroupsLower.length === 0 || resourcesLower.length === 0) continue',
         'grantsAnyVerb(r, "rbac.authorization.k8s.io", RBAC_ESCALATION_RESOURCES, ["bind", "escalate"])',
         'const impersonatesCore = grantsAnyVerb(r, "", CORE_IMPERSONATE_RESOURCES, ["impersonate"])',
         'const impersonatesAuth = grantsAnyVerb(r, "authentication.k8s.io", ["uids", "userextras/*"], ["impersonate"])',
@@ -275,6 +281,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("ignore rbac.authorization.k8s.io apiGroup on bind/escalate", "checks_ops", 'grantsAnyVerb(r, "rbac.authorization.k8s.io", RBAC_ESCALATION_RESOURCES, ["bind", "escalate"])', 'grantsAnyVerb(r, "*", RBAC_ESCALATION_RESOURCES, ["bind", "escalate"])'),
     ("bypass impersonate verb check in core impersonate branch", "checks_ops", 'const impersonatesCore = grantsAnyVerb(r, "", CORE_IMPERSONATE_RESOURCES, ["impersonate"])', 'const impersonatesCore = grantsAnyVerb(r, "", [...CORE_IMPERSONATE_RESOURCES, "impersonate"], ["get", "impersonate"])'),
     ("drop uids or userextras/* authentication.k8s.io impersonate check", "checks_ops", 'const impersonatesAuth = grantsAnyVerb(r, "authentication.k8s.io", ["uids", "userextras/*"], ["impersonate"])', 'const impersonatesAuth = grantsAnyVerb(r, "authentication.k8s.io", ["userextras"], ["impersonate"])'),
+    ("allow bind/escalate escalation on rolebindings/clusterrolebindings", "checks_ops", 'const RBAC_ESCALATION_RESOURCES = ["roles", "clusterroles"] as const', 'const RBAC_ESCALATION_RESOURCES = ["roles", "clusterroles", "rolebindings", "clusterrolebindings"] as const'),
+    ("allow res/* subresource wildcard in ruleGrants", "checks_ops", "res === `*/${sub}`", "res === `${parent}/*` || res === `*/${sub}`"),
+    ("let nonResourceURLs-only rules feed writeAccess/anyWildcard", "checks_ops", "if (apiGroupsLower.length === 0 || resourcesLower.length === 0) continue", "// no-op"),
     ("reintroduce unused get verb on peerauthentications", "rbac", "    resources: [peerauthentications]\n    verbs: [list]", "    resources: [peerauthentications]\n    verbs: [get, list]"),
     ("reintroduce unused get verb on policyreports", "rbac", "    resources: [policyreports]\n    verbs: [list]", "    resources: [policyreports]\n    verbs: [get, list]"),
     ("drop R397 wiring in regression-check-kakao.sh", "reg", "check R397 ", "check R9999 "),

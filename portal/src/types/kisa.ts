@@ -24,6 +24,8 @@ export type KisaReasonKey =
   | "compliance.kisa.reason.tlsStrictNoExceptions"
   | "compliance.kisa.reason.tlsStrictWithExceptions"
   | "compliance.kisa.reason.tlsNotStrict"
+  | "compliance.kisa.reason.tlsMultipleMeshWide"
+  | "compliance.kisa.reason.tlsMeshWideMissing"
   | "compliance.kisa.reason.obsConfigured"
   | "compliance.kisa.reason.obsNoChannel"
   | "compliance.kisa.reason.obsInvalidDestination"

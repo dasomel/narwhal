@@ -55,6 +55,8 @@ function kisaReasonLabel(key: KisaReasonKey, t: ReturnType<typeof useT>): string
     case "compliance.kisa.reason.tlsStrictNoExceptions": return t("compliance.kisa.reason.tlsStrictNoExceptions")
     case "compliance.kisa.reason.tlsStrictWithExceptions": return t("compliance.kisa.reason.tlsStrictWithExceptions")
     case "compliance.kisa.reason.tlsNotStrict": return t("compliance.kisa.reason.tlsNotStrict")
+    case "compliance.kisa.reason.tlsMultipleMeshWide": return t("compliance.kisa.reason.tlsMultipleMeshWide")
+    case "compliance.kisa.reason.tlsMeshWideMissing": return t("compliance.kisa.reason.tlsMeshWideMissing")
     case "compliance.kisa.reason.obsConfigured": return t("compliance.kisa.reason.obsConfigured")
     case "compliance.kisa.reason.obsNoChannel": return t("compliance.kisa.reason.obsNoChannel")
     case "compliance.kisa.reason.obsInvalidDestination": return t("compliance.kisa.reason.obsInvalidDestination")

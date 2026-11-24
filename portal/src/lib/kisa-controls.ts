@@ -79,7 +79,7 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail" | "det
     severity: "High",
     standardRefs: ["NSA/CISA", "ISMS-P 2.7.1"],
     evidence:
-      "security.istio.io PeerAuthentication 전체를 실시간 조회해 메시 전역 기본 모드(istio-system/default)와 모든 PERMISSIVE/DISABLE 예외(네임스페이스·셀렉터·포트 단위)를 점검.",
+      "security.istio.io PeerAuthentication 전체를 실시간 조회해 가정 루트 네임스페이스(istio-system) 내 단일 메시 전역 STRICT 여부와 모든 예외(복수 메시 전역 정책·네임스페이스·셀렉터·포트 단위·미증명 UNSET)를 점검.",
     remediation:
       "PERMISSIVE/DISABLE 예외별로 비-메시 트래픽 경로를 재확인해 최소 범위(워크로드·포트 단위)로 축소하고, 예외 구간은 NetworkPolicy로 보완.",
   },

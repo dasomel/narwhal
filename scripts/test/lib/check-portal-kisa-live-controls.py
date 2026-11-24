@@ -249,6 +249,32 @@ def check(texts: dict[str, str]) -> list[str]:
     if "if (val.length > 0)" not in checks:
         errors.append("kisa-checks.ts extractFlagValues must reject empty flag values")
 
+    if "export async function checkTls01(" not in checks:
+        errors.append("kisa-checks.ts missing checkTls01")
+    else:
+        tls_body = checks.split("export async function checkTls01(", 1)[1]
+        tls_code = re.sub(r"//[^\n]*", "", tls_body)
+        if 'metadata?.name === "default"' in tls_code or 'metadata.name === "default"' in tls_code:
+            errors.append("kisa-checks.ts checkTls01 must never select mesh-wide PeerAuthentication by name ('default')")
+        for tls_req in (
+            "if (meshWideRootPas.length === 0)",
+            "if (meshWideRootPas.length > 1)",
+            "multiple mesh-wide policies; effective mode ambiguous",
+            "creationTimestamp",
+            "singleRootPa.spec?.portLevelMtls",
+            "compliance.kisa.reason.tlsMeshWideMissing",
+            "compliance.kisa.reason.tlsMultipleMeshWide",
+        ):
+            if tls_req not in tls_body:
+                errors.append(f"kisa-checks.ts checkTls01 missing {tls_req!r}")
+        if 'makeOutcome(\n      "pass"' not in tls_body:
+            errors.append("kisa-checks.ts checkTls01 missing pass outcome")
+        else:
+            pass_idx = tls_body.index('makeOutcome(\n      "pass"')
+            for guard in ("if (meshWideRootPas.length === 0)", "if (meshWideRootPas.length > 1)", "if (exceptions.length === 0)"):
+                if guard not in tls_body or tls_body.index(guard) > pass_idx:
+                    errors.append(f"kisa-checks.ts checkTls01 guard {guard!r} must precede pass return")
+
     if "function mapApiServerPod(" not in k8s:
         errors.append("k8s-client.ts missing mapApiServerPod")
     else:
@@ -273,7 +299,7 @@ def check(texts: dict[str, str]) -> list[str]:
         "compliance.kisa.reason.secSecretMetaNotEvaluated",
         "compliance.kisa.reason.secCronJobNotEvaluated",
         'makeOutcome(\n    "manual",\n    "compliance.kisa.reason.imgNodeManual"',
-        "portLevelMtls",
+        "pa.spec?.portLevelMtls",
         "sel.matchExpressions",
     ):
         if needle not in checks:
@@ -460,9 +486,9 @@ def check(texts: dict[str, str]) -> list[str]:
     ):
         if r5_needle not in test:
             errors.append(f"kisa-live-controls.test.ts missing R5 closed-world test marker {r5_needle!r}")
-    for r10_needle in ("reproduction (R10):", "matchesLabelSelector"):
+    for r10_needle in ("reproduction (R10):", "matchesLabelSelector", "reproduction (R11):"):
         if r10_needle not in test:
-            errors.append(f"kisa-live-controls.test.ts missing R10 test marker {r10_needle!r}")
+            errors.append(f"kisa-live-controls.test.ts missing R10/R11 test marker {r10_needle!r}")
     for sweep_needle in ("IMG-03 never passes", "POD-01 does not pass", "NET-01 closed-world baseline:", "Reproduction (R10 MAJOR 2):", "ADM-01 warns", "TLS-02 warns", "CP-01/ETCD-01 reject"):
         if sweep_needle not in unit_test:
             errors.append(f"kisa.test.ts missing sweep regression marker {sweep_needle!r}")
@@ -481,7 +507,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop checkObs01 call", "kisa", "applyRich(await checkObs01())", 'status = "warn"'),
     ("drop checkImg02 call", "kisa", "applyRich(await checkImg02())", 'status = "warn"'),
     ("mark KISA-IMG-01 pass instead of manual", "checks", 'makeOutcome(\n    "manual",\n    "compliance.kisa.reason.imgNodeManual"', 'makeOutcome(\n    "pass",\n    "compliance.kisa.reason.imgNodeManual"'),
-    ("ignore portLevelMtls in KISA-TLS-01", "checks", "portLevelMtls", "ignoredField"),
+    ("ignore portLevelMtls in KISA-TLS-01", "checks", "pa.spec?.portLevelMtls", "pa.spec?.ignoredField"),
+    ("restore name-based default selection in checkTls01", "checks", "const rootPa = meshWideRootPas[0]", 'const rootPa = meshWideRootPas.find((p) => p.metadata?.name === "default") ?? meshWideRootPas[0]'),
     ("merge containers with flatMap in checkEtcd02", "checks", 'const etcdContainer = containers.find((c) => c.name === "etcd")', 'const etcdContainer = { command: containers.flatMap((c) => c.command ?? []), args: containers.flatMap((c) => c.args ?? []) }'),
     ("merge containers with flatMap in mapApiServerPod", "k8s", 'const apiserverContainer = (p.spec.containers ?? []).find((c) => c.name === "kube-apiserver")', 'const apiserverContainer = { command: (p.spec.containers ?? []).flatMap((c) => c.command ?? []), args: [] }'),
     ("reintroduce pod name prefix falco match in checkObs01", "checks_ops", 'const appName = p.metadata?.labels?.["app.kubernetes.io/name"] ?? p.metadata?.labels?.["app"] ?? ""', 'const appName = p.metadata?.name?.startsWith("falco-") ? "falco" : ""'),

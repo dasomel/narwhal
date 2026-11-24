@@ -2983,9 +2983,9 @@ export interface KisaRawCiliumClusterwideNetworkPolicy {
 }
 
 export interface KisaRawPeerAuthentication {
-  metadata?: { name?: string; namespace?: string }
+  metadata?: { name?: string; namespace?: string; creationTimestamp?: string }
   spec?: {
-    selector?: { matchLabels?: Record<string, string> }
+    selector?: { matchLabels?: Record<string, string>; matchExpressions?: unknown[] }
     mtls?: { mode?: string }
     portLevelMtls?: Record<string, { mode?: string }>
   }

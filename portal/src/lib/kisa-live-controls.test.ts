@@ -639,17 +639,55 @@ describe("KISA-IMG-01 honest manual status", () => {
 })
 
 describe("KISA-TLS-01 live evaluation", () => {
-  it("passes when mesh-wide STRICT has zero exceptions", async () => {
+  it("passes when istio-system has exactly one selector-less STRICT policy (regardless of name) and zero exceptions", async () => {
     mockGetKisaPeerAuthentications.mockResolvedValue({
       status: "ok",
-      data: [{ metadata: { name: "default", namespace: "istio-system" }, spec: { mtls: { mode: "STRICT" } } }],
+      data: [{ metadata: { name: "mesh-strict", namespace: "istio-system", creationTimestamp: "2026-11-15T00:00:00Z" }, spec: { mtls: { mode: "STRICT" } } }],
     })
     const r = await checkTls01()
     expect(r.status).toBe("pass")
     expect(r.reasonKey).toBe("compliance.kisa.reason.tlsStrictNoExceptions")
+    expect(r.detailLocalized.en).toContain("istio-system/mesh-strict")
+    expect(r.detailLocalized.en).toContain("assumed rootNamespace=istio-system")
   })
 
-  it("warns and lists both namespace-wide, selector, and portLevelMtls exceptions", async () => {
+  it("reproduction (R11): warns (never pass) when legacy UNSET and default STRICT coexist in istio-system", async () => {
+    mockGetKisaPeerAuthentications.mockResolvedValue({
+      status: "ok",
+      data: [
+        { metadata: { name: "legacy", namespace: "istio-system", creationTimestamp: "2026-11-01T00:00:00Z" }, spec: {} },
+        { metadata: { name: "default", namespace: "istio-system", creationTimestamp: "2026-11-15T00:00:00Z" }, spec: { mtls: { mode: "STRICT" } } },
+      ],
+    })
+    const r = await checkTls01()
+    expect(r.status).toBe("warn")
+    expect(r.reasonKey).toBe("compliance.kisa.reason.tlsMultipleMeshWide")
+    expect(r.detailLocalized.en).toContain("multiple mesh-wide policies; effective mode ambiguous")
+    expect(r.detailLocalized.en).toContain("legacy(mode=UNSET (defaults to PERMISSIVE at mesh root), creationTimestamp=2026-11-01T00:00:00Z)")
+    expect(r.detailLocalized.en).toContain("default(mode=STRICT, creationTimestamp=2026-11-15T00:00:00Z)")
+  })
+
+  it("warns when zero mesh-wide (selector-less) policies exist in istio-system", async () => {
+    mockGetKisaPeerAuthentications.mockResolvedValue({ status: "ok", data: [] })
+    const emptyRes = await checkTls01()
+    expect(emptyRes.status).toBe("warn")
+    expect(emptyRes.reasonKey).toBe("compliance.kisa.reason.tlsMeshWideMissing")
+    expect(emptyRes.detailLocalized.en).toContain("assumed root namespace istio-system")
+
+    mockGetKisaPeerAuthentications.mockResolvedValue({
+      status: "ok",
+      data: [
+        { metadata: { name: "ingress-only", namespace: "istio-system" }, spec: { selector: { matchLabels: { app: "ingress" } }, mtls: { mode: "STRICT" } } },
+        { metadata: { name: "harbor-permissive", namespace: "devtools" }, spec: { mtls: { mode: "PERMISSIVE" }, selector: { matchLabels: { app: "harbor" } } } },
+      ],
+    })
+    const selectorOnlyRes = await checkTls01()
+    expect(selectorOnlyRes.status).toBe("warn")
+    expect(selectorOnlyRes.reasonKey).toBe("compliance.kisa.reason.tlsMeshWideMissing")
+    expect(selectorOnlyRes.detailLocalized.en).toContain("devtools/harbor-permissive")
+  })
+
+  it("warns and lists namespace-wide, selector, and portLevelMtls exceptions (including STRICT portLevelMtls and today's live shape)", async () => {
     mockGetKisaPeerAuthentications.mockResolvedValue({
       status: "ok",
       data: [
@@ -663,11 +701,63 @@ describe("KISA-TLS-01 live evaluation", () => {
     expect(r.detail).toContain("devtools/harbor-permissive")
     expect(r.detail).toContain("storage/velero-metrics")
     expect(r.detail).toContain("port 8085:PERMISSIVE")
+
+    mockGetKisaPeerAuthentications.mockResolvedValue({
+      status: "ok",
+      data: [
+        { metadata: { name: "default", namespace: "istio-system" }, spec: { mtls: { mode: "STRICT" } } },
+        { metadata: { name: "port-strict", namespace: "devtools" }, spec: { mtls: { mode: "STRICT" }, portLevelMtls: { "8080": { mode: "STRICT" } }, selector: { matchLabels: { app: "web" } } } },
+      ],
+    })
+    const portStrictRes = await checkTls01()
+    expect(portStrictRes.status).toBe("warn")
+    expect(portStrictRes.detailLocalized.en).toContain("devtools/port-strict(port 8080:STRICT, app=web)")
   })
 
-  it("fails when mesh-wide PA is missing or not STRICT, warns on rootPa portLevelMtls exception, and returns manual on 403", async () => {
-    mockGetKisaPeerAuthentications.mockResolvedValue({ status: "ok", data: [] })
-    expect((await checkTls01()).status).toBe("fail")
+  it("handles UNSET inheritance per Istio rules: sole ns-wide UNSET inherits single STRICT mesh-wide, while ambiguous/workload UNSET warns", async () => {
+    mockGetKisaPeerAuthentications.mockResolvedValue({
+      status: "ok",
+      data: [
+        { metadata: { name: "default", namespace: "istio-system" }, spec: { mtls: { mode: "STRICT" } } },
+        { metadata: { name: "ns-unset", namespace: "app-a" }, spec: {} },
+      ],
+    })
+    const soleUnset = await checkTls01()
+    expect(soleUnset.status).toBe("pass")
+    expect(soleUnset.detailLocalized.en).toContain("app-a/ns-unset(UNSET (inherits), ns-wide)")
+
+    mockGetKisaPeerAuthentications.mockResolvedValue({
+      status: "ok",
+      data: [
+        { metadata: { name: "default", namespace: "istio-system" }, spec: { mtls: { mode: "STRICT" } } },
+        { metadata: { name: "ns-unset", namespace: "app-a" }, spec: {} },
+        { metadata: { name: "ns-strict", namespace: "app-a" }, spec: { mtls: { mode: "STRICT" } } },
+      ],
+    })
+    const multiNs = await checkTls01()
+    expect(multiNs.status).toBe("warn")
+    expect(multiNs.detailLocalized.en).toContain("app-a/ns-unset(UNSET (inherits), ns-wide)")
+
+    mockGetKisaPeerAuthentications.mockResolvedValue({
+      status: "ok",
+      data: [
+        { metadata: { name: "default", namespace: "istio-system" }, spec: { mtls: { mode: "STRICT" } } },
+        { metadata: { name: "wl-unset", namespace: "app-a" }, spec: { selector: { matchLabels: { app: "web" } }, mtls: { mode: "UNSET" } } },
+      ],
+    })
+    const wlUnset = await checkTls01()
+    expect(wlUnset.status).toBe("warn")
+    expect(wlUnset.detailLocalized.en).toContain("app-a/wl-unset(UNSET (inherits), app=web)")
+  })
+
+  it("fails when sole mesh-wide PA is not STRICT, warns on rootPa portLevelMtls, and returns manual when list is forbidden", async () => {
+    mockGetKisaPeerAuthentications.mockResolvedValue({
+      status: "ok",
+      data: [{ metadata: { name: "default", namespace: "istio-system" }, spec: {} }],
+    })
+    const rootUnset = await checkTls01()
+    expect(rootUnset.status).toBe("fail")
+    expect(rootUnset.reasonKey).toBe("compliance.kisa.reason.tlsNotStrict")
 
     mockGetKisaPeerAuthentications.mockResolvedValue({
       status: "ok",

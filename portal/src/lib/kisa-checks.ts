@@ -571,31 +571,98 @@ export function checkImg01(): KisaCheckOutcome {
 }
 
 // --- KISA-TLS-01: Istio PeerAuthentication mTLS coverage ---
+// D-KISA-CLOSED-WORLD / Istio PeerAuthentication rules
+// (https://istio.io/latest/docs/reference/config/security/peer_authentication/):
+// - Root namespace assumption: `meshConfig.rootNamespace` is not queried, so ISTIO_ROOT_NAMESPACE ("istio-system")
+//   is assumed and surfaced in every outcome reason; zero selector-less policies in istio-system => warn (not pass).
+// - No name selection & no oldest-wins reimplementation: never select by metadata.name ("default") or resolve ties
+//   by creationTimestamp; 2+ selector-less policies in istio-system => warn ("multiple mesh-wide policies; effective mode ambiguous").
+// - UNSET inheritance rule: MutualTLSMode.UNSET inherits from parent if one exists, else defaults to PERMISSIVE.
+//   At mesh root (istio-system, no parent), UNSET/missing => PERMISSIVE (fail).
+//   In a non-root namespace `ns`, a selector-less policy with UNSET/missing mode (and no portLevelMtls) is always
+//   reported as "UNSET (inherits)", and its inheritance is provably STRICT ONLY when (1) istio-system has
+//   exactly one selector-less policy whose mtls.mode is STRICT with no portLevelMtls AND (2) `ns` has no other
+//   selector-less policy (count === 1, avoiding Istio's oldest-wins tie-breaker). Workload-scoped (selector) UNSET
+//   policies, policies in multi-policy namespaces, or any policy carrying portLevelMtls cannot be proven STRICT and block pass.
+const ISTIO_ROOT_NAMESPACE = "istio-system"
 
-function formatPaException(pa: KisaRawPeerAuthentication): string | null {
+function isSelectorlessPa(pa: KisaRawPeerAuthentication): boolean {
+  const sel = pa.spec?.selector as { matchLabels?: Record<string, string>; matchExpressions?: unknown[]; [k: string]: unknown } | undefined
+  if (!sel) return true
+  const extraKeys = Object.keys(sel).filter((k) => k !== "matchLabels" && k !== "matchExpressions")
+  if (extraKeys.length > 0) return false
+  return Object.keys(sel.matchLabels ?? {}).length === 0 && (sel.matchExpressions ?? []).length === 0
+}
+
+function normalizePaMode(mode: string | undefined): string {
+  const normalized = (mode ?? "").trim().toUpperCase()
+  return normalized.length > 0 ? normalized : "UNSET"
+}
+
+function formatPaSelector(pa: KisaRawPeerAuthentication): string {
+  const sel = pa.spec?.selector as { matchLabels?: Record<string, string>; matchExpressions?: unknown[] } | undefined
+  const selLabels = sel?.matchLabels
+  if (selLabels && Object.keys(selLabels).length > 0) {
+    return Object.entries(selLabels).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join(",")
+  }
+  if ((sel?.matchExpressions ?? []).length > 0) {
+    return "selector-expr"
+  }
+  return isSelectorlessPa(pa) ? "ns-wide" : "selector"
+}
+
+interface PaClassification {
+  blockingException: string | null
+  inheritedStrictNote: string | null
+}
+
+function classifyPaPolicy(
+  pa: KisaRawPeerAuthentication,
+  singleStrictMeshRoot: boolean,
+  nsWideCounts: Map<string, number>,
+): PaClassification {
   const ns = pa.metadata?.namespace ?? ""
   const name = pa.metadata?.name ?? "unknown"
-  const mode = (pa.spec?.mtls?.mode ?? "UNSET").toUpperCase()
-  const selLabels = pa.spec?.selector?.matchLabels
-  const selStr = selLabels && Object.keys(selLabels).length > 0
-    ? Object.entries(selLabels).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join(",")
-    : "ns-wide"
+  const mode = normalizePaMode(pa.spec?.mtls?.mode)
+  const selStr = formatPaSelector(pa)
+  const selectorless = isSelectorlessPa(pa)
 
+  const portEntries = Object.entries(pa.spec?.portLevelMtls ?? {}).sort(([a], [b]) => a.localeCompare(b))
   const portExceptions: string[] = []
-  for (const [port, cfg] of Object.entries(pa.spec?.portLevelMtls ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
-    const pMode = (cfg?.mode ?? "").toUpperCase()
-    if (pMode === "PERMISSIVE" || pMode === "DISABLE") {
-      portExceptions.push(`port ${port}:${pMode}`)
-    }
+  for (const [port, cfg] of portEntries) {
+    const pMode = normalizePaMode(cfg?.mode)
+    portExceptions.push(`port ${port}:${pMode === "UNSET" ? "UNSET (inherits)" : pMode}`)
+  }
+
+  if (portExceptions.length > 0) {
+    const details = mode !== "STRICT"
+      ? `${mode === "UNSET" ? "UNSET (inherits)" : mode}, ${portExceptions.join("/")}, ${selStr}`
+      : `${portExceptions.join("/")}, ${selStr}`
+    return { blockingException: `${ns}/${name}(${details})`, inheritedStrictNote: null }
   }
 
   if (mode === "PERMISSIVE" || mode === "DISABLE") {
-    return `${ns}/${name}(${mode}, ${selStr})`
+    return { blockingException: `${ns}/${name}(${mode}, ${selStr})`, inheritedStrictNote: null }
   }
-  if (portExceptions.length > 0) {
-    return `${ns}/${name}(${portExceptions.join("/")}, ${selStr})`
+
+  if (mode === "UNSET") {
+    const formatted = `${ns}/${name}(UNSET (inherits), ${selStr})`
+    const provablyInheritsStrict =
+      singleStrictMeshRoot &&
+      selectorless &&
+      ns.length > 0 &&
+      ns !== ISTIO_ROOT_NAMESPACE &&
+      (nsWideCounts.get(ns) ?? 0) === 1
+    return provablyInheritsStrict
+      ? { blockingException: null, inheritedStrictNote: formatted }
+      : { blockingException: formatted, inheritedStrictNote: null }
   }
-  return null
+
+  if (mode !== "STRICT") {
+    return { blockingException: `${ns}/${name}(${mode}, ${selStr})`, inheritedStrictNote: null }
+  }
+
+  return { blockingException: null, inheritedStrictNote: null }
 }
 
 export async function checkTls01(): Promise<KisaCheckOutcome> {
@@ -606,47 +673,119 @@ export async function checkTls01(): Promise<KisaCheckOutcome> {
   }
 
   const items = paRes.data
-  const isMeshWideSelector = (p: KisaRawPeerAuthentication) => {
-    const sel = p.spec?.selector as { matchLabels?: Record<string, string>; matchExpressions?: unknown[] } | undefined
-    return !sel || (Object.keys(sel.matchLabels ?? {}).length === 0 && (sel.matchExpressions ?? []).length === 0)
-  }
-  const rootPa =
-    items.find((p) => p.metadata?.namespace === "istio-system" && p.metadata?.name === "default" && isMeshWideSelector(p)) ??
-    items.find((p) => p.metadata?.namespace === "istio-system" && isMeshWideSelector(p))
+  const meshWideRootPas = items.filter(
+    (p) => p.metadata?.namespace === ISTIO_ROOT_NAMESPACE && isSelectorlessPa(p),
+  )
 
-  const meshMode = (rootPa?.spec?.mtls?.mode ?? "UNSET").toUpperCase()
-  const rootPortExceptions = rootPa && meshMode === "STRICT" ? formatPaException(rootPa) : null
-  const exceptions = [
-    ...items.filter((p) => p !== rootPa).map(formatPaException),
-    rootPortExceptions,
-  ]
-    .filter((x): x is string => x !== null)
-    .sort()
+  const nsWideCounts = new Map<string, number>()
+  for (const p of items) {
+    const ns = p.metadata?.namespace ?? ""
+    if (ns.length > 0 && ns !== ISTIO_ROOT_NAMESPACE && isSelectorlessPa(p)) {
+      nsWideCounts.set(ns, (nsWideCounts.get(ns) ?? 0) + 1)
+    }
+  }
+
+  const singleRootPa = meshWideRootPas.length === 1 ? meshWideRootPas[0] : undefined
+  const singleRootMode = singleRootPa ? normalizePaMode(singleRootPa.spec?.mtls?.mode) : ""
+  const singleRootPortCount = singleRootPa ? Object.keys(singleRootPa.spec?.portLevelMtls ?? {}).length : 0
+  const singleStrictMeshRoot =
+    meshWideRootPas.length === 1 && singleRootMode === "STRICT" && singleRootPortCount === 0
+
+  const classifyOthers = (excludeRootPa?: KisaRawPeerAuthentication) => {
+    const blocking: string[] = []
+    const inheritedStrict: string[] = []
+    for (const p of items) {
+      if (excludeRootPa && p === excludeRootPa) continue
+      const cls = classifyPaPolicy(p, singleStrictMeshRoot, nsWideCounts)
+      if (cls.blockingException) blocking.push(cls.blockingException)
+      if (cls.inheritedStrictNote) inheritedStrict.push(cls.inheritedStrictNote)
+    }
+    if (excludeRootPa && normalizePaMode(excludeRootPa.spec?.mtls?.mode) === "STRICT") {
+      const rootCls = classifyPaPolicy(excludeRootPa, false, nsWideCounts)
+      if (rootCls.blockingException) blocking.push(rootCls.blockingException)
+    }
+    return {
+      blocking: blocking.sort(),
+      inheritedStrict: inheritedStrict.sort(),
+    }
+  }
+
+  if (meshWideRootPas.length === 0) {
+    const { blocking, inheritedStrict } = classifyOthers()
+    const allExceptions = [...blocking, ...inheritedStrict].sort()
+    const excSuffixKo = allExceptions.length > 0 ? ` · 예외 ${allExceptions.length}건: ${allExceptions.join(", ")}` : ""
+    const excSuffixEn = allExceptions.length > 0 ? `; ${allExceptions.length} exception(s): ${allExceptions.join(", ")}` : ""
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.tlsMeshWideMissing",
+      `가정 루트 네임스페이스(${ISTIO_ROOT_NAMESPACE}, meshConfig.rootNamespace 미조회)에 메시 전역(selector 없음) PeerAuthentication 없음 (기본값 PERMISSIVE)${excSuffixKo}`,
+      `No mesh-wide (selector-less) PeerAuthentication found in assumed root namespace ${ISTIO_ROOT_NAMESPACE} (meshConfig.rootNamespace not queried; Istio defaults to PERMISSIVE)${excSuffixEn}`,
+    )
+  }
+
+  if (meshWideRootPas.length > 1) {
+    const meshList = meshWideRootPas
+      .map((p) => {
+        const n = p.metadata?.name ?? "unknown"
+        const m = normalizePaMode(p.spec?.mtls?.mode)
+        const modeText = m === "UNSET" ? "UNSET (defaults to PERMISSIVE at mesh root)" : m
+        const ts = p.metadata?.creationTimestamp ?? "unknown"
+        return `${n}(mode=${modeText}, creationTimestamp=${ts})`
+      })
+      .sort()
+      .join(", ")
+    const rootSet = new Set(meshWideRootPas)
+    const otherExceptions = items
+      .filter((p) => !rootSet.has(p))
+      .map((p) => classifyPaPolicy(p, false, nsWideCounts))
+      .flatMap((c) => [c.blockingException, c.inheritedStrictNote])
+      .filter((x): x is string => x !== null)
+      .sort()
+    const excSuffixKo = otherExceptions.length > 0 ? ` · 추가 예외 ${otherExceptions.length}건: ${otherExceptions.join(", ")}` : ""
+    const excSuffixEn = otherExceptions.length > 0 ? `; additional exceptions (${otherExceptions.length}): ${otherExceptions.join(", ")}` : ""
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.tlsMultipleMeshWide",
+      `가정 루트 네임스페이스(${ISTIO_ROOT_NAMESPACE}, meshConfig.rootNamespace 미조회)에 메시 전역 정책 ${meshWideRootPas.length}건 공존(multiple mesh-wide policies; effective mode ambiguous): ${meshList}${excSuffixKo}`,
+      `multiple mesh-wide policies; effective mode ambiguous in assumed root namespace ${ISTIO_ROOT_NAMESPACE} (meshConfig.rootNamespace not queried): ${meshList}${excSuffixEn}`,
+    )
+  }
+
+  const rootPa = meshWideRootPas[0]
+  const rootName = rootPa.metadata?.name ?? "unknown"
+  const meshMode = normalizePaMode(rootPa.spec?.mtls?.mode)
+  const { blocking: exceptions, inheritedStrict } = classifyOthers(rootPa)
 
   if (meshMode !== "STRICT") {
-    const excSuffixKo = exceptions.length > 0 ? ` · 추가 예외 ${exceptions.length}건: ${exceptions.join(", ")}` : ""
-    const excSuffixEn = exceptions.length > 0 ? `; additional exceptions (${exceptions.length}): ${exceptions.join(", ")}` : ""
+    const allExceptions = [...exceptions, ...inheritedStrict].sort()
+    const meshModeDisplay = meshMode === "UNSET" ? "UNSET (defaults to PERMISSIVE at mesh root)" : meshMode
+    const excSuffixKo = allExceptions.length > 0 ? ` · 추가 예외 ${allExceptions.length}건: ${allExceptions.join(", ")}` : ""
+    const excSuffixEn = allExceptions.length > 0 ? `; additional exceptions (${allExceptions.length}): ${allExceptions.join(", ")}` : ""
     return makeOutcome(
       "fail",
       "compliance.kisa.reason.tlsNotStrict",
-      `메시 전역 PeerAuthentication(istio-system) 모드=${meshMode} (STRICT 아님)${excSuffixKo}`,
-      `Mesh-wide PeerAuthentication (istio-system) mode=${meshMode} (not STRICT)${excSuffixEn}`,
+      `메시 전역 PeerAuthentication(${ISTIO_ROOT_NAMESPACE}/${rootName}, 루트 네임스페이스 가정) 모드=${meshModeDisplay} (STRICT 아님)${excSuffixKo}`,
+      `Mesh-wide PeerAuthentication (${ISTIO_ROOT_NAMESPACE}/${rootName}; assumed rootNamespace=${ISTIO_ROOT_NAMESPACE}) mode=${meshModeDisplay} (not STRICT)${excSuffixEn}`,
     )
   }
 
   if (exceptions.length === 0) {
+    const inheritedSuffixKo = inheritedStrict.length > 0 ? ` · STRICT 상속 확인: ${inheritedStrict.join(", ")}` : ""
+    const inheritedSuffixEn = inheritedStrict.length > 0 ? ` (inherited STRICT: ${inheritedStrict.join(", ")})` : ""
     return makeOutcome(
       "pass",
       "compliance.kisa.reason.tlsStrictNoExceptions",
-      `메시 전역 STRICT(istio-system/${rootPa?.metadata?.name ?? "default"}), PERMISSIVE/DISABLE 예외 0건`,
-      `Mesh-wide STRICT (istio-system/${rootPa?.metadata?.name ?? "default"}), 0 PERMISSIVE/DISABLE exceptions`,
+      `메시 전역 STRICT(${ISTIO_ROOT_NAMESPACE}/${rootName}, 루트 네임스페이스 가정·meshConfig.rootNamespace 미조회), 예외 0건${inheritedSuffixKo}`,
+      `Mesh-wide STRICT (${ISTIO_ROOT_NAMESPACE}/${rootName}; assumed rootNamespace=${ISTIO_ROOT_NAMESPACE}, meshConfig.rootNamespace not queried), 0 exceptions${inheritedSuffixEn}`,
     )
   }
 
+  const inheritedSuffixKo = inheritedStrict.length > 0 ? ` · STRICT 상속: ${inheritedStrict.join(", ")}` : ""
+  const inheritedSuffixEn = inheritedStrict.length > 0 ? `; inherited STRICT: ${inheritedStrict.join(", ")}` : ""
   return makeOutcome(
     "warn",
     "compliance.kisa.reason.tlsStrictWithExceptions",
-    `메시 전역 STRICT(istio-system/${rootPa?.metadata?.name ?? "default"}) · 예외 ${exceptions.length}건: ${exceptions.join(", ")}`,
-    `Mesh-wide STRICT (istio-system/${rootPa?.metadata?.name ?? "default"}); ${exceptions.length} exceptions: ${exceptions.join(", ")}`,
+    `메시 전역 STRICT(${ISTIO_ROOT_NAMESPACE}/${rootName}, 루트 네임스페이스 가정) · 예외 ${exceptions.length}건: ${exceptions.join(", ")}${inheritedSuffixKo}`,
+    `Mesh-wide STRICT (${ISTIO_ROOT_NAMESPACE}/${rootName}; assumed rootNamespace=${ISTIO_ROOT_NAMESPACE}); ${exceptions.length} exceptions: ${exceptions.join(", ")}${inheritedSuffixEn}`,
   )
 }

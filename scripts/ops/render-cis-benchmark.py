@@ -45,6 +45,10 @@ def scalar(value, key=False):
     return json.dumps(value, ensure_ascii=False, allow_nan=False)
   if key and '\n' in value:
     raise ValueError('multiline mapping keys are unsupported')
+  # C1 controls and the BOM are not printable YAML: refuse instead of emitting text that
+  # parsers reject or silently alter.
+  if any(0x80 <= ord(c) <= 0x9f or c == '\ufeff' for c in value):
+    raise ValueError('unsupported C1 control character or BOM')
   ambiguous = (not value or value != value.strip() or
     value.lower() in {'true', 'false', 'null', 'yes', 'no', 'on', 'off', '~', 'y', 'n'} or
     value[0] in '-?:,[]{}#&*!|>\'"%@`' or
@@ -59,7 +63,7 @@ def field(value, indent):
   if isinstance(value, (dict, list)) and value:
     return '\n' + emit(value, indent + 2)
   if isinstance(value, str) and '\n' in value:
-    if any((ord(c) < 32 and c != '\n') or c in '\x7f\u0085\u2028\u2029' for c in value):
+    if any((ord(c) < 32 and c != '\n') or c in '\x7f\u2028\u2029\ufeff' or 0x80 <= ord(c) <= 0x9f for c in value):
       raise ValueError('unsupported control character in block scalar')
     # Explicit indentation preserves leading spaces; keep chomping preserves all LFs.
     trailing = len(value) - len(value.rstrip('\n'))

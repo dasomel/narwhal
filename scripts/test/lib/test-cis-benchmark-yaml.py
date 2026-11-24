@@ -27,7 +27,8 @@ for value in strings:
   for obj in ({'value': value}, {'nested': [{'value': value}]}, {value: 'value'} if '\n' not in value else {}):
     if obj:
       assert yaml.safe_load(renderer.emit(obj)) == obj, (obj, renderer.emit(obj))
-for bad in ({'a\nb': 'value'}, {'value': 'a\r\nb'}, {1: 'value'}):
+for bad in ({'a\nb': 'value'}, {'value': 'a\r\nb'}, {1: 'value'}, {'k': '\x80'}, {'k': 'a\n\x80b'},
+            {'\ufeff': 'v'}, {'k': '\ufeffv'}, {'k': '\x9f'}):
   try:
     renderer.emit(bad)
   except (ValueError, TypeError):

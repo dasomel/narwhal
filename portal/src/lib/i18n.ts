@@ -928,16 +928,29 @@ export const ko = {
   "compliance.counter.infra": "인프라 실패 (조치가능)",
   "compliance.counter.infraBreakdown": "+{accepted} 수용(예외)",
   "compliance.counter.frameworksPassRate": "프레임워크 실패 기록 없음 비율",
-  "compliance.counter.frameworksRawRate": "원본 통과율 (Trivy raw)",
+  "compliance.counter.frameworksPassRateWithBenchmark": "프레임워크 테스트 통과·실패 미기록 비율",
   "compliance.counter.frameworksEffectiveRate": "예외 반영 비율",
   "compliance.counter.frameworksBreakdown": "실패 기록 없음 {passed} · 미평가 {notEvaluated} · 조치가능 {actionable} · 수용 {accepted}",
+  "compliance.counter.frameworksBreakdownWithBenchmark": "테스트 통과(벤치마크) {tested} · 실패 기록 없음 {noFailure} · 미평가 {notEvaluated} · 조치가능 {actionable} · 수용 {accepted}",
+  "compliance.counter.frameworksPassSplit": "테스트 통과(벤치마크) {tested} · 실패 기록 없음 {noFailure}",
   "compliance.counter.dataUnavailable": "데이터 조회 불가",
   "compliance.framework.passRate": "통과율",
   "compliance.framework.evaluatedPassRate": "실패 기록 없음 비율 (스캐너는 실패만 기록)",
+  "compliance.framework.evaluatedPassRateWithBenchmark": "테스트 통과·실패 기록 없음 비율",
   "compliance.framework.noFailureRecordedLabel": "실패 기록 없음 (스캐너는 실패만 기록)",
   "compliance.framework.noFailureRecordedShort": "실패 기록 없음",
-  "compliance.framework.failureOnlyNote": "이 배포의 Trivy Operator는 실패한 검사만 기록하므로, '실패 기록 없음'은 카탈로그에 등록된 Config Audit·RBAC 검사 ID가 스캔 범위 내 리포트에서 실패를 기록하지 않았음을 뜻하며 개별 통과 증명이 아닙니다. 노드·컨트롤플레인(인프라) 검사는 스캐너가 항목별 평가 증거를 남기지 않아 미평가로 표시되며, 실제 검증은 노드 검증 스크립트(scripts/test/verify-cluster.sh)에서 수행합니다.",
-  "compliance.framework.rawPassRate": "원본 통과율",
+  "compliance.framework.testedBenchmarkLabel": "테스트 통과 (벤치마크)",
+  "compliance.framework.testedBenchmarkShort": "테스트 통과 (벤치마크)",
+  "compliance.framework.passedTestsCol": "통과 / 실패 기록 없음",
+  "compliance.framework.benchmarkNodes": "{count}개 노드",
+  "compliance.framework.benchmarkSourceLine": "{tool} v{version} · {benchmarkId} · {nodes} · {finishedAt}",
+  "compliance.framework.benchmarkActual": "실제 값",
+  "compliance.framework.benchmarkExpected": "기대 결과",
+  "compliance.framework.sourceDisagreement": "도구 판정 불일치 (Trivy: {trivy} · kube-bench: {benchmark}) — 실패 우선 유지",
+  "compliance.framework.verdict.passed": "통과",
+  "compliance.framework.verdict.failed": "실패",
+  "compliance.framework.verdict.not_evaluated": "미평가",
+  "compliance.framework.failureOnlyNote": "이 배포의 Trivy Operator는 실패한 검사만 기록하므로, '실패 기록 없음'은 카탈로그에 등록된 Config Audit·RBAC 검사 ID가 스캔 범위 내 리포트에서 실패를 기록하지 않았음을 뜻하며 개별 통과 증명이 아닙니다. 노드·컨트롤플레인(인프라) 검사는 유효한 kube-bench 테스트 기록이 있으면 '테스트 통과(벤치마크)' 또는 실패로 평가되며, 유효한 기록이 없으면 사유(기록 없음·만료·오류·수동 등)와 함께 미평가로 표시됩니다(노드 직접 검증: scripts/test/verify-cluster.sh).",
   "compliance.framework.effectivePassRate": "예외 반영 비율",
   "compliance.framework.controls": "{count}개 컨트롤",
   "compliance.framework.actionableSummary": "조치가능 컨트롤 {actionable}개 · 수용 {accepted}개 · 미평가 {notEvaluated}개 (원본 실패 {raw}개)",
@@ -962,8 +975,14 @@ export const ko = {
   "compliance.framework.notEvaluatedReason.no_evidence_in_report": "리포트 내 개별 평가 증거 없음 (checks[]에 해당 검사 ID 통과 기록 부재)",
   "compliance.framework.notEvaluatedReason.absent_from_report": "리포트 결과 누락 (스펙에 정의되었으나 detailReport.results에 없음)",
   "compliance.framework.notEvaluatedReason.coverage_unknown": "커버리지 확인 불가 (설정·노드·리포트 조회 실패 또는 스펙 누락)",
+  "compliance.framework.notEvaluatedReason.benchmark_missing": "kube-bench 테스트 기록 없음 (노드 또는 항목 누락)",
+  "compliance.framework.notEvaluatedReason.benchmark_stale": "kube-bench 테스트 기록 만료(26시간 초과) 또는 미래 시각",
+  "compliance.framework.notEvaluatedReason.benchmark_error": "kube-bench 실행 오류 상태 (status=error)",
+  "compliance.framework.notEvaluatedReason.benchmark_malformed": "kube-bench 기록 형식·합계·벤치마크 ID·노드 검증 실패",
+  "compliance.framework.notEvaluatedReason.benchmark_list_forbidden": "kube-bench ConfigMap 목록 조회 권한 거부 (403)",
+  "compliance.framework.notEvaluatedReason.benchmark_info": "kube-bench 정보성 항목 (INFO — 평가 안 됨)",
   "compliance.framework.coverageUnknownNotice": "보조 메타데이터(오퍼레이터 설정·노드·리포트) 일부 조회 실패로 미확인 컨트롤이 미평가 처리되었습니다.",
-  "compliance.framework.rawSummary": "원본 실패 {fail} (원본 통과율 {rate}%)",
+  "compliance.framework.rawSummary": "원본 실패 {fail}",
   "compliance.framework.rawChecks": "원본 {count}",
   "compliance.framework.exceptionsDocLink": "위험 수용 예외 문서",
   "compliance.framework.mixedScope": "수용됨 (혼합)",
@@ -2544,16 +2563,29 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.counter.infra": "Infra Failures (Actionable)",
   "compliance.counter.infraBreakdown": "+{accepted} accepted (exception)",
   "compliance.counter.frameworksPassRate": "Framework No-Failure-Recorded Rate",
-  "compliance.counter.frameworksRawRate": "Raw pass rate (Trivy)",
+  "compliance.counter.frameworksPassRateWithBenchmark": "Framework Tested & No-Failure Rate",
   "compliance.counter.frameworksEffectiveRate": "Exception-adjusted rate",
   "compliance.counter.frameworksBreakdown": "{passed} no failure recorded · {notEvaluated} not evaluated · {actionable} actionable · {accepted} accepted",
+  "compliance.counter.frameworksBreakdownWithBenchmark": "{tested} tested (benchmark) · {noFailure} no failure recorded · {notEvaluated} not evaluated · {actionable} actionable · {accepted} accepted",
+  "compliance.counter.frameworksPassSplit": "{tested} tested (benchmark) · {noFailure} no failure recorded",
   "compliance.counter.dataUnavailable": "Data unavailable",
   "compliance.framework.passRate": "Pass rate",
   "compliance.framework.evaluatedPassRate": "No failure recorded rate (scanner records failures only)",
+  "compliance.framework.evaluatedPassRateWithBenchmark": "Tested & no-failure-recorded rate",
   "compliance.framework.noFailureRecordedLabel": "No failure recorded (scanner records failures only)",
   "compliance.framework.noFailureRecordedShort": "no failure recorded",
-  "compliance.framework.failureOnlyNote": "Trivy Operator in this deployment records failed checks only, so 'no failure recorded' applies only to catalogued Config Audit and RBAC checks on in-scope reports rather than verified individual pass records. Node and control-plane (infra) checks leave no per-check scanner evidence and remain not evaluated; verify them on-node with scripts/test/verify-cluster.sh.",
-  "compliance.framework.rawPassRate": "Raw pass rate",
+  "compliance.framework.testedBenchmarkLabel": "Tested (benchmark)",
+  "compliance.framework.testedBenchmarkShort": "tested (benchmark)",
+  "compliance.framework.passedTestsCol": "Passed / No failure recorded",
+  "compliance.framework.benchmarkNodes": "{count} node(s)",
+  "compliance.framework.benchmarkSourceLine": "{tool} v{version} · {benchmarkId} · {nodes} · {finishedAt}",
+  "compliance.framework.benchmarkActual": "Actual",
+  "compliance.framework.benchmarkExpected": "Expected",
+  "compliance.framework.sourceDisagreement": "Source verdicts disagree (Trivy: {trivy} · kube-bench: {benchmark}) — kept failed",
+  "compliance.framework.verdict.passed": "passed",
+  "compliance.framework.verdict.failed": "failed",
+  "compliance.framework.verdict.not_evaluated": "not evaluated",
+  "compliance.framework.failureOnlyNote": "Trivy Operator in this deployment records failed checks only, so 'no failure recorded' applies only to catalogued Config Audit and RBAC checks on in-scope reports rather than verified individual pass records. Node and control-plane (infra) checks are evaluated as 'tested (benchmark)' or failed when valid kube-bench test records exist; otherwise they remain not evaluated with the stated reason (missing, stale, error, manual, etc.; on-node verification: scripts/test/verify-cluster.sh).",
   "compliance.framework.effectivePassRate": "Exception-adjusted rate",
   "compliance.framework.controls": "{count} controls",
   "compliance.framework.actionableSummary": "{actionable} actionable controls · {accepted} accepted · {notEvaluated} not evaluated (raw failed {raw})",
@@ -2578,8 +2610,14 @@ export const en: Record<keyof typeof ko, string> = {
   "compliance.framework.notEvaluatedReason.no_evidence_in_report": "No evidence in report (check ID not listed as evaluated in checks[])",
   "compliance.framework.notEvaluatedReason.absent_from_report": "Absent from report (present in spec, missing from detailReport.results)",
   "compliance.framework.notEvaluatedReason.coverage_unknown": "Coverage unknown (config/node/report lookup failed or spec missing)",
+  "compliance.framework.notEvaluatedReason.benchmark_missing": "No valid kube-bench test record for expected node(s) or control",
+  "compliance.framework.notEvaluatedReason.benchmark_stale": "kube-bench test record is stale (> 26h) or timestamp is in the future",
+  "compliance.framework.notEvaluatedReason.benchmark_error": "kube-bench run ended in error status",
+  "compliance.framework.notEvaluatedReason.benchmark_malformed": "kube-bench record failed validation (malformed, wrong benchmark, duplicate ID, totals mismatch, or unknown node)",
+  "compliance.framework.notEvaluatedReason.benchmark_list_forbidden": "kube-bench ConfigMap list read forbidden (403)",
+  "compliance.framework.notEvaluatedReason.benchmark_info": "kube-bench informational entry (INFO — not evaluated)",
   "compliance.framework.coverageUnknownNotice": "Some auxiliary metadata (operator config/nodes/reports) failed to load; unverified controls are marked not evaluated.",
-  "compliance.framework.rawSummary": "Raw failed {fail} (raw pass rate {rate}%)",
+  "compliance.framework.rawSummary": "Raw failed {fail}",
   "compliance.framework.rawChecks": "raw {count}",
   "compliance.framework.exceptionsDocLink": "Risk-accepted exceptions doc",
   "compliance.framework.mixedScope": "Accepted (mixed)",
@@ -3287,6 +3325,18 @@ export function translateNotEvaluatedReason(locale: Locale, reason?: string): st
       return t(locale, "compliance.framework.notEvaluatedReason.no_evidence_in_report")
     case "absent_from_report":
       return t(locale, "compliance.framework.notEvaluatedReason.absent_from_report")
+    case "benchmark_missing":
+      return t(locale, "compliance.framework.notEvaluatedReason.benchmark_missing")
+    case "benchmark_stale":
+      return t(locale, "compliance.framework.notEvaluatedReason.benchmark_stale")
+    case "benchmark_error":
+      return t(locale, "compliance.framework.notEvaluatedReason.benchmark_error")
+    case "benchmark_malformed":
+      return t(locale, "compliance.framework.notEvaluatedReason.benchmark_malformed")
+    case "benchmark_list_forbidden":
+      return t(locale, "compliance.framework.notEvaluatedReason.benchmark_list_forbidden")
+    case "benchmark_info":
+      return t(locale, "compliance.framework.notEvaluatedReason.benchmark_info")
     default:
       return t(locale, "compliance.framework.notEvaluatedReason.coverage_unknown")
   }

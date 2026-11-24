@@ -6,9 +6,11 @@
 import { en } from "./i18n"
 import type { AcceptedClass } from "@/types/compliance"
 import {
+  ACCEPTED_BENCHMARK_RULES,
   ACCEPTED_CONFIG_AUDIT_RULES,
   ACCEPTED_RBAC_BINDING_RULES,
   ACCEPTED_RBAC_RULES,
+  benchmarkRuleIndex,
   CHECK_ID_PAD_WIDTH,
   COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
   COMPLIANCE_EXCEPTIONS_DOC_URL,
@@ -18,6 +20,7 @@ import {
   rbacBindingRuleIndex,
   rbacRuleIndex,
   type AcceptanceScope,
+  type AcceptedBenchmarkRule,
   type AcceptedConfigAuditRule,
   type AcceptedInfraRule,
   type AcceptedMatch,
@@ -31,6 +34,7 @@ import {
 } from "./compliance-acceptance"
 
 export {
+  ACCEPTED_BENCHMARK_RULES,
   ACCEPTED_CONFIG_AUDIT_RULES,
   ACCEPTED_RBAC_BINDING_RULES,
   ACCEPTED_RBAC_RULES,
@@ -40,6 +44,7 @@ export {
   findUnusedAcceptanceRules,
   normalizeCheckId,
   type AcceptanceScope,
+  type AcceptedBenchmarkRule,
   type AcceptedConfigAuditRule,
   type AcceptedInfraRule,
   type AcceptedMatch,
@@ -288,4 +293,33 @@ export function matchInfraException(node: string, checkId: string): AcceptedMatc
     }
   }
   return null
+}
+
+/**
+ * D-BENCHMARK-EXACT-ACCEPT: Matches a kube-bench finding ONLY by exact
+ * `(benchmarkId, controlId)` and optional exact `node` in
+ * `compliance-acceptance-rules.json` (`benchmark[]`) — never regex, prefix, or wildcard.
+ */
+export function matchBenchmarkException(
+  benchmarkId: string,
+  controlId: string,
+  node?: string,
+): AcceptedMatch | null {
+  if (benchmarkId.trim() === "" || controlId.trim() === "") return null
+  if (node !== undefined && node.trim() === "") return null
+  const rules = benchmarkRuleIndex.get(`${benchmarkId}\0${controlId}`)
+  if (!rules) return null
+  // Prefer an exact node-scoped rule if present, otherwise an exact unscoped rule.
+  const exactNodeRule = node !== undefined ? rules.find((r) => r.node === node) : undefined
+  const matched = exactNodeRule ?? rules.find((r) => r.node === undefined)
+  if (!matched) return null
+  return {
+    ruleId: matched.id,
+    class: matched.class,
+    reasonKey: matched.reasonKey,
+    reason: matched.reason,
+    owner: matched.owner,
+    reviewedAt: matched.reviewedAt,
+    docAnchor: matched.docAnchor,
+  }
 }

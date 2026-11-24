@@ -68,7 +68,18 @@ describe("Compliance UI accepted exceptions", () => {
       acceptedRbacFailures: { Critical: 10, High: 20, Medium: 30, Low: 0 },
       totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 1 },
       acceptedInfraFailures: { Critical: 0, High: 1, Medium: 0, Low: 0 },
-      frameworks: [{ id: "cis", title: "CIS", passCount: 8, failCount: 2, totalControls: 10, passRate: 0.8 }],
+      frameworks: [{
+        id: "cis",
+        title: "CIS",
+        passCount: 8,
+        evaluatedPassCount: 8,
+        notEvaluatedCount: 0,
+        failCount: 2,
+        totalControls: 10,
+        passRate: 0.8,
+        evaluatedPassRate: 0.8,
+        effectivePassRate: 0.8,
+      }],
       scannedWorkloads: 76,
       scannedRbacObjects: 192,
       scannedNodes: 6,
@@ -554,7 +565,8 @@ describe("Compliance UI accepted exceptions", () => {
     expect(pageEnHtml).toContain("No failure recorded (scanner records failures only)")
     expect(pageEnHtml).toContain("✗ 2 Failed (actionable)")
     expect(pageEnHtml).toContain("+13 accepted")
-    expect(pageEnHtml).toContain("Raw failed 15 (raw pass rate 87.0%)")
+    expect(pageEnHtml).toContain("Raw failed 15")
+    expect(pageEnHtml).not.toContain("raw pass rate")
     expect(pageEnHtml).toContain("Accepted exception controls (1)")
     expect(pageEnHtml).toContain("Risk accepted")
     expect(pageEnHtml).toContain(COMPLIANCE_EXCEPTIONS_DOC_ANCHOR)
@@ -668,7 +680,8 @@ describe("Compliance UI accepted exceptions", () => {
     })
     const pageHtml = renderToStaticMarkup(pageEl)
     expect(pageHtml).toContain("✗ 0 Failed (actionable)")
-    expect(pageHtml).toContain("Raw failed 2 (raw pass rate 80.0%)")
+    expect(pageHtml).toContain("Raw failed 2")
+    expect(pageHtml).not.toContain("raw pass rate")
     expect(pageHtml).toContain("raw 2")
     expect(pageHtml).not.toContain("+0 accepted")
   })
@@ -972,15 +985,17 @@ describe("Compliance UI accepted exceptions", () => {
     }
 
     const countersHtml = renderToStaticMarkup(<FailureCounters summary={pooledSummary} locale="en" />)
-    // Pooled raw = 145/178 = 81.46% -> 81.4% (not unweighted 70.5%)
-    expect(countersHtml).toContain("81.4% (145/178)")
+    // Raw CCR placeholder sum (145/178 = 81.4%) must NEVER appear; only evaluated (0/178) & effective (32/178).
+    expect(countersHtml).not.toContain("145/178")
+    expect(countersHtml).not.toContain("81.4%")
     expect(countersHtml).toContain("0.0%")
     expect(countersHtml).toContain("(0/178)")
     expect(countersHtml).toContain("17.9% (32/178)")
     expect(countersHtml).not.toContain("70.5%")
 
     // 100% leak check: a framework whose raw passCount === totalControls (100% placeholders)
-    // with notEvaluatedCount > 0 MUST NEVER display "100%" in summary, grid, or detail page.
+    // with notEvaluatedCount > 0 MUST NEVER display "100%" or "10/10" in summary, grid, or detail page;
+    // and an evaluatedPassRate === 1 framework with coverageUnknown/notEvaluated caps at 99.9%.
     const allPlaceholderFw: ComplianceFramework = {
       id: "all-placeholder",
       title: "All Placeholder",
@@ -995,15 +1010,38 @@ describe("Compliance UI accepted exceptions", () => {
       evaluatedPassRate: 0,
       effectivePassRate: 0,
     }
+    const cappedIncompleteFw: ComplianceFramework = {
+      id: "capped-incomplete",
+      title: "Capped Incomplete",
+      passCount: 10,
+      evaluatedPassCount: 10,
+      notEvaluatedCount: 0,
+      coverageUnknown: true,
+      failCount: 0,
+      actionableFailCount: 0,
+      acceptedFailCount: 0,
+      totalControls: 10,
+      passRate: 1,
+      evaluatedPassRate: 1,
+      effectivePassRate: 1,
+    }
 
     const leakSummaryHtml = renderToStaticMarkup(
       <FailureCounters summary={{ ...pooledSummary, frameworks: [allPlaceholderFw] }} locale="en" />,
     )
-    expect(leakSummaryHtml).toContain("99.9% (10/10)")
+    expect(leakSummaryHtml).toContain("0.0%")
+    expect(leakSummaryHtml).toContain("0/10")
+    expect(leakSummaryHtml).not.toContain("10/10")
     expect(leakSummaryHtml).not.toContain("100%")
 
+    const cappedSummaryHtml = renderToStaticMarkup(
+      <FailureCounters summary={{ ...pooledSummary, frameworks: [cappedIncompleteFw] }} locale="en" />,
+    )
+    expect(cappedSummaryHtml).toContain("99.9%")
+    expect(cappedSummaryHtml).not.toContain("100%")
+
     vi.mocked(useQuery).mockReturnValue({
-      data: [allPlaceholderFw],
+      data: [allPlaceholderFw, cappedIncompleteFw],
       isLoading: false,
       isError: false,
       refetch: vi.fn(),
@@ -1013,15 +1051,25 @@ describe("Compliance UI accepted exceptions", () => {
         <FrameworksGrid />
       </LocaleProvider>,
     )
-    expect(leakGridHtml).toContain("99.9% (10/10)")
+    expect(leakGridHtml).toContain("0.0%")
+    expect(leakGridHtml).toContain("0/10")
+    expect(leakGridHtml).toContain("99.9%")
     expect(leakGridHtml).not.toContain("100%")
 
     mockGetLocale.mockResolvedValue("en")
     mockGetComplianceFrameworkDetail.mockResolvedValue({ ...allPlaceholderFw, controls: [] })
     const leakDetailEl = await FrameworkDetailPage({ params: Promise.resolve({ id: "all-placeholder" }) })
     const leakDetailHtml = renderToStaticMarkup(leakDetailEl)
-    expect(leakDetailHtml).toContain("99.9% (10/10)")
+    expect(leakDetailHtml).toContain("0.0%")
+    expect(leakDetailHtml).toContain("0/10")
+    expect(leakDetailHtml).not.toContain("10/10")
     expect(leakDetailHtml).not.toContain("100%")
+
+    mockGetComplianceFrameworkDetail.mockResolvedValue({ ...cappedIncompleteFw, controls: [] })
+    const cappedDetailEl = await FrameworkDetailPage({ params: Promise.resolve({ id: "capped-incomplete" }) })
+    const cappedDetailHtml = renderToStaticMarkup(cappedDetailEl)
+    expect(cappedDetailHtml).toContain("99.9%")
+    expect(cappedDetailHtml).not.toContain("100%")
   })
 
   it("renders visible partial-data notice naming failed auxiliary sources", () => {
@@ -1336,4 +1384,275 @@ it("J1/J2 UI: renders cluster-scoped ConfigAuditRow with visible Cluster scope, 
   })
   const fwHtml = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-cis-1.23" }) }))
   expect(fwHtml).toContain("No report in the namespaces this check applies to")
+
+  // kube-bench benchmark evidence: tested (benchmark) separate from no-failure-recorded, source/time line,
+  // actual/expected excerpts for FAIL, and source disagreement verdicts in en + ko.
+  const cisFramework: ComplianceFramework = {
+    id: "k8s-cis-1.23",
+    title: "CIS Kubernetes Benchmarks v1.23",
+    totalControls: 116,
+    passCount: 95,
+    evaluatedPassCount: 74,
+    benchmarkTestedPassCount: 70,
+    benchmarkTestedFailCount: 5,
+    noFailureRecordedPassCount: 4,
+    notEvaluatedCount: 17,
+    failCount: 25,
+    actionableFailCount: 23,
+    acceptedFailCount: 2,
+    passRate: 95 / 116,
+    evaluatedPassRate: 74 / 116,
+    effectivePassRate: 76 / 116,
+  }
+  const allFrameworksWithCis: ComplianceFramework[] = [
+    cisFramework,
+    {
+      id: "k8s-kisa-1.0",
+      title: "KISA",
+      totalControls: 7,
+      passCount: 3,
+      evaluatedPassCount: 2,
+      benchmarkTestedPassCount: 0,
+      noFailureRecordedPassCount: 2,
+      notEvaluatedCount: 1,
+      failCount: 4,
+      actionableFailCount: 0,
+      acceptedFailCount: 4,
+      passRate: 3 / 7,
+      evaluatedPassRate: 2 / 7,
+      effectivePassRate: 6 / 7,
+    },
+    {
+      id: "k8s-nsa-1.0",
+      title: "NSA",
+      totalControls: 27,
+      passCount: 10,
+      evaluatedPassCount: 4,
+      benchmarkTestedPassCount: 0,
+      noFailureRecordedPassCount: 4,
+      notEvaluatedCount: 14,
+      failCount: 9,
+      actionableFailCount: 0,
+      acceptedFailCount: 9,
+      passRate: 10 / 27,
+      evaluatedPassRate: 4 / 27,
+      effectivePassRate: 13 / 27,
+    },
+    {
+      id: "k8s-pss-baseline-0.1",
+      title: "PSS Baseline",
+      totalControls: 11,
+      passCount: 6,
+      evaluatedPassCount: 3,
+      benchmarkTestedPassCount: 0,
+      noFailureRecordedPassCount: 3,
+      notEvaluatedCount: 5,
+      failCount: 3,
+      actionableFailCount: 0,
+      acceptedFailCount: 3,
+      passRate: 6 / 11,
+      evaluatedPassRate: 3 / 11,
+      effectivePassRate: 6 / 11,
+    },
+    {
+      id: "k8s-pss-restricted-0.1",
+      title: "PSS Restricted",
+      totalControls: 17,
+      passCount: 8,
+      evaluatedPassCount: 3,
+      benchmarkTestedPassCount: 0,
+      noFailureRecordedPassCount: 3,
+      notEvaluatedCount: 11,
+      failCount: 3,
+      actionableFailCount: 0,
+      acceptedFailCount: 3,
+      passRate: 8 / 17,
+      evaluatedPassRate: 3 / 17,
+      effectivePassRate: 6 / 17,
+    },
+  ]
+  const benchmarkSummary: ComplianceSummary = {
+    totalConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    lowSeverityConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    acceptedSystemConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    acceptedInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    frameworks: [cisFramework],
+    scannedWorkloads: 10,
+    scannedRbacObjects: 5,
+    scannedNodes: 1,
+    lastUpdated: new Date().toISOString(),
+  }
+  const benchCountersEn = renderToStaticMarkup(<FailureCounters summary={benchmarkSummary} locale="en" />)
+  expect(benchCountersEn).toContain("63.7%")
+  expect(benchCountersEn).toContain("74/116")
+  expect(benchCountersEn).toContain("70 tested (benchmark) · 4 no failure recorded · 17 not evaluated · 23 actionable · 2 accepted")
+  expect(benchCountersEn).toContain("70 tested (benchmark) · 4 no failure recorded")
+  expect(benchCountersEn).not.toContain("74 no failure recorded")
+  expect(benchCountersEn).not.toContain("95/116")
+  expect(benchCountersEn).not.toContain("81.8%")
+  expect(benchCountersEn).toContain("evaluated as &#x27;tested (benchmark)&#x27; or failed when valid kube-bench test records exist")
+  const benchCountersKo = renderToStaticMarkup(<FailureCounters summary={benchmarkSummary} locale="ko" />)
+  expect(benchCountersKo).toContain("63.7%")
+  expect(benchCountersKo).toContain("74/116")
+  expect(benchCountersKo).toContain("테스트 통과(벤치마크) 70 · 실패 기록 없음 4 · 미평가 17 · 조치가능 23 · 수용 2")
+  expect(benchCountersKo).toContain("테스트 통과(벤치마크) 70 · 실패 기록 없음 4")
+  expect(benchCountersKo).not.toContain("실패 기록 없음 74")
+  expect(benchCountersKo).not.toContain("95/116")
+  expect(benchCountersKo).not.toContain("81.8%")
+  expect(benchCountersKo).toContain("유효한 kube-bench 테스트 기록이 있으면 &#x27;테스트 통과(벤치마크)&#x27; 또는 실패로 평가되며")
+
+  // All 5 frameworks total: 86/178 (48.3%, 70 tested + 16 no failure recorded), NEVER raw 122/178 (68.5%)
+  const allBenchSummary: ComplianceSummary = {
+    ...benchmarkSummary,
+    frameworks: allFrameworksWithCis,
+  }
+  const allBenchCountersEn = renderToStaticMarkup(<FailureCounters summary={allBenchSummary} locale="en" />)
+  expect(allBenchCountersEn).toContain("48.3%")
+  expect(allBenchCountersEn).toContain("86/178")
+  expect(allBenchCountersEn).toContain("70 tested (benchmark) · 16 no failure recorded")
+  expect(allBenchCountersEn).not.toContain("122/178")
+  expect(allBenchCountersEn).not.toContain("68.5%")
+  expect(allBenchCountersEn).not.toContain("95/116")
+  const allBenchCountersKo = renderToStaticMarkup(<FailureCounters summary={allBenchSummary} locale="ko" />)
+  expect(allBenchCountersKo).toContain("48.3%")
+  expect(allBenchCountersKo).toContain("86/178")
+  expect(allBenchCountersKo).toContain("테스트 통과(벤치마크) 70 · 실패 기록 없음 16")
+  expect(allBenchCountersKo).not.toContain("122/178")
+  expect(allBenchCountersKo).not.toContain("68.5%")
+
+  vi.mocked(useQuery).mockReturnValue({
+    data: allFrameworksWithCis,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useQuery>)
+  const gridEnHtml = renderToStaticMarkup(
+    <LocaleProvider locale="en">
+      <FrameworksGrid />
+    </LocaleProvider>,
+  )
+  expect(gridEnHtml).toContain("63.7%")
+  expect(gridEnHtml).toContain("74/116 (70 tested (benchmark) · 4 no failure recorded)")
+  expect(gridEnHtml).toContain("70 tested (benchmark)")
+  expect(gridEnHtml).toContain("4 no failure recorded")
+  expect(gridEnHtml).not.toContain("95/116")
+  expect(gridEnHtml).not.toContain("81.8%")
+  expect(gridEnHtml).not.toContain("122/178")
+  const gridKoHtml = renderToStaticMarkup(
+    <LocaleProvider locale="ko">
+      <FrameworksGrid />
+    </LocaleProvider>,
+  )
+  expect(gridKoHtml).toContain("74/116 (테스트 통과(벤치마크) 70 · 실패 기록 없음 4)")
+  expect(gridKoHtml).not.toContain("95/116")
+  expect(gridKoHtml).not.toContain("81.8%")
+
+  const cisBenchDetail: ComplianceFrameworkDetail = {
+    ...cisFramework,
+    controls: [
+      {
+        id: "1.1.1",
+        name: "Ensure that the API server pod specification file permissions are set to 644 or more restrictive",
+        severity: "High",
+        passCount: 1,
+        failCount: 0,
+        actionableFailCount: 0,
+        acceptedFailCount: 0,
+        evaluationState: "passed",
+        testedByBenchmark: true,
+        benchmarkEvidence: {
+          tool: "kube-bench",
+          toolVersion: "0.16.0",
+          benchmarkId: "cis-1.23",
+          nodeCount: 1,
+          finishedAt: "2026-11-24T12:42:23Z",
+          verdict: "passed",
+        },
+      },
+      {
+        id: "5.1.8",
+        name: "Limit use of the Bind, Impersonate and Escalate permissions in the Kubernetes cluster",
+        severity: "High",
+        passCount: 1,
+        failCount: 0,
+        actionableFailCount: 0,
+        acceptedFailCount: 0,
+        evaluationState: "passed",
+        testedByBenchmark: false,
+      },
+      {
+        id: "1.1.12",
+        name: "Ensure that the etcd data directory ownership is set to etcd:etcd",
+        severity: "Low",
+        passCount: 0,
+        failCount: 1,
+        actionableFailCount: 1,
+        acceptedFailCount: 0,
+        evaluationState: "failed",
+        testedByBenchmark: true,
+        benchmarkEvidence: {
+          tool: "kube-bench",
+          toolVersion: "0.16.0",
+          benchmarkId: "cis-1.23",
+          nodeCount: 1,
+          finishedAt: "2026-11-24T12:42:23Z",
+          verdict: "failed",
+          failFindings: [
+            {
+              node: "narwhal-master-1",
+              status: "FAIL",
+              actualValue: "UNKNOWN:UNKNOWN",
+              expectedResult: "'etcd:etcd' is present",
+            },
+          ],
+        },
+      },
+      {
+        id: "1.3.6",
+        name: "Ensure that the RotateKubeletServerCertificate argument is set to true",
+        severity: "High",
+        passCount: 0,
+        failCount: 1,
+        actionableFailCount: 1,
+        acceptedFailCount: 0,
+        evaluationState: "failed",
+        benchmarkEvidence: {
+          tool: "kube-bench",
+          toolVersion: "0.16.0",
+          benchmarkId: "cis-1.23",
+          nodeCount: 1,
+          finishedAt: "2026-11-24T12:42:23Z",
+          verdict: "passed",
+          sourceDisagreement: { trivyVerdict: "failed", benchmarkVerdict: "passed" },
+        },
+      },
+    ],
+  }
+  mockGetComplianceFrameworkDetail.mockResolvedValue(cisBenchDetail)
+  mockGetLocale.mockResolvedValue("en")
+  const detailEnHtml = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-cis-1.23" }) }))
+  expect(detailEnHtml).toContain("63.7%")
+  expect(detailEnHtml).toContain("74/116 (70 tested (benchmark) · 4 no failure recorded)")
+  expect(detailEnHtml).not.toContain("95/116")
+  expect(detailEnHtml).not.toContain("81.8%")
+  expect(detailEnHtml).toContain("70 Tested (benchmark)")
+  expect(detailEnHtml).toContain("4 No failure recorded (scanner records failures only)")
+  expect(detailEnHtml).toContain("kube-bench v0.16.0 · cis-1.23 · 1 node(s) · 2026-11-24T12:42:23Z")
+  expect(detailEnHtml).toContain("UNKNOWN:UNKNOWN")
+  expect(detailEnHtml).toContain("&#x27;etcd:etcd&#x27; is present")
+  expect(detailEnHtml).toContain("Source verdicts disagree (Trivy: failed · kube-bench: passed) — kept failed")
+
+  mockGetLocale.mockResolvedValue("ko")
+  const detailKoHtml = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-cis-1.23" }) }))
+  expect(detailKoHtml).toContain("63.7%")
+  expect(detailKoHtml).toContain("74/116 (테스트 통과(벤치마크) 70 · 실패 기록 없음 4)")
+  expect(detailKoHtml).not.toContain("95/116")
+  expect(detailKoHtml).not.toContain("81.8%")
+  expect(detailKoHtml).toContain("70 테스트 통과 (벤치마크)")
+  expect(detailKoHtml).toContain("4 실패 기록 없음 (스캐너는 실패만 기록)")
+  expect(detailKoHtml).toContain("kube-bench v0.16.0 · cis-1.23 · 1개 노드 · 2026-11-24T12:42:23Z")
+  expect(detailKoHtml).toContain("도구 판정 불일치 (Trivy: 실패 · kube-bench: 통과) — 실패 우선 유지")
 })

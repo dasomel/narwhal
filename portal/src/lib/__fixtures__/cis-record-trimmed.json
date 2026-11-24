@@ -1,0 +1,244 @@
+{
+  "schemaVersion": 1,
+  "runId": "99f382e2-1159-42bf-9a2b-299bfbdcb1df",
+  "tool": "kube-bench",
+  "toolVersion": "0.16.0",
+  "image": "docker.io/aquasec/kube-bench:v0.16.0@sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679",
+  "benchmarkId": "cis-1.23",
+  "node": "narwhal-master-1",
+  "nodeRoles": [
+    "control-plane"
+  ],
+  "kubernetesVersion": "v1.35.7",
+  "startedAt": "2026-11-24T12:42:19Z",
+  "finishedAt": "2026-11-24T12:42:23Z",
+  "status": "complete",
+  "totals": {
+    "pass": 9,
+    "fail": 5,
+    "warn": 6,
+    "info": 0
+  },
+  "results": [
+    {
+      "controlId": "1.1.1",
+      "section": "1.1",
+      "text": "Ensure that the API server pod specification file permissions are set to 644 or more restrictive (Automated)",
+      "status": "PASS",
+      "scored": true,
+      "type": "automated",
+      "actualValue": "permissions=600",
+      "expectedResult": "permissions has permissions 600, expected 644 or more restrictive",
+      "reason": ""
+    },
+    {
+      "controlId": "1.1.2",
+      "section": "1.1",
+      "text": "Ensure that the API server pod specification file ownership is set to root:root (Automated)",
+      "status": "PASS",
+      "scored": true,
+      "type": "automated",
+      "actualValue": "root:root",
+      "expectedResult": "'root:root' is present",
+      "reason": ""
+    },
+    {
+      "controlId": "1.1.9",
+      "section": "1.1",
+      "text": "Ensure that the Container Network Interface file permissions are set to 644 or more restrictive (Manual)",
+      "status": "WARN",
+      "scored": false,
+      "type": "automated",
+      "actualValue": "",
+      "expectedResult": "'permissions' is present",
+      "reason": ""
+    },
+    {
+      "controlId": "1.1.12",
+      "section": "1.1",
+      "text": "Ensure that the etcd data directory ownership is set to etcd:etcd (Automated)",
+      "status": "FAIL",
+      "scored": true,
+      "type": "automated",
+      "actualValue": "UNKNOWN:UNKNOWN",
+      "expectedResult": "'etcd:etcd' is present",
+      "reason": ""
+    },
+    {
+      "controlId": "1.2.1",
+      "section": "1.2",
+      "text": "Ensure that the --anonymous-auth argument is set to false (Manual)",
+      "status": "WARN",
+      "scored": false,
+      "type": "automated",
+      "actualValue": "[REDACTED]",
+      "expectedResult": "'--anonymous-auth' is present",
+      "reason": ""
+    },
+    {
+      "controlId": "1.2.2",
+      "section": "1.2",
+      "text": "[REDACTED]",
+      "status": "PASS",
+      "scored": true,
+      "type": "automated",
+      "actualValue": "[REDACTED]",
+      "expectedResult": "[REDACTED]",
+      "reason": ""
+    },
+    {
+      "controlId": "1.2.6",
+      "section": "1.2",
+      "text": "Ensure that the --kubelet-certificate-authority argument is set as appropriate (Automated)",
+      "status": "FAIL",
+      "scored": true,
+      "type": "automated",
+      "actualValue": "[REDACTED]",
+      "expectedResult": "'--kubelet-certificate-authority' is present",
+      "reason": ""
+    },
+    {
+      "controlId": "1.3.6",
+      "section": "1.3",
+      "text": "Ensure that the RotateKubeletServerCertificate argument is set to true (Automated)",
+      "status": "PASS",
+      "scored": true,
+      "type": "automated",
+      "actualValue": "[REDACTED]",
+      "expectedResult": "'--feature-gates' is present OR '--feature-gates' is not present",
+      "reason": ""
+    },
+    {
+      "controlId": "1.3.7",
+      "section": "1.3",
+      "text": "Ensure that the --bind-address argument is set to 127.0.0.1 (Automated)",
+      "status": "FAIL",
+      "scored": true,
+      "type": "automated",
+      "actualValue": "[REDACTED]",
+      "expectedResult": "'--bind-address' is equal to '127.0.0.1' OR '--bind-address' is not present",
+      "reason": ""
+    },
+    {
+      "controlId": "1.4.1",
+      "section": "1.4",
+      "text": "Ensure that the --profiling argument is set to false (Automated)",
+      "status": "PASS",
+      "scored": true,
+      "type": "automated",
+      "actualValue": "root      322184   10647  0 Nov15 ?        00:56:52 kube-scheduler --authentication-kubeconfig=/etc/kubernetes/scheduler.conf --authorization-kubeconfig=/etc/kubernetes/scheduler.conf --kubeconfig=/etc/kubernetes/scheduler.conf --leader-elect=true --bind-address=0.0.0.0 --profiling=false",
+      "expectedResult": "'--profiling' is equal to 'false'",
+      "reason": ""
+    },
+    {
+      "controlId": "1.4.2",
+      "section": "1.4",
+      "text": "Ensure that the --bind-address argument is set to 127.0.0.1 (Automated)",
+      "status": "FAIL",
+      "scored": true,
+      "type": "automated",
+      "actualValue": "root      322184   10647  0 Nov15 ?        00:56:52 kube-scheduler --authentication-kubeconfig=/etc/kubernetes/scheduler.conf --authorization-kubeconfig=/etc/kubernetes/scheduler.conf --kubeconfig=/etc/kubernetes/scheduler.conf --leader-elect=true --bind-address=0.0.0.0 --profiling=false",
+      "expectedResult": "'--bind-address' is equal to '127.0.0.1' OR '--bind-address' is not present",
+      "reason": ""
+    },
+    {
+      "controlId": "2.1",
+      "section": "2",
+      "text": "Ensure that the --cert-file and --key-file arguments are set as appropriate (Automated)",
+      "status": "PASS",
+      "scored": true,
+      "type": "automated",
+      "actualValue": "[REDACTED]",
+      "expectedResult": "'--cert-file' is present AND '--key-file' is present",
+      "reason": ""
+    },
+    {
+      "controlId": "3.1.1",
+      "section": "3.1",
+      "text": "Client certificate authentication should not be used for users (Manual)",
+      "status": "WARN",
+      "scored": false,
+      "type": "manual",
+      "actualValue": "",
+      "expectedResult": "",
+      "reason": "Test marked as a manual test"
+    },
+    {
+      "controlId": "3.2.1",
+      "section": "3.2",
+      "text": "Ensure that a minimal audit policy is created (Manual)",
+      "status": "PASS",
+      "scored": false,
+      "type": "automated",
+      "actualValue": "[REDACTED]",
+      "expectedResult": "'--audit-policy-file' is present",
+      "reason": ""
+    },
+    {
+      "controlId": "4.1.1",
+      "section": "4.1",
+      "text": "Ensure that the kubelet service file permissions are set to 644 or more restrictive (Automated)",
+      "status": "PASS",
+      "scored": true,
+      "type": "automated",
+      "actualValue": "permissions=600",
+      "expectedResult": "permissions has permissions 600, expected 644 or more restrictive",
+      "reason": ""
+    },
+    {
+      "controlId": "4.2.1",
+      "section": "4.2",
+      "text": "Ensure that the --anonymous-auth argument is set to false (Automated)",
+      "status": "PASS",
+      "scored": true,
+      "type": "automated",
+      "actualValue": "apiVersion: kubelet.config.k8s.io/v1beta1\nauthentication:\n  anonymous:\n    enabled: false\n  webhook:\n    cacheTTL: 0s\n    enabled: true\n  x509:\n    clientCAFile: /etc/kubernetes/pki/ca.crt\nauthorization:\n  mode: Webhook\n  webhook:\n    cacheAuthorizedTTL: 0s\n    cacheUnauthorizedTTL: 0s\ncgroupDriver: systemd\nclusterDNS:\n- 10.96.0.10\nclusterDomain: cluster.local\ncontainerRuntimeEndpoint: unix:///run",
+      "expectedResult": "'{.authentication.anonymous.enabled}' is equal to 'false'",
+      "reason": ""
+    },
+    {
+      "controlId": "4.2.6",
+      "section": "4.2",
+      "text": "Ensure that the --protect-kernel-defaults argument is set to true (Automated)",
+      "status": "FAIL",
+      "scored": true,
+      "type": "automated",
+      "actualValue": "apiVersion: kubelet.config.k8s.io/v1beta1\nauthentication:\n  anonymous:\n    enabled: false\n  webhook:\n    cacheTTL: 0s\n    enabled: true\n  x509:\n    clientCAFile: /etc/kubernetes/pki/ca.crt\nauthorization:\n  mode: Webhook\n  webhook:\n    cacheAuthorizedTTL: 0s\n    cacheUnauthorizedTTL: 0s\ncgroupDriver: systemd\nclusterDNS:\n- 10.96.0.10\nclusterDomain: cluster.local\ncontainerRuntimeEndpoint: unix:///run",
+      "expectedResult": "'{.protectKernelDefaults}' is present",
+      "reason": ""
+    },
+    {
+      "controlId": "4.2.9",
+      "section": "4.2",
+      "text": "Ensure that the --event-qps argument is set to 0 or a level which ensures appropriate event capture (Manual)",
+      "status": "WARN",
+      "scored": false,
+      "type": "automated",
+      "actualValue": "apiVersion: kubelet.config.k8s.io/v1beta1\nauthentication:\n  anonymous:\n    enabled: false\n  webhook:\n    cacheTTL: 0s\n    enabled: true\n  x509:\n    clientCAFile: /etc/kubernetes/pki/ca.crt\nauthorization:\n  mode: Webhook\n  webhook:\n    cacheAuthorizedTTL: 0s\n    cacheUnauthorizedTTL: 0s\ncgroupDriver: systemd\nclusterDNS:\n- 10.96.0.10\nclusterDomain: cluster.local\ncontainerRuntimeEndpoint: unix:///run",
+      "expectedResult": "'{.eventRecordQPS}' is present",
+      "reason": ""
+    },
+    {
+      "controlId": "5.1.1",
+      "section": "5.1",
+      "text": "Ensure that the cluster-admin role is only used where required (Manual)",
+      "status": "WARN",
+      "scored": false,
+      "type": "manual",
+      "actualValue": "",
+      "expectedResult": "",
+      "reason": "Test marked as a manual test"
+    },
+    {
+      "controlId": "5.2.2",
+      "section": "5.2",
+      "text": "Minimize the admission of privileged containers (Manual)",
+      "status": "WARN",
+      "scored": false,
+      "type": "manual",
+      "actualValue": "",
+      "expectedResult": "",
+      "reason": "Test marked as a manual test"
+    }
+  ]
+}

@@ -255,7 +255,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("swallow configAudit error instead of throwing unavailable", "compliance", 'throw new ComplianceDataUnavailableError("configAudit", msg)', "return []"),
     ("cache partial response on auxiliary failure", "compliance", "if (!meta.partial)", "if (true)"),
     ("round incomplete pass rate up to 100%", "types", "Math.min(99.9, Math.floor(pct * 10 + 1e-9) / 10)", "Math.round(pct * 10) / 10"),
-    ("leak 100% on raw formatter in FrameworksGrid", "grid", "const rawPctText = formatPassRatePct(fw.passRate, {\n            hasActionableFail: fw.failCount > 0 || hasActionable,\n            hasNotEvaluated: hasNotEval,\n          })", "const rawPctText = formatPassRatePct(fw.passRate, {\n            hasActionableFail: fw.failCount > 0,\n          })"),
+    ("leak 100% on evaluated formatter in FrameworksGrid", "grid", "const evaluatedPctText = formatPassRatePct(evaluatedRate, {\n            hasActionableFail: hasActionable,\n            hasNotEvaluated: hasNotEval,\n          })", "const evaluatedPctText = formatPassRatePct(evaluatedRate, {\n            hasActionableFail: hasActionable,\n          })"),
     ("revert pooled ratio to unweighted avgRate", "counters", "function pooledRatio(", "function avgRate("),
     ("drop partial notice from FailureCounters", "counters", "compliance.summary.partialNotice", "compliance.summary.removed"),
     ("grade KISA CFG-01 on raw passRate thresholds", "kisa", "if (actionableControls > 0 || actionableFailures > 0 || auditFailures > 0) {", "if (frameworks.some((f) => f.passRate < 0.6)) {"),

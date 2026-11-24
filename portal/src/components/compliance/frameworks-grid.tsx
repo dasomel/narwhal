@@ -45,6 +45,12 @@ function PassRateBar({ rate }: { rate: number }) {
   )
 }
 
+function verdictText(verdict: "passed" | "failed" | "not_evaluated", t: ReturnType<typeof useT>): string {
+  if (verdict === "passed") return t("compliance.framework.verdict.passed")
+  if (verdict === "failed") return t("compliance.framework.verdict.failed")
+  return t("compliance.framework.verdict.not_evaluated")
+}
+
 function ControlPreviewCard({
   ctrl,
   frameworkId,
@@ -61,6 +67,8 @@ function ControlPreviewCard({
   const droppedFail = ctrl.droppedFailCount ?? 0
   const isAcceptedOnly = Boolean(ctrl.accepted)
   const isNotEvaluated = (ctrl.evaluationState === "not_evaluated" || (!ctrl.evaluationState && ctrl.failCount === 0))
+  const isTestedPass = ctrl.evaluationState === "passed" && ctrl.testedByBenchmark === true
+  const ev = ctrl.benchmarkEvidence
   const cardBorder = isNotEvaluated
     ? "border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/10 dark:border-amber-900/60"
     : isAcceptedOnly
@@ -84,6 +92,14 @@ function ControlPreviewCard({
             {t("compliance.framework.notEvaluatedShort")}
           </Badge>
         )}
+        {isTestedPass && (
+          <Badge
+            variant="outline"
+            className="text-[0.65rem] px-1.5 py-0 text-green-700 border-green-300 dark:text-green-400 dark:border-green-800"
+          >
+            {t("compliance.framework.testedBenchmarkShort")}
+          </Badge>
+        )}
         {isAcceptedOnly && (
           <Badge
             variant="outline"
@@ -102,27 +118,62 @@ function ControlPreviewCard({
           {ctrl.notEvaluatedDetail ? ` (${ctrl.notEvaluatedDetail})` : ""}
         </p>
       ) : (
-        <div className="flex flex-wrap items-center gap-3 mt-1 text-muted-foreground">
-          <span className="text-green-600 font-medium">✓ {ctrl.passCount}</span>
-          <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
-            ✗ {actionableFail}
-          </span>
-          {(acceptedFail > 0 || ctrl.failCount !== actionableFail || droppedFail > 0) && (
-            <Badge
-              variant="outline"
-              className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
-            >
-              {[
-                acceptedFail > 0 ? `+${acceptedFail} ${t("compliance.framework.acceptedShort")}` : null,
-                droppedFail > 0 ? t("compliance.framework.droppedShort", { count: String(droppedFail) }) : null,
-              ]
-                .filter(Boolean)
-                .join(" · ") || t("compliance.framework.rawChecks", { count: String(ctrl.failCount) })}
-              {acceptedFail > 0 || droppedFail > 0
-                ? ` (${t("compliance.framework.rawChecks", { count: String(ctrl.failCount) })})`
-                : ""}
-            </Badge>
+        <div className="space-y-1 mt-1">
+          <div className="flex flex-wrap items-center gap-3 text-muted-foreground">
+            <span className="text-green-600 font-medium">✓ {ctrl.passCount}</span>
+            <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
+              ✗ {actionableFail}
+            </span>
+            {(acceptedFail > 0 || ctrl.failCount !== actionableFail || droppedFail > 0) && (
+              <Badge
+                variant="outline"
+                className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+              >
+                {[
+                  acceptedFail > 0 ? `+${acceptedFail} ${t("compliance.framework.acceptedShort")}` : null,
+                  droppedFail > 0 ? t("compliance.framework.droppedShort", { count: String(droppedFail) }) : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || t("compliance.framework.rawChecks", { count: String(ctrl.failCount) })}
+                {acceptedFail > 0 || droppedFail > 0
+                  ? ` (${t("compliance.framework.rawChecks", { count: String(ctrl.failCount) })})`
+                  : ""}
+              </Badge>
+            )}
+          </div>
+          {ev && ev.finishedAt && (
+            <p className="text-[0.7rem] text-muted-foreground font-mono">
+              {t("compliance.framework.benchmarkSourceLine", {
+                tool: ev.tool,
+                version: ev.toolVersion,
+                benchmarkId: ev.benchmarkId,
+                nodes: t("compliance.framework.benchmarkNodes", { count: String(ev.nodeCount) }),
+                finishedAt: ev.finishedAt,
+              })}
+            </p>
           )}
+          {ev?.sourceDisagreement && (
+            <p className="text-[0.7rem] text-amber-700 dark:text-amber-400">
+              {t("compliance.framework.sourceDisagreement", {
+                trivy: verdictText(ev.sourceDisagreement.trivyVerdict, t),
+                benchmark: verdictText(ev.sourceDisagreement.benchmarkVerdict, t),
+              })}
+            </p>
+          )}
+          {ev?.failFindings?.map((f) => (
+            <div key={f.node} className="text-[0.7rem] text-muted-foreground space-y-0.5">
+              {f.actualValue && (
+                <p className="truncate">
+                  <span className="font-medium">{f.node} · {t("compliance.framework.benchmarkActual")}:</span> {f.actualValue}
+                </p>
+              )}
+              {f.expectedResult && (
+                <p className="truncate">
+                  <span className="font-medium">{t("compliance.framework.benchmarkExpected")}:</span> {f.expectedResult}
+                </p>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -285,6 +336,8 @@ export function FrameworksGrid() {
           const acceptedFail = fw.acceptedFailCount ?? 0
           const notEvaluated = fw.notEvaluatedCount ?? Math.max(0, fw.totalControls - fw.failCount)
           const evaluatedPass = fw.evaluatedPassCount ?? 0
+          const testedPass = fw.benchmarkTestedPassCount ?? 0
+          const noFailurePass = fw.noFailureRecordedPassCount ?? Math.max(0, evaluatedPass - testedPass)
           const droppedChecks = fw.droppedCheckCount ?? 0
           const droppedControls = fw.droppedFailCount ?? 0
           const evaluatedRate = fw.evaluatedPassRate ?? 0
@@ -294,10 +347,6 @@ export function FrameworksGrid() {
           const hasNotEval = notEvaluated > 0 || (Boolean(fw.coverageUnknown) || fw.evaluatedPassCount === undefined || fw.notEvaluatedCount === undefined)
           const evaluatedPctText = formatPassRatePct(evaluatedRate, {
             hasActionableFail: hasActionable,
-            hasNotEvaluated: hasNotEval,
-          })
-          const rawPctText = formatPassRatePct(fw.passRate, {
-            hasActionableFail: fw.failCount > 0 || hasActionable,
             hasNotEvaluated: hasNotEval,
           })
           const effectivePctText = formatPassRatePct(effectiveRate, {
@@ -340,15 +389,35 @@ export function FrameworksGrid() {
                     </span>
                   </div>
                 </div>
-                <PassRateBar rate={evaluatedRate * 100} />
+                <PassRateBar rate={hasActionable || hasNotEval ? Math.min(99.9, evaluatedRate * 100) : evaluatedRate * 100} />
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 text-[0.7rem] text-muted-foreground">
-                  <span>{t("compliance.framework.rawPassRate")}: {rawPctText} ({fw.passCount}/{fw.totalControls})</span>
+                  <span>
+                    {evaluatedPass}/{fw.totalControls} (
+                    {testedPass > 0
+                      ? t("compliance.counter.frameworksPassSplit", {
+                          tested: String(testedPass),
+                          noFailure: String(noFailurePass),
+                        })
+                      : `${noFailurePass} ${t("compliance.framework.noFailureRecordedShort")}`}
+                    )
+                  </span>
                   <span>{t("compliance.framework.effectivePassRate")}: {effectivePctText} ({effectivePassNum}/{fw.totalControls})</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground">
-                  <span className="text-green-600 font-medium" title={t("compliance.framework.noFailureRecordedLabel")}>
-                    ✓ {evaluatedPass} {t("compliance.framework.noFailureRecordedShort")}
-                  </span>
+                  {testedPass > 0 ? (
+                    <>
+                      <span className="text-green-600 font-medium" title={t("compliance.framework.testedBenchmarkLabel")}>
+                        ✓ {testedPass} {t("compliance.framework.testedBenchmarkShort")}
+                      </span>
+                      <span className="text-emerald-600 font-medium" title={t("compliance.framework.noFailureRecordedLabel")}>
+                        ✓ {noFailurePass} {t("compliance.framework.noFailureRecordedShort")}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-green-600 font-medium" title={t("compliance.framework.noFailureRecordedLabel")}>
+                      ✓ {noFailurePass} {t("compliance.framework.noFailureRecordedShort")}
+                    </span>
+                  )}
                   <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
                     ✗ {actionableFail}
                   </span>

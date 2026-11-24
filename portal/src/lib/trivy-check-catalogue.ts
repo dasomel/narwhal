@@ -73,7 +73,8 @@ export function resolveCanonicalCheckId(rawId: string): string {
   if (!upper) return ""
   const exact = EXACT_ALIAS_TO_CANONICAL.get(upper)
   if (exact) return exact
-  const norm = normalizeCheckId(upper)
+  const compact = /^(KSV|KCV)-0*(\d+)$/.test(upper) ? upper.replace("-", "") : upper
+  const norm = normalizeCheckId(compact)
   if (Object.hasOwn(TRIVY_CHECK_CATALOGUE, norm)) return norm
   return NORMALIZED_ALIAS_TO_CANONICAL.get(norm) ?? norm
 }

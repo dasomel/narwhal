@@ -102,7 +102,8 @@ function ControlsTable({
             const acceptedFail = ctrl.acceptedFailCount ?? 0
             const droppedFail = ctrl.droppedFailCount ?? 0
             const isNotEvaluated = (ctrl.evaluationState === "not_evaluated" || (!ctrl.evaluationState && ctrl.failCount === 0))
-            const isTestedPass = ctrl.evaluationState === "passed" && ctrl.testedByBenchmark === true
+            const isTestedPass =
+              ctrl.evaluationState === "passed" && (ctrl.testedByBenchmark === true || ctrl.testedByReport === true)
             const ev = ctrl.benchmarkEvidence
             return (
               <tr
@@ -321,7 +322,8 @@ export default async function FrameworkDetailPage({ params }: Props) {
   const actionableControlsFail = detail.actionableFailCount ?? detail.failCount
   const acceptedControlsFail = detail.acceptedFailCount ?? acceptedControls.length
   const evaluatedPass = detail.evaluatedPassCount ?? 0
-  const testedPass = detail.benchmarkTestedPassCount ?? 0
+  const testedPass =
+    detail.testedPassCount ?? (detail.benchmarkTestedPassCount ?? 0) + (detail.reportTestedPassCount ?? 0)
   const noFailurePass = detail.noFailureRecordedPassCount ?? Math.max(0, evaluatedPass - testedPass)
   const hasBenchmarkTests = testedPass > 0 || (detail.benchmarkTestedFailCount ?? 0) > 0
   const notEvaluated = detail.notEvaluatedCount ?? Math.max(0, detail.totalControls - detail.failCount)

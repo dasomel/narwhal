@@ -67,7 +67,8 @@ function ControlPreviewCard({
   const droppedFail = ctrl.droppedFailCount ?? 0
   const isAcceptedOnly = Boolean(ctrl.accepted)
   const isNotEvaluated = (ctrl.evaluationState === "not_evaluated" || (!ctrl.evaluationState && ctrl.failCount === 0))
-  const isTestedPass = ctrl.evaluationState === "passed" && ctrl.testedByBenchmark === true
+  const isTestedPass =
+    ctrl.evaluationState === "passed" && (ctrl.testedByBenchmark === true || ctrl.testedByReport === true)
   const ev = ctrl.benchmarkEvidence
   const cardBorder = isNotEvaluated
     ? "border-amber-200/80 bg-amber-50/40 dark:bg-amber-950/10 dark:border-amber-900/60"
@@ -336,7 +337,7 @@ export function FrameworksGrid() {
           const acceptedFail = fw.acceptedFailCount ?? 0
           const notEvaluated = fw.notEvaluatedCount ?? Math.max(0, fw.totalControls - fw.failCount)
           const evaluatedPass = fw.evaluatedPassCount ?? 0
-          const testedPass = fw.benchmarkTestedPassCount ?? 0
+          const testedPass = fw.testedPassCount ?? (fw.benchmarkTestedPassCount ?? 0) + (fw.reportTestedPassCount ?? 0)
           const noFailurePass = fw.noFailureRecordedPassCount ?? Math.max(0, evaluatedPass - testedPass)
           const droppedChecks = fw.droppedCheckCount ?? 0
           const droppedControls = fw.droppedFailCount ?? 0

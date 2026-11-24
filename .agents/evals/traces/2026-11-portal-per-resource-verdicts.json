@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-per-resource-verdicts-20261125",
+  "task": "Owner-approved Phase 1 design change (D-COMPLIANCE-VERDICT-SOURCE): derive portal compliance framework verdicts from paginated per-resource Trivy reports joined via ClusterComplianceReport.spec.compliance.controls[].checks[].id so portal works accurately under both trivy-operator 0.25.0 (identical live output) and 0.36.1 with reportRecordFailedChecksOnly=\"false\" (explicit success:true -> tested-passed, ignoring buggy CCR status.detailReport success:false and inflated status.summary.failCount).",
+  "changeContext": {
+    "paths": [
+      "portal/src/lib/compliance.ts",
+      "portal/src/lib/trivy-check-catalogue.ts",
+      "portal/src/types/compliance.ts",
+      "portal/src/components/compliance/failure-counters.tsx",
+      "portal/src/components/compliance/frameworks-grid.tsx",
+      "portal/src/app/(dashboard)/compliance/frameworks/[id]/page.tsx",
+      "portal/src/lib/compliance.test.ts",
+      "portal/src/lib/compliance-verdict-source.test.ts",
+      "scripts/test/lib/check-portal-compliance-evidence-narrowing.py",
+      "scripts/test/lib/check-portal-compliance-round6.py",
+      "portal/CHANGELOG.md",
+      "portal/CHANGELOG-ko.md",
+      "portal/docs/lessons-log.md",
+      ".agents/evals/traces/2026-11-portal-per-resource-verdicts.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Verified ClusterRole/narwhal-portal in gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml already grants get/list/watch on all 6 per-resource Trivy report kinds plus clustercompliancereports (zero RBAC widening). Scoped strictly to portal verdict source, pagination, types, UI tested-pass display, behavioral tests, R392/R393 paged-fetcher updates, and docs/trace. Left untouched: RBAC manifests, trivy-operator chart (Phase 2), kube-bench.ts, kisa.ts, cache-keys.ts, acceptance rules."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Prior upstream v0.36.1 inspection proved FromDetailReport hardcodes Success:false for MisconfStatusPassed entries and TotalsCheckCount increments failCount++ while large CCRs exceed etcd 1.5 MiB. In portal/src/lib/compliance.ts (~L2121-2139), reading detailReport.results[].checks and status.summary.failCount classified passed checks as failures."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Recorded D-COMPLIANCE-VERDICT-SOURCE in portal/src/lib/compliance.ts. Added complianceK8sListPaged/tryComplianceK8sListPaged (limit=200, metadata.continue, single 410 restart, fail-closed on truncation) across per-resource report lists and ReplicaSets. Replaced detailReport.results[].checks verdict parsing with per-resource report joins (controlEvidenceFailures + family-isolated controlEvidencePasses) keyed by spec.compliance.controls[].checks[].id normalized via resolveCanonicalCheckId (including KSV-0001/KCV-0033 without colliding KSV0012/KSV012). Added optional testedByReport, reportTestedPassCount, and testedPassCount (omitted when 0 so 0.25.0 output is byte-compatible) and wired UI tested-pass display."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Portal tsc --noEmit, eslint, full Vitest suite (200 files / 2836 tests including compliance-verdict-source.test.ts fixtures a-f + pagination), read-only live kubectl proxy comparison as system:serviceaccount:devtools:narwhal-portal against portal-sa-1.1.27.json across all 5 frameworks, repo make test (full static regression suite), make validate, and markdownlint-changed.py. NOT covered: live cluster running trivy-operator 0.36.1 (Phase 2).",
+      "evidence": [
+        "cmd:cd portal && pnpm exec tsc --noEmit && pnpm lint && pnpm exec vitest run -> exit 0, 200 files passed, 2836 tests passed, 0 failed",
+        "live:K8S_API_SERVER=http://127.0.0.1:8071 (system:serviceaccount:devtools:narwhal-portal) getComplianceFrameworks() vs portal-sa-1.1.27.json -> ALL_COUNT_FIELDS_EQUAL=True across all 5 frameworks (k8s-cis-1.23, k8s-kisa-1.0, k8s-nsa-1.0, k8s-pss-baseline-0.1, k8s-pss-restricted-0.1)",
+        "cmd:make test -> passed 511 failed 0 warnings 3",
+        "cmd:make validate -> exit 0",
+        "cmd:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Portal derives compliance framework verdicts from paginated per-resource Trivy reports via spec.compliance.controls[].checks[].id, verified with Vitest fixtures (a)-(f), full static regression suite, and read-only live cluster parity on trivy-operator 0.25.0. Live trivy-operator 0.36.1 verification remains Phase 2."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Phase 1 complete and verified within repository scope and read-only live 0.25.0 parity; Phase 2 trivy-operator 0.36.1 rollout is separate."
+    }
+  ]
+}

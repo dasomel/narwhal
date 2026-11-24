@@ -1212,7 +1212,7 @@ function makeCcr(opts: {
   title?: string
   passCount: number
   failCount: number
-  specControls?: Array<{ id: string; name: string; severity: string }>
+  specControls?: Array<{ id: string; name: string; severity: string; checks?: Array<{ id: string }> }>
   results?: Array<{
     id: string
     name: string
@@ -1322,6 +1322,65 @@ describe("compliance framework actionable vs accepted split", () => {
 
   it("fails closed on unknown check IDs, unknown targets, mixed controls, and node checks", async () => {
     installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
+        items: [
+          makeCar({
+            namespace: "security-system",
+            kind: "DaemonSet",
+            name: "falco",
+            checks: [
+              { checkID: "KSV9999", severity: "HIGH", success: false },
+              { checkID: "KSV017", severity: "MEDIUM", success: false },
+            ],
+          }),
+          {
+            metadata: {
+              name: "widget-foo",
+              namespace: "devtools",
+              labels: { "trivy-operator.resource.kind": "Widget", "trivy-operator.resource.name": "foo" },
+            },
+            report: {
+              summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 },
+              checks: [{ checkID: "KSV018", title: "Unknown target kind", severity: "HIGH", success: false }],
+            },
+          },
+          makeCar({
+            namespace: "devtools",
+            kind: "ReplicaSet",
+            name: "gitea-67f4766475",
+            checks: [{ checkID: "KSV020", severity: "HIGH", success: false }],
+          }),
+          makeCar({
+            namespace: "dev",
+            kind: "Pod",
+            name: "unlisted-app",
+            checks: [{ checkID: "KSV020", severity: "HIGH", success: false }],
+          }),
+          makeCar({
+            namespace: "kube-system",
+            kind: "DaemonSet",
+            name: "cilium",
+            checks: [{ checkID: "KSV014", severity: "MEDIUM", success: false }],
+          }),
+        ],
+      },
+      "/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports": {
+        items: [
+          {
+            metadata: {
+              name: "node-narwhal-master-1",
+              labels: { "trivy-operator.resource.kind": "Node", "trivy-operator.resource.name": "narwhal-master-1" },
+            },
+            report: {
+              summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 2 },
+              checks: [
+                { checkID: "KCV0056", title: "CNI perms", severity: "LOW", success: false },
+                { checkID: "KCV0059", title: "etcd ownership", severity: "LOW", success: false },
+              ],
+            },
+          },
+        ],
+      },
       "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": {
         items: [
           makeCcr({
@@ -1329,64 +1388,21 @@ describe("compliance framework actionable vs accepted split", () => {
             title: "Test Framework",
             passCount: 1,
             failCount: 5,
+            specControls: [
+              { id: "C0", name: "No failure recorded", severity: "LOW", checks: [{ id: "AVD-KSV-0001" }] },
+              { id: "C1", name: "Unknown check ID", severity: "HIGH", checks: [{ id: "AVD-KSV-9999" }] },
+              { id: "C2", name: "Unknown target", severity: "HIGH", checks: [{ id: "AVD-KSV-0018" }] },
+              { id: "C3", name: "Mixed control", severity: "HIGH", checks: [{ id: "AVD-KSV-0020" }] },
+              { id: "C4", name: "Actionable node checks", severity: "LOW", checks: [{ id: "AVD-KCV-0056" }, { id: "AVD-KCV-0059" }] },
+              { id: "C5", name: "Mixed exact accepted and uncovered control", severity: "MEDIUM", checks: [{ id: "AVD-KSV-0014" }, { id: "AVD-KSV-0017" }] },
+            ],
             results: [
-              // 0. Passing control -> never marked accepted
-              {
-                id: "C0",
-                name: "All passing",
-                severity: "LOW",
-                checks: [{ checkID: "AVD-KSV-0020", target: "devtools/replicaset-gitea-67f4766475", success: true }],
-              },
-              // 1. Unknown check ID on allowlisted workload -> actionable
-              {
-                id: "C1",
-                name: "Unknown check ID",
-                severity: "HIGH",
-                checks: [
-                  { checkID: "AVD-KSV-9999", target: "security-system/daemonset-falco", success: false },
-                  { target: "security-system/daemonset-falco", success: false },
-                ],
-              },
-              // 2. Unparseable / unknown target -> actionable
-              {
-                id: "C2",
-                name: "Unknown target",
-                severity: "HIGH",
-                checks: [
-                  { checkID: "AVD-KSV-0017", target: "no-slash-target", success: false },
-                  { checkID: "AVD-KSV-0017", target: "devtools/widget-foo", success: false },
-                ],
-              },
-              // 3. Mixed control (one actionable + one accepted) -> actionable (control.accepted = false)
-              {
-                id: "C3",
-                name: "Mixed control",
-                severity: "HIGH",
-                checks: [
-                  { checkID: "AVD-KSV-0020", target: "devtools/replicaset-gitea-67f4766475", success: false },
-                  { checkID: "AVD-KSV-0020", target: "dev/pod-unlisted-app", success: false },
-                ],
-              },
-              // 4. Unlisted node / infra checks (including KCV0056 and KCV0059) -> actionable (matches Infra tab)
-              {
-                id: "C4",
-                name: "Actionable node checks",
-                severity: "LOW",
-                checks: [
-                  { checkID: "AVD-KCV-0056", target: "/node-narwhal-master-1", success: false },
-                  { checkID: "AVD-KCV-0059", target: "/node-narwhal-master-1", success: false },
-                ],
-              },
-              // 5. Exact Falco acceptance plus uncovered Cilium KSV014 -> actionable
-              {
-                id: "C5",
-                name: "Mixed exact accepted and uncovered control",
-                severity: "MEDIUM",
-                checks: [
-                  { checkID: "AVD-KSV-0014", target: "kube-system/daemonset-cilium", success: false },
-                  { checkID: "AVD-KSV-0017", target: "security-system/daemonset-falco", success: false },
-                ],
-              },
+              { id: "C0", name: "No failure recorded", severity: "LOW", checks: [{ checkID: "", success: true }] },
+              { id: "C1", name: "Unknown check ID", severity: "HIGH", checks: [] },
+              { id: "C2", name: "Unknown target", severity: "HIGH", checks: [] },
+              { id: "C3", name: "Mixed control", severity: "HIGH", checks: [] },
+              { id: "C4", name: "Actionable node checks", severity: "LOW", checks: [] },
+              { id: "C5", name: "Mixed exact accepted and uncovered control", severity: "MEDIUM", checks: [] },
             ],
           }),
         ],
@@ -1404,7 +1420,6 @@ describe("compliance framework actionable vs accepted split", () => {
       totalControls: 6,
     })
     expect(frameworks[0].passRate).toBeCloseTo(1 / 6)
-    // C0 has only a CCR pass without spec linkage or matching report evidence.
     expect(frameworks[0].effectivePassRate).toBeCloseTo(0)
 
     const detail = await getComplianceFrameworkDetail("test-fw")
@@ -1412,8 +1427,8 @@ describe("compliance framework actionable vs accepted split", () => {
     const byId = new Map(detail!.controls.map((c) => [c.id, c]))
 
     expect(byId.get("C0")?.accepted).toBe(false)
-    expect(byId.get("C1")).toMatchObject({ failCount: 2, actionableFailCount: 2, acceptedFailCount: 0, accepted: false })
-    expect(byId.get("C2")).toMatchObject({ failCount: 2, actionableFailCount: 2, acceptedFailCount: 0, accepted: false })
+    expect(byId.get("C1")).toMatchObject({ failCount: 1, actionableFailCount: 1, acceptedFailCount: 0, accepted: false })
+    expect(byId.get("C2")).toMatchObject({ failCount: 1, actionableFailCount: 1, acceptedFailCount: 0, accepted: false })
     expect(byId.get("C3")).toMatchObject({ failCount: 2, actionableFailCount: 2, acceptedFailCount: 0, accepted: false })
     expect(byId.get("C4")).toMatchObject({ failCount: 2, actionableFailCount: 2, acceptedFailCount: 0, accepted: false })
     expect(byId.get("C5")).toMatchObject({
@@ -1426,40 +1441,43 @@ describe("compliance framework actionable vs accepted split", () => {
 
   it("drops superseded ReplicaSets while enforcing Deployment ownership on live-revision ReplicaSets", async () => {
     installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
+        items: [
+          makeCar({
+            namespace: "devtools",
+            kind: "ReplicaSet",
+            name: "unlisted-old11",
+            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+          }),
+          makeCar({
+            namespace: "devtools",
+            kind: "ReplicaSet",
+            name: "harbor-core-b569bd8dd",
+            checks: [{ checkID: "KSV011", severity: "HIGH", success: false }],
+          }),
+          makeCar({
+            namespace: "devtools",
+            kind: "ReplicaSet",
+            name: "harbor-core-bcdfg",
+            checks: [{ checkID: "KSV020", severity: "HIGH", success: false }],
+          }),
+        ],
+      },
       "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": {
         items: [
           makeCcr({
             id: "rs-fw",
             passCount: 0,
             failCount: 3,
+            specControls: [
+              { id: "RS-SUPERSEDED", name: "Superseded RS only", severity: "HIGH", checks: [{ id: "AVD-KSV-0014" }] },
+              { id: "RS-OWNED", name: "Live Deployment RS", severity: "HIGH", checks: [{ id: "AVD-KSV-0011" }] },
+              { id: "RS-STANDALONE", name: "Standalone RS", severity: "HIGH", checks: [{ id: "AVD-KSV-0020" }] },
+            ],
             results: [
-              // Only superseded RS -> dropped (0 actionable, 0 accepted)
-              {
-                id: "RS-SUPERSEDED",
-                name: "Superseded RS only",
-                severity: "HIGH",
-                checks: [
-                  { checkID: "AVD-KSV-0011", target: "devtools/replicaset-unlisted-old11", success: false },
-                ],
-              },
-              // Live-revision allowlisted RS with Deployment owner -> accepted
-              {
-                id: "RS-OWNED",
-                name: "Live Deployment RS",
-                severity: "HIGH",
-                checks: [
-                  { checkID: "AVD-KSV-0011", target: "devtools/replicaset-harbor-core-b569bd8dd", success: false },
-                ],
-              },
-              // Standalone RS without Deployment owner even with hash-like suffix -> actionable
-              {
-                id: "RS-STANDALONE",
-                name: "Standalone RS",
-                severity: "HIGH",
-                checks: [
-                  { checkID: "AVD-KSV-0011", target: "devtools/replicaset-harbor-core-bcdfg", success: false },
-                ],
-              },
+              { id: "RS-SUPERSEDED", name: "Superseded RS only", severity: "HIGH", checks: [] },
+              { id: "RS-OWNED", name: "Live Deployment RS", severity: "HIGH", checks: [] },
+              { id: "RS-STANDALONE", name: "Standalone RS", severity: "HIGH", checks: [] },
             ],
           }),
         ],
@@ -1536,53 +1554,58 @@ describe("compliance framework actionable vs accepted split", () => {
             id: "rbac-fw",
             passCount: 0,
             failCount: 4,
+            specControls: [
+              { id: "RBAC-OK", name: "Accepted RBAC", severity: "HIGH", checks: [{ id: "AVD-KSV-0041" }, { id: "AVD-KSV-0048" }] },
+              { id: "RBAC-UNLISTED-CHECK", name: "Unlisted check", severity: "MEDIUM", checks: [{ id: "AVD-KSV-0042" }] },
+              { id: "RBAC-HASHED-RESOLVED", name: "Hashed resolved", severity: "HIGH", checks: [{ id: "AVD-KSV-0046" }] },
+              { id: "RBAC-HASHED-UNRESOLVED", name: "Hashed unresolved", severity: "HIGH", checks: [{ id: "AVD-KSV-0044" }] },
+            ],
             results: [
-              // Built-in + upstream + ACCEPTED_RBAC_RULES -> accepted
-              {
-                id: "RBAC-OK",
-                name: "Accepted RBAC",
-                severity: "HIGH",
-                checks: [
-                  { checkID: "AVD-KSV-0041", target: "/clusterrole-cluster-admin", success: false },
-                  { checkID: "AVD-KSV-0041", target: "/clusterrole-cert-manager-cainjector", success: false },
-                  { checkID: "AVD-KSV-0041", target: "/clusterrole-platform-admin", success: false },
-                  { checkID: "AVD-KSV-0048", target: "devtools/role-narwhal-portal-jobs", success: false },
-                ],
-              },
-              // Unlisted check KSV042 on platform-admin -> stays actionable
-              {
-                id: "RBAC-UNLISTED-CHECK",
-                name: "Unlisted check",
-                severity: "MEDIUM",
-                checks: [{ checkID: "AVD-KSV-0042", target: "/clusterrole-platform-admin", success: false }],
-              },
-              // Hashed ClusterRole resolved via clusterrbacassessmentreports -> accepted (system:*)
-              {
-                id: "RBAC-HASHED-RESOLVED",
-                name: "Hashed resolved",
-                severity: "HIGH",
-                checks: [{ checkID: "AVD-KSV-0041", target: "/clusterrole-54cdc9b678", success: false }],
-              },
-              // Hashed ClusterRole NOT in clusterrbacassessmentreports -> fails closed (actionable)
-              {
-                id: "RBAC-HASHED-UNRESOLVED",
-                name: "Hashed unresolved",
-                severity: "HIGH",
-                checks: [{ checkID: "AVD-KSV-0041", target: "/clusterrole-deadbeef00", success: false }],
-              },
+              { id: "RBAC-OK", name: "Accepted RBAC", severity: "HIGH", checks: [] },
+              { id: "RBAC-UNLISTED-CHECK", name: "Unlisted check", severity: "MEDIUM", checks: [] },
+              { id: "RBAC-HASHED-RESOLVED", name: "Hashed resolved", severity: "HIGH", checks: [] },
+              { id: "RBAC-HASHED-UNRESOLVED", name: "Hashed unresolved", severity: "HIGH", checks: [] },
             ],
           }),
         ],
       },
+      "/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports": {
+        items: [
+          makeRbac({ namespace: "devtools", kind: "Role", roleName: "narwhal-portal-jobs", checks: [{ checkID: "KSV048", severity: "HIGH", success: false }] }),
+        ],
+      },
       "/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports": {
         items: [
+          makeRbac({ kind: "ClusterRole", roleName: "cluster-admin", checks: [{ checkID: "KSV041", severity: "HIGH", success: false }] }),
+          makeRbac({ kind: "ClusterRole", roleName: "cert-manager-cainjector", checks: [{ checkID: "KSV041", severity: "HIGH", success: false }] }),
+          makeRbac({
+            kind: "ClusterRole",
+            roleName: "platform-admin",
+            checks: [
+              { checkID: "KSV041", severity: "HIGH", success: false },
+              { checkID: "KSV042", severity: "MEDIUM", success: false },
+            ],
+          }),
           {
             metadata: {
               name: "clusterrole-54cdc9b678",
               labels: { "trivy-operator.resource.kind": "ClusterRole" },
               ownerReferences: [{ kind: "ClusterRole", name: "system:kube-controller-manager" }],
             },
-            report: { summary: { criticalCount: 1, highCount: 0, mediumCount: 0, lowCount: 0 }, checks: [] },
+            report: {
+              summary: { criticalCount: 1, highCount: 0, mediumCount: 0, lowCount: 0 },
+              checks: [{ checkID: "KSV046", title: "Bootstrap role check", severity: "HIGH", success: false }],
+            },
+          },
+          {
+            metadata: {
+              name: "clusterrole-deadbeef00",
+              labels: { "trivy-operator.resource.kind": "ClusterRole" },
+            },
+            report: {
+              summary: { criticalCount: 1, highCount: 0, mediumCount: 0, lowCount: 0 },
+              checks: [{ checkID: "KSV044", title: "Unresolved hashed role", severity: "HIGH", success: false }],
+            },
           },
         ],
       },
@@ -1643,7 +1666,7 @@ describe("compliance framework actionable vs accepted split", () => {
     expect(detail!.controls.every((c) => c.evaluationState === "not_evaluated" && c.notEvaluatedReason === "summary_only")).toBe(true)
   })
 
-  it("fails closed to coverage_unknown when spec.checks metadata is trimmed (ccr-live-trimmed.json) while keeping actionable vs accepted fail counts", async () => {
+  it("fails closed to coverage_unknown when spec.checks metadata is trimmed (ccr-live-trimmed.json) without trusting detailReport verdicts", async () => {
     installK8sMock({
       "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": ccrLiveTrimmed,
     })
@@ -1651,87 +1674,56 @@ describe("compliance framework actionable vs accepted split", () => {
     const frameworks = await getComplianceFrameworks()
     const byId = new Map(frameworks.map((f) => [f.id, f]))
 
+    // Under D-COMPLIANCE-VERDICT-SOURCE, status.detailReport.results[].checks is never trusted as a
+    // verdict source. When spec.compliance.controls[].checks is trimmed and no per-resource reports
+    // are present, every control stays not_evaluated (coverage_unknown) and summary.failCount fails
+    // closed as actionable.
     expect(byId.get("k8s-nsa-1.0")).toMatchObject({
       passCount: 18,
       failCount: 9,
       evaluatedPassCount: 0,
-      notEvaluatedCount: 18,
-      actionableFailCount: 7,
-      acceptedFailCount: 2,
+      notEvaluatedCount: 27,
+      actionableFailCount: 9,
+      acceptedFailCount: 0,
       coverageUnknown: true,
     })
-    expect(byId.get("k8s-nsa-1.0")!.effectivePassRate).toBeCloseTo(2 / 27)
+    expect(byId.get("k8s-nsa-1.0")!.effectivePassRate).toBe(0)
     expect(byId.get("k8s-pss-baseline-0.1")).toMatchObject({
       passCount: 8,
       failCount: 3,
       evaluatedPassCount: 0,
-      notEvaluatedCount: 8,
-      actionableFailCount: 2,
-      acceptedFailCount: 1,
+      notEvaluatedCount: 11,
+      actionableFailCount: 3,
+      acceptedFailCount: 0,
+      coverageUnknown: true,
     })
-    expect(byId.get("k8s-pss-baseline-0.1")!.effectivePassRate).toBeCloseTo(1 / 11)
     expect(byId.get("k8s-pss-restricted-0.1")).toMatchObject({
       passCount: 14,
       failCount: 3,
       evaluatedPassCount: 0,
-      notEvaluatedCount: 14,
-      actionableFailCount: 2,
-      acceptedFailCount: 1,
+      notEvaluatedCount: 17,
+      actionableFailCount: 3,
+      acceptedFailCount: 0,
+      coverageUnknown: true,
     })
-    expect(byId.get("k8s-pss-restricted-0.1")!.effectivePassRate).toBeCloseTo(1 / 17)
     expect(byId.get("k8s-cis-1.23")).toMatchObject({
       passCount: 101,
       failCount: 15,
       evaluatedPassCount: 0,
-      notEvaluatedCount: 101,
-      actionableFailCount: 13,
-      acceptedFailCount: 2,
+      notEvaluatedCount: 116,
+      actionableFailCount: 15,
+      acceptedFailCount: 0,
+      coverageUnknown: true,
     })
     expect(byId.get("k8s-kisa-1.0")).toMatchObject({
       passCount: 3,
       failCount: 4,
       evaluatedPassCount: 0,
-      notEvaluatedCount: 3,
+      notEvaluatedCount: 7,
       actionableFailCount: 4,
       acceptedFailCount: 0,
+      coverageUnknown: true,
     })
-
-    const cisDetail = await getComplianceFrameworkDetail("k8s-cis-1.23")
-    expect(cisDetail).not.toBeNull()
-    const cisActionable = cisDetail!.controls
-      .filter((c) => (c.actionableFailCount ?? 0) > 0)
-      .map((c) => ({ id: c.id, act: c.actionableFailCount, acc: c.acceptedFailCount }))
-    // Independent fixture inventory: KSV041 additionally covers six cert-manager roles,
-    // admin/edit and system:node; KSV049 additionally covers admin/edit.
-    // Node exporter adds hostPID (5.2.3), hostNetwork (5.2.5), hostPath (5.2.12),
-    // and the two hostNetwork/hostPID findings linked by KISA-POD-01.
-    expect(cisActionable).toEqual([
-      { id: "1.1.9", act: 1, acc: 0 },
-      { id: "1.1.12", act: 1, acc: 0 },
-      { id: "5.1.2", act: 20, acc: 12 },
-      { id: "5.1.3", act: 12, acc: 4 },
-      { id: "5.1.6", act: 1, acc: 0 },
-      { id: "5.2.5", act: 1, acc: 1 },
-      { id: "5.2.6", act: 1, acc: 4 },
-      { id: "5.2.7", act: 3, acc: 5 },
-      { id: "5.2.8", act: 1, acc: 1 },
-      { id: "5.2.10", act: 1, acc: 4 },
-      { id: "5.2.12", act: 1, acc: 6 },
-      { id: "5.7.2", act: 1, acc: 0 },
-      { id: "5.7.3", act: 139, acc: 19 },
-    ])
-
-    const kisaDetail = await getComplianceFrameworkDetail("k8s-kisa-1.0")
-    expect(kisaDetail).not.toBeNull()
-    const kisaActionable = kisaDetail!.controls
-      .filter((c) => (c.actionableFailCount ?? 0) > 0)
-      .map((c) => ({ id: c.id, act: c.actionableFailCount, acc: c.acceptedFailCount }))
-    expect(kisaActionable).toEqual([
-      { id: "KISA-RBAC-01", act: 20, acc: 12 },
-      { id: "KISA-POD-01", act: 5, acc: 15 },
-      { id: "KISA-ADM-01", act: 1, acc: 4 },
-      { id: "KISA-RBAC-02", act: 12, acc: 4 },
-    ])
   })
 
   it("fails safe on the framework path when replicasets list returns 403 or 500 (nothing dropped)", async () => {
@@ -1747,6 +1739,18 @@ describe("compliance framework actionable vs accepted split", () => {
           return { ok: true, status: 200, statusText: "OK", _path: path }
         })
         mockReadJsonWithPolicy.mockImplementation(async (res: { _path: string }) => {
+          if (res._path === "/apis/aquasecurity.github.io/v1alpha1/configauditreports") {
+            return {
+              items: [
+                makeCar({
+                  namespace: "devtools",
+                  kind: "ReplicaSet",
+                  name: "unlisted-old11",
+                  checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+                }),
+              ],
+            }
+          }
           if (res._path === "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports") {
             return {
               items: [
@@ -1754,16 +1758,8 @@ describe("compliance framework actionable vs accepted split", () => {
                   id: `rs-err-${status}`,
                   passCount: 0,
                   failCount: 1,
-                  results: [
-                    {
-                      id: "RS-1",
-                      name: "Unlisted RS",
-                      severity: "HIGH",
-                      checks: [
-                        { checkID: "AVD-KSV-0014", target: "devtools/replicaset-unlisted-old11", success: false },
-                      ],
-                    },
-                  ],
+                  specControls: [{ id: "RS-1", name: "Unlisted RS", severity: "HIGH", checks: [{ id: "AVD-KSV-0014" }] }],
+                  results: [{ id: "RS-1", name: "Unlisted RS", severity: "HIGH", checks: [] }],
                 }),
               ],
             }
@@ -1802,22 +1798,24 @@ describe("compliance framework actionable vs accepted split", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
     try {
       installK8sMock({
+        "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
+          items: [
+            makeCar({
+              namespace: "devtools",
+              kind: "ReplicaSet",
+              name: "unlisted-old11",
+              checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+            }),
+          ],
+        },
         "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": {
           items: [
             makeCcr({
               id: "rs-empty",
               passCount: 0,
               failCount: 1,
-              results: [
-                {
-                  id: "RS-MISSING",
-                  name: "Missing RS",
-                  severity: "HIGH",
-                  checks: [
-                    { checkID: "AVD-KSV-0014", target: "devtools/replicaset-unlisted-old11", success: false },
-                  ],
-                },
-              ],
+              specControls: [{ id: "RS-MISSING", name: "Missing RS", severity: "HIGH", checks: [{ id: "AVD-KSV-0014" }] }],
+              results: [{ id: "RS-MISSING", name: "Missing RS", severity: "HIGH", checks: [] }],
             }),
           ],
         },
@@ -1845,33 +1843,39 @@ describe("compliance framework actionable vs accepted split", () => {
     }
   })
 
-  it("fails closed when summary.failCount exceeds detail controls and handles controls with checks: []", async () => {
+  it("ignores inflated CCR summary.failCount when spec.checks exist and handles controls with checks: []", async () => {
     installK8sMock({
+      "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
+        items: [
+          makeCar({
+            namespace: "security-system",
+            kind: "DaemonSet",
+            name: "falco",
+            checks: [{ checkID: "KSV017", severity: "HIGH", success: false }],
+          }),
+          makeCar({
+            namespace: "dev",
+            kind: "Pod",
+            name: "unlisted-app",
+            checks: [{ checkID: "KSV014", severity: "HIGH", success: false }],
+          }),
+        ],
+      },
       "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports": {
         items: [
           makeCcr({
             id: "unaccounted-and-empty",
             passCount: 5,
             failCount: 5,
+            specControls: [
+              { id: "C-EMPTY", name: "Empty checks control", severity: "LOW" },
+              { id: "C-ACCEPTED", name: "Accepted control", severity: "HIGH", checks: [{ id: "AVD-KSV-0017" }] },
+              { id: "C-ACTIONABLE", name: "Actionable control", severity: "HIGH", checks: [{ id: "AVD-KSV-0014" }] },
+            ],
             results: [
-              {
-                id: "C-EMPTY",
-                name: "Empty checks control",
-                severity: "LOW",
-                checks: [],
-              },
-              {
-                id: "C-ACCEPTED",
-                name: "Mixed exact accepted and uncovered control",
-                severity: "HIGH",
-                checks: [{ checkID: "AVD-KSV-0017", target: "security-system/daemonset-falco", success: false }],
-              },
-              {
-                id: "C-ACTIONABLE",
-                name: "Actionable control",
-                severity: "HIGH",
-                checks: [{ checkID: "AVD-KSV-0014", target: "dev/pod-unlisted-app", success: false }],
-              },
+              { id: "C-EMPTY", name: "Empty checks control", severity: "LOW", checks: [] },
+              { id: "C-ACCEPTED", name: "Accepted control", severity: "HIGH", checks: [] },
+              { id: "C-ACTIONABLE", name: "Actionable control", severity: "HIGH", checks: [] },
             ],
           }),
         ],
@@ -1880,13 +1884,12 @@ describe("compliance framework actionable vs accepted split", () => {
 
     const detail = await getComplianceFrameworkDetail("unaccounted-and-empty")
     expect(detail).not.toBeNull()
-    // detailFailControls = 2 (C-ACCEPTED, C-ACTIONABLE); summary.failCount = 5 -> unaccountedFail = 3
-    // C-EMPTY has checks: [] -> empty_checks (not_evaluated); no passing controls verified -> evaluatedPassCount = 0
-    expect(detail!.actionableFailCount).toBe(4)
+    expect(detail!.failCount).toBe(2)
+    expect(detail!.actionableFailCount).toBe(1)
     expect(detail!.acceptedFailCount).toBe(1)
     expect(detail!.evaluatedPassCount).toBe(0)
     expect(detail!.notEvaluatedCount).toBe(1)
-    expect(detail!.effectivePassRate).toBe(0)
+    expect(detail!.effectivePassRate).toBeCloseTo(1 / 3)
 
     const emptyCtrl = detail!.controls.find((c) => c.id === "C-EMPTY")
     expect(emptyCtrl).toMatchObject({
@@ -1908,23 +1911,13 @@ describe("compliance framework actionable vs accepted split", () => {
             id: "sts-hash-fw",
             passCount: 0,
             failCount: 2,
+            specControls: [
+              { id: "STS-RESOLVED", name: "Hashed StatefulSet resolved via ConfigAuditReport", severity: "LOW", checks: [{ id: "AVD-KSV-0011" }] },
+              { id: "STS-UNRESOLVED", name: "Hashed StatefulSet without real resource name label", severity: "LOW", checks: [{ id: "AVD-KSV-0014" }] },
+            ],
             results: [
-              {
-                id: "STS-RESOLVED",
-                name: "Hashed StatefulSet resolved via ConfigAuditReport",
-                severity: "LOW",
-                checks: [
-                  { checkID: "AVD-KSV-0011", target: "monitoring/statefulset-78785dbd5c", success: false },
-                ],
-              },
-              {
-                id: "STS-UNRESOLVED",
-                name: "Hashed StatefulSet missing from ConfigAuditReport",
-                severity: "LOW",
-                checks: [
-                  { checkID: "AVD-KSV-0011", target: "monitoring/statefulset-deadbeef00", success: false },
-                ],
-              },
+              { id: "STS-RESOLVED", name: "Hashed StatefulSet resolved via ConfigAuditReport", severity: "LOW", checks: [] },
+              { id: "STS-UNRESOLVED", name: "Hashed StatefulSet without real resource name label", severity: "LOW", checks: [] },
             ],
           }),
         ],
@@ -1932,6 +1925,7 @@ describe("compliance framework actionable vs accepted split", () => {
       "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
         items: [
           {
+            // monitoring/statefulset-78785dbd5c resolves real name from trivy-operator.resource.name label
             metadata: {
               namespace: "monitoring",
               name: "statefulset-78785dbd5c",
@@ -1940,7 +1934,21 @@ describe("compliance framework actionable vs accepted split", () => {
                 "trivy-operator.resource.name": "prometheus-prometheus-stack-kube-prom-prometheus",
               },
             },
-            report: { summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 1 }, checks: [] },
+            report: {
+              summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 1 },
+              checks: [{ checkID: "KSV011", title: "CPU not limited", severity: "LOW", success: false }],
+            },
+          },
+          {
+            metadata: {
+              namespace: "monitoring",
+              name: "statefulset-deadbeef00",
+              labels: { "trivy-operator.resource.kind": "StatefulSet" },
+            },
+            report: {
+              summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 1 },
+              checks: [{ checkID: "KSV014", title: "Read-only root fs", severity: "LOW", success: false }],
+            },
           },
         ],
       },
@@ -2189,14 +2197,18 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     expect(byId.get("WORKER-ABS")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type" })
     expect(byId.get("LOWER-CASE")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "unlinked_check_id" })
     expect(byId.get("MANUAL-OMIT")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "manual" })
-    expect(byId.get("MASTER-OK")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "infra_no_per_check_evidence" })
-    expect(byId.get("WORKLOAD-OK")).toMatchObject({ evaluationState: "passed" })
+    // MASTER-OK has an explicit success:true record in ClusterInfraAssessmentReport -> tested-passed.
+    expect(byId.get("MASTER-OK")).toMatchObject({ evaluationState: "passed", testedByReport: true, passCount: 1 })
+    expect(byId.get("WORKLOAD-OK")).toMatchObject({ evaluationState: "passed", passCount: 0 })
 
     expect(detail!.rawPassCount).toBe(7)
-    expect(detail!.evaluatedPassCount).toBe(1)
-    expect(detail!.notEvaluatedCount).toBe(6)
-    expect(detail!.evaluatedPassRate).toBeCloseTo(1 / 7)
-    expect(detail!.effectivePassRate).toBeCloseTo(1 / 7)
+    expect(detail!.evaluatedPassCount).toBe(2)
+    expect(detail!.reportTestedPassCount).toBe(1)
+    expect(detail!.testedPassCount).toBe(1)
+    expect(detail!.noFailureRecordedPassCount).toBe(1)
+    expect(detail!.notEvaluatedCount).toBe(5)
+    expect(detail!.evaluatedPassRate).toBeCloseTo(2 / 7)
+    expect(detail!.effectivePassRate).toBeCloseTo(2 / 7)
     expect(detail!.lastUpdated).toBe("2026-11-22T06:00:00Z")
   })
 
@@ -2317,23 +2329,23 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     const frameworks = await getComplianceFrameworks()
     const byId = new Map(frameworks.map((f) => [f.id, f]))
 
-    // Hand-derived expectations under the narrowed check-catalogue rule (H1: infra never passes from report existence):
+    // Hand-derived expectations under D-COMPLIANCE-VERDICT-SOURCE + narrowed check-catalogue rule:
     // k8s-cis-1.23 (8 controls):
     //   1.1.1 (KCV0048, master Node) -> not_evaluated (infra_no_per_check_evidence)
-    //   1.1.9 (KCV0056) -> failed (actionable: 1)
+    //   1.1.9 (KCV0056) -> node-narwhal-master-1 report has checks: [] (stale CCR detailReport ignored) -> not_evaluated (infra_no_per_check_evidence)
     //   1.2.1 (KCV0001, kube-system Pod) -> not_evaluated (excluded_namespace: kube-system excluded)
     //   3.1.1 (Manual) -> not_evaluated (manual)
     //   4.1.5 (KCV0073, master/worker Node) -> not_evaluated (infra_no_per_check_evidence)
     //   5.1.1 (KSV111, RoleBinding/ClusterRoleBinding) -> not_evaluated (unsupported_kind)
     //   5.2.2 (KSV017) -> failed (accepted: falco)
-    //   5.7.3 (KSV020/KSV021) -> failed (accepted: harbor-core + argocd-dex-server; droppedCheckCount: 2)
+    //   5.7.3 (KSV020/KSV021) -> failed (actionable: argocd-dex-server, accepted: harbor-core; droppedCheckCount: 2)
     expect(byId.get("k8s-cis-1.23")).toMatchObject({
       totalControls: 8,
       passCount: 5,
       evaluatedPassCount: 0,
-      notEvaluatedCount: 5,
-      failCount: 3,
-      actionableFailCount: 2,
+      notEvaluatedCount: 6,
+      failCount: 2,
+      actionableFailCount: 1,
       acceptedFailCount: 1,
       droppedFailCount: 0,
       droppedCheckCount: 2,
@@ -2362,7 +2374,7 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
       }, {})
     expect(reasonCounts((await getComplianceFrameworkDetail("k8s-cis-1.23"))!)).toEqual({
       excluded_namespace: 1,
-      infra_no_per_check_evidence: 2,
+      infra_no_per_check_evidence: 3,
       manual: 1,
       unsupported_kind: 1,
     })
@@ -2378,7 +2390,7 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
       actionable: acc.actionable + (f.actionableFailCount ?? 0),
       accepted: acc.accepted + (f.acceptedFailCount ?? 0),
     }), { controls: 0, raw: 0, evaluated: 0, notEvaluated: 0, actionable: 0, accepted: 0 })
-    expect(totals).toEqual({ controls: 11, raw: 7, evaluated: 1, notEvaluated: 6, actionable: 2, accepted: 2 })
+    expect(totals).toEqual({ controls: 11, raw: 7, evaluated: 1, notEvaluated: 7, actionable: 1, accepted: 2 })
     console.info("trimmed snapshot replay:", JSON.stringify(totals))
 
     // Pin the measured 2026-11-22 full-snapshot pooled aggregate expectations carried in the trimmed fixture.
@@ -2626,9 +2638,9 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     const detail = await getComplianceFrameworkDetail("cis-node-applicability")
     expect(detail).not.toBeNull()
     const byId = new Map(detail!.controls.map((c) => [c.id, c]))
-    // 4.1.5 (KCV0073) & 4.1.6 (KCV0074) apply to ["master", "worker"] in catalogue — NOT worker-only over-corrected
-    // to missing_node_type — and under H1 stay not_evaluated (infra_no_per_check_evidence) without a failing record.
-    expect(byId.get("4.1.5")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "infra_no_per_check_evidence" })
+    // 4.1.5 (KCV0073) has an explicit success:true record in ClusterInfraAssessmentReport -> tested-passed.
+    // 4.1.6 (KCV0074) has zero records -> stays not_evaluated (infra_no_per_check_evidence).
+    expect(byId.get("4.1.5")).toMatchObject({ evaluationState: "passed", testedByReport: true, passCount: 1 })
     expect(byId.get("4.1.6")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "infra_no_per_check_evidence" })
     // Explicit spec/collector nodeType: "worker" on master-only cluster -> missing_node_type by data, not by CIS section number
     expect(byId.get("4.W")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type" })

@@ -9,12 +9,14 @@
 
 ## [Unreleased]
 
+## [1.1.26] - 2026-11-24
+
 ### 변경
 
 - **Compliance > CIS `kube-bench` 테스트 기록 연동 (`src/lib/kube-bench.ts`, `src/lib/compliance.ts`, `src/lib/compliance-acceptance.ts`, `src/lib/compliance-accepted.ts`, `src/data/compliance-acceptance-rules.json`, `src/types/compliance.ts`, `src/lib/cache-keys.ts`, `src/lib/i18n.ts`, `src/components/compliance/failure-counters.tsx`, `src/components/compliance/frameworks-grid.tsx`, `src/app/(dashboard)/compliance/frameworks/[id]/page.tsx`):**
-  - 기존 포털 `configmaps` get/list 권한으로 `security-system` 네임스페이스의 `narwhal.io/compliance-tool=kube-bench` ConfigMap(`record.json`)을 조회해 `k8s-cis-1.23` 평가에 연동했습니다. `schemaVersion=1`, `tool=kube-bench`, `benchmarkId=cis-1.23`, `status=complete`, 중복 없는 비어 있지 않은 `controlId`, `totals` 일치, 미래 시각이 아닌 `finishedAt`, 26시간 상한(`BENCHMARK_MAX_AGE_HOURS = 26`), `/api/v1/nodes` 실존 노드 일치, 512 KiB JSON 크기 상한, 잘림/403 비캐시 등 fail-closed 검증과 섹션별 노드 커버리지(1.x/2.x/3.x 전체 컨트롤플레인 노드, 4.x 전체 노드, 5.x 클러스터 1회)를 적용했습니다.
-  - 도구 간 실패 우선 원칙을 적용해 Trivy 실패 또는 노드 `kube-bench` `FAIL` 중 하나라도 있으면 컨트롤을 `failed`로 유지하고 판정 불일치(`sourceDisagreement`, 예: CIS `1.3.6`) 시 양쪽 판정을 함께 표시합니다. `WARN`/`type: "manual"`은 `manual`, `INFO`는 `benchmark_info`, 검증·커버리지 오류는 전용 한영 `benchmark_*` 미평가 사유로 표시합니다.
-  - `compliance-acceptance-rules.json`에 빈 `benchmark` 배열과 정확 일치 로더/매처(`matchBenchmarkException`: `benchmarkId + controlId`, 선택적 `node`, 본 레인에서 수용 규칙 미추가)를 확장하고, 프레임워크 목록·상세·요약 캐시 키를 `v4`로 올렸으며, 요약 카드·그리드·상세 UI가 `테스트 통과(벤치마크)`와 `실패 기록 없음`을 분리 집계하고 도구·버전·노드 수·완료 시각 및 FAIL `actualValue`/`expectedResult` 발췌를 표시하도록 개선했습니다(`R402`).
+  - 기존 포털 RBAC 변경 없이 기존 `configmaps` list/get 권한으로 `security-system` 네임스페이스의 노드별 `kube-bench` ConfigMap(#792의 정기 CIS 벤치마크가 기록, `narwhal.io/compliance-tool=kube-bench`, `record.json`)을 조회해 `k8s-cis-1.23` 평가의 테스트 근거로 연동했습니다. `schemaVersion=1`, `tool=kube-bench`, `benchmarkId=cis-1.23`, `status=complete`, 중복 없는 비어 있지 않은 `controlId`, `totals` 일치, 미래 시각이 아닌 `finishedAt`, 26시간 상한(`BENCHMARK_MAX_AGE_HOURS = 26`), `/api/v1/nodes` 실존 노드 확인, 512 KiB JSON 크기 상한, 잘림/403 비캐시 등 fail-closed 검증과 섹션별 노드 커버리지(1.x/2.x/3.x 전체 컨트롤플레인 노드, 4.x 전체 노드, 5.x 클러스터 1회)를 적용했습니다. 이 규칙은 벤치마크 근거 자체에 대한 것이며 최종 통제 상태가 아닙니다. 26시간 초과·오류 상태·형식 오류·중복 또는 누락된 기록은 벤치마크 판정을 내지 않고(사유 표시), `WARN`/`type: "manual"`(`manual`)과 `INFO`(`benchmark_info`) 결과도 판정을 내지 않습니다. 최종 상태는 Trivy와의 실패 우선 병합을 따릅니다. Trivy가 실패를 기록한 통제는 실패로 유지되고, Trivy가 실패 없이 보고한 통제는 "실패 기록 없음"으로 유지되며, 두 소스 어디에도 근거가 없는 통제만 미평가로 표시됩니다.
+  - Trivy와 도구 간 실패 우선(failure-first) 병합을 적용했습니다: Trivy 실패 또는 노드 `kube-bench` `FAIL` 중 하나라도 있으면 컨트롤을 `failed`로 유지하고(판정 불일치 시 `sourceDisagreement`로 양쪽 판정 병기, 예: CIS `1.3.6`), 검증·커버리지 결함은 전용 한영 `benchmark_*` 사유로 표시합니다. 2026-11-24 포털 ServiceAccount 권한 실측에서 cis-1.23(116개 통제)은 테스트 통과(벤치마크) 70, 실패 기록 없음 4, 실패 25(조치 필요 24, 수용 1), 미평가 17(이전: 0 / 4 / 23 / 89)로 집계되었습니다. 포털은 관측된 테스트 기록과 기준선 대조 결과만 보고하며 통제를 증명하거나 보장한다고 표현하지 않습니다.
+  - 벤치마크 점검 결과는 정확한 규칙으로만 수용 가능하도록 `compliance-acceptance-rules.json`에 빈 `benchmark` 배열과 정확 일치 로더/매처(`matchBenchmarkException`: `benchmarkId`, `controlId`, 선택적 `node`)를 확장했습니다(이번 릴리스에서 추가된 수용 규칙 없음). 스캐너 원본 통과 수 렌더링을 제거하여(기존 CIS 95/116, 전체 122/178로 표시되던 원본 수치 대신 근거 기반 74/116 및 86/178 표시) 요약 카드·그리드·상세 UI가 `테스트 통과(벤치마크)`를 `실패 기록 없음`과 분리 집계하고 도구·버전·노드 수·타임스탬프 및 FAIL `actualValue`/`expectedResult` 발췌를 표시하도록 개선했습니다. 프레임워크 목록·상세·요약 캐시 키를 `v4`로 올렸으며 회귀 검증 `R402`(23개 변이)를 통과합니다.
 
 ## [1.1.25] - 2026-11-24
 
@@ -970,7 +972,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.25...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.26...HEAD
+[1.1.26]: https://github.com/dasomel/narwhal/compare/portal/v1.1.25...portal/v1.1.26
 [1.1.25]: https://github.com/dasomel/narwhal/compare/portal/v1.1.24...portal/v1.1.25
 [1.1.24]: https://github.com/dasomel/narwhal/compare/portal/v1.1.23...portal/v1.1.24
 [1.1.23]: https://github.com/dasomel/narwhal/compare/portal/v1.1.22...portal/v1.1.23

@@ -181,6 +181,10 @@ etcd:
         value: "http://0.0.0.0:2381"
 controllerManager:
   extraArgs:
+    # D1: CIS 1.3.1 explicit upstream default; cost: retains up to 12500 terminated
+    # pods (no retention change). Escape: change after measuring API/etcd load.
+    - name: terminated-pod-gc-threshold
+      value: "12500"
     # bind-address 0.0.0.0 so Prometheus (running off the control-plane node) can scrape
     # /metrics. kubeadm defaults these to 127.0.0.1, which makes them unreachable and fires
     # KubeControllerManagerInstanceUnreachable / KubeSchedulerInstanceUnreachable + TargetDown.

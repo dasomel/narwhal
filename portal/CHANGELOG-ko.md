@@ -9,6 +9,11 @@
 
 ## [Unreleased]
 
+### 변경
+
+- kubeadm root etcd(1.1.12), 노드 외부 보안 metrics(1.3.7/1.4.2)에 실측 노드별 정확 수용 규칙을 추가했습니다. 라이브 적용이나 새로운 테스트 통과를 주장하지 않습니다.
+- CIS 1.3.6 / KCV0038은 조치 필요로 유지합니다. 관측된 kubelet은 serverTLSBootstrap·CSR이 없고 자체 서명 서빙 인증서를 사용합니다. kube-bench PASS는 controller-manager gate만 검사합니다.
+
 ## [1.1.26] - 2026-11-24
 
 ### 변경

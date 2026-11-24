@@ -253,8 +253,9 @@ describe("kube-bench CIS test records", () => {
     for (const failId of ["1.1.12", "1.2.6", "1.3.7", "1.4.2", "4.2.6"]) {
       const ctrl = byId.get(failId)!
       expect(ctrl.evaluationState).toBe("failed")
-      expect(ctrl.actionableFailCount).toBe(1)
-      expect(ctrl.accepted).toBe(false)
+      const accepted = ["1.1.12", "1.3.7", "1.4.2"].includes(failId)
+      expect(ctrl.actionableFailCount).toBe(accepted ? 0 : 1)
+      expect(ctrl.accepted).toBe(accepted)
       expect(ctrl.benchmarkEvidence?.verdict).toBe("failed")
       expect(ctrl.benchmarkEvidence?.failFindings?.[0].node).toBe("narwhal-master-1")
       expect(ctrl.benchmarkEvidence?.failFindings?.[0].expectedResult?.length).toBeGreaterThan(0)
@@ -286,6 +287,28 @@ describe("kube-bench CIS test records", () => {
     expect(detail!.noFailureRecordedPassCount).toBe(1)
     expect(detail!.evaluatedPassCount).toBe(9)
     expect(detail!.benchmarkTestedFailCount).toBe(5)
+  })
+
+  it.each([
+    ["1.3.6", "KCV0038", "kube-controller-manager"],
+    ["1.3.7", "KCV0039", "kube-controller-manager"],
+    ["1.4.2", "KCV0041", "kube-scheduler"],
+  ])("keeps 1.3.6 actionable and accepts only reviewed metrics identity for %s", async (control, check, component) => {
+    const target = `${component}-narwhal-master-1`
+    setupRoutes({
+      controls: [{ id: control, name: control, severity: "HIGH", checks: [{ id: check }] }],
+      benchmarkConfigMaps: [makeConfigMap("cis-bench-latest", cloneTrimmedRecord())],
+      infraItems: [{
+        metadata: { namespace: "kube-system", name: `pod-${target}`, labels: {
+          "trivy-operator.resource.kind": "Pod", "trivy-operator.resource.name": target,
+        } },
+        report: { summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 },
+          checks: [{ checkID: check, success: false, severity: "HIGH", title: control }] },
+      }],
+    })
+    const detail = await getComplianceFrameworkDetail("k8s-cis-1.23")
+    expect(detail!.controls[0]).toMatchObject({ evaluationState: "failed", accepted: control !== "1.3.6", actionableFailCount: control === "1.3.6" ? 1 : 0 })
+    expect(detail!.controls[0].benchmarkEvidence?.verdict).toBe(control === "1.3.6" ? "passed" : "failed")
   })
 
   it.each<{
@@ -688,8 +711,8 @@ describe("kube-bench CIS test records", () => {
       expect(fw).toMatchObject({
         totalControls: 1,
         failCount: 1,
-        actionableFailCount: 1,
-        acceptedFailCount: 0,
+        actionableFailCount: 0,
+        acceptedFailCount: 1,
         benchmarkTestedFailCount: 1,
         benchmarkTestedPassCount: 0,
         noFailureRecordedPassCount: 0,
@@ -700,7 +723,7 @@ describe("kube-bench CIS test records", () => {
     expect(detail!.controls[0]).toMatchObject({
       id: "1.1.12",
       evaluationState: "failed",
-      actionableFailCount: 1,
+      actionableFailCount: 0,
       testedByBenchmark: true,
     })
   })

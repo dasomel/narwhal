@@ -6,13 +6,13 @@ Verifies:
    nodeCollector hostPath volumes/mounts (remounting host /etc/cni/net.d/ at container /etc/cni so
    CMD-0009/CMD-0010 /*/cni/* globs CNI files instead of the 700 dir) AND adds read-only
    /etc/passwd and /etc/group File mounts (and renders cleanly via helm template when available).
-2. portal/src/lib/compliance-accepted.ts normalizes KCV IDs and keeps ACCEPTED_INFRA_RULES empty
+2. portal/src/lib/compliance-accepted.ts normalizes KCV IDs and keeps ACCEPTED_INFRA_RULES exact
    (neither KCV0056 nor KCV0059 is allowlisted), failing closed on empty/unlisted inputs.
 3. portal/src/lib/compliance.ts reuses infraAuditMatcher across Infra list/detail/summary and
    Compliance Frameworks (Node targets) while keeping raw counts visible and failing closed when
    checks[] is omitted.
 4. portal/src/types/compliance.ts, portal/src/lib/i18n.ts, and docs/common/compliance-hardening.md
-   stay aligned (empty Infra allowlist table + node-collector root-cause resolution).
+   stay aligned (exact Infra allowlist table + node-collector root-cause resolution).
 5. scripts/test/verify-cluster.sh defines and invokes verify_node_file_hardening under nodes, and
    behavioral fixture tests prove it passes compliant CIS 1.1.9/1.1.12 layouts and catches regressions.
 6. scripts/test/regression-check-kakao.sh wires R385 with --mutation-verify.
@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[3]
 FILES = {
     "trivy": ROOT / "gitops/charts/narwhal-apps/templates/trivy-operator.yaml",
     "accepted": ROOT / "portal/src/lib/compliance-accepted.ts",
+    "rules": ROOT / "portal/src/data/compliance-acceptance-rules.json",
     "acceptance": ROOT / "portal/src/lib/compliance-acceptance.ts",
     "compliance": ROOT / "portal/src/lib/compliance.ts",
     "infra_list": ROOT / "portal/src/components/compliance/infra-audit-list.tsx",
@@ -308,7 +309,7 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
             f"must match sha256({expected_nc_hash})"
         )
 
-    # 2. compliance-accepted.ts: KCV normalization + empty ACCEPTED_INFRA_RULES (neither KCV0056 nor KCV0059)
+    # 2. compliance-accepted.ts: KCV normalization + exact ACCEPTED_INFRA_RULES (neither KCV0056 nor KCV0059)
     acc = texts["accepted"] + texts["acceptance"]
     for needle in (
         "CHECK_ID_PAD_WIDTH",
@@ -322,15 +323,20 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
     if "infraCniDirGlob" in acc:
         errors.append("compliance-accepted.ts must remove stale infraCniDirGlob reason key")
 
-    infra_section_m = re.search(r"export const ACCEPTED_INFRA_RULES:\s*readonly AcceptedInfraRule\[\]\s*=\s*(.*?)(?:\n\n|\Z)", acc, re.S)
-    if not infra_section_m:
-        errors.append("compliance-accepted.ts missing ACCEPTED_INFRA_RULES definition")
-    else:
-        infra_block = infra_section_m.group(1).strip()
-        if infra_block != "[]":
-            errors.append(f"ACCEPTED_INFRA_RULES must be empty [] (got {infra_block!r})")
-        if "KCV0056" in infra_block or "KCV0059" in infra_block:
-            errors.append("ACCEPTED_INFRA_RULES must NOT allowlist KCV0056 or KCV0059")
+    # D6: retired empty-table assertion must preserve the original negative checks
+    # while allowing only reviewed control-plane Pod triples. Cost: explicit set;
+    # escape: extend after evidence review, never blanket node acceptance.
+    rules = json.loads(texts["rules"])["infra"]
+    targets = {(r.get("kind"), r.get("namespace"), r.get("name"), c)
+               for r in rules for c in r.get("checks", [])}
+    expected = {
+        ("Pod", "kube-system", "kube-controller-manager-narwhal-master-1", "KCV0039"),
+        ("Pod", "kube-system", "kube-scheduler-narwhal-master-1", "KCV0041"),
+    }
+    if targets != expected:
+        errors.append("Infra rules must match reviewed exact control-plane Pod targets; KCV0056/KCV0059 stay actionable")
+    if "= loaded.infra" not in acc:
+        errors.append("ACCEPTED_INFRA_RULES must load validated infra data")
 
     # 3. compliance.ts & infra-audit-list.tsx & types & i18n
     comp = texts["compliance"]
@@ -361,7 +367,7 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
     doc = texts["doc"]
     for needle in (
         "\n### Infra allowlist\n",
-        "**0 Infra rules**",
+        "**2 Infra rules**",
         "## Node collector & CIS 1.1.9 / 1.1.12 resolution",
         "D-NODE-COLLECTOR-PASSWD",
         "D-NODE-COLLECTOR-PASSWD-ROLLOUT",
@@ -419,8 +425,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("revert etc-cni-netd mountPath", "trivy", "            - name: etc-cni-netd\n              mountPath: /etc/cni\n              readOnly: true\n", "            - name: etc-cni-netd\n              mountPath: /etc/cni/net.d/\n              readOnly: true\n"),
     ("mount /etc/shadow", "trivy", "path: /etc/group", "path: /etc/shadow"),
     ("stale nodeCollector checksum annotation", "trivy", "checksum/node-collector-mounts: \"eca6d129ecc1594eb2d9bcc63e2d5b2ea63cc89909a235fa591134bc555d4a70\"", "checksum/node-collector-mounts: \"stale\""),
-    ("allowlist KCV0056", "accepted", "export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = []", 'export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = [\n  infraRule("*", ["KCV0056"], "upstream", "compliance.acceptedReason.infraCniDirGlob"),\n]'),
-    ("allowlist KCV0059", "accepted", "export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = []", 'export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = [\n  infraRule("*", ["KCV0059"], "upstream", "compliance.acceptedReason.infraCniDirGlob"),\n]'),
+    ("allowlist KCV0056", "rules", '"KCV0039"', '"KCV0056"'),
+    ("allowlist KCV0059", "rules", '"KCV0039"', '"KCV0059"'),
     ("drop KCV normalization", "acceptance", "(?:AVD-(KSV|KCV)-|(KSV|KCV))0*(\\d+)", "(?:AVD-(KSV)-|(KSV))0*(\\d+)"),
     ("drop Node matcher in frameworks", "compliance", 'if (resolved.kind === "Node")', 'if (resolved.kind === "NeverNode")'),
     ("drop mixed-node accepted badge", "infra_list", "{hasActionable && acceptedFailures > 0 && (", "{false && acceptedFailures > 0 && ("),

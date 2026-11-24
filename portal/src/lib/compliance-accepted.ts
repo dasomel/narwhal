@@ -7,6 +7,7 @@ import { en } from "./i18n"
 import type { AcceptedClass } from "@/types/compliance"
 import {
   ACCEPTED_BENCHMARK_RULES,
+  ACCEPTED_INFRA_RULES,
   ACCEPTED_CONFIG_AUDIT_RULES,
   ACCEPTED_RBAC_BINDING_RULES,
   ACCEPTED_RBAC_RULES,
@@ -35,6 +36,7 @@ import {
 
 export {
   ACCEPTED_BENCHMARK_RULES,
+  ACCEPTED_INFRA_RULES,
   ACCEPTED_CONFIG_AUDIT_RULES,
   ACCEPTED_RBAC_BINDING_RULES,
   ACCEPTED_RBAC_RULES,
@@ -98,6 +100,8 @@ export function infraRule(
   return {
     id: `infra:cluster:Node:${node}:${cls}`,
     scope: "cluster",
+    kind: "Node",
+    namespace: "",
     node,
     checks: new Set(ids.map(normalizeCheckId)),
     class: cls,
@@ -108,15 +112,6 @@ export function infraRule(
     docAnchor: COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
   }
 }
-
-/**
- * Reviewed node-level Infra Assessment exceptions. Currently empty: KCV0059 is fixed via
- * host /etc/passwd and /etc/group mounts and KCV0056 is fixed via mounting host /etc/cni/net.d/
- * at /etc/cni in trivy-operator.yaml (so CMD-0009 stats CNI files instead of the directory).
- * Keeping the empty fail-closed table preserves data-only additions if needed later;
- * all unlisted KCV IDs stay actionable.
- */
-export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = []
 
 const infraRuleIndex = new Map<string, AcceptedInfraRule[]>()
 for (const rule of ACCEPTED_INFRA_RULES) {
@@ -274,13 +269,13 @@ export function matchRbacBindingException(binding: {
   return null
 }
 
-export function matchInfraException(node: string, checkId: string): AcceptedMatch | null {
+export function matchInfraException(node: string, checkId: string, kind = "Node", namespace = ""): AcceptedMatch | null {
   if (node.trim() === "" || checkId.trim() === "") return null
   const normalizedCheck = normalizeCheckId(checkId)
   const rules = infraRuleIndex.get(node)
   if (!rules) return null
   for (const rule of rules) {
-    if (rule.checks.has(normalizedCheck)) {
+    if (rule.kind === kind && rule.namespace === namespace && rule.checks.has(normalizedCheck)) {
       return {
         ruleId: rule.id,
         class: rule.class,

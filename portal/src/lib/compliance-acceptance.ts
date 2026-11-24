@@ -77,8 +77,10 @@ export interface AcceptedRbacRule {
 }
 
 export interface AcceptedInfraRule {
+  kind: "Node" | "Pod"
+  namespace: string
   id: string
-  scope: "cluster"
+  scope: AcceptanceScope
   node: string
   checks: ReadonlySet<string>
   class: AcceptedClass
@@ -298,6 +300,7 @@ function loadAcceptanceRules(rawFile: RawAcceptanceRulesFile): {
   rbac: readonly AcceptedRbacRule[]
   rbacBindings: readonly AcceptedRbacBindingRule[]
   benchmark: readonly AcceptedBenchmarkRule[]
+  infra: readonly AcceptedInfraRule[]
 } {
   const seenIds = new Set<string>()
   const configAudit: AcceptedConfigAuditRule[] = []
@@ -475,6 +478,28 @@ function loadAcceptanceRules(rawFile: RawAcceptanceRulesFile): {
     })
   }
 
+  // D4: exact measured kind/namespace/resource/check only; cost: new nodes stay actionable;
+  // escape: review a fresh node record before adding another rule.
+  const infra: AcceptedInfraRule[] = []
+  const infraTargets = new Set<string>()
+  for (const raw of rawFile.infra) {
+    const common = assertCommonRuleFields(raw, seenIds)
+    if (!((raw.kind === "Node" && common.scope === "cluster") || (raw.kind === "Pod" && common.scope === "namespace"))) {
+      throw new Error(`Invalid infra rule ${raw.id}: exact Node/Pod scope required`)
+    }
+    for (const check of common.checks) {
+      const target = `${raw.kind}\0${raw.namespace}\0${raw.name}\0${check}`
+      if (infraTargets.has(target)) throw new Error(`Overlapping infra rule ${raw.id}`)
+      infraTargets.add(target)
+    }
+    infra.push({
+      id: raw.id, scope: common.scope, kind: raw.kind, namespace: raw.namespace, node: raw.name, checks: common.checks,
+      class: common.cls, reasonKey: common.reasonKey, reason: common.reason,
+      owner: raw.owner, reviewedAt: raw.reviewedAt,
+      docAnchor: COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
+    })
+  }
+
   const benchmark: AcceptedBenchmarkRule[] = []
   const benchmarkAllowedFields = new Set([
     "id",
@@ -539,7 +564,7 @@ function loadAcceptanceRules(rawFile: RawAcceptanceRulesFile): {
     })
   }
 
-  return { configAudit, rbac, rbacBindings, benchmark }
+  return { configAudit, rbac, rbacBindings, benchmark, infra }
 }
 
 const loaded = loadAcceptanceRules(rulesData as RawAcceptanceRulesFile)
@@ -547,6 +572,7 @@ const loaded = loadAcceptanceRules(rulesData as RawAcceptanceRulesFile)
 export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = loaded.configAudit
 export const ACCEPTED_RBAC_RULES: readonly AcceptedRbacRule[] = loaded.rbac
 export const ACCEPTED_RBAC_BINDING_RULES: readonly AcceptedRbacBindingRule[] = loaded.rbacBindings
+export const ACCEPTED_INFRA_RULES: readonly AcceptedInfraRule[] = loaded.infra
 export const ACCEPTED_BENCHMARK_RULES: readonly AcceptedBenchmarkRule[] = loaded.benchmark
 
 export const configRuleIndex = new Map<string, AcceptedConfigAuditRule[]>()
@@ -633,8 +659,8 @@ export function findUnusedAcceptanceRules(
           id: rule.id,
           domain: "infra",
           scope: rule.scope,
-          namespace: "",
-          kind: "Node",
+          namespace: rule.namespace,
+          kind: rule.kind,
           name: rule.node,
           checks: Array.from(rule.checks).sort(),
           owner: rule.owner,

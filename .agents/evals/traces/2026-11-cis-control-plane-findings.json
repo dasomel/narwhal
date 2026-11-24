@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cis-control-plane-findings-20261124",
+  "task": "Handle the control-plane CIS findings revealed by real benchmark tests: one safe fix, three exact acceptances, six owner decisions",
+  "changeContext": {
+    "paths": [
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/compliance-accepted.test.ts",
+      "portal/src/lib/i18n.ts",
+      "portal/src/lib/kube-bench.test.ts",
+      "scripts/ops/apply-control-plane-flags.sh",
+      "scripts/test/lib/check-control-plane-flags.py",
+      "scripts/test/lib/check-node-compliance-checks.py",
+      "scripts/test/lib/check-portal-cis-test-records.py",
+      "scripts/test/lib/check-portal-exact-acceptance.py",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/ops/lib/control-plane-flags.py",
+      ".agents/evals/traces/2026-11-cis-control-plane-findings.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Ten control-plane and node CIS findings are actionable after real testing. This change fixes 1.3.1, accepts 1.1.12, 1.3.7 and 1.4.2 by exact rules, and documents 1.2.1, 1.2.6, 1.2.10, 1.2.12, 1.3.6 and 4.2.6 as owner decisions with prerequisites. No kubelet or apiserver setting is changed."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "With portal 1.1.26 the CIS framework showed tested passed 70, no failure recorded 4, failed 25 (actionable 24), not evaluated 17 for the portal ServiceAccount; the kube-bench record listed FAIL 1.1.12, 1.2.6, 1.3.7, 1.4.2, 4.2.6 and Trivy failed 1.2.1, 1.2.10, 1.2.12, 1.3.1, 1.3.6.",
+      "evidence": [
+        "artifact:.omc/live/evidence/portal-sa-1.1.26.json (orchestrator, portal ServiceAccount, 2026-11-24)",
+        "artifact:.omc/live/evidence/cis-record-live-r2.json (kube-bench v0.16.0, cis-1.23, PASS 74 FAIL 5 WARN 46)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Bootstrap sets --terminated-pod-gc-threshold=12500 explicitly for kube-controller-manager (the upstream default, so behaviour is unchanged). scripts/ops/apply-control-plane-flags.sh applies it on existing clusters by a single-line insertion with a backup outside the manifests directory, a health gate on the new pod and the leader Lease, automatic restore and a dry run that writes nothing to the node. Exact acceptance rules were added for 1.1.12, 1.3.7 and 1.4.2 (benchmark and matching Trivy infra findings). The acceptance of 1.3.6 proposed in the first round was removed after the reviewer measured that kubelet serving certificates are self-signed and serverTLSBootstrap is not set."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline checks by the author lane and a live application on the local single-node cluster by the orchestrator on 2026-11-24 (UTC). Multi-control-plane rollout, the automatic restore path on a live node and the kubeadm-config ConfigMap update are not covered.",
+      "summary": "The checks reject the reviewer's mutations and the flag was applied live: the dry run showed a one-line diff, the apply completed with a new pod UID, Ready, the flag in the command line and a Lease renewed after the new process started; all ArgoCD applications stayed Synced and Healthy.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-portal-exact-acceptance.py --mutation-verify -> 42 mutations rejected",
+        "test:python3 scripts/test/lib/check-portal-cis-test-records.py --mutation-verify -> 24 mutations rejected",
+        "test:python3 scripts/test/lib/check-control-plane-flags.py --mutation-verify -> 13 mutations rejected",
+        "test:apply-control-plane-flags.sh --dry-run on the live node -> diff of exactly one added line '- --terminated-pod-gc-threshold=12500'; no file created on the node",
+        "test:apply-control-plane-flags.sh on the live node -> exit 0; pod UID 15e502e3 -> ec26bea5, ready true, restarts 0; flag present in the pod command; Lease kube-controller-manager renewTime 2026-11-24T16:06:18Z after the new process; backup /var/lib/narwhal/control-plane-flags/manifest.* mode 0600; /etc/kubernetes/manifests contains only the five static pod manifests",
+        "test:make validate -> exit 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "1.3.1 is fixed in the bootstrap and on the live single-node cluster; three by-design findings are accepted by exact rules with reasons verified on the live cluster; six findings remain actionable and are documented as owner decisions. Not claimed: multi-node rollout, restore-path behaviour on a live node, persistence across kubeadm upgrade until the kubeadm-config ConfigMap is updated."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (bootstrap, exact acceptance rules and a single-node live application; no kubelet or apiserver change)"
+    }
+  ]
+}

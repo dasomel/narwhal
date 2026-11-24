@@ -42,6 +42,9 @@ def check(texts):
             if domain == 'rbac' and (rule.get('kind'), rule.get('scope')) not in (
                     ('Role', 'namespace'), ('ClusterRole', 'cluster')):
                 errors.append('RBAC kind/scope mismatch')
+            if domain == 'infra' and (rule.get('kind'), rule.get('scope')) not in (
+                    ('Node', 'cluster'), ('Pod', 'namespace')):
+                errors.append('infra kind/scope mismatch')
             if domain == 'configAudit' and rule.get('kind') not in (
                     'Pod', 'ReplicaSet', 'DaemonSet', 'StatefulSet', 'CronJob'):
                 errors.append('invalid workload kind')
@@ -169,6 +172,10 @@ def check(texts):
             errors.append(f'{name}: acceptance bypasses exact lookup')
         if name == 'matchRbacException' and 'rbacRuleIndex.get(`${scope}\\0${namespace}\\0${kind}\\0${roleName}`)' not in body:
             errors.append(f'{name}: missing kind in rbacRuleIndex lookup')
+        if name == 'matchInfraException':
+            for selector in ('rule.kind === kind', 'rule.namespace === namespace'):
+                if selector not in body:
+                    errors.append(f'{name}: missing {selector}')
         if 'rule.checks.has(normalizedCheck)' not in body:
             errors.append(f'{name}: no explicit check membership')
         if re.search(r'\.(?:includes|startsWith|endsWith|test|exec|match)\(', body):
@@ -207,7 +214,13 @@ def main():
     data_noboot = json.loads(texts['data'])
     data_noboot['rbacBindings'][0]['requireBootstrapMetadata'] = False
     mutations.append(('rbacBindings drop requireBootstrapMetadata', 'data', json.dumps(data_noboot)))
+    for field, value in (('name', 'kube-controller-manager-*'), ('kind', 'Deployment'), ('namePrefix', 'kube-')):
+        data = json.loads(texts['data'])
+        data['infra'][0][field] = value
+        mutations.append((f'infra invalid {field}', 'data', json.dumps(data)))
     replacements = [
+        ("drop infra kind", "matcher", "rule.kind === kind && ", ""),
+        ("drop infra namespace", "matcher", "rule.namespace === namespace && ", ""),
         ('prefix acceptance', 'matcher', 'rule.checks.has(normalizedCheck)', 'roleName.startsWith("system:")'),
         ('regex acceptance', 'matcher', 'rule.checks.has(normalizedCheck)', '/system:/.test(roleName)'),
         ('label-only acceptance', 'matcher', 'if (kind !== "Role" && kind !== "ClusterRole") return null',

@@ -310,8 +310,11 @@ functionality or reverses an intentional trade-off.
 
 1. **`--bind-address` = 0.0.0.0 on controller-manager / scheduler** (CIS 1.3.7, 1.4.2 —
    1.4.2 is CRITICAL). Deliberately set so Prometheus (off the control-plane node) can
-   scrape `/metrics`. On the private `192.168.56.0/24` lab network this is not an
-   exposure. Reverting to 127.0.0.1 blinds monitoring. See `02-init-cluster.sh`.
+   scrape `/metrics`. Secure ports 10257/10259 use kubeadm authentication/authorization
+   kubeconfigs (recorded scheduler command in `cis-record-live-r2.json`).
+   Binding all interfaces still exposes the listener; this acceptance does not claim
+   node firewall isolation. Reverting to 127.0.0.1 blinds monitoring.
+   Owner: `scripts/cluster/02-init-cluster.sh` controllerManager/scheduler extraArgs.
 2. **Privileged / hostPath / hostNetwork / NET_RAW / root workloads** (CIS 5.2.2/5.2.3/
    5.2.5/5.2.6/5.2.7/5.2.8/5.2.10/5.2.12/5.2.13, 5.7.2/5.7.3; NSA 1.0/1.1/1.2/1.4/1.5/
    1.7/1.9/1.10; PSS baseline/restricted 3/4/5). The large counts are dominated by
@@ -325,7 +328,7 @@ functionality or reverses an intentional trade-off.
 
 ### Adding or updating allowlist entries
 
-Every exception in `portal/src/data/compliance-acceptance-rules.json` (loaded and validated by `portal/src/lib/compliance-acceptance.ts` / `portal/src/lib/compliance-accepted.ts`) is fail-closed by exact `(scope, namespace, kind, name, checkID)` with required `id`, `reason`, `owner`, and `reviewedAt` metadata — no namespace-blanket (`SYSTEM_NAMESPACES`), substring (`UPSTREAM_RBAC_ROLE_PATTERNS`), prefix (`system:`/`kubeadm:`), or check-less role acceptance exists. Any unlisted check, unlisted workload/role, or unknown/mismatched kind remains actionable, unused rules are surfaced in `ComplianceSummary` and the Compliance UI, and report rows are marked accepted only when every failing check is present in `checks[]`, accounted for by the per-severity `summary` totals, and accepted. The allowlist currently holds **45 Config Audit rules across 45 workloads**, **47 RBAC rules**, and **0 Infra rules**.
+Every exception in `portal/src/data/compliance-acceptance-rules.json` (loaded and validated by `portal/src/lib/compliance-acceptance.ts` / `portal/src/lib/compliance-accepted.ts`) is fail-closed by exact `(scope, namespace, kind, name, checkID)` with required `id`, `reason`, `owner`, and `reviewedAt` metadata — no namespace-blanket (`SYSTEM_NAMESPACES`), substring (`UPSTREAM_RBAC_ROLE_PATTERNS`), prefix (`system:`/`kubeadm:`), or check-less role acceptance exists. Any unlisted check, unlisted workload/role, or unknown/mismatched kind remains actionable, unused rules are surfaced in `ComplianceSummary` and the Compliance UI, and report rows are marked accepted only when every failing check is present in `checks[]`, accounted for by the per-severity `summary` totals, and accepted. The allowlist currently holds **45 Config Audit rules across 45 workloads**, **47 RBAC rules**, and **2 Infra rules**.
 
 **ReplicaSet ownership and residual risk (fail-safe fallback when ReplicaSet lookup is unavailable):** `ClusterRole narwhal-portal` (`gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml`) grants read-only `get`/`list` access on `apps` `replicasets` (in addition to `deployments`, `statefulsets`, and `daemonsets`). When building Config Audit data (`portal/src/lib/compliance.ts`), the portal lists `/apis/apps/v1/replicasets` in the same request path as `configauditreports` (with no separate longer-lived ReplicaSet cache; only the combined filtered result is cached), drops a `ReplicaSet` report **only** when it is a fully drained **superseded Deployment revision** — all of: (a) `metadata.ownerReferences` names a `Deployment`, (b) `spec.replicas == 0` **and** `status.replicas == 0` **and** `status.terminatingReplicas == 0` reported explicitly (`status.replicas` does not count terminating pods; a cluster that does not report the field keeps the report), and (c) the same `Deployment` (in the same namespace) owns at least one other `ReplicaSet` in the list with a strictly higher `deployment.kubernetes.io/revision` annotation — and passes each kept `ReplicaSet`'s `metadata.ownerReferences` Deployment names into `normalizeWorkloadName` / `matchConfigAuditException` (`portal/src/lib/compliance-accepted.ts`). Standalone `ReplicaSet`s (no `Deployment` owner), a `Deployment` intentionally or HPA/KEDA scaled to `0` (whose current-revision `ReplicaSet` has no higher-revision sibling), `ReplicaSet`s with `status.replicas > 0` (pods still terminating), and any `ReplicaSet` with missing/unknown `spec.replicas`, `status.replicas`, or `deployment.kubernetes.io/revision` remain counted so live findings and scaled-to-zero workloads are never hidden. A trailing `pod-template-hash` matching the Kubernetes `SafeEncodeString` alphabet (`^[bcdfghjklmnpqrstvwxz2456789]{5,10}$`, no vowels and no `0`/`1`/`3`) collapses to `<name>` **only** when `metadata.ownerReferences` names a `Deployment` with `<name>` — a standalone `ReplicaSet` named `<allowlisted-name>-<5-to-10-safe-chars>` without a matching `Deployment` owner is **not** accepted, and non-`SafeEncodeString` suffixes are never collapsed even with an owner reference. **Residual risk:** if `/apis/apps/v1/replicasets` cannot be read (e.g. 403/timeout) or a report's `ReplicaSet` is missing from the returned list, the portal fails safe in the direction that never hides a live finding — it keeps the report, logs one warning, and leaves the findings actionable while ownership is unknown.
 
@@ -496,8 +499,16 @@ Bindings without all four guarantees (including `kubeadm:cluster-admins`, `kubea
 
 | namespace | workload | checks | class | reason |
 | --- | --- | --- | --- | --- |
+| kube-system | Pod/kube-controller-manager-narwhal-master-1 | KCV0039 | accept | bind-address=0.0.0.0 permits off-node Prometheus scraping; secure ports 10257/10259 use kubeadm authentication/authorization kubeconfigs. No node firewall isolation is claimed. |
+| kube-system | Pod/kube-scheduler-narwhal-master-1 | KCV0041 | accept | bind-address=0.0.0.0 permits off-node Prometheus scraping; secure ports 10257/10259 use kubeadm authentication/authorization kubeconfigs. No node firewall isolation is claimed. |
 
 ## Node collector & CIS 1.1.9 / 1.1.12 resolution
+
+Historical collector investigation below is not the current ownership conclusion.
+On 2026-11-24 the owner reported kubeadm root etcd and no host etcd user;
+the new kube-bench result is UNKNOWN:UNKNOWN (not an observed UID). The exact
+benchmark acceptance and 0700 evidence are recorded in Control-plane CIS follow-up.
+KCV0059 remains unaccepted: no current Trivy failure was supplied for that check.
 
 - **CIS 1.1.12 (`KCV0059`, etcd data directory ownership `etcd:etcd`):** `node-collector:0.3.1` executes `CMD-0012` (`stat -c %U:%G $etcd.datadirs`, resolving to `/var/lib/etcd` via `defaultdatadir`). Live collector output on `narwhal-master-1` returned `"etcdDataDirectoryOwnership":{"values":["UNKNOWN:UNKNOWN"]}` because `/var/lib/etcd` is `700 etcd:etcd` (`995:984`) on the host while the container lacked the host `etcd` entry in `/etc/passwd`/`/etc/group`. `gitops/charts/narwhal-apps/templates/trivy-operator.yaml` mounts host `/etc/passwd` and `/etc/group` read-only into `nodeCollector` (`D-NODE-COLLECTOR-PASSWD`, preserving all chart `0.27.0` defaults) and sets `podAnnotations."checksum/node-collector-mounts"` (`D-NODE-COLLECTOR-PASSWD-ROLLOUT`) so the scanner resolves real `etcd:etcd` ownership; `KCV0059` is **not** allowlisted and stays actionable until rollout + rescan. Note: `trivy-operator` v0.25.0 (chart `0.27.0`) loads `nodeCollector` ConfigMap mounts only at operator startup and its upstream Deployment omits a ConfigMap checksum annotation, so on an existing cluster without the `podAnnotations` checksum change an ArgoCD sync alone does not apply new mounts — run `kubectl -n security-system rollout restart deploy/trivy-operator` before triggering/waiting for rescan.
 - **CIS 1.1.9 / 1.1.10 (`KCV0056` / `KCV0057`, CNI file permissions `<= 600` and ownership `root:root`):** `node-collector:0.3.1` executes `CMD-0009` (`stat -c %a /*/cni/*`, `nodeType: master`) and `CMD-0010` (`stat -c %U:%G /*/cni/*`, `nodeType: master`). With the chart default `mountPath: /etc/cni/net.d/`, `/*/cni/*` matched the directory `/etc/cni/net.d` itself (`700 root:root`) instead of the files inside it (`05-cilium.conflist` `600 root:root`), falsely failing `KCV0056`. Mounting host `/etc/cni/net.d/` at container path `/etc/cni` in `gitops/charts/narwhal-apps/templates/trivy-operator.yaml` (`D-NODE-COLLECTOR-CNI-MOUNT`) makes `/*/cni/*` glob the actual CNI config files (`/etc/cni/05-cilium.conflist`), so live `node-collector:0.3.1` on `narwhal-master-1` returns `"containerNetworkInterfaceFilePermissions":{"values":[600]}` and `"containerNetworkInterfaceFileOwnership":{"values":["root:root"]}` while keeping every other collector key unchanged.
@@ -733,3 +744,98 @@ The upstream repository `aquasecurity/kube-bench` reports the Apache-2.0 license
 (GitHub license API, measured 2026-11-24). The bundle SBOM has no license source
 for this image artifact, so it stays in the SBOM review inventory with that note.
 The image index digest was re-measured with `crane digest` on 2026-11-24T11:51:59Z.
+
+## Control-plane CIS follow-up (2026-11-24, offline author lane)
+
+D1: bootstrap explicitly renders `- --terminated-pod-gc-threshold=12500` in
+kube-controller-manager. This retains the upstream default, avoiding an unmeasured
+retention reduction to 1000. Join scripts consume the published ClusterConfiguration;
+they do not render a second controllerManager argument list. Existing clusters need
+`scripts/ops/apply-control-plane-flags.sh`; no live rollout was done in this lane.
+
+### Reviewed exact exceptions
+
+Rules in `portal/src/data/compliance-acceptance-rules.json` are restricted to
+`narwhal-master-1`, reviewedAt `2026-11-24`; new nodes remain actionable. Trivy control-plane reports identify the exact Pod
+resource name (`kube-controller-manager-narwhal-master-1` or
+`kube-scheduler-narwhal-master-1`); the legacy infra matcher argument `node`
+contains this resource identity for Pod reports, not the host node name.
+
+| Control / source | True reason and evidence | Owner |
+| --- | --- | --- |
+| 1.1.12 / kube-bench | kubeadm static-pod etcd runs as root; no host etcd user exists (owner-provided live facts). `cis-record-live-r2.json` reports 1.1.12 `UNKNOWN:UNKNOWN`, not proof of root ownership; 1.1.11 PASS actualValue is `permissions=700`. Changing ownership alone can deny etcd access. | `02-init-cluster.sh` etcd.local; kubeadm owns the generated static pod |
+| 1.3.7 / kube-bench + Trivy KCV0039 | `controllerManager.extraArgs` intentionally binds 0.0.0.0 for off-node Prometheus. Secure-port authentication/authorization is retained; no firewall isolation is asserted. See Risk-accepted exceptions item 1. | `scripts/cluster/02-init-cluster.sh` |
+| 1.4.2 / kube-bench + Trivy KCV0041 | `scheduler.extraArgs` intentionally binds 0.0.0.0 for off-node Prometheus. The measured scheduler command includes authentication/authorization kubeconfigs. See Risk-accepted exceptions item 1. | `scripts/cluster/02-init-cluster.sh` |
+
+### Needs owner decision / staged rollout
+
+These remain actionable, with no configuration change or acceptance rule.
+
+| Control | Concrete risk | Prerequisite / owner decision |
+| --- | --- | --- |
+| 1.2.1 anonymous-auth=false | kubeadm apiserver HTTP health probes need unauthenticated health endpoints; disabling anonymous auth can restart a healthy apiserver. Bootstrap VIP readiness uses unauthenticated `curl -sk https://${VIP_ADDRESS}:6443/healthz` (without `--fail`, so HTTP 401 can be mistaken for success). kube-vip uses a copied admin.conf against the local API for leader election, not an anonymous health probe. Cloud LB probe behavior is not established here. | Inventory generated kubeadm probes and LB checks; choose restricted anonymous health-path authentication or authenticated probes, test failover and rollback on one node. |
+| 1.2.6 kubelet-certificate-authority | Enforcing CA validation rejects current self-signed kubelet serving certificates (owner-provided Q4 facts). Repo KubeletConfiguration omits serverTLSBootstrap and has no serving CSR approver; omission alone does not prove a live cert chain. | Deploy a serving CSR approver with identity/SAN validation, enable serverTLSBootstrap, verify issued chains and all API-to-kubelet consumers before adding the CA flag. |
+| 1.3.6 RotateKubeletServerCertificate / KCV0038 | Actionable: reviewer live reads found no serverTLSBootstrap, no CSRs and self-signed :10250 issuer `CN=narwhal-master-1-ca@1794714706`. kube-bench PASS only checks the controller-manager feature gate; it does not prove kubelets use rotated CA-signed serving certificates. | Same as 1.2.6: enable serverTLSBootstrap, deploy a kubelet-serving CSR approver with reviewed validation policy, and configure apiserver --kubelet-certificate-authority after issuance and rotation tests. |
+| 1.2.10 EventRateLimit | Enabling the plugin without admission configuration/budgets can fail API startup or discard operational events. | Define admission configuration volume/file and per-user/namespace/server budgets; measure event rates and stage saturation/recovery testing. |
+| 1.2.12 AlwaysPullImages | Admission changes cached/pre-loaded image behavior, adding registry availability/authentication dependency in this air-gapped platform. | Mirror and authenticate every workload image, rehearse registry outage and node restart, then decide rollout policy. |
+| 4.2.6 protect-kernel-defaults | Kubelet can refuse startup when required kernel values differ; the earlier hardening was removed for this reason. | Persist and verify on every node, including old base-marker nodes: vm.overcommit_memory=1, vm.panic_on_oom=0, kernel.panic=10, kernel.panic_on_oops=1, kernel.keys.root_maxkeys=1000000, kernel.keys.root_maxbytes=25000000; reboot-test first, then staged kubelet restart with rollback. |
+
+### Existing-cluster trial and recovery (orchestrator only)
+
+Use explicit mappings for each real control-plane node, sequentially; no default
+kubectl context is consulted. SSH uses BatchMode and normal known-host checks;
+pass `--identity` for the existing Vagrant private key or cloud SSH key.
+The remote node needs sudo; the operator machine needs python3 and yq v4. Inspect the dry-run diff first:
+
+```bash
+bash scripts/ops/apply-control-plane-flags.sh --kubeconfig /absolute/admin.conf --node narwhal-master-1=vagrant@192.168.56.10 --identity /absolute/node-key --dry-run
+bash scripts/ops/apply-control-plane-flags.sh --kubeconfig /absolute/admin.conf --node narwhal-master-1=vagrant@192.168.56.10 --identity /absolute/node-key --timeout 180
+# Use the exact backup path printed by the successful apply:
+bash scripts/ops/apply-control-plane-flags.sh --kubeconfig /absolute/admin.conf --node narwhal-master-1=vagrant@192.168.56.10 --identity /absolute/node-key --rollback /var/lib/narwhal/control-plane-flags/manifest.REPLACE
+```
+
+The apply waits for a new mirror-pod UID, Ready=True, exact command, and a
+controller-manager Lease whose holder is a current Ready controller pod and whose
+renewTime advances after the new process started. Rollback waits for the restored
+pod and Lease too. If a later node fails, that node is restored; earlier applied
+nodes and exact rollback commands are printed, and the script exits non-zero.
+Backups remain root-only 0600 outside manifests. Replacement uses a verified same-
+filesystem temporary directory outside manifests. Dry-run renders locally without
+remote writes. Local python3/yq v4 are required; remote yq is not required.
+SSH uses keepalives and strict host verification; `--known-hosts FILE` selects an
+existing trusted hosts file (default: the user's known_hosts).
+
+The helper edits static-pod manifests only. To retain the flag across kubeadm
+upgrade/join regeneration, the orchestrator must separately update the published
+ClusterConfiguration after review. With local yq v4, run this sequence (render and
+patch construction tested offline; API mutation is not yet performed):
+
+```bash
+KUBECONFIG=/absolute/admin.conf
+export KUBECONFIG
+umask 077
+work=$(mktemp -d)
+kubectl -n kube-system get configmap kubeadm-config -o json > "$work/before.json"
+yq -r '.data.ClusterConfiguration' "$work/before.json" > "$work/cluster.yaml"
+yq '( .controllerManager.extraArgs // [] ) |= (map(select(.name != "terminated-pod-gc-threshold")) + [{"name": "terminated-pod-gc-threshold", "value": "12500"}])' "$work/cluster.yaml" > "$work/new.yaml"
+python3 - "$work" <<'PYCONFIG'
+import json, pathlib, sys
+w = pathlib.Path(sys.argv[1])
+before = json.loads((w / "before.json").read_text())
+patch = [{"op": "test", "path": "/metadata/resourceVersion", "value": before["metadata"]["resourceVersion"]},
+         {"op": "replace", "path": "/data/ClusterConfiguration", "value": (w / "new.yaml").read_text()}]
+(w / "patch.json").write_text(json.dumps(patch))
+PYCONFIG
+diff -u "$work/cluster.yaml" "$work/new.yaml" || test "$?" = 1
+kubectl -n kube-system patch configmap kubeadm-config --type=json --patch-file "$work/patch.json" --dry-run=server -o yaml
+# After reviewing the diff and server dry-run:
+kubectl -n kube-system patch configmap kubeadm-config --type=json --patch-file "$work/patch.json"
+kubectl -n kube-system get configmap kubeadm-config -o json > "$work/after.json"
+yq -r '.data.ClusterConfiguration' "$work/after.json" | yq -e '.controllerManager.extraArgs[] | select(.name == "terminated-pod-gc-threshold" and .value == "12500")'
+rm -rf "$work"
+```
+
+Skipping this update lets kubeadm upgrade or a control-plane join regenerate a
+manifest without the explicit flag; reapply the helper after regeneration and
+repeat health verification. After a live trial verify kube-bench, Prometheus
+scraping and controller-manager logs. Offline stubs do not prove these properties.

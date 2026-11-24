@@ -113,14 +113,16 @@ def check(texts: dict[str, str]) -> list[str]:
     if "benchmarkTestedFailCount = 0" in comp:
         errors.append("compliance.ts must not hardcode benchmarkTestedFailCount = 0 in summary-only branch")
 
-    # 3. Exact benchmark acceptance schema & matcher (empty in this lane, no pattern matching)
+    # 3. Exact benchmark acceptance schema & matcher (reviewed exact L4 triples, no pattern matching)
     try:
         rules_data = json.loads(texts["rules"])
     except Exception as exc:
         errors.append(f"compliance-acceptance-rules.json invalid JSON: {exc}")
         rules_data = {}
-    if rules_data.get("benchmark") != []:
-        errors.append("compliance-acceptance-rules.json benchmark[] must exist and stay empty in this lane")
+    expected = {("cis-1.23", c, "narwhal-master-1") for c in ("1.1.12", "1.3.7", "1.4.2")}
+    actual = {(r.get("benchmarkId"), r.get("controlId"), r.get("node")) for r in rules_data.get("benchmark", [])}
+    if actual != expected or len(rules_data.get("benchmark", [])) != 3:
+        errors.append("benchmark rules must match reviewed L4 exact triples")
 
     for needle in (
         "BENCHMARK_CONTROL_ID_RE",
@@ -138,6 +140,8 @@ def check(texts: dict[str, str]) -> list[str]:
         mb_body = matcher.split("export function matchBenchmarkException", 1)[1].split("\nexport ", 1)[0]
         if "benchmarkRuleIndex.get(`${benchmarkId}\\0${controlId}`)" not in mb_body:
             errors.append("matchBenchmarkException must use exact benchmarkRuleIndex lookup")
+        if "r.node === node" not in mb_body:
+            errors.append("matchBenchmarkException must match exact node")
         if re.search(r"\.(?:includes|startsWith|endsWith|test|exec|match)\(", mb_body):
             errors.append("matchBenchmarkException must not use pattern/substring/regex matching")
 
@@ -236,6 +240,7 @@ def check(texts: dict[str, str]) -> list[str]:
 
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("drop benchmark node equality", "matcher", "r.node === node", "true"),
     ("allow stale records (>26h) as valid", "kube_bench", "if (nowMs - finishedMs > BENCHMARK_MAX_AGE_MS) {", "if (false) {"),
     ("allow future finishedAt as valid", "kube_bench", "if (finishedMs > nowMs) {", "if (false) {"),
     ("treat error status as valid", "kube_bench", 'if (parsed.status === "error") {', "if (false) {"),
@@ -246,7 +251,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop JSON byte size cap", "kube_bench", 'if (Buffer.byteLength(rawJson, "utf8") > MAX_BENCHMARK_RECORD_BYTES) {', "if (false) {"),
     ("benchmark PASS overrides Trivy failure", "kube_bench", 'if (trivyState === "failed" || bench.verdict === "failed")', 'if (bench.verdict === "failed")'),
     ("pattern-based benchmark acceptance", "matcher", "const exactNodeRule = node !== undefined ? rules.find((r) => r.node === node) : undefined", "const exactNodeRule = node !== undefined ? rules.find((r) => node.includes(r.node ?? \"\")) : undefined"),
-    ("add benchmark acceptance rule in this lane", "rules", '"benchmark": []', '"benchmark": [{"id":"x"}]'),
+    ("widen reviewed benchmark control", "rules", '"controlId": "1.1.12"', '"controlId": "1.1.13"'),
     ("cache response on kube-bench ConfigMap list 403", "compliance", "if (!evalCtx.hasHttpError && !evalCtx.benchmarkStore.listFailed)", "if (!evalCtx.hasHttpError)"),
     ("remove duplicate-node ConfigMap validation", "kube_bench", "if (validByNode.has(node)) {", "if (false) {"),
     ("exclude workers from section 4.x coverage", "kube_bench", 'if (top === "4") return "all-nodes"', 'if (top === "4") return "control-plane"'),

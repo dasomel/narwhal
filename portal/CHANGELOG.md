@@ -11,6 +11,10 @@ English | [한국어](CHANGELOG-ko.md)
 
 ### Changed
 
+- **Compliance > KISA live controls (`src/lib/kisa.ts`, `src/lib/kisa-checks.ts`, `src/lib/kisa-checks-ops.ts`, `src/lib/kisa-controls.ts`, `src/lib/k8s-client.ts`, `src/types/kisa.ts`, `src/lib/cache-keys.ts`, `src/lib/i18n.ts`, `src/components/compliance/kisa-checklist.tsx`):**
+  - Removed the hard-coded `STATIC_STATUS` map and switched `KISA-ETCD-02`, `KISA-SEC-01`, `KISA-TLS-01`, `KISA-OBS-01`, and `KISA-IMG-02` to live Kubernetes API evaluation, while keeping `KISA-IMG-01` honestly `manual` with the node verification command (`hosts.toml` is not readable via K8s API and `#765` publishes no cluster object). Failed/forbidden API reads yield `manual`/degraded with a stated ko/en reason and skip caching (`D-KISA-LIVE`, cache bumped to `compliance:v4:kisa:list`, `R397`).
+  - Fixed `KISA-RBAC-02` to evaluate `apiGroups` inside each individual rule (eliminating false Critical findings from cross-rule `*` combinations and CRD-only wildcards) and aligned acceptance with `portal/src/data/compliance-acceptance-rules.json` via `matchRbacException`.
+  - Updated stale evidence text in `kisa-controls.ts` across `KISA-CP-01`, `KISA-RBAC-01`, `KISA-NET-01`, `KISA-TLS-01`, `KISA-OBS-01`, `KISA-IMG-01`, and `KISA-IMG-02`.
 - **Dependencies**: Bumped `next` and `eslint-config-next` to 16.4.6 (#708), `@opentelemetry/auto-instrumentations-node` to 0.83.1, `@opentelemetry/exporter-trace-otlp-http` and `@opentelemetry/sdk-node` to 0.301.2, `@opentelemetry/resources` to 3.1.1 (#709), `@playwright/test` to 1.65.1, `@vitejs/plugin-react` to 6.3.0, `vite` to 8.3.8 (#710), `zustand` to 5.1.0 (#711), and `@grpc/grpc-js` to 1.14.7 (#712).
 
 ## [1.1.24] - 2026-11-23

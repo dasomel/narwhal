@@ -1,0 +1,493 @@
+import "server-only"
+import type { Localized } from "./i18n-utils"
+import type { KisaReasonKey, KisaStatus } from "@/types/kisa"
+import type {
+  KisaFetchResult,
+  KisaNetworkPolicyPeer,
+  KisaRawNetworkPolicy,
+  KisaRawPeerAuthentication,
+} from "./k8s-client"
+
+export interface KisaCheckOutcome {
+  status: KisaStatus
+  live: boolean
+  detail: string
+  detailLocalized: Localized
+  reasonKey: KisaReasonKey
+  partial?: boolean
+}
+
+export function makeOutcome(
+  status: KisaStatus,
+  reasonKey: KisaReasonKey,
+  ko: string,
+  en: string,
+  opts?: { live?: boolean; partial?: boolean },
+): KisaCheckOutcome {
+  return {
+    status,
+    live: opts?.live ?? status !== "manual",
+    detail: ko,
+    detailLocalized: { ko, en },
+    reasonKey,
+    partial: opts?.partial,
+  }
+}
+
+export function fetchErrorOutcome(
+  res: Exclude<KisaFetchResult<unknown>, { status: "ok" }>,
+  labelKo: string,
+  labelEn: string,
+): KisaCheckOutcome {
+  if (res.status === "forbidden") {
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.apiForbidden",
+      `${labelKo} 조회 권한 없음 (${res.resource}) — 평가 불가`,
+      `${labelEn} read forbidden (${res.resource}) — not evaluated`,
+      { live: false, partial: true },
+    )
+  }
+  if (res.status === "truncated") {
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.listTruncated",
+      `${labelKo} 목록이 잘림 (${res.resource}) — 전체 평가 불가`,
+      `${labelEn} list truncated (${res.resource}) — full evaluation unavailable`,
+      { live: false, partial: true },
+    )
+  }
+  if (res.status === "not-found") {
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.resourceMissing",
+      `${labelKo} 리소스를 찾을 수 없음`,
+      `${labelEn} resource not found`,
+      { live: false },
+    )
+  }
+  return makeOutcome(
+    "manual",
+    "compliance.kisa.reason.apiUnavailable",
+    `${labelKo} 조회 실패 (${res.resource}) — 평가 불가`,
+    `${labelEn} read failed (${res.resource}) — not evaluated`,
+    { live: false, partial: true },
+  )
+}
+
+// --- KISA-ETCD-02: APISIX etcd isolation + client TLS/auth ---
+
+function extractFlagValues(tokens: string[], flag: string): string[] {
+  const vals: string[] = []
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]
+    if (t === flag && i + 1 < tokens.length) {
+      vals.push(tokens[i + 1])
+    } else if (t.startsWith(`${flag}=`)) {
+      vals.push(t.slice(flag.length + 1))
+    }
+  }
+  return vals
+}
+
+function hasEnabledFlag(tokens: string[], flag: string): boolean {
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]
+    if (t === flag) {
+      const next = tokens[i + 1]
+      if (next && !next.startsWith("-") && (next === "false" || next === "0")) return false
+      return true
+    }
+    if (t.startsWith(`${flag}=`)) {
+      const val = t.slice(flag.length + 1).toLowerCase()
+      return val !== "false" && val !== "0" && val !== ""
+    }
+  }
+  return false
+}
+
+function selectorMatchesLabels(
+  selector: { matchLabels?: Record<string, string>; matchExpressions?: Array<{ key: string; operator: string; values?: string[] }> } | undefined,
+  labels: Record<string, string>,
+): boolean {
+  if (!selector) return true
+  for (const [k, v] of Object.entries(selector.matchLabels ?? {})) {
+    if (labels[k] !== v) return false
+  }
+  for (const expr of selector.matchExpressions ?? []) {
+    const val = labels[expr.key]
+    const vals = expr.values ?? []
+    if (expr.operator === "In" && (!val || !vals.includes(val))) return false
+    if (expr.operator === "NotIn" && val !== undefined && vals.includes(val)) return false
+    if (expr.operator === "Exists" && val === undefined) return false
+    if (expr.operator === "DoesNotExist" && val !== undefined) return false
+  }
+  return true
+}
+
+function isApisixGatewayPeer(peer: KisaNetworkPolicyPeer): boolean {
+  if (peer.ipBlock) return false
+  if (peer.namespaceSelector) {
+    const nsLabels = peer.namespaceSelector.matchLabels ?? {}
+    if (
+      nsLabels["kubernetes.io/metadata.name"] !== "platform-system" ||
+      (peer.namespaceSelector.matchExpressions && peer.namespaceSelector.matchExpressions.length > 0)
+    ) {
+      return false
+    }
+  }
+  const podLabels = peer.podSelector?.matchLabels
+  if (!podLabels || Object.keys(podLabels).length === 0) return false
+  if (peer.podSelector?.matchExpressions && peer.podSelector.matchExpressions.length > 0) return false
+  return podLabels["app.kubernetes.io/name"] === "apisix" || podLabels["app"] === "apisix"
+}
+
+export async function checkEtcd02(): Promise<KisaCheckOutcome> {
+  const { getKisaDeployment, getKisaNamespacedNetworkPolicies } = await import("./k8s-client")
+  const [depRes, npRes] = await Promise.all([
+    getKisaDeployment("platform-system", "apisix-etcd"),
+    getKisaNamespacedNetworkPolicies("platform-system"),
+  ])
+
+  if (depRes.status !== "ok") return fetchErrorOutcome(depRes, "Deployment platform-system/apisix-etcd", "Deployment platform-system/apisix-etcd")
+  if (npRes.status !== "ok") return fetchErrorOutcome(npRes, "platform-system NetworkPolicy", "platform-system NetworkPolicies")
+
+  const dep = depRes.data
+  const podLabels = dep.spec?.template?.metadata?.labels ?? { app: "apisix-etcd" }
+  const containers = dep.spec?.template?.spec?.containers ?? []
+  const tokens = containers.flatMap((c) => [...(c.command ?? []), ...(c.args ?? [])])
+
+  const clientUrls = extractFlagValues(tokens, "--listen-client-urls")
+    .flatMap((v) => v.split(","))
+    .map((v) => v.trim())
+    .filter(Boolean)
+  const hasHttpsClient = clientUrls.length > 0 && clientUrls.every((u) => u.startsWith("https://"))
+  const hasCertFiles = extractFlagValues(tokens, "--cert-file").length > 0 && extractFlagValues(tokens, "--key-file").length > 0
+  const hasClientAuth = hasEnabledFlag(tokens, "--client-cert-auth") && extractFlagValues(tokens, "--trusted-ca-file").length > 0
+  const tlsAuthEnabled = hasHttpsClient && hasCertFiles && hasClientAuth
+
+  const policies: KisaRawNetworkPolicy[] = npRes.data
+  const selectingIngress = policies.filter((p) => {
+    const types = p.spec?.policyTypes ?? (p.spec?.ingress ? ["Ingress"] : [])
+    return types.includes("Ingress") && selectorMatchesLabels(p.spec?.podSelector, podLabels)
+  })
+
+  if (selectingIngress.length === 0) {
+    return makeOutcome(
+      "fail",
+      "compliance.kisa.reason.etcdPolicyMissing",
+      `apisix-etcd를 선택하는 Ingress NetworkPolicy 없음 (${tlsAuthEnabled ? "TLS·인증 활성" : "etcd 클라이언트 TLS·인증 미활성화 (평문 HTTP)"})`,
+      `No Ingress NetworkPolicy selects apisix-etcd (${tlsAuthEnabled ? "client TLS/auth enabled" : "etcd client TLS/auth not enabled (plain HTTP)"})`,
+    )
+  }
+
+  let hasBroadOrAllowAll = false
+  let hasApisix2379Allow = false
+  const policyNames = selectingIngress.map((p) => p.metadata?.name ?? "unknown")
+
+  for (const pol of selectingIngress) {
+    const ingressRules = pol.spec?.ingress ?? []
+    for (const rule of ingressRules) {
+      const fromPeers = rule.from
+      if (!fromPeers || fromPeers.length === 0) {
+        hasBroadOrAllowAll = true
+        continue
+      }
+      if (!fromPeers.every(isApisixGatewayPeer)) {
+        hasBroadOrAllowAll = true
+        continue
+      }
+      const ports = rule.ports
+      if (!ports || ports.length === 0 || ports.some((pt) => String(pt.port) === "2379")) {
+        hasApisix2379Allow = true
+      }
+    }
+  }
+
+  if (hasBroadOrAllowAll) {
+    return makeOutcome(
+      "fail",
+      "compliance.kisa.reason.etcdPolicyBroad",
+      `apisix-etcd NetworkPolicy(${policyNames.join(", ")})가 전체 허용이거나 APISIX 외 피어를 허용함 (${tlsAuthEnabled ? "TLS·인증 활성" : "평문 HTTP"})`,
+      `apisix-etcd NetworkPolicy (${policyNames.join(", ")}) allows all sources or non-APISIX peers (${tlsAuthEnabled ? "TLS/auth enabled" : "plain HTTP"})`,
+    )
+  }
+
+  const isolationNoteKo = hasApisix2379Allow
+    ? `NetworkPolicy(${policyNames.join(", ")})가 2379/TCP 인바운드를 APISIX 게이트웨이로만 제한`
+    : `NetworkPolicy(${policyNames.join(", ")})가 apisix-etcd 인바운드를 차단(default-deny)`
+  const isolationNoteEn = hasApisix2379Allow
+    ? `NetworkPolicy (${policyNames.join(", ")}) restricts TCP 2379 ingress strictly to APISIX gateway pods`
+    : `NetworkPolicy (${policyNames.join(", ")}) denies ingress to apisix-etcd`
+
+  if (tlsAuthEnabled) {
+    return makeOutcome(
+      "pass",
+      "compliance.kisa.reason.etcdIsolatedTls",
+      `${isolationNoteKo} · etcd 클라이언트 TLS·인증(--client-cert-auth) 활성화`,
+      `${isolationNoteEn}; etcd client TLS and --client-cert-auth enabled`,
+    )
+  }
+
+  return makeOutcome(
+    "warn",
+    "compliance.kisa.reason.etcdIsolatedPlainHttp",
+    `${isolationNoteKo} · 잔여 위험: etcd 클라이언트 TLS·인증 미활성화 (평문 HTTP: ${clientUrls.join(", ") || "기본값"})`,
+    `${isolationNoteEn}; remaining gap: etcd client TLS/auth not enabled (plain HTTP: ${clientUrls.join(", ") || "default"})`,
+  )
+}
+
+// --- KISA-SEC-01: OpenBao unseal key isolation ---
+
+const EXTERNAL_KMS_ENV_KEYS = new Set([
+  "BAO_SEAL_TYPE",
+  "VAULT_SEAL_TYPE",
+  "AWS_KMS_KEY_ID",
+  "VAULT_AWSKMS_SEAL_KEY_ID",
+  "VAULT_GCPCKMS_SEAL_CRYPTO_KEY",
+  "VAULT_AZUREKEYVAULT_KEY_NAME",
+  "VAULT_TRANSIT_SEAL_KEY_NAME",
+])
+
+export async function checkSec01(): Promise<KisaCheckOutcome> {
+  const { getKisaCronJob, getKisaStatefulSet, getKisaSecretMetadata } = await import("./k8s-client")
+  const [cjRes, stsRes] = await Promise.all([
+    getKisaCronJob("storage", "openbao-auto-unseal"),
+    getKisaStatefulSet("storage", "openbao"),
+  ])
+
+  if (cjRes.status === "forbidden" || cjRes.status === "error" || cjRes.status === "truncated") {
+    return fetchErrorOutcome(cjRes, "CronJob storage/openbao-auto-unseal", "CronJob storage/openbao-auto-unseal")
+  }
+  if (stsRes.status === "forbidden" || stsRes.status === "error" || stsRes.status === "truncated") {
+    return fetchErrorOutcome(stsRes, "StatefulSet storage/openbao", "StatefulSet storage/openbao")
+  }
+
+  let externalKms = false
+  if (stsRes.status === "ok") {
+    const stsContainers = stsRes.data.spec?.template?.spec?.containers ?? []
+    for (const c of stsContainers) {
+      for (const e of c.env ?? []) {
+        if (!e.name) continue
+        if (EXTERNAL_KMS_ENV_KEYS.has(e.name) && e.value && e.value !== "shamir" && e.value !== "static") {
+          externalKms = true
+        }
+      }
+    }
+  }
+
+  let secretRefName = "openbao-init"
+  const cjPresent = cjRes.status === "ok" && !cjRes.data.spec?.suspend
+  const cjIssuesKo: string[] = []
+  const cjIssuesEn: string[] = []
+  let saName = ""
+
+  if (cjRes.status === "ok") {
+    const podSpec = cjRes.data.spec?.jobTemplate?.spec?.template?.spec
+    saName = podSpec?.serviceAccountName ?? podSpec?.serviceAccount ?? ""
+    const dedicatedSa = Boolean(saName && saName !== "default")
+    const automountDisabled = podSpec?.automountServiceAccountToken === false
+    const containers = [...(podSpec?.containers ?? []), ...(podSpec?.initContainers ?? [])]
+    let hasSkipVerify = false
+    for (const c of containers) {
+      for (const e of c.env ?? []) {
+        if (e.name === "BAO_SKIP_VERIFY" || e.name === "VAULT_SKIP_VERIFY") {
+          const v = (e.value ?? "").trim().toLowerCase()
+          if (v !== "false" && v !== "0" && v !== "") hasSkipVerify = true
+        }
+        if (e.valueFrom?.secretKeyRef?.name) {
+          secretRefName = e.valueFrom.secretKeyRef.name
+        }
+      }
+    }
+    if (cjPresent) {
+      if (!dedicatedSa) {
+        cjIssuesKo.push("전용 ServiceAccount 미지정")
+        cjIssuesEn.push("dedicated ServiceAccount missing")
+      }
+      if (!automountDisabled) {
+        cjIssuesKo.push("automountServiceAccountToken!=false")
+        cjIssuesEn.push("automountServiceAccountToken!=false")
+      }
+      if (hasSkipVerify) {
+        cjIssuesKo.push("BAO_SKIP_VERIFY 활성화")
+        cjIssuesEn.push("BAO_SKIP_VERIFY enabled")
+      }
+    }
+  }
+
+  const secRes = await getKisaSecretMetadata("storage", secretRefName)
+  const secretMetaNotEvaluated = secRes.status === "forbidden" || secRes.status === "error" || secRes.status === "truncated"
+  const secretPartial = secRes.status === "error" || secRes.status === "truncated"
+
+  if (cjPresent) {
+    if (cjIssuesKo.length > 0) {
+      return makeOutcome(
+        "fail",
+        "compliance.kisa.reason.secCronJobWeak",
+        `CronJob storage/openbao-auto-unseal 보강 미흡: ${cjIssuesKo.join(", ")}`,
+        `CronJob storage/openbao-auto-unseal hardening defects: ${cjIssuesEn.join(", ")}`,
+        { partial: secretPartial },
+      )
+    }
+    if (secRes.status === "ok") {
+      const excludeBackup = secRes.data.labels["velero.io/exclude-from-backup"] === "true"
+      const hasLastApplied = secRes.data.annotationKeys.includes("kubectl.kubernetes.io/last-applied-configuration")
+      const secIssuesKo: string[] = []
+      const secIssuesEn: string[] = []
+      if (!excludeBackup) {
+        secIssuesKo.push("velero.io/exclude-from-backup=true 라벨 누락")
+        secIssuesEn.push("velero.io/exclude-from-backup=true label missing")
+      }
+      if (hasLastApplied) {
+        secIssuesKo.push("last-applied-configuration 주석 잔존")
+        secIssuesEn.push("last-applied-configuration annotation present")
+      }
+      if (secIssuesKo.length > 0) {
+        return makeOutcome(
+          "fail",
+          "compliance.kisa.reason.secSecretExposed",
+          `Secret storage/${secretRefName} 메타데이터 취약: ${secIssuesKo.join(", ")}`,
+          `Secret storage/${secretRefName} metadata issues: ${secIssuesEn.join(", ")}`,
+        )
+      }
+      return makeOutcome(
+        "warn",
+        "compliance.kisa.reason.secNoExternalKms",
+        `CronJob 보강 확인(SA=${saName}, automount=false, BAO_SKIP_VERIFY 없음) · Secret storage/${secretRefName} 메타데이터 확인(exclude-from-backup=true, last-applied 없음) · 외부 KMS 미적용으로 인클러스터 unseal 키 잔존`,
+        `CronJob hardened (SA=${saName}, automount=false, no BAO_SKIP_VERIFY); Secret storage/${secretRefName} metadata verified (exclude-from-backup=true, no last-applied); no external KMS so in-cluster unseal key remains`,
+      )
+    }
+    if (secretMetaNotEvaluated) {
+      const reasonKo = secRes.status === "forbidden" ? "Secret 메타데이터 미평가(권한 없음)" : "Secret 메타데이터 미평가(조회 실패)"
+      const reasonEn = secRes.status === "forbidden" ? "Secret metadata not evaluated (no read permission)" : "Secret metadata not evaluated (API error)"
+      return makeOutcome(
+        "warn",
+        "compliance.kisa.reason.secSecretMetaNotEvaluated",
+        `CronJob 보강 확인(SA=${saName}, automount=false, BAO_SKIP_VERIFY 없음) · ${reasonKo} · 외부 KMS 미적용으로 인클러스터 unseal 키 잔존`,
+        `CronJob hardened (SA=${saName}, automount=false, no BAO_SKIP_VERIFY); ${reasonEn}; no external KMS so in-cluster unseal key remains`,
+        { partial: secretPartial },
+      )
+    }
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.secNoExternalKms",
+      `CronJob 보강 확인(SA=${saName}, automount=false, BAO_SKIP_VERIFY 없음) · 참조 Secret storage/${secretRefName} 없음 · 외부 KMS 미적용`,
+      `CronJob hardened (SA=${saName}, automount=false, no BAO_SKIP_VERIFY); referenced Secret storage/${secretRefName} not found; no external KMS`,
+    )
+  }
+
+  if (externalKms && secRes.status === "not-found") {
+    return makeOutcome(
+      "pass",
+      "compliance.kisa.reason.secExternalKms",
+      `외부 KMS 자동 unseal 구성 확인 및 인클러스터 unseal CronJob·Secret storage/${secretRefName} 미존재`,
+      `External KMS auto-unseal configured and no in-cluster unseal CronJob or Secret storage/${secretRefName}`,
+    )
+  }
+  if (externalKms && secretMetaNotEvaluated) {
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.secSecretMetaNotEvaluated",
+      `외부 KMS 감지·CronJob 미실행이나 Secret storage/${secretRefName} 미존재 여부를 권한 부재로 미평가`,
+      `External KMS detected and CronJob inactive, but absence of Secret storage/${secretRefName} not evaluated (no permission)`,
+      { partial: secretPartial },
+    )
+  }
+  return makeOutcome(
+    "warn",
+    "compliance.kisa.reason.secNoExternalKms",
+    `openbao-auto-unseal CronJob 미존재/중지 상태이나 외부 KMS 구성이 확인되지 않음 (수동 unseal 또는 외부 KMS 확인 필요)`,
+    `openbao-auto-unseal CronJob absent/suspended, but external KMS seal not detected (verify manual unseal or KMS config)`,
+    { partial: secretPartial },
+  )
+}
+
+// --- KISA-IMG-01: Node containerd Harbor TLS verification (manual — host file) ---
+
+export function checkImg01(): KisaCheckOutcome {
+  // #765 (08-6b-harbor-containerd-tls-node.sh) writes /etc/containerd/certs.d/harbor.*/{ca.crt,hosts.toml}
+  // on each node directly and publishes no in-cluster ConfigMap/annotation. Never invent a signal.
+  return makeOutcome(
+    "manual",
+    "compliance.kisa.reason.imgNodeManual",
+    "노드 /etc/containerd/certs.d/harbor.*/hosts.toml은 K8s API로 조회 불가(#765 미게시) — 노드에서 확인: grep -E 'ca =|skip_verify' /etc/containerd/certs.d/harbor.*/hosts.toml",
+    "Host /etc/containerd/certs.d/harbor.*/hosts.toml is not readable via K8s API (#765 publishes no cluster object) — verify on nodes: grep -E 'ca =|skip_verify' /etc/containerd/certs.d/harbor.*/hosts.toml",
+    { live: false },
+  )
+}
+
+// --- KISA-TLS-01: Istio PeerAuthentication mTLS coverage ---
+
+function formatPaException(pa: KisaRawPeerAuthentication): string | null {
+  const ns = pa.metadata?.namespace ?? ""
+  const name = pa.metadata?.name ?? "unknown"
+  const mode = (pa.spec?.mtls?.mode ?? "UNSET").toUpperCase()
+  const selLabels = pa.spec?.selector?.matchLabels
+  const selStr = selLabels && Object.keys(selLabels).length > 0
+    ? Object.entries(selLabels).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join(",")
+    : "ns-wide"
+
+  const portExceptions: string[] = []
+  for (const [port, cfg] of Object.entries(pa.spec?.portLevelMtls ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+    const pMode = (cfg?.mode ?? "").toUpperCase()
+    if (pMode === "PERMISSIVE" || pMode === "DISABLE") {
+      portExceptions.push(`port ${port}:${pMode}`)
+    }
+  }
+
+  if (mode === "PERMISSIVE" || mode === "DISABLE") {
+    return `${ns}/${name}(${mode}, ${selStr})`
+  }
+  if (portExceptions.length > 0) {
+    return `${ns}/${name}(${portExceptions.join("/")}, ${selStr})`
+  }
+  return null
+}
+
+export async function checkTls01(): Promise<KisaCheckOutcome> {
+  const { getKisaPeerAuthentications } = await import("./k8s-client")
+  const paRes = await getKisaPeerAuthentications()
+  if (paRes.status !== "ok") {
+    return fetchErrorOutcome(paRes, "Istio PeerAuthentication", "Istio PeerAuthentications")
+  }
+
+  const items = paRes.data
+  const rootPa =
+    items.find((p) => p.metadata?.namespace === "istio-system" && p.metadata?.name === "default" && !p.spec?.selector?.matchLabels) ??
+    items.find((p) => p.metadata?.namespace === "istio-system" && (!p.spec?.selector || Object.keys(p.spec.selector.matchLabels ?? {}).length === 0))
+
+  const meshMode = (rootPa?.spec?.mtls?.mode ?? "UNSET").toUpperCase()
+  const exceptions = items
+    .filter((p) => p !== rootPa)
+    .map(formatPaException)
+    .filter((x): x is string => x !== null)
+    .sort()
+
+  if (meshMode !== "STRICT") {
+    const excSuffixKo = exceptions.length > 0 ? ` · 추가 예외 ${exceptions.length}건: ${exceptions.join(", ")}` : ""
+    const excSuffixEn = exceptions.length > 0 ? `; additional exceptions (${exceptions.length}): ${exceptions.join(", ")}` : ""
+    return makeOutcome(
+      "fail",
+      "compliance.kisa.reason.tlsNotStrict",
+      `메시 전역 PeerAuthentication(istio-system) 모드=${meshMode} (STRICT 아님)${excSuffixKo}`,
+      `Mesh-wide PeerAuthentication (istio-system) mode=${meshMode} (not STRICT)${excSuffixEn}`,
+    )
+  }
+
+  if (exceptions.length === 0) {
+    return makeOutcome(
+      "pass",
+      "compliance.kisa.reason.tlsStrictNoExceptions",
+      `메시 전역 STRICT(istio-system/${rootPa?.metadata?.name ?? "default"}), PERMISSIVE/DISABLE 예외 0건`,
+      `Mesh-wide STRICT (istio-system/${rootPa?.metadata?.name ?? "default"}), 0 PERMISSIVE/DISABLE exceptions`,
+    )
+  }
+
+  return makeOutcome(
+    "warn",
+    "compliance.kisa.reason.tlsStrictWithExceptions",
+    `메시 전역 STRICT(istio-system/${rootPa?.metadata?.name ?? "default"}) · 예외 ${exceptions.length}건: ${exceptions.join(", ")}`,
+    `Mesh-wide STRICT (istio-system/${rootPa?.metadata?.name ?? "default"}); ${exceptions.length} exceptions: ${exceptions.join(", ")}`,
+  )
+}

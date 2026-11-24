@@ -88,6 +88,18 @@ rules:
     resources: [customresourcedefinitions]
     resourceNames: [gateways.gateway.networking.k8s.io]
     verbs: [get]
+  # Owner-approved (2026-11-24, KISA live controls): read-only get/list for live evaluation of
+  # KISA-TLS-01 (Istio PeerAuthentications), KISA-SEC-01 (openbao-auto-unseal CronJob spec), and
+  # KISA-IMG-02 (Kyverno PolicyReport current violations). No Secret read added.
+  - apiGroups: [security.istio.io]
+    resources: [peerauthentications]
+    verbs: [get, list]
+  - apiGroups: [batch]
+    resources: [cronjobs]
+    verbs: [get, list]
+  - apiGroups: [wgpolicyk8s.io]
+    resources: [policyreports]
+    verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

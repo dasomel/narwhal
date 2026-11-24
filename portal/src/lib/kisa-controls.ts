@@ -1,6 +1,6 @@
 import type { KisaControl } from "@/types/kisa"
 
-export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
+export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail" | "detailLocalized" | "reasonKey">[] = [
   {
     id: "KISA-CP-01",
     domain: "컨트롤플레인/API",
@@ -8,7 +8,7 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     severity: "Critical",
     standardRefs: ["CIS 1.2.x", "NSA/CISA §7", "ISMS-P 2.11"],
     evidence:
-      "kube-apiserver 3/3에 --audit-log-path/--audit-policy-file 구성됨, /var/log/kubernetes/audit/audit.log 실기록+로테이션(maxage 30/backup 10/size 100). Falco 0.45.1은 D-FALCO-045(2026-10-28)로 GitOps에서 전 프로바이더에 활성화되도록 바뀜(syscall 소스만 사용, 감사 webhook(k8saudit) 백엔드는 구성하지 않으므로 감사 webhook 백엔드 없음은 유지되는 사실). 클러스터 반영과 동작은 이 증거에 포함되지 않음.",
+      "kube-apiserver 파드의 --audit-log-path/--audit-policy-file 인자를 실시간 점검. Falco 0.45.1은 syscall 소스만 사용하며 감사 webhook(k8saudit) 백엔드는 구성하지 않음.",
     remediation: "감사 로그의 Loki 출하 연계(현재 파일 로컬 보관만)와 감사 정책 커버리지 점검.",
   },
   {
@@ -18,7 +18,7 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     severity: "Critical",
     standardRefs: ["CIS 2.x", "ISMS-P 2.7.1"],
     evidence:
-      "EncryptionConfiguration aescbc 프로바이더 활성(identity 폴백 포함), apiserver --encryption-provider-config 적용됨.",
+      "kube-apiserver 파드의 --encryption-provider-config 인자를 실시간 점검 (EncryptionConfiguration aescbc 프로바이더).",
     remediation: "암호화 키 주기 로테이션 절차 수립 및 기존 시크릿 재암호화(kubectl replace) 주기화.",
   },
   {
@@ -28,9 +28,9 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     severity: "Critical",
     standardRefs: ["NIST SP 800-190 §4.5", "ISMS-P 2.7"],
     evidence:
-      "unseal Shamir 키가 OpenBao와 동일 네임스페이스 평문 K8s Secret(storage/openbao-init)에 저장.",
+      "CronJob storage/openbao-auto-unseal 사양(전용 SA·automountServiceAccountToken=false·BAO_SKIP_VERIFY 미사용)과 storage/openbao-init Secret 메타데이터(velero.io/exclude-from-backup·last-applied-configuration 미존재)를 실시간 점검. 외부 KMS/HSM 없이 인클러스터 자동 unseal 사용 시 잔여 위험(warn)으로 표시.",
     remediation:
-      "unseal 키를 클러스터 외부/KMS auto-unseal로 분리, 또는 별도 ns+RBAC 격리.",
+      "외부 KMS/HSM auto-unseal 도입 시 인클러스터 unseal Secret 제거 가능. 온프렘 유지 시 CronJob 최소권한·Secret 백업 제외 라벨·last-applied 주석 제거 상태를 유지.",
   },
   {
     id: "KISA-ETCD-02",
@@ -39,9 +39,9 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     severity: "High",
     standardRefs: ["CIS", "NSA/CISA"],
     evidence:
-      "APISIX 설정 저장 etcd가 비인증 평문 HTTP(apisix-infra.yaml). OIDC client secret 경유.",
+      "Deployment platform-system/apisix-etcd 인자(--listen-client-urls TLS·--client-cert-auth)와 platform-system NetworkPolicy의 APISIX 게이트웨이 인바운드 제한 여부를 실시간 점검.",
     remediation:
-      "APISIX etcd에 TLS+인증, 또는 mesh 내부 한정+NetworkPolicy.",
+      "APISIX etcd 인바운드를 APISIX 게이트웨이로만 제한하는 NetworkPolicy 유지 및 클라이언트 TLS·mTLS 인증(--client-cert-auth) 전환.",
   },
   {
     id: "KISA-IMG-01",
@@ -50,8 +50,8 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     severity: "High",
     standardRefs: ["NIST SP 800-190 §3.1", "KISA Docker #26"],
     evidence:
-      "전 노드 containerd가 Harbor에 skip_verify=true(02-containerd.sh).",
-    remediation: "Harbor CA를 노드 신뢰 스토어에 등록 후 skip_verify 제거.",
+      "노드 파일시스템(/etc/containerd/certs.d/harbor.*/hosts.toml)은 Kubernetes API로 직접 읽을 수 없고 #765(08-6b-harbor-containerd-tls-node.sh)가 클러스터 상태 객체를 게시하지 않아 수동 확인 대상입니다. 노드에서 grep -E 'ca =|skip_verify' /etc/containerd/certs.d/harbor.*/hosts.toml 또는 harbor_ca_check_local로 확인하세요.",
+    remediation: "각 노드에서 Harbor containerd CA 신뢰(ca = ...) 및 skip_verify 미존재를 정기 검증.",
   },
   {
     id: "KISA-RBAC-01",
@@ -60,9 +60,9 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     severity: "High",
     standardRefs: ["CIS 5.1", "NSA/CISA", "ISMS-P 2.6"],
     evidence:
-      "이전에 지적된 온디맨드 kube-system cluster-admin SA는 제거됨 — headlamp(view), velero-ui(velero-ui-readonly+storage ns Role), platform-admin(와일드카드 없는 명시적 룰)로 최소권한 전환 완료. 남은 cluster-admin 바인딩은 velero-server(storage ns SA, Velero 업스트림 요구사항) 1건뿐(K8s 빌트인 제외).",
+      "Kubernetes 기본(system:*/kubeadm:*/cluster-admin) 외 cluster-admin 바인딩 존재 여부를 실시간 점검. headlamp(view), velero-ui(velero-ui-readonly), velero-server(velero-server-least-privilege), platform-admin은 최소권한으로 전환됨.",
     remediation:
-      "velero-server는 Velero 백업/복원 특성상 사실상 불가피 — 네임스페이스 스코프 Role 대체 가능 여부만 주기 검토, 신규 cluster-admin 직접부여 지양.",
+      "신규 cluster-admin 직접 부여를 금지하고 최소권한 Role/ClusterRole 유지.",
   },
   {
     id: "KISA-TLS-01",
@@ -71,9 +71,9 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     severity: "High",
     standardRefs: ["NSA/CISA", "ISMS-P 2.7.1"],
     evidence:
-      "메시 기본값은 STRICT(istio-system/default PeerAuthentication). 비-메시 클라이언트 연동을 위해 platform-system·database·devtools(harbor)·monitoring 4개 네임스페이스에 PERMISSIVE 예외 적용 중 — ArgoCD·Grafana·Harbor·OpenBao·APISIX 등 opt-out 서비스가 이 예외 범위에 포함됨.",
+      "security.istio.io PeerAuthentication 전체를 실시간 조회해 메시 전역 기본 모드(istio-system/default)와 모든 PERMISSIVE/DISABLE 예외(네임스페이스·셀렉터·포트 단위)를 점검.",
     remediation:
-      "PERMISSIVE 네임스페이스별로 실제 비-메시 트래픽 경로를 재확인해 필요 최소 범위로 축소, 나머지는 STRICT 복귀 검토. 예외 구간은 NetworkPolicy+AuthorizationPolicy로 보완.",
+      "PERMISSIVE/DISABLE 예외별로 비-메시 트래픽 경로를 재확인해 최소 범위(워크로드·포트 단위)로 축소하고, 예외 구간은 NetworkPolicy로 보완.",
   },
   {
     id: "KISA-POD-01",
@@ -82,7 +82,7 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     severity: "Medium",
     standardRefs: ["CIS 5.2", "Pod Security Standards"],
     evidence:
-      "전 네임스페이스(14개)에 pod-security.kubernetes.io audit/warn 라벨 적용(앱 ns=baseline, 호스트 접근 ns=privileged). enforce 모드는 미적용.",
+      "대상 네임스페이스(kube-node-lease·kube-public 제외)의 pod-security.kubernetes.io enforce/audit/warn 라벨 적용 비율을 실시간 점검.",
     remediation: "audit 위반 로그 관찰 후 단계적 enforce 승격.",
   },
   {
@@ -92,9 +92,9 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     severity: "Medium",
     standardRefs: ["ISMS-P 2.11.1", "KISA 운영관리"],
     evidence:
-      "Alertmanager 수신자 미설정 — 알림 룰이 통지로 이어지지 않음.",
+      "AlertmanagerConfig(monitoring/narwhal-notification-channels)의 외부 알림 수신자(Slack/Email/Webhook 등) 라우팅 여부와 security-system의 Falco·falcosidekick 파드 Ready 상태를 실시간 점검.",
     remediation:
-      "수신자(Slack/Email/webhook) 구성+보안 전용 룰(CVE, RBAC 이상탐지). Falco 0.45.1(D-FALCO-045, 2026-10-28)은 GitOps에서 활성화되어 falcosidekick이 critical 이상 런타임 이벤트를 Alertmanager로 보내도록 구성되어 있으나(`/api/v2/alerts`), 수신자가 없으면 통지로 이어지지 않으며 라이브 동작은 검증 전.",
+      "포털 설정에서 외부 알림 수신자(Slack/Email/Webhook)를 등록하고 Falco·falcosidekick 기동 상태를 유지.",
   },
   {
     id: "KISA-NET-01",
@@ -103,8 +103,8 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     severity: "Medium",
     standardRefs: ["CIS 5.3", "NSA/CISA §4", "KISA 망분리"],
     evidence:
-      "이전의 curated egress 허용목록 설계는 폐기되고(2026-07-09) iam·devtools·monitoring·storage·database 5개 네임스페이스에 egress 전체 허용(egress:[{}]) NetworkPolicy로 대체됨 — egress 통제는 사실상 무력화. ingress default-deny NetworkPolicy는 어느 네임스페이스에도 없어 pod 간 인바운드가 여전히 무제한.",
-    remediation: "네임스페이스별 ingress default-deny + 명시적 허용 정책 추가. egress도 전체 허용 대신 대상별 최소 허용목록으로 재설계 검토.",
+      "대상 네임스페이스(iam·devtools·monitoring·storage·database)의 ingress default-deny NetworkPolicy(podSelector: {}) 적용 여부를 실시간 점검. egress는 현재 전체 허용(egress:[{}]) 상태.",
+    remediation: "미적용 네임스페이스에 ingress default-deny + 명시적 허용 정책을 단계 적용하고, egress 최소 허용목록 전환 검토.",
   },
   {
     id: "KISA-IMG-02",
@@ -113,8 +113,8 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     severity: "Low",
     standardRefs: ["NSA/CISA", "SLSA"],
     evidence:
-      "클러스터 전체 실행 이미지(78종) 중 :latest 태그 0건 — Harbor(v2.15.1), 포털(1.0.4) 등 전량 불변 태그로 고정됨. 다만 Cosign 서명·검증은 여전히 부재하고, Kyverno disallow-latest-tag 정책도 Audit 모드라 재발 방지 기제는 없음.",
-    remediation: "Kyverno disallow-latest-tag를 Audit→Enforce로 전환해 회귀 방지, Cosign 서명+verifyImages 도입.",
+      "실행 중 파드의 :latest/미지정 태그 여부, Kyverno ClusterPolicy(disallow-latest-tag·verify-image-signatures) 상태, 및 PolicyReport의 현재 유효 위반 건수(삭제 리소스·0-replica 구 ReplicaSet·구 정책 범위 외 잔재 제외)를 실시간 점검.",
+    remediation: "disallow-latest-tag Enforce 유지, verify-image-signatures Enforce 전환 여부(에어갭 서명 미러링 요건 고려) 검토.",
   },
   {
     id: "KISA-IMG-03",
@@ -150,8 +150,9 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     title: "RBAC 위험 바인딩 점검",
     severity: "Medium",
     standardRefs: ["CIS 5.1"],
-    evidence: "라이브 RBAC 바인딩 위험도 평가.",
-    remediation: "wildcard·권한상승 바인딩 제거.",
+    evidence:
+      "비-빌트인 RBAC 바인딩을 단일 rule 기준(apiGroups·resources·verbs)으로 실시간 평가하고 compliance-acceptance-rules.json 정확 수용 규칙과 일관되게 집계.",
+    remediation: "조치가능한 wildcard·권한상승(bind/escalate/impersonate) 바인딩 제거.",
   },
   {
     id: "KISA-CFG-01",
@@ -159,7 +160,7 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail">[] = [
     title: "컴플라이언스 프레임워크 통과율",
     severity: "Medium",
     standardRefs: ["CIS", "NSA/CISA"],
-    evidence: "Trivy ClusterComplianceReport(CIS/NSA) 평가.",
+    evidence: "Trivy ClusterComplianceReport(CIS/NSA) 및 Config/RBAC/Infra 감사 리포트 실시간 평가.",
     remediation: "미통과 컨트롤 조치.",
   },
 ]

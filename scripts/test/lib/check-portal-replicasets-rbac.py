@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""R378: pin the entire narwhal-portal ClusterRole rule set (narwhal#727 + 2026-11-24 CRD get).
+"""R378: pin the entire narwhal-portal ClusterRole rule set (narwhal#727 + 2026-11-24 CRD get + KISA live reads).
 
 Verifies the owner decisions:
 - 2026-11-19 (#727): grant ClusterRole narwhal-portal read-only get/list on apps/replicasets.
 - 2026-11-24: grant ClusterRole narwhal-portal read-only get on the single CRD
   gateways.gateway.networking.k8s.io (resourceNames-pinned; no list/watch, no other CRD).
+- 2026-11-24 (KISA live controls): grant ClusterRole narwhal-portal read-only get/list on
+  security.istio.io/peerauthentications, batch/cronjobs, and wgpolicyk8s.io/policyreports
+  (no watch, no write verbs, no secrets).
 Pins every rule in ClusterRole narwhal-portal via exact set equality (including resourceNames),
 and keeps docs/common/compliance-hardening.md aligned. --mutation-verify proves broken copies fail.
 """
@@ -75,6 +78,9 @@ EXPECTED_CLUSTERROLE_RULES: set[RuleTuple] = {
         frozenset({"get"}),
         frozenset({"gateways.gateway.networking.k8s.io"}),
     ),
+    (frozenset({"security.istio.io"}), frozenset({"peerauthentications"}), frozenset({"get", "list"}), frozenset()),
+    (frozenset({"batch"}), frozenset({"cronjobs"}), frozenset({"get", "list"}), frozenset()),
+    (frozenset({"wgpolicyk8s.io"}), frozenset({"policyreports"}), frozenset({"get", "list"}), frozenset()),
 }
 
 
@@ -173,6 +179,11 @@ def _crd_rule(docs: list[dict]) -> dict:
     return next(r for r in cr["rules"] if "apiextensions.k8s.io" in r.get("apiGroups", []))
 
 
+def _group_rule(docs: list[dict], group: str) -> dict:
+    cr = next(d for d in docs if d.get("kind") == "ClusterRole" and (d.get("metadata") or {}).get("name") == "narwhal-portal")
+    return next(r for r in cr["rules"] if group in r.get("apiGroups", []))
+
+
 MUTATIONS = [
     "replicasets rule removed",
     "watch verb added to replicasets",
@@ -189,6 +200,15 @@ MUTATIONS = [
     "list verb added to crd rule",
     "resourceNames dropped from crd rule",
     "extra resourceName added to crd rule",
+    "peerauthentications rule removed",
+    "watch verb added to peerauthentications",
+    "extra resource authorizationpolicies in peerauthentications rule",
+    "cronjobs rule removed",
+    "write verb create added to cronjobs",
+    "extra resource jobs in cronjobs rule",
+    "policyreports rule removed",
+    "watch verb added to policyreports",
+    "extra resource clusterpolicyreports in policyreports rule",
 ]
 
 
@@ -226,6 +246,24 @@ def mutate(name: str, base_docs: list[dict], base_doc_text: str) -> tuple[list[d
         _crd_rule(docs).pop("resourceNames", None)
     elif name == "extra resourceName added to crd rule":
         _crd_rule(docs)["resourceNames"].append("httproutes.gateway.networking.k8s.io")
+    elif name == "peerauthentications rule removed":
+        cr["rules"].remove(_group_rule(docs, "security.istio.io"))
+    elif name == "watch verb added to peerauthentications":
+        _group_rule(docs, "security.istio.io")["verbs"].append("watch")
+    elif name == "extra resource authorizationpolicies in peerauthentications rule":
+        _group_rule(docs, "security.istio.io")["resources"].append("authorizationpolicies")
+    elif name == "cronjobs rule removed":
+        cr["rules"].remove(_group_rule(docs, "batch"))
+    elif name == "write verb create added to cronjobs":
+        _group_rule(docs, "batch")["verbs"].append("create")
+    elif name == "extra resource jobs in cronjobs rule":
+        _group_rule(docs, "batch")["resources"].append("jobs")
+    elif name == "policyreports rule removed":
+        cr["rules"].remove(_group_rule(docs, "wgpolicyk8s.io"))
+    elif name == "watch verb added to policyreports":
+        _group_rule(docs, "wgpolicyk8s.io")["verbs"].append("watch")
+    elif name == "extra resource clusterpolicyreports in policyreports rule":
+        _group_rule(docs, "wgpolicyk8s.io")["resources"].append("clusterpolicyreports")
     return docs, doc_text
 
 

@@ -38,7 +38,7 @@ def check(texts):
             'complianceFrameworksList: () => "compliance:v3:frameworks:list"',
             'join("compliance", "v3", "frameworks", id)',
             'complianceSummary: () => "compliance:v3:summary"',
-            'kisaComplianceList: () => "compliance:v3:kisa:list"',
+            'kisaComplianceList: () => "compliance:v4:kisa:list"',
         ],
     }
     for key, needles in required.items():
@@ -68,7 +68,7 @@ MUTATIONS = [
     ("old framework cache", "keys", "compliance:v3:frameworks:list", "compliance:frameworks:list"),
     ("old detail cache", "keys", 'join("compliance", "v3", "frameworks", id)', 'join("compliance", "frameworks", id)'),
     ("old summary cache", "keys", "compliance:v3:summary", "compliance:summary"),
-    ("old KISA cache", "keys", "compliance:v3:kisa:list", "compliance:kisa:list"),
+    ("old KISA cache", "keys", "compliance:v4:kisa:list", "compliance:kisa:list"),
     ("optimistic grid", "grid", "fw.evaluatedPassCount ?? 0", "fw.evaluatedPassCount ?? fw.passCount"),
     ("optimistic summary", "ssr", "f.evaluatedPassCount ?? 0", "f.evaluatedPassCount ?? f.passCount"),
     ("optimistic detail", "detail", "detail.evaluatedPassCount ?? 0", "detail.evaluatedPassCount ?? detail.passCount"),

@@ -37,6 +37,30 @@ vi.mock("./k8s-client", () => ({
   getRbacBindings: vi.fn(async () => []),
   getClusterRoles: vi.fn(async () => []),
   getRoles: vi.fn(async () => []),
+  getKisaDeployment: vi.fn(async () => ({ status: "not-found" })),
+  getKisaStatefulSet: vi.fn(async () => ({ status: "not-found" })),
+  getKisaCronJob: vi.fn(async () => ({ status: "not-found" })),
+  getKisaSecretMetadata: vi.fn(async () => ({ status: "not-found" })),
+  getKisaNamespacedNetworkPolicies: vi.fn(async () => ({ status: "ok", data: [] })),
+  getKisaPeerAuthentications: vi.fn(async () => ({ status: "ok", data: [] })),
+  getKisaNotificationConfig: vi.fn(async () => ({ status: "not-found" })),
+  getKisaNamespacedPods: vi.fn(async () => ({ status: "ok", data: [] })),
+  getKisaKyvernoClusterPolicies: vi.fn(async () => ({ status: "ok", data: [] })),
+  getKisaPolicyReports: vi.fn(async () => ({ status: "ok", data: [] })),
+  getKisaWorkloadInventory: vi.fn(async () => ({
+    pods: { status: "ok", data: [] },
+    replicasets: { status: "ok", data: [] },
+    deployments: { status: "ok", data: [] },
+    statefulsets: { status: "ok", data: [] },
+    daemonsets: { status: "ok", data: [] },
+    cronjobs: { status: "ok", data: [] },
+  })),
+  getKisaRbacSnapshot: vi.fn(async () => ({
+    clusterRoleBindings: { status: "ok", data: [] },
+    roleBindings: { status: "ok", data: [] },
+    clusterRoles: { status: "ok", data: [] },
+    roles: { status: "ok", data: [] },
+  })),
 }))
 
 import { getKisaControls } from "./kisa"

@@ -2748,3 +2748,347 @@ export async function getOssClusterInventory(): Promise<OssClusterInventory> {
     gatewayApiCrdAnnotations,
   }
 }
+
+// --- KISA live control read-only fetchers (D-KISA-LIVE) ---
+// Explicit discriminated outcomes (ok | not-found | forbidden | truncated | error) so KISA
+// controls never silently convert 403/5xx/truncation into an empty list or false pass.
+
+export type KisaFetchResult<T> =
+  | { status: "ok"; data: T }
+  | { status: "not-found" }
+  | { status: "forbidden"; resource: string }
+  | { status: "truncated"; resource: string }
+  | { status: "error"; resource: string; message: string }
+
+export interface KisaRawContainer {
+  name?: string
+  image?: string
+  command?: string[]
+  args?: string[]
+  env?: Array<{
+    name?: string
+    value?: string
+    valueFrom?: { secretKeyRef?: { name?: string; key?: string } }
+  }>
+}
+
+export interface KisaRawPodSpec {
+  serviceAccountName?: string
+  serviceAccount?: string
+  automountServiceAccountToken?: boolean
+  containers?: KisaRawContainer[]
+  initContainers?: KisaRawContainer[]
+}
+
+export interface KisaRawDeployment {
+  metadata?: { name?: string; namespace?: string; labels?: Record<string, string> }
+  spec?: {
+    template?: {
+      metadata?: { labels?: Record<string, string> }
+      spec?: KisaRawPodSpec
+    }
+  }
+}
+
+export interface KisaRawStatefulSet {
+  metadata?: { name?: string; namespace?: string }
+  spec?: {
+    template?: {
+      spec?: KisaRawPodSpec
+    }
+  }
+}
+
+export interface KisaRawCronJob {
+  metadata?: { name?: string; namespace?: string }
+  spec?: {
+    suspend?: boolean
+    jobTemplate?: {
+      spec?: {
+        template?: {
+          spec?: KisaRawPodSpec
+        }
+      }
+    }
+  }
+}
+
+export interface KisaSecretMetadata {
+  name: string
+  namespace: string
+  labels: Record<string, string>
+  annotationKeys: string[]
+}
+
+export interface KisaNetworkPolicyPeer {
+  podSelector?: { matchLabels?: Record<string, string>; matchExpressions?: Array<{ key: string; operator: string; values?: string[] }> }
+  namespaceSelector?: { matchLabels?: Record<string, string>; matchExpressions?: Array<{ key: string; operator: string; values?: string[] }> }
+  ipBlock?: { cidr?: string; except?: string[] }
+}
+
+export interface KisaRawNetworkPolicy {
+  metadata?: { name?: string; namespace?: string }
+  spec?: {
+    podSelector?: { matchLabels?: Record<string, string>; matchExpressions?: Array<{ key: string; operator: string; values?: string[] }> }
+    policyTypes?: string[]
+    ingress?: Array<{
+      from?: KisaNetworkPolicyPeer[]
+      ports?: Array<{ port?: number | string; protocol?: string }>
+    }>
+  }
+}
+
+export interface KisaRawPeerAuthentication {
+  metadata?: { name?: string; namespace?: string }
+  spec?: {
+    selector?: { matchLabels?: Record<string, string> }
+    mtls?: { mode?: string }
+    portLevelMtls?: Record<string, { mode?: string }>
+  }
+}
+
+export interface KisaRawAlertmanagerReceiver {
+  name?: string
+  slackConfigs?: unknown[]
+  emailConfigs?: unknown[]
+  webhookConfigs?: unknown[]
+  pagerdutyConfigs?: unknown[]
+  opsgenieConfigs?: unknown[]
+  msteamsConfigs?: unknown[]
+  wechatConfigs?: unknown[]
+  victoropsConfigs?: unknown[]
+  pushoverConfigs?: unknown[]
+  snsConfigs?: unknown[]
+  telegramConfigs?: unknown[]
+  webexConfigs?: unknown[]
+  discordConfigs?: unknown[]
+  jiraConfigs?: unknown[]
+}
+
+export interface KisaRawAlertmanagerRoute {
+  receiver?: string
+  routes?: KisaRawAlertmanagerRoute[]
+}
+
+export interface KisaRawAlertmanagerConfig {
+  metadata?: { name?: string; namespace?: string }
+  spec?: {
+    route?: KisaRawAlertmanagerRoute
+    receivers?: KisaRawAlertmanagerReceiver[]
+  }
+}
+
+export interface KisaRawPodStatus {
+  metadata?: {
+    name?: string
+    namespace?: string
+    labels?: Record<string, string>
+    deletionTimestamp?: string
+  }
+  spec?: {
+    containers?: Array<{ name?: string; image?: string }>
+    initContainers?: Array<{ name?: string; image?: string }>
+  }
+  status?: {
+    phase?: string
+    conditions?: Array<{ type?: string; status?: string }>
+    containerStatuses?: Array<{ name?: string; ready?: boolean; image?: string }>
+  }
+}
+
+export interface KisaRawClusterPolicy {
+  metadata?: {
+    name?: string
+    generation?: number
+    managedFields?: Array<{ time?: string }>
+  }
+  spec?: {
+    validationFailureAction?: string
+    background?: boolean
+    rules?: Array<{
+      name?: string
+      verifyImages?: Array<{
+        imageReferences?: string[]
+        required?: boolean
+      }>
+    }>
+  }
+  status?: {
+    conditions?: Array<{ type?: string; status?: string }>
+  }
+}
+
+export interface KisaRawPolicyReport {
+  metadata?: { name?: string; namespace?: string }
+  scope?: { kind?: string; name?: string; namespace?: string }
+  results?: Array<{
+    policy?: string
+    rule?: string
+    result?: string
+    message?: string
+    timestamp?: { seconds?: number }
+    resources?: Array<{ kind?: string; name?: string; namespace?: string }>
+  }>
+}
+
+export interface KisaRawReplicaSet {
+  metadata?: {
+    name?: string
+    namespace?: string
+    annotations?: Record<string, string>
+    ownerReferences?: Array<{ kind?: string; name?: string }>
+  }
+  spec?: { replicas?: number }
+  status?: { replicas?: number; terminatingReplicas?: number }
+}
+
+export interface KisaRawNamedObject {
+  metadata?: { name?: string; namespace?: string }
+}
+
+export interface KisaWorkloadInventory {
+  pods: KisaFetchResult<KisaRawPodStatus[]>
+  replicasets: KisaFetchResult<KisaRawReplicaSet[]>
+  deployments: KisaFetchResult<KisaRawNamedObject[]>
+  statefulsets: KisaFetchResult<KisaRawNamedObject[]>
+  daemonsets: KisaFetchResult<KisaRawNamedObject[]>
+  cronjobs: KisaFetchResult<KisaRawNamedObject[]>
+}
+
+export interface KisaRbacSnapshot {
+  clusterRoleBindings: KisaFetchResult<Array<{ metadata: { name: string }; roleRef: { kind: string; name: string }; subjects?: Array<{ kind: string; name: string; namespace?: string }> }>>
+  roleBindings: KisaFetchResult<Array<{ metadata: { name: string; namespace: string }; roleRef: { kind: string; name: string }; subjects?: Array<{ kind: string; name: string; namespace?: string }> }>>
+  clusterRoles: KisaFetchResult<Array<{ metadata: { name: string }; rules?: K8sPolicyRule[] }>>
+  roles: KisaFetchResult<Array<{ metadata: { name: string; namespace: string }; rules?: K8sPolicyRule[] }>>
+}
+
+function mapKisaFetchError<T>(resource: string, err: unknown): KisaFetchResult<T> {
+  if (err instanceof K8sCredentialError) return { status: "forbidden", resource }
+  if (err instanceof K8sHttpError && err.status === 404) return { status: "not-found" }
+  return { status: "error", resource, message: err instanceof Error ? err.message : String(err) }
+}
+
+async function fetchKisaSingle<T>(resource: string, path: string, init?: RequestInit): Promise<KisaFetchResult<T>> {
+  try {
+    return { status: "ok", data: await k8sFetch<T>(path, init) }
+  } catch (err) {
+    return mapKisaFetchError(resource, err)
+  }
+}
+
+async function fetchKisaList<T>(resource: string, path: string, maxPages = DEFAULT_LIST_MAX_PAGES): Promise<KisaFetchResult<T[]>> {
+  try {
+    const list = await listBounded<T>(path, { maxPages })
+    if (list.truncated) return { status: "truncated", resource }
+    return { status: "ok", data: list.items }
+  } catch (err) {
+    return mapKisaFetchError(resource, err)
+  }
+}
+
+export async function getKisaDeployment(namespace: string, name: string): Promise<KisaFetchResult<KisaRawDeployment>> {
+  return fetchKisaSingle(
+    `deployments.apps/${namespace}/${name}`,
+    `/apis/apps/v1/namespaces/${safeK8sSegment(namespace)}/deployments/${safeK8sSegment(name)}`,
+  )
+}
+
+export async function getKisaStatefulSet(namespace: string, name: string): Promise<KisaFetchResult<KisaRawStatefulSet>> {
+  return fetchKisaSingle(
+    `statefulsets.apps/${namespace}/${name}`,
+    `/apis/apps/v1/namespaces/${safeK8sSegment(namespace)}/statefulsets/${safeK8sSegment(name)}`,
+  )
+}
+
+export async function getKisaCronJob(namespace: string, name: string): Promise<KisaFetchResult<KisaRawCronJob>> {
+  return fetchKisaSingle(
+    `cronjobs.batch/${namespace}/${name}`,
+    `/apis/batch/v1/namespaces/${safeK8sSegment(namespace)}/cronjobs/${safeK8sSegment(name)}`,
+  )
+}
+
+// D-KISA-SECRET-META: request PartialObjectMetadata so Secret .data never crosses the wire.
+// ClusterRole narwhal-portal intentionally has NO secrets read in storage; under the portal SA
+// this returns { status: "forbidden" } and KISA-SEC-01 degrades that sub-signal to not evaluated.
+export async function getKisaSecretMetadata(namespace: string, name: string): Promise<KisaFetchResult<KisaSecretMetadata>> {
+  const res = await fetchKisaSingle<{
+    kind?: string
+    metadata?: { name?: string; namespace?: string; labels?: Record<string, string>; annotations?: Record<string, string> }
+  }>(
+    `secrets/${namespace}/${name}`,
+    `/api/v1/namespaces/${safeK8sSegment(namespace)}/secrets/${safeK8sSegment(name)}`,
+    { headers: { Accept: "application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1" } },
+  )
+  if (res.status !== "ok") return res
+  const meta = res.data.metadata ?? {}
+  return {
+    status: "ok",
+    data: {
+      name: meta.name ?? name,
+      namespace: meta.namespace ?? namespace,
+      labels: meta.labels ?? {},
+      annotationKeys: Object.keys(meta.annotations ?? {}),
+    },
+  }
+}
+
+export async function getKisaNamespacedNetworkPolicies(namespace: string): Promise<KisaFetchResult<KisaRawNetworkPolicy[]>> {
+  return fetchKisaList(
+    `networkpolicies.networking.k8s.io/${namespace}`,
+    `/apis/networking.k8s.io/v1/namespaces/${safeK8sSegment(namespace)}/networkpolicies`,
+  )
+}
+
+export async function getKisaPeerAuthentications(): Promise<KisaFetchResult<KisaRawPeerAuthentication[]>> {
+  return fetchKisaList("peerauthentications.security.istio.io", "/apis/security.istio.io/v1/peerauthentications")
+}
+
+export async function getKisaNotificationConfig(): Promise<KisaFetchResult<KisaRawAlertmanagerConfig>> {
+  return fetchKisaSingle("alertmanagerconfigs.monitoring.coreos.com/monitoring/narwhal-notification-channels", notificationConfigPath)
+}
+
+export async function getKisaNamespacedPods(namespace: string): Promise<KisaFetchResult<KisaRawPodStatus[]>> {
+  return fetchKisaList(`pods/${namespace}`, `/api/v1/namespaces/${safeK8sSegment(namespace)}/pods`)
+}
+
+export async function getKisaKyvernoClusterPolicies(): Promise<KisaFetchResult<KisaRawClusterPolicy[]>> {
+  return fetchKisaList("clusterpolicies.kyverno.io", "/apis/kyverno.io/v1/clusterpolicies")
+}
+
+export async function getKisaPolicyReports(): Promise<KisaFetchResult<KisaRawPolicyReport[]>> {
+  return fetchKisaList("policyreports.wgpolicyk8s.io", "/apis/wgpolicyk8s.io/v1alpha2/policyreports", CLUSTER_WIDE_POD_MAX_PAGES)
+}
+
+export async function getKisaWorkloadInventory(): Promise<KisaWorkloadInventory> {
+  const [pods, replicasets, deployments, statefulsets, daemonsets, cronjobs] = await Promise.all([
+    fetchKisaList<KisaRawPodStatus>("pods", "/api/v1/pods", CLUSTER_WIDE_POD_MAX_PAGES),
+    fetchKisaList<KisaRawReplicaSet>("replicasets.apps", "/apis/apps/v1/replicasets", CLUSTER_WIDE_POD_MAX_PAGES),
+    fetchKisaList<KisaRawNamedObject>("deployments.apps", "/apis/apps/v1/deployments"),
+    fetchKisaList<KisaRawNamedObject>("statefulsets.apps", "/apis/apps/v1/statefulsets"),
+    fetchKisaList<KisaRawNamedObject>("daemonsets.apps", "/apis/apps/v1/daemonsets"),
+    fetchKisaList<KisaRawNamedObject>("cronjobs.batch", "/apis/batch/v1/cronjobs"),
+  ])
+  return { pods, replicasets, deployments, statefulsets, daemonsets, cronjobs }
+}
+
+export async function getKisaRbacSnapshot(): Promise<KisaRbacSnapshot> {
+  const [clusterRoleBindings, roleBindings, clusterRoles, roles] = await Promise.all([
+    fetchKisaList<{ metadata: { name: string }; roleRef: { kind: string; name: string }; subjects?: Array<{ kind: string; name: string; namespace?: string }> }>(
+      "clusterrolebindings.rbac.authorization.k8s.io",
+      "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings",
+    ),
+    fetchKisaList<{ metadata: { name: string; namespace: string }; roleRef: { kind: string; name: string }; subjects?: Array<{ kind: string; name: string; namespace?: string }> }>(
+      "rolebindings.rbac.authorization.k8s.io",
+      "/apis/rbac.authorization.k8s.io/v1/rolebindings",
+    ),
+    fetchKisaList<{ metadata: { name: string }; rules?: K8sPolicyRule[] }>(
+      "clusterroles.rbac.authorization.k8s.io",
+      "/apis/rbac.authorization.k8s.io/v1/clusterroles",
+    ),
+    fetchKisaList<{ metadata: { name: string; namespace: string }; rules?: K8sPolicyRule[] }>(
+      "roles.rbac.authorization.k8s.io",
+      "/apis/rbac.authorization.k8s.io/v1/roles",
+    ),
+  ])
+  return { clusterRoleBindings, roleBindings, clusterRoles, roles }
+}

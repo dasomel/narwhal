@@ -1,12 +1,13 @@
 "use client"
 import { useState, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { useT } from "@/lib/i18n-client"
+import { useT, useLocale } from "@/lib/i18n-client"
+import { pick } from "@/lib/i18n-utils"
 import { DataState } from "@/components/ui/data-state"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { fetchComplianceJson } from "./fetch-json"
-import type { KisaResponse, KisaControl, KisaStatus } from "@/types/kisa"
+import type { KisaResponse, KisaControl, KisaReasonKey, KisaStatus } from "@/types/kisa"
 import type { Severity } from "@/types/security"
 
 const severityBadgeClass: Record<Severity, string> = {
@@ -32,18 +33,58 @@ function SummaryBadge({ label, count, className }: { label: string; count: numbe
   )
 }
 
+function kisaReasonLabel(key: KisaReasonKey, t: ReturnType<typeof useT>): string {
+  switch (key) {
+    case "compliance.kisa.reason.apiForbidden": return t("compliance.kisa.reason.apiForbidden")
+    case "compliance.kisa.reason.apiUnavailable": return t("compliance.kisa.reason.apiUnavailable")
+    case "compliance.kisa.reason.listTruncated": return t("compliance.kisa.reason.listTruncated")
+    case "compliance.kisa.reason.resourceMissing": return t("compliance.kisa.reason.resourceMissing")
+    case "compliance.kisa.reason.etcdIsolatedTls": return t("compliance.kisa.reason.etcdIsolatedTls")
+    case "compliance.kisa.reason.etcdIsolatedPlainHttp": return t("compliance.kisa.reason.etcdIsolatedPlainHttp")
+    case "compliance.kisa.reason.etcdPolicyMissing": return t("compliance.kisa.reason.etcdPolicyMissing")
+    case "compliance.kisa.reason.etcdPolicyBroad": return t("compliance.kisa.reason.etcdPolicyBroad")
+    case "compliance.kisa.reason.secExternalKms": return t("compliance.kisa.reason.secExternalKms")
+    case "compliance.kisa.reason.secNoExternalKms": return t("compliance.kisa.reason.secNoExternalKms")
+    case "compliance.kisa.reason.secSecretMetaNotEvaluated": return t("compliance.kisa.reason.secSecretMetaNotEvaluated")
+    case "compliance.kisa.reason.secCronJobWeak": return t("compliance.kisa.reason.secCronJobWeak")
+    case "compliance.kisa.reason.secSecretExposed": return t("compliance.kisa.reason.secSecretExposed")
+    case "compliance.kisa.reason.imgNodeManual": return t("compliance.kisa.reason.imgNodeManual")
+    case "compliance.kisa.reason.tlsStrictNoExceptions": return t("compliance.kisa.reason.tlsStrictNoExceptions")
+    case "compliance.kisa.reason.tlsStrictWithExceptions": return t("compliance.kisa.reason.tlsStrictWithExceptions")
+    case "compliance.kisa.reason.tlsNotStrict": return t("compliance.kisa.reason.tlsNotStrict")
+    case "compliance.kisa.reason.obsConfigured": return t("compliance.kisa.reason.obsConfigured")
+    case "compliance.kisa.reason.obsNoChannel": return t("compliance.kisa.reason.obsNoChannel")
+    case "compliance.kisa.reason.obsFalcoDown": return t("compliance.kisa.reason.obsFalcoDown")
+    case "compliance.kisa.reason.obsConfigMissing": return t("compliance.kisa.reason.obsConfigMissing")
+    case "compliance.kisa.reason.imgPolicyEnforced": return t("compliance.kisa.reason.imgPolicyEnforced")
+    case "compliance.kisa.reason.imgVerifyAudit": return t("compliance.kisa.reason.imgVerifyAudit")
+    case "compliance.kisa.reason.imgViolations": return t("compliance.kisa.reason.imgViolations")
+    case "compliance.kisa.reason.imgPolicyReportsNotEvaluated": return t("compliance.kisa.reason.imgPolicyReportsNotEvaluated")
+    case "compliance.kisa.reason.rbacClean": return t("compliance.kisa.reason.rbacClean")
+    case "compliance.kisa.reason.rbacHighBindings": return t("compliance.kisa.reason.rbacHighBindings")
+    case "compliance.kisa.reason.rbacCriticalBindings": return t("compliance.kisa.reason.rbacCriticalBindings")
+  }
+}
+
 function ExpandedPanel({ control }: { control: KisaControl }) {
   const t = useT()
+  const locale = useLocale()
+  const detailText = pick(control.detailLocalized ?? control.detail, locale)
   return (
     <div className="px-6 py-4 bg-muted/10 border-t border-dashed space-y-3 text-xs">
       <div>
         <p className="font-medium text-muted-foreground mb-1">{t("compliance.kisa.evidence")}</p>
         <p className="text-foreground">{control.evidence}</p>
       </div>
-      {control.detail && (
+      {(control.reasonKey || detailText) && (
         <div>
           <p className="font-medium text-muted-foreground mb-1">{t("compliance.kisa.statusDetail")}</p>
-          <p className="text-foreground">{control.detail}</p>
+          {control.reasonKey && (
+            <p className="font-medium text-foreground mb-0.5">
+              {kisaReasonLabel(control.reasonKey, t)}
+            </p>
+          )}
+          {detailText && <p className="text-foreground">{detailText}</p>}
         </div>
       )}
       <div>

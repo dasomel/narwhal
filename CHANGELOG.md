@@ -33,7 +33,7 @@ English | [한국어](CHANGELOG-ko.md)
 
 - **Scope Kyverno signature Audit to the signed portal repository (#683).** Include `devtools`, exclude unsigned third-party/Narwhal images, and accept tag references without digest mutation; CycloneDX checks remain. Live check: third-party violations stopped, and Kyverno now reports the portal signature as not found — Cosign v3 stores it as an OCI referrer that Kyverno 1.18.1 does not verify (#684); Audit only.
 
-- **Portal is pinned to `narwhal-portal:1.1.25` (was 1.1.15 in released v1.5.0; 1.1.16, 1.1.17, 1.1.18, 1.1.19, 1.1.20, 1.1.21, 1.1.22, 1.1.23 and 1.1.24 were intermediate pins).** Closed-world live KISA controls (#788), dependency bumps (#777), OSS updates upstream lookup and gateway CRD permission (#778), release preparation and changelog corrections (#789, #790). The image was published for amd64 and arm64, and Cosign v3.1.4 verification with the repository public key and transparency log passed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684); no live rollout is claimed.
+- **Portal is pinned to `narwhal-portal:1.1.26` (was 1.1.15 in released v1.5.0; 1.1.16, 1.1.17, 1.1.18, 1.1.19, 1.1.20, 1.1.21, 1.1.22, 1.1.23, 1.1.24 and 1.1.25 were intermediate pins).** CIS kube-bench benchmark test records integration into Compliance frameworks (#793) and 1.1.26 release preparation (#794). The image was published for amd64 and arm64, and Cosign v3.1.4 verification with the repository public key and transparency log passed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684); no live rollout is claimed.
 
 ## [1.5.0] - 2026-11-14
 

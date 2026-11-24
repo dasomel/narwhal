@@ -175,10 +175,13 @@ def check(texts: dict[str, str]) -> list[str]:
         "compliance.kisa.reason.imgInventoryNotEvaluated",
         "partial: true, partialSources: failedInvSources",
         "matchRbacException(name, cid, roleNs, kind) !== null",
+        "export function ruleGrants(",
         "const hasCoreOrWildcardGroup = hasWildcardGroup || apiGroupsLower.includes(\"\")",
         "if (hasWildcardVerb && hasWildcardResource && hasCoreOrWildcardGroup)",
-        "const matchesVerb = (verb: string) => hasWildcardVerb || verbsLower.includes(verb)",
-        'matchesGroup("rbac.authorization.k8s.io") &&\n      RBAC_RESOURCE_LIST.some(matchesResource) &&\n      (matchesVerb("bind") || matchesVerb("escalate"))',
+        "if (!verbs.includes(\"*\") && !verbs.includes(targetVerb)) return false",
+        'grantsAnyVerb(r, "rbac.authorization.k8s.io", RBAC_ESCALATION_RESOURCES, ["bind", "escalate"])',
+        'const impersonatesCore = grantsAnyVerb(r, "", CORE_IMPERSONATE_RESOURCES, ["impersonate"])',
+        'const impersonatesAuth = grantsAnyVerb(r, "authentication.k8s.io", ["uids", "userextras/*"], ["impersonate"])',
     ):
         if needle not in checks_ops:
             errors.append(f"kisa-checks-ops.ts missing {needle!r}")
@@ -268,8 +271,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop parseImageRefStrict in extractFailedImageRef", "checks_ops", "return parseImageRefStrict(candidate) ? candidate : null", "return candidate"),
     ("ignore failed IMG-02 inventory lists and fall through to pass", "checks_ops", "  if (failedInvSources.length > 0) {\n    return makeOutcome(\n      \"warn\",\n      \"compliance.kisa.reason.imgInventoryNotEvaluated\",\n      baseKo,\n      baseEn,\n      { partial: true, partialSources: failedInvSources },\n    )\n  }", ""),
     ("return pass from checkSec01 when CronJob is missing", "checks", '      "manual",\n      "compliance.kisa.reason.secCronJobNotEvaluated"', '      "pass",\n      "compliance.kisa.reason.secCronJobNotEvaluated"'),
-    ("ignore verbs:['*'] for bind/escalate in RBAC-02", "checks_ops", "const matchesVerb = (verb: string) => hasWildcardVerb || verbsLower.includes(verb)", "const matchesVerb = (verb: string) => verbsLower.includes(verb)"),
-    ("ignore rbac.authorization.k8s.io apiGroup on bind/escalate", "checks_ops", 'matchesGroup("rbac.authorization.k8s.io") &&\n      RBAC_RESOURCE_LIST.some(matchesResource)', 'true &&\n      RBAC_RESOURCE_LIST.some(matchesResource)'),
+    ("ignore verbs:['*'] for bind/escalate/impersonate in RBAC-02", "checks_ops", 'if (!verbs.includes("*") && !verbs.includes(targetVerb)) return false', 'if (!verbs.includes(targetVerb)) return false'),
+    ("ignore rbac.authorization.k8s.io apiGroup on bind/escalate", "checks_ops", 'grantsAnyVerb(r, "rbac.authorization.k8s.io", RBAC_ESCALATION_RESOURCES, ["bind", "escalate"])', 'grantsAnyVerb(r, "*", RBAC_ESCALATION_RESOURCES, ["bind", "escalate"])'),
+    ("bypass impersonate verb check in core impersonate branch", "checks_ops", 'const impersonatesCore = grantsAnyVerb(r, "", CORE_IMPERSONATE_RESOURCES, ["impersonate"])', 'const impersonatesCore = grantsAnyVerb(r, "", [...CORE_IMPERSONATE_RESOURCES, "impersonate"], ["get", "impersonate"])'),
+    ("drop uids or userextras/* authentication.k8s.io impersonate check", "checks_ops", 'const impersonatesAuth = grantsAnyVerb(r, "authentication.k8s.io", ["uids", "userextras/*"], ["impersonate"])', 'const impersonatesAuth = grantsAnyVerb(r, "authentication.k8s.io", ["userextras"], ["impersonate"])'),
     ("reintroduce unused get verb on peerauthentications", "rbac", "    resources: [peerauthentications]\n    verbs: [list]", "    resources: [peerauthentications]\n    verbs: [get, list]"),
     ("reintroduce unused get verb on policyreports", "rbac", "    resources: [policyreports]\n    verbs: [list]", "    resources: [policyreports]\n    verbs: [get, list]"),
     ("drop R397 wiring in regression-check-kakao.sh", "reg", "check R397 ", "check R9999 "),

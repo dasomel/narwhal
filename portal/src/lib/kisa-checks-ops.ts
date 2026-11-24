@@ -410,9 +410,73 @@ function isUnavoidableRbacBuiltin(b: { name: string; subjects: Array<{ kind: str
   return false
 }
 
-const WRITE_VERBS = new Set(["create", "update", "patch", "delete", "deletecollection"])
-const RBAC_RESOURCE_LIST = ["roles", "clusterroles", "rolebindings", "clusterrolebindings"] as const
-const IMPERSONATE_CORE_RESOURCES = ["users", "groups", "serviceaccounts", "uids", "impersonate"] as const
+export interface RbacPolicyRule {
+  apiGroups?: string[]
+  resources?: string[]
+  verbs?: string[]
+  resourceNames?: string[]
+}
+
+const WRITE_VERBS = ["create", "update", "patch", "delete", "deletecollection"] as const
+const WRITE_VERB_SET = new Set<string>(WRITE_VERBS)
+const SECRET_ACCESS_VERBS = ["get", "list", "watch", ...WRITE_VERBS] as const
+const RBAC_ESCALATION_RESOURCES = ["roles", "clusterroles", "rolebindings", "clusterrolebindings"] as const
+const CORE_WORKLOAD_RESOURCES = ["pods", "pods/exec", "replicationcontrollers"] as const
+const APPS_WORKLOAD_RESOURCES = ["deployments", "daemonsets", "statefulsets", "replicasets"] as const
+const BATCH_WORKLOAD_RESOURCES = ["jobs", "cronjobs"] as const
+const CORE_NET_RESOURCES = ["services", "endpoints"] as const
+const NETWORKING_NET_RESOURCES = ["ingresses", "networkpolicies"] as const
+const WEBHOOK_RESOURCES = ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"] as const
+const CORE_IMPERSONATE_RESOURCES = ["users", "groups", "serviceaccounts"] as const
+
+// Evaluates Kubernetes RBAC PolicyRule matching within a single rule:
+// (apiGroup in apiGroups or '*') && (verb in verbs or '*') && (resource matches resources).
+// Subresources follow Kubernetes ResourceMatches (exact, '*', 'res/*', '*/sub'), and a
+// 'parent/*' query matches any concrete 'parent/<key>' grant (e.g. 'userextras/scopes').
+// resourceNames is intentionally not exempted (fail-closed: a named privileged target
+// such as 'system:admin' or 'cluster-admin' still confers the dangerous capability).
+export function ruleGrants(
+  rule: RbacPolicyRule,
+  apiGroup: string,
+  resource: string,
+  verb: string,
+): boolean {
+  const targetGroup = apiGroup.toLowerCase()
+  const targetResource = resource.toLowerCase()
+  const targetVerb = verb.toLowerCase()
+
+  const groups = (rule.apiGroups ?? []).map((g) => g.toLowerCase())
+  if (!groups.includes("*") && !groups.includes(targetGroup)) return false
+
+  const verbs = (rule.verbs ?? []).map((v) => v.toLowerCase())
+  if (!verbs.includes("*") && !verbs.includes(targetVerb)) return false
+
+  const resources = (rule.resources ?? []).map((res) => res.toLowerCase())
+  const slashIdx = targetResource.indexOf("/")
+  if (slashIdx === -1) {
+    return resources.some((res) => res === "*" || res === targetResource)
+  }
+
+  const parent = targetResource.slice(0, slashIdx)
+  const sub = targetResource.slice(slashIdx + 1)
+  if (sub === "*") {
+    return resources.some(
+      (res) =>
+        res === "*" ||
+        res === targetResource ||
+        (res.startsWith(`${parent}/`) && res.length > parent.length + 1) ||
+        (res.startsWith("*/") && res.length > 2 && res !== "*/*"),
+    )
+  }
+
+  return resources.some(
+    (res) =>
+      res === "*" ||
+      res === targetResource ||
+      res === `${parent}/*` ||
+      res === `*/${sub}`,
+  )
+}
 
 export interface RbacRuleEvaluation {
   criticalWildcard: boolean
@@ -423,7 +487,16 @@ export interface RbacRuleEvaluation {
   triggeredCheckIds: string[]
 }
 
-export function evaluateRbacRules(rules: ReadonlyArray<{ apiGroups?: string[]; resources?: string[]; verbs?: string[] }>): RbacRuleEvaluation {
+function grantsAnyVerb(
+  rule: RbacPolicyRule,
+  apiGroup: string,
+  resources: readonly string[],
+  verbs: readonly string[],
+): boolean {
+  return resources.some((res) => verbs.some((v) => ruleGrants(rule, apiGroup, res, v)))
+}
+
+export function evaluateRbacRules(rules: ReadonlyArray<RbacPolicyRule>): RbacRuleEvaluation {
   let criticalWildcard = false
   let escalation = false
   let writeAccess = false
@@ -441,12 +514,6 @@ export function evaluateRbacRules(rules: ReadonlyArray<{ apiGroups?: string[]; r
     const hasWildcardResource = resourcesLower.includes("*")
     const hasCoreOrWildcardGroup = hasWildcardGroup || apiGroupsLower.includes("")
 
-    const matchesGroup = (group: string) => hasWildcardGroup || apiGroupsLower.includes(group)
-    const matchesResource = (target: string) =>
-      hasWildcardResource ||
-      resourcesLower.some((res) => res === target || (res.endsWith("/*") && target.startsWith(res.slice(0, -1))))
-    const matchesVerb = (verb: string) => hasWildcardVerb || verbsLower.includes(verb)
-
     if (hasWildcardVerb || hasWildcardResource) {
       anyWildcard = true
       if (hasWildcardVerb || hasCoreOrWildcardGroup) {
@@ -460,61 +527,43 @@ export function evaluateRbacRules(rules: ReadonlyArray<{ apiGroups?: string[]; r
       if (hasWildcardGroup) checkIds.add("KSV044")
     }
 
-    if (matchesGroup("") && matchesResource("secrets")) {
+    if (grantsAnyVerb(r, "", ["secrets"], SECRET_ACCESS_VERBS)) {
       secretsAccess = true
       checkIds.add("KSV041")
     }
 
-    const hasWrite = hasWildcardVerb || verbsLower.some((v) => WRITE_VERBS.has(v))
-    if (hasWrite) {
+    if (hasWildcardVerb || verbsLower.some((v) => WRITE_VERB_SET.has(v))) {
       writeAccess = true
-      const writesCoreWorkload =
-        matchesGroup("") && (matchesResource("pods") || matchesResource("pods/exec") || matchesResource("replicationcontrollers"))
-      const writesAppsWorkload =
-        matchesGroup("apps") && ["deployments", "daemonsets", "statefulsets", "replicasets"].some(matchesResource)
-      const writesBatchWorkload =
-        matchesGroup("batch") && ["jobs", "cronjobs"].some(matchesResource)
-      if (writesCoreWorkload || writesAppsWorkload || writesBatchWorkload) {
+      if (
+        grantsAnyVerb(r, "", CORE_WORKLOAD_RESOURCES, WRITE_VERBS) ||
+        grantsAnyVerb(r, "apps", APPS_WORKLOAD_RESOURCES, WRITE_VERBS) ||
+        grantsAnyVerb(r, "batch", BATCH_WORKLOAD_RESOURCES, WRITE_VERBS)
+      ) {
         checkIds.add("KSV048")
       }
-
-      if (matchesGroup("rbac.authorization.k8s.io") && RBAC_RESOURCE_LIST.some(matchesResource)) {
+      if (grantsAnyVerb(r, "rbac.authorization.k8s.io", RBAC_ESCALATION_RESOURCES, WRITE_VERBS)) {
         checkIds.add("KSV049")
       }
-
-      const writesCoreNet = matchesGroup("") && (matchesResource("services") || matchesResource("endpoints"))
-      const writesDiscoveryNet = matchesGroup("discovery.k8s.io") && matchesResource("endpointslices")
-      const writesNetworkingNet =
-        matchesGroup("networking.k8s.io") && (matchesResource("ingresses") || matchesResource("networkpolicies"))
-      if (writesCoreNet || writesDiscoveryNet || writesNetworkingNet) {
+      if (
+        grantsAnyVerb(r, "", CORE_NET_RESOURCES, WRITE_VERBS) ||
+        grantsAnyVerb(r, "discovery.k8s.io", ["endpointslices"], WRITE_VERBS) ||
+        grantsAnyVerb(r, "networking.k8s.io", NETWORKING_NET_RESOURCES, WRITE_VERBS)
+      ) {
         checkIds.add("KSV056")
       }
-
-      if (
-        matchesGroup("admissionregistration.k8s.io") &&
-        (matchesResource("mutatingwebhookconfigurations") || matchesResource("validatingwebhookconfigurations"))
-      ) {
+      if (grantsAnyVerb(r, "admissionregistration.k8s.io", WEBHOOK_RESOURCES, WRITE_VERBS)) {
         checkIds.add("KSV114")
       }
     }
 
-    if (
-      matchesGroup("rbac.authorization.k8s.io") &&
-      RBAC_RESOURCE_LIST.some(matchesResource) &&
-      (matchesVerb("bind") || matchesVerb("escalate"))
-    ) {
+    if (grantsAnyVerb(r, "rbac.authorization.k8s.io", RBAC_ESCALATION_RESOURCES, ["bind", "escalate"])) {
       escalation = true
       checkIds.add("KSV050")
     }
-    const impersonatesCore =
-      matchesGroup("") &&
-      IMPERSONATE_CORE_RESOURCES.some(matchesResource) &&
-      (matchesVerb("impersonate") || matchesResource("impersonate"))
-    const impersonatesExtras =
-      matchesGroup("authentication.k8s.io") &&
-      matchesResource("userextras") &&
-      matchesVerb("impersonate")
-    if (impersonatesCore || impersonatesExtras) {
+
+    const impersonatesCore = grantsAnyVerb(r, "", CORE_IMPERSONATE_RESOURCES, ["impersonate"])
+    const impersonatesAuth = grantsAnyVerb(r, "authentication.k8s.io", ["uids", "userextras/*"], ["impersonate"])
+    if (impersonatesCore || impersonatesAuth) {
       escalation = true
       checkIds.add("KSV053")
     }

@@ -46,7 +46,7 @@ vi.mock("./k8s-client", () => ({
 }))
 
 import { checkEtcd02, checkImg01, checkSec01, checkTls01 } from "./kisa-checks"
-import { checkImg02, checkObs01, checkRbacLive, evaluateRbacRules } from "./kisa-checks-ops"
+import { checkImg02, checkObs01, checkRbacLive, evaluateRbacRules, ruleGrants, type RbacPolicyRule } from "./kisa-checks-ops"
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -558,90 +558,315 @@ describe("KISA-IMG-02 live evaluation", () => {
   })
 })
 
-describe("KISA-RBAC-02 scoring bug fix and exact acceptance consistency", () => {
-  it("does not cross-combine * across different rules or treat CRD-only apiGroups as Critical", () => {
-    // istiod pattern: rule A has resources: ["*"] read-only, rule B has verbs: ["*"] on specific resource
-    const istiod = evaluateRbacRules([
-      { apiGroups: ["networking.istio.io"], resources: ["*"], verbs: ["get", "list", "watch"] },
-      { apiGroups: ["networking.k8s.io"], resources: ["ingresses/status"], verbs: ["*"] },
-    ])
-    expect(istiod.criticalWildcard).toBe(false)
-
-    // chaos-mesh / velero CRD-only wildcard
-    const crdOnly = evaluateRbacRules([
-      { apiGroups: ["chaos-mesh.org"], resources: ["*"], verbs: ["*"] },
-    ])
-    expect(crdOnly.criticalWildcard).toBe(false)
-
-    // True Critical wildcard inside one rule on core/all apiGroups
-    const trueCrit = evaluateRbacRules([
-      { apiGroups: ["*"], resources: ["*"], verbs: ["*"] },
-    ])
-    expect(trueCrit.criticalWildcard).toBe(true)
-
-    // verbs: ["*"] on rbac.authorization.k8s.io/roles includes bind/escalate -> escalation Critical
-    const roleStar = evaluateRbacRules([
-      { apiGroups: ["rbac.authorization.k8s.io"], resources: ["roles"], verbs: ["*"] },
-    ])
-    expect(roleStar.escalation).toBe(true)
-    expect(roleStar.triggeredCheckIds).toContain("KSV050")
-    expect(roleStar.triggeredCheckIds).toContain("KSV049")
-
-    // Explicit escalate/bind on rbac.authorization.k8s.io
-    const explicitEsc = evaluateRbacRules([
-      { apiGroups: ["rbac.authorization.k8s.io"], resources: ["clusterroles"], verbs: ["escalate"] },
-    ])
-    expect(explicitEsc.escalation).toBe(true)
-    expect(explicitEsc.triggeredCheckIds).toContain("KSV050")
-    const explicitBind = evaluateRbacRules([
-      { apiGroups: ["rbac.authorization.k8s.io"], resources: ["rolebindings"], verbs: ["bind"] },
-    ])
-    expect(explicitBind.escalation).toBe(true)
-
-    // apiGroups: ["*"] + resources: ["*"] includes subresources like pods/exec and escalation
-    const allGroupStar = evaluateRbacRules([
-      { apiGroups: ["*"], resources: ["*"], verbs: ["create"] },
-    ])
-    expect(allGroupStar.triggeredCheckIds).toContain("KSV048")
-    expect(allGroupStar.triggeredCheckIds).toContain("KSV049")
-
-    // Similar resource/verb name in an unrelated apiGroup must NOT count as RBAC escalation/secrets/workloads
-    const decoyGroup = evaluateRbacRules([
-      { apiGroups: ["custom.example.io"], resources: ["roles", "secrets", "deployments"], verbs: ["*", "bind", "escalate", "impersonate"] },
-    ])
-    expect(decoyGroup.escalation).toBe(false)
-    expect(decoyGroup.secretsAccess).toBe(false)
-    expect(decoyGroup.criticalWildcard).toBe(false)
-    expect(decoyGroup.triggeredCheckIds).not.toContain("KSV041")
-    expect(decoyGroup.triggeredCheckIds).not.toContain("KSV048")
-    expect(decoyGroup.triggeredCheckIds).not.toContain("KSV049")
-    expect(decoyGroup.triggeredCheckIds).not.toContain("KSV050")
-    expect(decoyGroup.triggeredCheckIds).not.toContain("KSV053")
+describe("KISA-RBAC-02 RBAC rule semantics, truth-table, and exact acceptance consistency", () => {
+  it.each<{
+    name: string
+    rule: RbacPolicyRule
+    apiGroup: string
+    resource: string
+    verb: string
+    expected: boolean
+  }>([
+    { name: "exact match core group", rule: { apiGroups: [""], resources: ["users"], verbs: ["impersonate"] }, apiGroup: "", resource: "users", verb: "impersonate", expected: true },
+    { name: "wildcard all in same rule", rule: { apiGroups: ["*"], resources: ["*"], verbs: ["*"] }, apiGroup: "authentication.k8s.io", resource: "userextras/scopes", verb: "impersonate", expected: true },
+    { name: "read-only wildcard does not grant impersonate", rule: { apiGroups: ["*"], resources: ["*"], verbs: ["get", "list", "watch"] }, apiGroup: "", resource: "users", verb: "impersonate", expected: false },
+    { name: "read-only wildcard grants secrets get", rule: { apiGroups: ["*"], resources: ["*"], verbs: ["get", "list", "watch"] }, apiGroup: "", resource: "secrets", verb: "get", expected: true },
+    { name: "missing apiGroups (nonResourceURLs) does not match core group", rule: { resources: ["*"], verbs: ["*"] }, apiGroup: "", resource: "secrets", verb: "get", expected: false },
+    { name: "pods does not grant pods/exec", rule: { apiGroups: [""], resources: ["pods"], verbs: ["create"] }, apiGroup: "", resource: "pods/exec", verb: "create", expected: false },
+    { name: "pods/* grants pods/exec", rule: { apiGroups: [""], resources: ["pods/*"], verbs: ["create"] }, apiGroup: "", resource: "pods/exec", verb: "create", expected: true },
+    { name: "pods/* does not grant bare pods", rule: { apiGroups: [""], resources: ["pods/*"], verbs: ["create"] }, apiGroup: "", resource: "pods", verb: "create", expected: false },
+    { name: "*/exec grants pods/exec", rule: { apiGroups: [""], resources: ["*/exec"], verbs: ["create"] }, apiGroup: "", resource: "pods/exec", verb: "create", expected: true },
+    { name: "uids in authentication.k8s.io grants impersonate", rule: { apiGroups: ["authentication.k8s.io"], resources: ["uids"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "uids", verb: "impersonate", expected: true },
+    { name: "uids in core group does not grant authentication.k8s.io uids", rule: { apiGroups: [""], resources: ["uids"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "uids", verb: "impersonate", expected: false },
+    { name: "userextras/scopes matches userextras/* query", rule: { apiGroups: ["authentication.k8s.io"], resources: ["userextras/scopes"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "userextras/*", verb: "impersonate", expected: true },
+    { name: "userextras/* matches userextras/scopes", rule: { apiGroups: ["authentication.k8s.io"], resources: ["userextras/*"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "userextras/scopes", verb: "impersonate", expected: true },
+    { name: "*/scopes matches userextras/* query", rule: { apiGroups: ["authentication.k8s.io"], resources: ["*/scopes"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "userextras/*", verb: "impersonate", expected: true },
+    { name: "bare userextras without subresource does not match userextras/*", rule: { apiGroups: ["authentication.k8s.io"], resources: ["userextras"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "userextras/*", verb: "impersonate", expected: false },
+    { name: "userextras/scopes with get verb does not grant impersonate", rule: { apiGroups: ["authentication.k8s.io"], resources: ["userextras/scopes"], verbs: ["get"] }, apiGroup: "authentication.k8s.io", resource: "userextras/*", verb: "impersonate", expected: false },
+    { name: "resource literal named impersonate does not grant users impersonate", rule: { apiGroups: [""], resources: ["impersonate"], verbs: ["get"] }, apiGroup: "", resource: "users", verb: "impersonate", expected: false },
+    { name: "*/* does not match bare resource or wildcard subresource", rule: { apiGroups: ["*"], resources: ["*/*"], verbs: ["*"] }, apiGroup: "", resource: "pods", verb: "create", expected: false },
+  ])("ruleGrants truth table: $name", ({ rule, apiGroup, resource, verb, expected }) => {
+    expect(ruleGrants(rule, apiGroup, resource, verb)).toBe(expected)
   })
 
-  it("fails RBAC-02 on a namespaced Role + RoleBinding granting verbs:['*'] on rbac.authorization.k8s.io/roles", async () => {
-    mockGetKisaRbacSnapshot.mockResolvedValue({
-      clusterRoleBindings: { status: "ok", data: [] },
-      roleBindings: {
-        status: "ok",
-        data: [{
-          metadata: { name: "team-rbac-admin", namespace: "dev" },
-          roleRef: { kind: "Role", name: "team-role-star" },
-          subjects: [{ kind: "ServiceAccount", name: "app", namespace: "dev" }],
-        }],
+  it.each<{
+    name: string
+    rules: RbacPolicyRule[]
+    criticalWildcard: boolean
+    escalation: boolean
+    writeAccess: boolean
+    secretsAccess: boolean
+    includeIds: string[]
+    excludeIds: string[]
+  }>([
+    {
+      name: "istiod cross-rule * pattern is not criticalWildcard",
+      rules: [
+        { apiGroups: ["networking.istio.io"], resources: ["*"], verbs: ["get", "list", "watch"] },
+        { apiGroups: ["networking.k8s.io"], resources: ["ingresses/status"], verbs: ["*"] },
+      ],
+      criticalWildcard: false,
+      escalation: false,
+      writeAccess: true,
+      secretsAccess: false,
+      includeIds: ["KSV046"],
+      excludeIds: ["KSV044", "KSV050", "KSV053"],
+    },
+    {
+      name: "CRD-only wildcard is not criticalWildcard",
+      rules: [{ apiGroups: ["chaos-mesh.org"], resources: ["*"], verbs: ["*"] }],
+      criticalWildcard: false,
+      escalation: false,
+      writeAccess: true,
+      secretsAccess: false,
+      includeIds: ["KSV046"],
+      excludeIds: ["KSV044", "KSV050", "KSV053"],
+    },
+    {
+      name: "full wildcard in single rule is criticalWildcard",
+      rules: [{ apiGroups: ["*"], resources: ["*"], verbs: ["*"] }],
+      criticalWildcard: true,
+      escalation: true,
+      writeAccess: true,
+      secretsAccess: true,
+      includeIds: ["KSV041", "KSV044", "KSV046", "KSV048", "KSV049", "KSV050", "KSV053", "KSV056", "KSV114"],
+      excludeIds: [],
+    },
+    {
+      name: "read-only wildcard (*, *, get/list/watch) is NOT escalation and NOT criticalWildcard",
+      rules: [{ apiGroups: ["*"], resources: ["*"], verbs: ["get", "list", "watch"] }],
+      criticalWildcard: false,
+      escalation: false,
+      writeAccess: false,
+      secretsAccess: true,
+      includeIds: ["KSV041", "KSV046"],
+      excludeIds: ["KSV044", "KSV050", "KSV053"],
+    },
+    {
+      name: "verbs:['*'] on rbac.authorization.k8s.io/roles is escalation",
+      rules: [{ apiGroups: ["rbac.authorization.k8s.io"], resources: ["roles"], verbs: ["*"] }],
+      criticalWildcard: false,
+      escalation: true,
+      writeAccess: true,
+      secretsAccess: false,
+      includeIds: ["KSV049", "KSV050"],
+      excludeIds: ["KSV053"],
+    },
+    {
+      name: "explicit escalate on clusterroles is escalation",
+      rules: [{ apiGroups: ["rbac.authorization.k8s.io"], resources: ["clusterroles"], verbs: ["escalate"] }],
+      criticalWildcard: false,
+      escalation: true,
+      writeAccess: false,
+      secretsAccess: false,
+      includeIds: ["KSV050"],
+      excludeIds: ["KSV053"],
+    },
+    {
+      name: "explicit bind on rolebindings is escalation",
+      rules: [{ apiGroups: ["rbac.authorization.k8s.io"], resources: ["rolebindings"], verbs: ["bind"] }],
+      criticalWildcard: false,
+      escalation: true,
+      writeAccess: false,
+      secretsAccess: false,
+      includeIds: ["KSV050"],
+      excludeIds: ["KSV053"],
+    },
+    {
+      name: "create/update/patch on rolebindings/clusterrolebindings is writeAccess KSV049 (not escalation)",
+      rules: [{ apiGroups: ["rbac.authorization.k8s.io"], resources: ["rolebindings", "clusterrolebindings"], verbs: ["create", "update", "patch"] }],
+      criticalWildcard: false,
+      escalation: false,
+      writeAccess: true,
+      secretsAccess: false,
+      includeIds: ["KSV049"],
+      excludeIds: ["KSV050", "KSV053"],
+    },
+    {
+      name: "impersonate on core users/groups/serviceaccounts is escalation KSV053",
+      rules: [{ apiGroups: [""], resources: ["users", "groups", "serviceaccounts"], verbs: ["impersonate"] }],
+      criticalWildcard: false,
+      escalation: true,
+      writeAccess: false,
+      secretsAccess: false,
+      includeIds: ["KSV053"],
+      excludeIds: ["KSV050"],
+    },
+    {
+      name: "impersonate on authentication.k8s.io uids is escalation KSV053",
+      rules: [{ apiGroups: ["authentication.k8s.io"], resources: ["uids"], verbs: ["impersonate"] }],
+      criticalWildcard: false,
+      escalation: true,
+      writeAccess: false,
+      secretsAccess: false,
+      includeIds: ["KSV053"],
+      excludeIds: ["KSV050"],
+    },
+    {
+      name: "impersonate on authentication.k8s.io userextras/scopes is escalation KSV053",
+      rules: [{ apiGroups: ["authentication.k8s.io"], resources: ["userextras/scopes"], verbs: ["impersonate"] }],
+      criticalWildcard: false,
+      escalation: true,
+      writeAccess: false,
+      secretsAccess: false,
+      includeIds: ["KSV053"],
+      excludeIds: ["KSV050"],
+    },
+    {
+      name: "impersonate on core uids (wrong apiGroup) is NOT flagged",
+      rules: [{ apiGroups: [""], resources: ["uids"], verbs: ["impersonate"] }],
+      criticalWildcard: false,
+      escalation: false,
+      writeAccess: false,
+      secretsAccess: false,
+      includeIds: [],
+      excludeIds: ["KSV053"],
+    },
+    {
+      name: "lookalike resources/verbs in unrelated apiGroup are NOT flagged",
+      rules: [{ apiGroups: ["custom.example.io"], resources: ["roles", "secrets", "deployments", "users", "uids", "userextras/scopes"], verbs: ["*", "bind", "escalate", "impersonate"] }],
+      criticalWildcard: false,
+      escalation: false,
+      writeAccess: true,
+      secretsAccess: false,
+      includeIds: ["KSV046"],
+      excludeIds: ["KSV041", "KSV048", "KSV049", "KSV050", "KSV053", "KSV056", "KSV114"],
+    },
+    {
+      name: "pods/exec create triggers KSV048 writeAccess",
+      rules: [{ apiGroups: [""], resources: ["pods/exec"], verbs: ["create"] }],
+      criticalWildcard: false,
+      escalation: false,
+      writeAccess: true,
+      secretsAccess: false,
+      includeIds: ["KSV048"],
+      excludeIds: ["KSV050", "KSV053"],
+    },
+    {
+      name: "resourceNames-scoped impersonate stays fail-closed (single named admin can still escalate)",
+      rules: [{ apiGroups: [""], resources: ["users"], resourceNames: ["system:admin"], verbs: ["impersonate"] }],
+      criticalWildcard: false,
+      escalation: true,
+      writeAccess: false,
+      secretsAccess: false,
+      includeIds: ["KSV053"],
+      excludeIds: [],
+    },
+    {
+      name: "resourceNames-scoped webhook write stays fail-closed (matches metallb:controller KSV114)",
+      rules: [{ apiGroups: ["admissionregistration.k8s.io"], resources: ["validatingwebhookconfigurations"], resourceNames: ["metallb-webhook-configuration"], verbs: ["update"] }],
+      criticalWildcard: false,
+      escalation: false,
+      writeAccess: true,
+      secretsAccess: false,
+      includeIds: ["KSV114"],
+      excludeIds: ["KSV050", "KSV053"],
+    },
+  ])("evaluateRbacRules: $name", ({ rules, criticalWildcard, escalation, writeAccess, secretsAccess, includeIds, excludeIds }) => {
+    const ev = evaluateRbacRules(rules)
+    expect(ev.criticalWildcard).toBe(criticalWildcard)
+    expect(ev.escalation).toBe(escalation)
+    expect(ev.writeAccess).toBe(writeAccess)
+    expect(ev.secretsAccess).toBe(secretsAccess)
+    for (const id of includeIds) expect(ev.triggeredCheckIds).toContain(id)
+    for (const id of excludeIds) expect(ev.triggeredCheckIds).not.toContain(id)
+  })
+
+  it.each<{
+    name: string
+    snapshot: KisaRbacSnapshot
+    expectedStatus: "pass" | "warn" | "fail"
+    detailContains?: string
+  }>([
+    {
+      name: "read-only wildcard Role + RoleBinding is NOT escalation -> pass",
+      snapshot: {
+        clusterRoleBindings: { status: "ok", data: [] },
+        roleBindings: {
+          status: "ok",
+          data: [{ metadata: { name: "readonly-all", namespace: "dev" }, roleRef: { kind: "Role", name: "readonly-all" }, subjects: [{ kind: "ServiceAccount", name: "app", namespace: "dev" }] }],
+        },
+        clusterRoles: { status: "ok", data: [] },
+        roles: {
+          status: "ok",
+          data: [{ metadata: { name: "readonly-all", namespace: "dev" }, rules: [{ apiGroups: ["*"], resources: ["*"], verbs: ["get", "list", "watch"] }] }],
+        },
       },
-      clusterRoles: { status: "ok", data: [] },
-      roles: {
-        status: "ok",
-        data: [{
-          metadata: { name: "team-role-star", namespace: "dev" },
-          rules: [{ apiGroups: ["rbac.authorization.k8s.io"], resources: ["roles"], verbs: ["*"] }],
-        }],
+      expectedStatus: "pass",
+    },
+    {
+      name: "read-only wildcard ClusterRole + ClusterRoleBinding is High warn, NOT Critical fail",
+      snapshot: {
+        clusterRoleBindings: {
+          status: "ok",
+          data: [{ metadata: { name: "cluster-readonly-all" }, roleRef: { kind: "ClusterRole", name: "cluster-readonly-all" }, subjects: [{ kind: "ServiceAccount", name: "app", namespace: "dev" }] }],
+        },
+        roleBindings: { status: "ok", data: [] },
+        clusterRoles: {
+          status: "ok",
+          data: [{ metadata: { name: "cluster-readonly-all" }, rules: [{ apiGroups: ["*"], resources: ["*"], verbs: ["get", "list", "watch"] }] }],
+        },
+        roles: { status: "ok", data: [] },
       },
-    })
+      expectedStatus: "warn",
+      detailContains: "High 1건 (Critical 0건)",
+    },
+    {
+      name: "impersonate on authentication.k8s.io uids fails RBAC-02 Critical",
+      snapshot: {
+        clusterRoleBindings: {
+          status: "ok",
+          data: [{ metadata: { name: "uid-impersonator" }, roleRef: { kind: "ClusterRole", name: "uid-impersonator" }, subjects: [{ kind: "ServiceAccount", name: "app", namespace: "dev" }] }],
+        },
+        roleBindings: { status: "ok", data: [] },
+        clusterRoles: {
+          status: "ok",
+          data: [{ metadata: { name: "uid-impersonator" }, rules: [{ apiGroups: ["authentication.k8s.io"], resources: ["uids"], verbs: ["impersonate"] }] }],
+        },
+        roles: { status: "ok", data: [] },
+      },
+      expectedStatus: "fail",
+      detailContains: "uid-impersonator",
+    },
+    {
+      name: "impersonate on authentication.k8s.io userextras/scopes fails RBAC-02 Critical",
+      snapshot: {
+        clusterRoleBindings: {
+          status: "ok",
+          data: [{ metadata: { name: "extras-impersonator" }, roleRef: { kind: "ClusterRole", name: "extras-impersonator" }, subjects: [{ kind: "ServiceAccount", name: "app", namespace: "dev" }] }],
+        },
+        roleBindings: { status: "ok", data: [] },
+        clusterRoles: {
+          status: "ok",
+          data: [{ metadata: { name: "extras-impersonator" }, rules: [{ apiGroups: ["authentication.k8s.io"], resources: ["userextras/scopes"], verbs: ["impersonate"] }] }],
+        },
+        roles: { status: "ok", data: [] },
+      },
+      expectedStatus: "fail",
+      detailContains: "extras-impersonator",
+    },
+    {
+      name: "namespaced Role + RoleBinding granting verbs:['*'] on rbac.authorization.k8s.io/roles fails RBAC-02 Critical",
+      snapshot: {
+        clusterRoleBindings: { status: "ok", data: [] },
+        roleBindings: {
+          status: "ok",
+          data: [{ metadata: { name: "team-rbac-admin", namespace: "dev" }, roleRef: { kind: "Role", name: "team-role-star" }, subjects: [{ kind: "ServiceAccount", name: "app", namespace: "dev" }] }],
+        },
+        clusterRoles: { status: "ok", data: [] },
+        roles: {
+          status: "ok",
+          data: [{ metadata: { name: "team-role-star", namespace: "dev" }, rules: [{ apiGroups: ["rbac.authorization.k8s.io"], resources: ["roles"], verbs: ["*"] }] }],
+        },
+      },
+      expectedStatus: "fail",
+      detailContains: "dev/team-rbac-admin",
+    },
+  ])("checkRbacLive: $name", async ({ snapshot, expectedStatus, detailContains }) => {
+    mockGetKisaRbacSnapshot.mockResolvedValue(snapshot)
     const res = await checkRbacLive("KISA-RBAC-02")
-    expect(res.status).toBe("fail")
-    expect(res.detail).toContain("dev/team-rbac-admin")
+    expect(res.status).toBe(expectedStatus)
+    if (detailContains) expect(res.detail).toContain(detailContains)
   })
 
   it("uses exact compliance-acceptance-rules.json (pass when only accepted High exists, fail on unaccepted Critical, manual on 403)", async () => {

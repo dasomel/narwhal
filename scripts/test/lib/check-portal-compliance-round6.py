@@ -77,14 +77,14 @@ def check(texts: dict[str, str]) -> list[str]:
         r"async function fetchConfigAuditListWithMeta\b[\s\S]*?export async function getConfigAuditList\b",
         comp,
     )
-    if not list_m or 'complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports")' not in list_m.group(0):
+    if not list_m or 'complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports")' not in list_m.group(0):
         errors.append("J2: fetchConfigAuditListWithMeta must fetch /apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports")
 
     detail_m = re.search(
         r"export async function getConfigAuditDetail\b[\s\S]*?interface RbacAuditListWithMeta\b",
         comp,
     )
-    if not detail_m or 'complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports")' not in detail_m.group(0):
+    if not detail_m or 'complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports")' not in detail_m.group(0):
         errors.append("J2: getConfigAuditDetail must fetch /apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports")
 
     for needle in (
@@ -168,8 +168,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("J1: ignore scopeNamespaces in getApplicableNamespaces", "compliance", "const scope = entry.scopeNamespaces?.length ? entry.scopeNamespaces : null", "const scope = null"),
     ("J1: drop no_report_in_scope_namespace reason", "compliance", 'notEvaluatedReason: "no_report_in_scope_namespace"', 'notEvaluatedReason: "no_report_for_family"'),
     ("J1: drop i18n no_report_in_scope_namespace en text", "i18n", '"No report in the namespaces this check applies to"', '"Removed"'),
-    ("J2: stop fetching clusterconfigauditreports in fetchConfigAuditListWithMeta", "compliance", '    ;[namespaced, clustered] = await Promise.all([\n      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),\n      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"),\n    ])', '    namespaced = await complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"); clustered = { items: [] }'),
-    ("J2: stop fetching clusterconfigauditreports in getConfigAuditDetail", "compliance", '    ;[namespaced, clustered] = await Promise.all([\n      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),\n      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"),\n    ])\n  } catch (err) {\n    const msg = err instanceof Error ? err.message : String(err)\n    console.warn("[compliance] getConfigAuditDetail failed:", msg)', '    namespaced = await complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"); clustered = { items: [] }\n  } catch (err) {\n    const msg = err instanceof Error ? err.message : String(err)\n    console.warn("[compliance] getConfigAuditDetail failed:", msg)'),
+    ("J2: stop fetching clusterconfigauditreports in fetchConfigAuditListWithMeta", "compliance", '    ;[namespaced, clustered] = await Promise.all([\n      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),\n      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"),\n    ])', '    namespaced = await complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"); clustered = { items: [] }'),
+    ("J2: stop fetching clusterconfigauditreports in getConfigAuditDetail", "compliance", '    ;[namespaced, clustered] = await Promise.all([\n      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),\n      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"),\n    ])\n  } catch (err) {\n    const msg = err instanceof Error ? err.message : String(err)\n    console.warn("[compliance] getConfigAuditDetail failed:", msg)', '    namespaced = await complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"); clustered = { items: [] }\n  } catch (err) {\n    const msg = err instanceof Error ? err.message : String(err)\n    console.warn("[compliance] getConfigAuditDetail failed:", msg)'),
     ("J2: drop cluster scope marker on ConfigAuditRow", "compliance", 'scope: "cluster" as const', 'scope: undefined'),
     ("J2: drop visible clusterScope badge in ConfigAuditTable", "cfg_table", 't("compliance.table.clusterScope")', '""'),
     ("J2: drop _cluster decode in ConfigAuditDetailPage", "cfg_detail", 'nsDecoded === "_cluster" ? "" : nsDecoded', "nsDecoded"),

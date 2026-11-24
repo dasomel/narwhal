@@ -204,9 +204,13 @@ export interface ComplianceFramework {
   evaluatedPassCount?: number
   /** Controls passed by active benchmark test execution (e.g. kube-bench PASS on all expected nodes with zero Trivy failures). */
   benchmarkTestedPassCount?: number
+  /** Controls passed with explicit `success: true` records in per-resource Trivy reports and zero failures (omitted when 0). */
+  reportTestedPassCount?: number
+  /** Total actively tested passing controls across kube-bench and per-resource Trivy reports without double-counting (omitted when reportTestedPassCount is 0). */
+  testedPassCount?: number
   /** Controls where active benchmark test execution recorded FAIL (may overlap with Trivy failures). */
   benchmarkTestedFailCount?: number
-  /** Controls in passed state backed only by Trivy failure-only inference (no failure recorded; not actively tested by benchmark). */
+  /** Controls in passed state backed only by Trivy failure-only inference (no failure recorded; not actively tested by benchmark or per-resource pass records). */
   noFailureRecordedPassCount?: number
   /** Controls that could not be evaluated on this cluster (not in catalogue, excluded scope, unsupported kind, absent node type, no report of family, manual/unlinked IDs, or unknown coverage). */
   notEvaluatedCount?: number
@@ -253,6 +257,8 @@ export interface ComplianceControl {
   evaluationState?: ControlEvaluationState
   /** True when the control was actively tested by a benchmark runner (e.g. kube-bench) rather than inferred from failure-only absence. */
   testedByBenchmark?: boolean
+  /** True when at least one mapped check has an explicit `success: true` record in per-resource Trivy reports and none failed (omitted when false). */
+  testedByReport?: boolean
   /** Active benchmark test evidence summary (e.g. kube-bench v0.16.0, node count, finishedAt, FAIL excerpts, source disagreement). */
   benchmarkEvidence?: BenchmarkControlEvidence
   /** Why a control was classified as `not_evaluated`. */

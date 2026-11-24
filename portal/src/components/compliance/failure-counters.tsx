@@ -91,8 +91,17 @@ export function FailureCounters({ summary, locale }: Props) {
     (acc, f) => acc + (f.benchmarkTestedPassCount ?? 0),
     0,
   )
+  const hasReportTestedPass = summary.frameworks.some(
+    (f) => f.testedPassCount !== undefined || (f.reportTestedPassCount ?? 0) > 0,
+  )
+  const testedPassTotal = hasReportTestedPass
+    ? summary.frameworks.reduce(
+        (acc, f) => acc + (f.testedPassCount ?? (f.benchmarkTestedPassCount ?? 0) + (f.reportTestedPassCount ?? 0)),
+        0,
+      )
+    : benchmarkTestedPassTotal
   const noFailureRecordedTotal = summary.frameworks.reduce(
-    (acc, f) => acc + (f.noFailureRecordedPassCount ?? Math.max(0, (f.evaluatedPassCount ?? 0) - (f.benchmarkTestedPassCount ?? 0))),
+    (acc, f) => acc + (f.noFailureRecordedPassCount ?? Math.max(0, (f.evaluatedPassCount ?? 0) - (f.testedPassCount ?? f.benchmarkTestedPassCount ?? 0))),
     0,
   )
   const notEvaluatedTotal = summary.frameworks.reduce(
@@ -188,7 +197,7 @@ export function FailureCounters({ summary, locale }: Props) {
                 )}
               </div>
               <div className="text-xs font-medium text-muted-foreground mt-1">
-                {key === "frameworks" && benchmarkTestedPassTotal > 0
+                {key === "frameworks" && testedPassTotal > 0
                   ? t(locale, "compliance.counter.frameworksPassRateWithBenchmark")
                   : t(locale, labelKey)}
               </div>
@@ -234,9 +243,9 @@ export function FailureCounters({ summary, locale }: Props) {
                   </div>
                   {(acceptedControlsTotal > 0 || rawControlsTotal !== actionableControlsTotal || notEvaluatedTotal > 0) && (
                     <div>
-                      {benchmarkTestedPassTotal > 0
+                      {testedPassTotal > 0
                         ? t(locale, "compliance.counter.frameworksBreakdownWithBenchmark", {
-                            tested: String(benchmarkTestedPassTotal),
+                            tested: String(testedPassTotal),
                             noFailure: String(noFailureRecordedTotal),
                             notEvaluated: String(notEvaluatedTotal),
                             actionable: String(actionableControlsTotal),
@@ -257,11 +266,11 @@ export function FailureCounters({ summary, locale }: Props) {
                         })}`}
                     </div>
                   )}
-                  {benchmarkTestedPassTotal > 0 ? (
+                  {testedPassTotal > 0 ? (
                     <div>
                       {evaluatedPassTotal}/{totalControlsAll} (
                       {t(locale, "compliance.counter.frameworksPassSplit", {
-                        tested: String(benchmarkTestedPassTotal),
+                        tested: String(testedPassTotal),
                         noFailure: String(noFailureRecordedTotal),
                       })}
                       )

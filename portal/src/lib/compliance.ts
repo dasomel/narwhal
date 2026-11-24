@@ -134,6 +134,80 @@ async function tryComplianceK8sFetch<T>(path: string): Promise<TryFetchResult<T>
   }
 }
 
+const COMPLIANCE_LIST_LIMIT = 200
+const COMPLIANCE_LIST_MAX_PAGES = 50
+
+interface RawK8sPagedList<T> {
+  metadata?: {
+    continue?: string
+  }
+  items?: T[]
+}
+
+async function complianceK8sListPaged<T>(
+  path: string,
+  opts: { limit?: number; maxPages?: number } = {},
+): Promise<{ items: T[] }> {
+  const limit = opts.limit ?? COMPLIANCE_LIST_LIMIT
+  const maxPages = opts.maxPages ?? COMPLIANCE_LIST_MAX_PAGES
+
+  const fetchPages = async (): Promise<{ items: T[] }> => {
+    const items: T[] = []
+    let continueToken: string | undefined
+    let pages = 0
+
+    while (pages < maxPages) {
+      const params = new URLSearchParams()
+      params.set("limit", String(limit))
+      if (continueToken) params.set("continue", continueToken)
+      const sep = path.includes("?") ? "&" : "?"
+      const data = await complianceK8sFetch<RawK8sPagedList<T>>(`${path}${sep}${params.toString()}`)
+      if (
+        !data ||
+        typeof data !== "object" ||
+        (data.items !== undefined && !Array.isArray(data.items)) ||
+        (data.metadata !== undefined &&
+          (data.metadata === null || typeof data.metadata !== "object" || Array.isArray(data.metadata))) ||
+        (data.metadata?.continue !== undefined && typeof data.metadata.continue !== "string")
+      ) {
+        throw new Error(`K8s API invalid list response for ${path}`)
+      }
+      if (data.items) items.push(...data.items)
+      pages++
+
+      continueToken = data.metadata?.continue
+      if (!continueToken) return { items }
+    }
+
+    throw new Error(`K8s API list truncated at ${maxPages} pages for ${path}`)
+  }
+
+  try {
+    return await fetchPages()
+  } catch (err) {
+    if (err instanceof K8sHttpError && err.status === 410) {
+      return await fetchPages()
+    }
+    throw err
+  }
+}
+
+async function tryComplianceK8sListPaged<T>(
+  path: string,
+  opts: { limit?: number; maxPages?: number } = {},
+): Promise<TryFetchResult<{ items: T[] }>> {
+  try {
+    const data = await complianceK8sListPaged<T>(path, opts)
+    return { ok: true, data }
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      ...(err instanceof K8sHttpError ? { status: err.status } : {}),
+    }
+  }
+}
+
 export type RbacRoleKind = "Role" | "ClusterRole"
 
 // --- CRD raw types ---
@@ -190,10 +264,6 @@ interface RawReplicaSet {
     // Pods of this ReplicaSet that are terminating; status.replicas does NOT count them.
     terminatingReplicas?: number
   }
-}
-
-interface RawReplicaSetList {
-  items?: RawReplicaSet[]
 }
 
 interface ReplicaSetSummary {
@@ -636,7 +706,7 @@ function parseDeploymentRevision(annotations?: Record<string, string>): number |
 // cached 0-replica state can never outlive or poison a subsequent report computation.
 async function fetchReplicaSetMap(): Promise<Map<string, ReplicaSetSummary> | null> {
   try {
-    const list = await complianceK8sFetch<RawReplicaSetList>("/apis/apps/v1/replicasets")
+    const list = await complianceK8sListPaged<RawReplicaSet>("/apis/apps/v1/replicasets")
     const entries: Array<{
       key: string
       namespace: string
@@ -789,8 +859,8 @@ async function fetchConfigAuditListWithMeta(): Promise<ConfigAuditListWithMeta> 
   let clustered: RawAuditList
   try {
     ;[namespaced, clustered] = await Promise.all([
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"),
+      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
+      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"),
     ])
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -882,8 +952,8 @@ export async function getConfigAuditDetail(
   let clustered: RawAuditList
   try {
     ;[namespaced, clustered] = await Promise.all([
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"),
+      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
+      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"),
     ])
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -953,8 +1023,8 @@ async function fetchRbacAuditListWithMeta(): Promise<RbacAuditListWithMeta> {
   let clustered: RawAuditList
   try {
     ;[namespaced, clustered] = await Promise.all([
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports"),
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports"),
+      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports"),
+      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports"),
     ])
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -998,8 +1068,8 @@ export async function getRbacAuditDetail(
   let clustered: RawAuditList
   try {
     ;[namespaced, clustered] = await Promise.all([
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports"),
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports"),
+      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports"),
+      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports"),
     ])
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -1038,8 +1108,8 @@ async function fetchInfraAuditListWithMeta(): Promise<InfraAuditListWithMeta> {
   let clustered: RawAuditList
   try {
     ;[namespaced, clustered] = await Promise.all([
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports"),
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports"),
+      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports"),
+      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports"),
     ])
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -1080,8 +1150,8 @@ export async function getInfraAuditDetail(node: string): Promise<InfraAuditDetai
   let clustered: RawAuditList
   try {
     ;[namespaced, clustered] = await Promise.all([
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports"),
-      complianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports"),
+      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports"),
+      complianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports"),
     ])
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -1394,6 +1464,7 @@ function controlEvidenceFailures(spec: RawSpecControl | undefined, ctx: Framewor
     ...ctx.evidenceReports.infra,
   ]
   const seenCanonicalIds = new Set<string>()
+  const seenFailureKeys = new Set<string>()
   const failures: Array<RawCheck & { target: string }> = []
   for (const { id } of spec?.checks ?? []) {
     const canonical = resolveCanonicalCheckId(id ?? "")
@@ -1406,8 +1477,16 @@ function controlEvidenceFailures(spec: RawSpecControl | undefined, ctx: Framewor
         const labels = r.metadata.labels ?? {}
         const owner = r.metadata.ownerReferences?.[0]
         const kind = labels["trivy-operator.resource.kind"] ?? owner?.kind ?? "Unknown"
-        const name = owner?.name ?? labels["trivy-operator.resource.name"] ?? r.metadata.name
-        failures.push({ ...c, target: `${r.metadata.namespace ?? ""}/${kind.toLowerCase()}-${name}` })
+        const name =
+          owner?.name ??
+          labels["trivy-operator.resource.name"] ??
+          r.metadata.annotations?.["trivy-operator.resource.name"] ??
+          r.metadata.name
+        const target = `${r.metadata.namespace ?? ""}/${kind.toLowerCase()}-${name}`
+        const dedupKey = `${canonical}\0${target}`
+        if (seenFailureKeys.has(dedupKey)) continue
+        seenFailureKeys.add(dedupKey)
+        failures.push({ ...c, target })
       }
     }
   }
@@ -1573,8 +1652,208 @@ function buildFrameworkEvalContext(opts: {
 
 interface NonFailingControlOutcome {
   evaluationState: ControlEvaluationState
+  testedByReport?: boolean
+  passCount?: number
   notEvaluatedReason?: ControlNotEvaluatedReason
   notEvaluatedDetail?: string
+}
+
+// D-COMPLIANCE-VERDICT-SOURCE (owner-approved 2026-11-25): derive per-control compliance
+// verdicts from per-resource Trivy reports (ConfigAuditReport, ClusterConfigAuditReport,
+// RbacAssessmentReport, ClusterRbacAssessmentReport, InfraAssessmentReport,
+// ClusterInfraAssessmentReport) report.checks[].success joined via
+// ClusterComplianceReport.spec.compliance.controls[].checks[].id (canonicalized with
+// resolveCanonicalCheckId). ClusterComplianceReport.status.detailReport is NOT a verdict
+// source because in trivy-operator v0.36.1 with reportRecordFailedChecksOnly="false",
+// FromDetailReport hardcodes Success:false for passed checks and TotalsCheckCount counts
+// them as failures, and large CCRs can exceed the etcd 1.5 MiB object limit.
+// A control is failed if any mapped check has success:false on any scanned resource;
+// tested-passed iff at least one mapped check has an explicit success:true record from an
+// in-scope resource (matching family, scanner, kinds, namespaces, and nodeType/commands)
+// and zero mapped checks failed; absent records never produce a pass and never a failure.
+// Otherwise existing honest states (no failure recorded / not_evaluated) stay unchanged.
+// Cost: paginated reads of all 6 per-resource report collections on framework queries.
+// Escape hatch: if upstream fixes FromDetailReport and etcd sizing, a future change may
+// read CCR status directly after removing this join.
+function resolveEffectiveNodeTypes(
+  entry: TrivyCheckCatalogueEntry,
+  specControl: RawSpecControl | undefined,
+): Array<"master" | "worker"> {
+  const declaredNodeTypes = new Set<"master" | "worker">()
+  const ctrlNodeType = normalizeNodeType(specControl?.nodeType)
+  if (ctrlNodeType) declaredNodeTypes.add(ctrlNodeType)
+  for (const cmd of specControl?.commands ?? []) {
+    const nt = normalizeNodeType(cmd.nodeType)
+    if (nt) declaredNodeTypes.add(nt)
+  }
+  const catalogueNodeTypes = entry.nodeTypes ?? ["master", "worker"]
+  const applicableNodeTypes =
+    declaredNodeTypes.size > 0
+      ? catalogueNodeTypes.filter((nt) => declaredNodeTypes.has(nt))
+      : [...catalogueNodeTypes]
+  return applicableNodeTypes.length > 0 ? applicableNodeTypes : [...declaredNodeTypes]
+}
+
+function inScopeReportsForPasses(
+  canonicalId: string,
+  specControl: RawSpecControl | undefined,
+  ctx: FrameworkEvalContext,
+): readonly RawAuditReport[] {
+  const entry = getCatalogueCheck(canonicalId)
+  if (entry) {
+    switch (entry.reportFamily) {
+      case "infra": {
+        if (ctx.infraScannerEnabled === false || ctx.operatorConfigError || ctx.hasInfraReports === "unknown") {
+          return []
+        }
+        if (entry.kinds.includes("Node")) {
+          if (ctx.hasMasterNodes === "unknown" || ctx.hasWorkerNodes === "unknown") return []
+          const effectiveNodeTypes = resolveEffectiveNodeTypes(entry, specControl)
+          const presentNodeTypes = effectiveNodeTypes.filter((nt) =>
+            nt === "master" ? ctx.hasMasterNodes === true : ctx.hasWorkerNodes === true,
+          )
+          if (presentNodeTypes.length === 0) return []
+          return ctx.evidenceReports.infra.filter((r) => {
+            if (!isNodeInfraReport(r)) return false
+            const nodeName = r.metadata.labels?.["trivy-operator.resource.name"] ?? r.metadata.name.replace(/^node-/, "")
+            const role = ctx.nodeRoles.get(nodeName)
+            return role !== undefined && presentNodeTypes.includes(role)
+          })
+        }
+        for (const ns of entry.requiredNamespaces ?? []) {
+          if (isNamespaceExcluded(ns, ctx) !== false) return []
+        }
+        if (ctx.supportedConfigAuditKinds === "unknown") return []
+        const auditedKinds = entry.kinds.filter((k) =>
+          matchesSupportedKind(k, ctx.supportedConfigAuditKinds as ReadonlySet<string>),
+        )
+        if (auditedKinds.length === 0) return []
+        return ctx.evidenceReports.infra.filter((r) => {
+          if (!auditedKinds.some((k) => reportMatchesKind(r, k))) return false
+          const ns = r.metadata.namespace ?? ""
+          if (entry.requiredNamespaces && entry.requiredNamespaces.length > 0) {
+            return entry.requiredNamespaces.includes(ns) && isNamespaceExcluded(ns, ctx) === false
+          }
+          return ns === "" || isNamespaceExcluded(ns, ctx) === false
+        })
+      }
+
+      case "rbac": {
+        if (
+          ctx.rbacScannerEnabled === false ||
+          ctx.operatorConfigError ||
+          ctx.hasRbacReports === "unknown" ||
+          ctx.supportedConfigAuditKinds === "unknown"
+        ) {
+          return []
+        }
+        const auditedKinds = entry.kinds.filter((k) =>
+          matchesSupportedKind(k, ctx.supportedConfigAuditKinds as ReadonlySet<string>),
+        )
+        if (auditedKinds.length === 0) return []
+        const applicableRbacNamespaces = getApplicableNamespaces(entry)
+        return ctx.evidenceReports.rbac.filter((r) => {
+          if (!auditedKinds.some((k) => reportMatchesKind(r, k))) return false
+          const ns = r.metadata.namespace ?? ""
+          if (applicableRbacNamespaces !== null) {
+            return applicableRbacNamespaces.includes(ns) && isNamespaceExcluded(ns, ctx) === false
+          }
+          const kind = reportResourceKind(r)
+          if (kind === "ClusterRole" || !ns) return true
+          return isNamespaceExcluded(ns, ctx) === false
+        })
+      }
+
+      default: {
+        // ConfigAudit family
+        if (
+          ctx.configAuditScannerEnabled === false ||
+          ctx.operatorConfigError ||
+          ctx.hasConfigAuditReports === "unknown" ||
+          ctx.supportedConfigAuditKinds === "unknown"
+        ) {
+          return []
+        }
+        for (const ns of [...(entry.requiredNamespaces ?? []), ...(entry.scopeNamespaces ?? [])]) {
+          if (isNamespaceExcluded(ns, ctx) !== false) return []
+        }
+        const auditedKinds = entry.kinds.filter((k) =>
+          matchesSupportedKind(k, ctx.supportedConfigAuditKinds as ReadonlySet<string>),
+        )
+        if (auditedKinds.length === 0) return []
+        const applicableNamespaces = getApplicableNamespaces(entry)
+        return ctx.evidenceReports.config.filter((r) => {
+          if (!auditedKinds.some((k) => reportMatchesKind(r, k))) return false
+          const ns = r.metadata.namespace ?? ""
+          if (applicableNamespaces !== null) {
+            return applicableNamespaces.includes(ns) && isNamespaceExcluded(ns, ctx) === false
+          }
+          if (!ns) return true
+          return isNamespaceExcluded(ns, ctx) === false
+        })
+      }
+    }
+  }
+
+  // Uncatalogued check ID: still enforce operator/scanner availability, namespace exclusion,
+  // and declared nodeType/commands scope on Node infra reports.
+  if (ctx.operatorConfigError) return []
+  const declaredNodeTypes = new Set<"master" | "worker">()
+  const ctrlNodeType = normalizeNodeType(specControl?.nodeType)
+  if (ctrlNodeType) declaredNodeTypes.add(ctrlNodeType)
+  for (const cmd of specControl?.commands ?? []) {
+    const nt = normalizeNodeType(cmd.nodeType)
+    if (nt) declaredNodeTypes.add(nt)
+  }
+  const candidates: RawAuditReport[] = []
+  if (ctx.configAuditScannerEnabled !== false && ctx.hasConfigAuditReports !== "unknown") {
+    candidates.push(...ctx.evidenceReports.config)
+  }
+  if (ctx.rbacScannerEnabled !== false && ctx.hasRbacReports !== "unknown") {
+    candidates.push(...ctx.evidenceReports.rbac)
+  }
+  if (ctx.infraScannerEnabled !== false && ctx.hasInfraReports !== "unknown") {
+    candidates.push(...ctx.evidenceReports.infra)
+  }
+  return candidates.filter((r) => {
+    const ns = r.metadata.namespace ?? ""
+    if (ns !== "" && isNamespaceExcluded(ns, ctx) !== false) return false
+    if (isNodeInfraReport(r) && declaredNodeTypes.size > 0) {
+      if (ctx.hasMasterNodes === "unknown" || ctx.hasWorkerNodes === "unknown") return false
+      const nodeName = r.metadata.labels?.["trivy-operator.resource.name"] ?? r.metadata.name.replace(/^node-/, "")
+      const role = ctx.nodeRoles.get(nodeName)
+      return role !== undefined && declaredNodeTypes.has(role)
+    }
+    return true
+  })
+}
+
+function controlEvidencePasses(
+  canonicalId: string,
+  specControl: RawSpecControl | undefined,
+  ctx: FrameworkEvalContext,
+): number {
+  if (!canonicalId) return 0
+  const reports = inScopeReportsForPasses(canonicalId, specControl, ctx)
+  const seenTargets = new Set<string>()
+  for (const r of reports) {
+    const ns = r.metadata.namespace ?? ""
+    for (const c of r.report?.checks ?? []) {
+      if (c.success !== true) continue
+      const checkCanonical = resolveCanonicalCheckId(c.checkID ?? "")
+      if (checkCanonical !== canonicalId) continue
+      const labels = r.metadata.labels ?? {}
+      const owner = r.metadata.ownerReferences?.[0]
+      const kind = labels["trivy-operator.resource.kind"] ?? owner?.kind ?? "Unknown"
+      const name =
+        owner?.name ??
+        labels["trivy-operator.resource.name"] ??
+        r.metadata.annotations?.["trivy-operator.resource.name"] ??
+        r.metadata.name
+      seenTargets.add(`${ns}/${kind.toLowerCase()}-${name}`)
+    }
+  }
+  return seenTargets.size
 }
 
 // D-CHECK-SCOPE-NS: Enforce both `requiredNamespaces` and `scopeNamespaces` from the check
@@ -1636,19 +1915,7 @@ function evaluateCheckAgainstCatalogue(
           notEvaluatedDetail: "node list unavailable",
         }
       }
-      const declaredNodeTypes = new Set<"master" | "worker">()
-      const ctrlNodeType = normalizeNodeType(specControl.nodeType)
-      if (ctrlNodeType) declaredNodeTypes.add(ctrlNodeType)
-      for (const cmd of specControl.commands ?? []) {
-        const nt = normalizeNodeType(cmd.nodeType)
-        if (nt) declaredNodeTypes.add(nt)
-      }
-      const catalogueNodeTypes = entry.nodeTypes ?? ["master", "worker"]
-      const applicableNodeTypes =
-        declaredNodeTypes.size > 0
-          ? catalogueNodeTypes.filter((nt) => declaredNodeTypes.has(nt))
-          : [...catalogueNodeTypes]
-      const effectiveNodeTypes = applicableNodeTypes.length > 0 ? applicableNodeTypes : [...declaredNodeTypes]
+      const effectiveNodeTypes = resolveEffectiveNodeTypes(entry, specControl)
 
       if (evalCtx.hasMasterNodes === false && evalCtx.hasWorkerNodes === false) {
         return {
@@ -1908,12 +2175,14 @@ function classifyNonFailingControl(
   specControl: RawSpecControl | undefined,
   evalCtx: FrameworkEvalContext,
   specHasAutomatedChecks: boolean,
+  hasDetailReport: boolean,
+  presentInDetailReport: boolean,
 ): NonFailingControlOutcome {
   if (evalCtx.hasHttpError) {
     return { evaluationState: "not_evaluated", notEvaluatedReason: "coverage_unknown", notEvaluatedDetail: evalCtx.failedAuxSources.join(", ") }
   }
   const checks = resultControl.checks ?? []
-  if (checks.length === 0 && !specControl?.checks?.length) {
+  if (presentInDetailReport && checks.length === 0 && !specControl?.checks?.length) {
     return {
       evaluationState: "not_evaluated",
       notEvaluatedReason: "empty_checks",
@@ -1937,6 +2206,13 @@ function classifyNonFailingControl(
   // `coverage_unknown`; missing check linkage cannot establish report family or scope.
   if (!Array.isArray(specControl.checks)) {
     const hasCommands = Array.isArray(specControl.commands) && specControl.commands.length > 0
+    if (!hasDetailReport && !specHasAutomatedChecks) {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "summary_only",
+        notEvaluatedDetail: "ClusterComplianceReport detailReport.results absent (reportType=summary)",
+      }
+    }
     if (specHasAutomatedChecks && !hasCommands) {
       return {
         evaluationState: "not_evaluated",
@@ -1970,24 +2246,72 @@ function classifyNonFailingControl(
     }
   }
 
-  // Lower-case check IDs in spec (e.g. avd-ksv-*) never match Trivy report IDs.
-  const nonUpperIds = rawIds.filter((id) => id !== id.toUpperCase())
-  if (nonUpperIds.length > 0) {
-    return {
-      evaluationState: "not_evaluated",
-      notEvaluatedReason: "unlinked_check_id",
-      notEvaluatedDetail: nonUpperIds.join(", "),
+  const normIds = Array.from(new Set(rawIds.map(resolveCanonicalCheckId).filter(Boolean)))
+  const passByCheck = new Map<string, number>()
+  let totalExplicitPasses = 0
+  for (const id of normIds) {
+    const count = controlEvidencePasses(id, specControl, evalCtx)
+    passByCheck.set(id, count)
+    totalExplicitPasses += count
+  }
+
+  // D-COMPLIANCE-VERDICT-SOURCE: a control with zero failing records on any mapped check and
+  // at least one explicit in-scope success:true record from per-resource reports is tested-passed,
+  // even when status.detailReport is absent or other in-scope mapped checks have no records
+  // (absent records never produce a pass and never produce a failure). Still enforce every mapped
+  // check's scope coverage via evaluateCheckAgainstCatalogue so mixed-family or missing_node_type
+  // controls cannot become tested-passed while a sibling check lacks scope coverage.
+  if (totalExplicitPasses === 0) {
+    if (!hasDetailReport) {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "summary_only",
+        notEvaluatedDetail: "ClusterComplianceReport detailReport.results absent (reportType=summary)",
+      }
+    }
+    if (!presentInDetailReport) {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "absent_from_report",
+        notEvaluatedDetail: "absent from status.detailReport.results",
+      }
+    }
+    // Lower-case check IDs in spec (e.g. avd-ksv-*) never match Trivy 0.25.0 report IDs when no
+    // per-resource records exist.
+    const nonUpperIds = rawIds.filter((id) => id !== id.toUpperCase())
+    if (nonUpperIds.length > 0) {
+      return {
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "unlinked_check_id",
+        notEvaluatedDetail: nonUpperIds.join(", "),
+      }
     }
   }
 
-  const normIds = rawIds.map(resolveCanonicalCheckId)
   for (const id of normIds) {
     const outcome = evaluateCheckAgainstCatalogue(id, specControl, evalCtx)
-    if (outcome.evaluationState !== "passed") {
-      return outcome
+    if (outcome.evaluationState === "passed") continue
+    // D-VERDICT-UNKNOWN-CHECK: unexecutable check means partial coverage; cost: such controls stay
+    // not_evaluated even with passes on other checks; escape hatch: remove the unknown id from the
+    // framework mapping or add it to the catalogue.
+    if (
+      totalExplicitPasses > 0 &&
+      (outcome.notEvaluatedReason === "infra_no_per_check_evidence" ||
+        (outcome.notEvaluatedReason === "not_in_catalogue" && (passByCheck.get(id) ?? 0) > 0))
+    ) {
+      continue
+    }
+    return outcome
+  }
+
+  if (totalExplicitPasses > 0) {
+    return {
+      evaluationState: "passed",
+      testedByReport: true,
+      passCount: totalExplicitPasses,
     }
   }
-  return { evaluationState: "passed" }
+  return { evaluationState: "passed", passCount: 0 }
 }
 
 export function summarizeComplianceControls(
@@ -1996,6 +2320,8 @@ export function summarizeComplianceControls(
 ): {
   evaluatedPassCount: number
   benchmarkTestedPassCount: number
+  reportTestedPassCount: number
+  testedPassCount: number
   benchmarkTestedFailCount: number
   noFailureRecordedPassCount: number
   notEvaluatedCount: number
@@ -2040,11 +2366,17 @@ export function summarizeComplianceControls(
   const benchmarkTestedPassCount = controls.filter(
     (c) => c.evaluationState === "passed" && c.testedByBenchmark === true,
   ).length
+  const reportTestedPassCount = controls.filter(
+    (c) => c.evaluationState === "passed" && c.testedByReport === true,
+  ).length
+  const testedPassCount = controls.filter(
+    (c) => c.evaluationState === "passed" && (c.testedByBenchmark === true || c.testedByReport === true),
+  ).length
   const benchmarkTestedFailCount = controls.filter(
     (c) => c.evaluationState === "failed" && c.benchmarkEvidence?.verdict === "failed",
   ).length
   const noFailureRecordedPassCount = controls.filter(
-    (c) => c.evaluationState === "passed" && c.testedByBenchmark !== true,
+    (c) => c.evaluationState === "passed" && c.testedByBenchmark !== true && c.testedByReport !== true,
   ).length
   const notEvaluatedCount =
     controls.length > 0
@@ -2054,6 +2386,8 @@ export function summarizeComplianceControls(
   return {
     evaluatedPassCount,
     benchmarkTestedPassCount,
+    reportTestedPassCount,
+    testedPassCount,
     benchmarkTestedFailCount,
     noFailureRecordedPassCount,
     notEvaluatedCount,
@@ -2074,151 +2408,131 @@ function buildComplianceFrameworkData(
   evalCtx: FrameworkEvalContext,
 ): { summary: ComplianceFramework; detail: ComplianceFrameworkDetail } {
   const passCount = item.status?.summary?.passCount ?? 0
-  const failCount = item.status?.summary?.failCount ?? 0
+  const rawSummaryFailCount = item.status?.summary?.failCount ?? 0
 
-  // status.detailReport.results 가 있으면 per-control 사용, 없으면 spec.compliance.controls 폴백.
-  // (Trivy reportType=summary 이면 detailReport 비어있음 — 실패 증거 없는 컨트롤은 not_evaluated.
-  //  reportType=all 이면 results[].checks[].success 및 spec/cluster coverage로 3-상태 집계.)
   const reportedControls = item.status?.detailReport?.results ?? []
-  const detailControls = [...reportedControls]
+  const reportedControlMap = new Map(reportedControls.map((r) => [r.id, r]))
+  const hasDetailReport = reportedControls.length > 0
   const specControls = item.spec.compliance.controls ?? []
   const specControlMap = new Map(specControls.map((sc) => [sc.id, sc]))
   const specHasAutomatedChecks = specControls.some((sc) => Array.isArray(sc.checks) && sc.checks.length > 0)
 
-  // D2: Underlying failures outrank the 6-hourly CCR, including omitted controls.
-  // Cost: check-ID join; escape hatch: remove once CCR freshness is guaranteed upstream.
-  for (const sc of specControls) {
-    if (!detailControls.some((c) => c.id === sc.id) && controlEvidenceFailures(sc, evalCtx).length > 0) {
-      detailControls.push({ ...sc, checks: [] })
-    }
-  }
-  let controls: ComplianceControl[]
-  if (detailControls.length > 0) {
-    controls = detailControls.map((c) => {
-      const checks = [...(c.checks ?? [])]
-      const specControl = specControlMap.get(c.id)
-      const evidenceSpec = specControl?.checks ? specControl : { ...specControl, ...c, checks: checks.map((k) => ({ id: k.checkID })) }
-      for (const failure of controlEvidenceFailures(evidenceSpec, evalCtx)) {
-        const target = parseComplianceTarget(failure.target)
-        const alreadyReported = checks.some((k) => {
-          if (k.success !== false) return false
-          if (resolveCanonicalCheckId(k.checkID ?? "") !== resolveCanonicalCheckId(failure.checkID)) return false
-          const resolved = reportTargetMap.get(k.target ?? "") ?? parseComplianceTarget(k.target)
-          if (resolved && target) {
-            return resolved.namespace === target.namespace && resolved.kind === target.kind && resolved.name === target.name
-          }
-          return (k.target ?? "") === failure.target
-        })
-        if (!alreadyReported) checks.push(failure)
-      }
-      let ctrlPass = 0
-      let ctrlFail = 0
-      let actionableFailCount = 0
-      let acceptedFailCount = 0
-      let droppedFailCount = 0
-      const scopes = new Set<FrameworkAcceptedToken>()
-
-      for (const k of checks) {
-        if (k.success === true) {
-          ctrlPass++
-          continue
-        }
-        ctrlFail++
-        const disp = classifyFrameworkCheck(k, rsMap, reportTargetMap, missingReplicaSets)
-        if (disp.status === "accepted") {
-          acceptedFailCount++
-          scopes.add(disp.scope)
-        } else if (disp.status === "actionable") {
-          actionableFailCount++
-        } else if (disp.status === "dropped") {
-          droppedFailCount++
-        }
-      }
-
-      if (ctrlFail > 0) {
-        const accepted = ctrlFail > 0 && actionableFailCount === 0 && acceptedFailCount > 0
-        return {
-          id: c.id,
-          name: c.name,
-          severity: mapSeverity(c.severity),
-          passCount: ctrlPass,
-          failCount: ctrlFail,
-          actionableFailCount,
-          acceptedFailCount,
-          droppedFailCount,
-          evaluationState: "failed" as const,
-          accepted,
-          ...(accepted ? { acceptedScope: resolveFrameworkAcceptedScope(scopes) } : {}),
-          description: c.description,
-        }
-      }
-
-      const evalOutcome = classifyNonFailingControl(c, specControlMap.get(c.id), evalCtx, specHasAutomatedChecks)
-      return {
-        id: c.id,
-        name: c.name,
-        severity: mapSeverity(c.severity),
-        passCount: evalOutcome.evaluationState === "passed" ? ctrlPass : 0,
-        failCount: 0,
-        actionableFailCount: 0,
-        acceptedFailCount: 0,
-        droppedFailCount: 0,
-        evaluationState: evalOutcome.evaluationState,
-        ...(evalOutcome.notEvaluatedReason ? { notEvaluatedReason: evalOutcome.notEvaluatedReason } : {}),
-        ...(evalOutcome.notEvaluatedDetail ? { notEvaluatedDetail: evalOutcome.notEvaluatedDetail } : {}),
-        accepted: false,
-        description: c.description,
-      }
-    })
-    // Materialise any spec control omitted from status.detailReport.results so it stays visible
-    // in the UI and in notEvaluatedCount instead of silently disappearing.
-    const detailControlIds = new Set(detailControls.map((c) => c.id))
-    for (const sc of specControls) {
-      if (detailControlIds.has(sc.id)) continue
-      controls.push({
-        id: sc.id,
-        name: sc.name,
-        severity: mapSeverity(sc.severity),
-        passCount: 0,
-        failCount: 0,
-        actionableFailCount: 0,
-        acceptedFailCount: 0,
-        droppedFailCount: 0,
-        evaluationState: "not_evaluated",
-        notEvaluatedReason: "absent_from_report",
-        notEvaluatedDetail: "absent from status.detailReport.results",
-        ...(evalCtx.hasHttpError ? { notEvaluatedReason: "coverage_unknown" as const, notEvaluatedDetail: evalCtx.failedAuxSources.join(", ") } : {}),
-        accepted: false,
-        description: sc.description,
+  // D-COMPLIANCE-VERDICT-SOURCE: drive control evaluation from spec.compliance.controls[]
+  // joined against per-resource reports rather than status.detailReport.results[].checks.
+  // Include any extra IDs present only in detailReport so nothing silently disappears.
+  const controlEntries: Array<{
+    id: string
+    name: string
+    severity: string
+    description?: string
+    specControl: RawSpecControl | undefined
+    reportedControl: (typeof reportedControls)[number] | undefined
+  }> = specControls.map((sc) => ({
+    id: sc.id,
+    name: sc.name,
+    severity: sc.severity,
+    description: sc.description,
+    specControl: sc,
+    reportedControl: reportedControlMap.get(sc.id),
+  }))
+  for (const rc of reportedControls) {
+    if (!specControlMap.has(rc.id)) {
+      controlEntries.push({
+        id: rc.id,
+        name: rc.name,
+        severity: rc.severity,
+        description: rc.description,
+        specControl: undefined,
+        reportedControl: rc,
       })
     }
-  } else {
-    controls = specControls.map((c) => ({
-      id: c.id,
-      name: c.name,
-      severity: mapSeverity(c.severity),
-      passCount: 0,
+  }
+
+  let controls: ComplianceControl[] = controlEntries.map(({ id, name, severity, description, specControl, reportedControl }) => {
+    const evidenceSpec = specControl
+    let ctrlFail = 0
+    let actionableFailCount = 0
+    let acceptedFailCount = 0
+    let droppedFailCount = 0
+    const scopes = new Set<FrameworkAcceptedToken>()
+
+    for (const failure of controlEvidenceFailures(evidenceSpec, evalCtx)) {
+      ctrlFail++
+      const disp = classifyFrameworkCheck(failure, rsMap, reportTargetMap, missingReplicaSets)
+      if (disp.status === "accepted") {
+        acceptedFailCount++
+        scopes.add(disp.scope)
+      } else if (disp.status === "actionable") {
+        actionableFailCount++
+      } else if (disp.status === "dropped") {
+        droppedFailCount++
+      }
+    }
+
+    if (ctrlFail > 0) {
+      const normIds = Array.from(
+        new Set((specControl?.checks ?? []).map((c) => resolveCanonicalCheckId(c.id ?? "")).filter(Boolean)),
+      )
+      const ctrlPass = normIds.reduce((sum, cid) => sum + controlEvidencePasses(cid, specControl, evalCtx), 0)
+      const accepted = ctrlFail > 0 && actionableFailCount === 0 && acceptedFailCount > 0
+      return {
+        id,
+        name,
+        severity: mapSeverity(severity),
+        passCount: ctrlPass,
+        failCount: ctrlFail,
+        actionableFailCount,
+        acceptedFailCount,
+        droppedFailCount,
+        evaluationState: "failed" as const,
+        accepted,
+        ...(accepted ? { acceptedScope: resolveFrameworkAcceptedScope(scopes) } : {}),
+        description,
+      }
+    }
+
+    const fallbackResult = reportedControl ?? { id, name, severity, description, checks: [] }
+    const evalOutcome = classifyNonFailingControl(
+      fallbackResult,
+      specControl,
+      evalCtx,
+      specHasAutomatedChecks,
+      hasDetailReport,
+      reportedControl !== undefined,
+    )
+    return {
+      id,
+      name,
+      severity: mapSeverity(severity),
+      passCount: evalOutcome.evaluationState === "passed" ? (evalOutcome.passCount ?? 0) : 0,
       failCount: 0,
       actionableFailCount: 0,
       acceptedFailCount: 0,
       droppedFailCount: 0,
-      evaluationState: "not_evaluated" as const,
-      notEvaluatedReason: "summary_only" as const,
-      notEvaluatedDetail: "ClusterComplianceReport detailReport.results absent (reportType=summary)",
-      ...(evalCtx.hasHttpError ? { notEvaluatedReason: "coverage_unknown" as const, notEvaluatedDetail: evalCtx.failedAuxSources.join(", ") } : {}),
+      evaluationState: evalOutcome.evaluationState,
+      ...(evalOutcome.testedByReport ? { testedByReport: true } : {}),
+      ...(evalOutcome.notEvaluatedReason ? { notEvaluatedReason: evalOutcome.notEvaluatedReason } : {}),
+      ...(evalOutcome.notEvaluatedDetail ? { notEvaluatedDetail: evalOutcome.notEvaluatedDetail } : {}),
       accepted: false,
-      description: c.description,
-    }))
-  }
+      description,
+    }
+  })
 
   if (item.spec.compliance.id === "k8s-cis-1.23") {
     controls = controls.map((ctrl) => mergeCisControlWithBenchmark(ctrl, evalCtx.benchmarkStore))
   }
 
-  const totalControls = Math.max(controls.length, specControls.length) || passCount + failCount
+  // When spec.compliance.controls carries check mappings, per-resource reports (and kube-bench)
+  // are the sole verdict source; ignore status.summary.failCount because trivy-operator 0.36.1
+  // TotalsCheckCount counts passed checks as failures. Keep summary fallback only when no spec
+  // check mapping exists (fail-closed for trimmed/summary-only specs).
+  const fallbackFailCount = specHasAutomatedChecks ? 0 : rawSummaryFailCount
+  const totalControls = Math.max(controls.length, specControls.length) || passCount + rawSummaryFailCount
   const {
     evaluatedPassCount,
     benchmarkTestedPassCount,
+    reportTestedPassCount,
+    testedPassCount,
     benchmarkTestedFailCount,
     noFailureRecordedPassCount,
     notEvaluatedCount,
@@ -2229,7 +2543,7 @@ function buildComplianceFrameworkData(
     droppedCheckCount,
     unaccountedFailTotal,
   } = summarizeComplianceControls(controls, {
-    failCount,
+    failCount: fallbackFailCount,
     totalControls,
   })
 
@@ -2246,6 +2560,7 @@ function buildComplianceFrameworkData(
     rawPassCount: passCount,
     evaluatedPassCount,
     benchmarkTestedPassCount,
+    ...(reportTestedPassCount > 0 ? { reportTestedPassCount, testedPassCount } : {}),
     benchmarkTestedFailCount,
     noFailureRecordedPassCount,
     notEvaluatedCount,
@@ -2282,7 +2597,7 @@ async function fetchFrameworkContext(): Promise<{
 }> {
   let list: RawComplianceList
   try {
-    list = await complianceK8sFetch<RawComplianceList>(
+    list = await complianceK8sListPaged<RawComplianceReport>(
       "/apis/aquasecurity.github.io/v1alpha1/clustercompliancereports",
     )
   } catch (err) {
@@ -2304,13 +2619,13 @@ async function fetchFrameworkContext(): Promise<{
     benchmarkCmRes,
   ] = await Promise.all([
     fetchReplicaSetMap(),
-    tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
-    tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"),
-    tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports"),
-    tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports"),
-    tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports"),
-    tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports"),
-    tryComplianceK8sFetch<RawNodeList>("/api/v1/nodes"),
+    tryComplianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
+    tryComplianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/clusterconfigauditreports"),
+    tryComplianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/rbacassessmentreports"),
+    tryComplianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/clusterrbacassessmentreports"),
+    tryComplianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/infraassessmentreports"),
+    tryComplianceK8sListPaged<RawAuditReport>("/apis/aquasecurity.github.io/v1alpha1/clusterinfraassessmentreports"),
+    tryComplianceK8sListPaged<NonNullable<RawNodeList["items"]>[number]>("/api/v1/nodes"),
     tryComplianceK8sFetch<RawDeployment>("/apis/apps/v1/namespaces/security-system/deployments/trivy-operator"),
     tryComplianceK8sFetch<RawConfigMap>("/api/v1/namespaces/security-system/configmaps/trivy-operator-trivy-config"),
     tryComplianceK8sFetch<RawConfigMapList>(BENCHMARK_CONFIGMAP_LIST_PATH),

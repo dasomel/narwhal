@@ -92,7 +92,7 @@ rules:
   # evaluation of KISA-TLS-01 (Istio PeerAuthentications: list), KISA-SEC-01/IMG-02 (CronJobs:
   # get+list), KISA-IMG-02 (Kyverno PolicyReports: list), and KISA-NET-01/ETCD-02
   # (CiliumNetworkPolicies + further read-only widening to CiliumClusterwideNetworkPolicies: list-only).
-  # No get/watch/write verbs and no Secret read added.
+  # No watch or write verbs and no Secret read added (get only on cronjobs).
   - apiGroups: [security.istio.io]
     resources: [peerauthentications]
     verbs: [list]

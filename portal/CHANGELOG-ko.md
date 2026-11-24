@@ -9,11 +9,13 @@
 
 ## [Unreleased]
 
+## [1.1.28] - 2026-11-25
+
 ### 변경
 
 - **Compliance 리소스별 리포트 판정 원천 전환 (`D-COMPLIANCE-VERDICT-SOURCE`, `src/lib/compliance.ts`, `src/lib/trivy-check-catalogue.ts`, `src/types/compliance.ts`, `src/components/compliance/failure-counters.tsx`, `src/components/compliance/frameworks-grid.tsx`, `src/app/(dashboard)/compliance/frameworks/[id]/page.tsx`):**
   - 프레임워크 통제 판정 원천을 `ClusterComplianceReport.status.detailReport.results[].checks`에서 기존 `ClusterRole/narwhal-portal` 권한으로 조회 가능한 리소스별 Trivy 리포트 6종(`configauditreports`, `clusterconfigauditreports`, `rbacassessmentreports`, `clusterrbacassessmentreports`, `infraassessmentreports`, `clusterinfraassessmentreports`)의 페이지네이션 조회(`limit=200`, `metadata.continue`, `410 Gone` 1회 재시작)로 전환하고 `ClusterComplianceReport.spec.compliance.controls[].checks[].id`와 `resolveCanonicalCheckId`(`AVD-KSV-0001`/`KSV001`/`KSV-0001`/`KCV0033` 정규화, `KSV0012`·`KSV012` 비충돌 유지)로 조인하도록 변경했습니다(RBAC 확장 없음).
-  - 매핑된 점검 중 하나라도 `success: false`가 있으면 `failed`(기존 정확 수용 규칙 및 `kube-bench` 실패 우선 병합·`sourceDisagreement` 유지), 실패 없이 명시적 `success: true` 기록이 1건 이상 있으면 `tested-passed`(`testedByReport: true`, 선택 필드 `reportTestedPassCount`·중복 제거 `testedPassCount` 집계), 그 외에는 기존 정직 상태(`실패 기록 없음` / `미평가`)를 유지하며 기록 부재로 통과를 추론하지 않습니다. `status.detailReport` 체크와 부풀려진 `status.summary.failCount`를 판정 원천에서 제외해 `trivy-operator` `0.36.1`(`reportRecordFailedChecksOnly: "false"`)의 `FromDetailReport` 버그로 통과 항목이 실패로 오판되는 문제를 차단했으며, `0.25.0` 라이브 클러스터 출력은 5개 프레임워크 전 카운트 필드에서 기존 `1.1.27` 실측과 동일함을 포털 ServiceAccount 읽기 전용 조회로 확인했습니다(2026-11-25).
+  - 매핑된 점검 중 하나라도 `success: false`가 있으면 `failed`(기존 정확 수용 규칙 및 `kube-bench` 실패 우선 병합·`sourceDisagreement` 유지), 실패 없이 통제 범위(노드 종류·네임스페이스·리소스 종류) 안의 리소스에 명시적 `success: true` 기록이 1건 이상 있으면 `tested-passed`(`testedByReport: true`, 선택 필드 `reportTestedPassCount`·중복 제거 `testedPassCount` 집계), 그 외에는 기존 정직 상태(`실패 기록 없음` / `미평가`)를 유지하며 기록 부재로 통과를 추론하지 않습니다. trivy-checks 카탈로그에 없는 점검이 매핑된 통제는 미평가로 남습니다(`D-VERDICT-UNKNOWN-CHECK`). `status.detailReport` 체크와 부풀려진 `status.summary.failCount`를 판정 원천에서 제외해 `trivy-operator` `0.36.1`(`reportRecordFailedChecksOnly: "false"`)의 `FromDetailReport` 버그로 통과 항목이 실패로 오판되는 문제를 차단했으며, `0.25.0` 라이브 클러스터 출력은 5개 프레임워크 전 카운트 필드에서 기존 `1.1.27` 실측과 동일함을 포털 ServiceAccount 읽기 전용 조회로 확인했습니다(2026-11-25).
 
 ## [1.1.27] - 2026-11-25
 
@@ -985,7 +987,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.27...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.28...HEAD
+[1.1.28]: https://github.com/dasomel/narwhal/compare/portal/v1.1.27...portal/v1.1.28
 [1.1.27]: https://github.com/dasomel/narwhal/compare/portal/v1.1.26...portal/v1.1.27
 [1.1.26]: https://github.com/dasomel/narwhal/compare/portal/v1.1.25...portal/v1.1.26
 [1.1.25]: https://github.com/dasomel/narwhal/compare/portal/v1.1.24...portal/v1.1.25

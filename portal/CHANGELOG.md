@@ -9,11 +9,13 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.28] - 2026-11-25
+
 ### Changed
 
 - **Compliance per-resource verdict source (`D-COMPLIANCE-VERDICT-SOURCE`, `src/lib/compliance.ts`, `src/lib/trivy-check-catalogue.ts`, `src/types/compliance.ts`, `src/components/compliance/failure-counters.tsx`, `src/components/compliance/frameworks-grid.tsx`, `src/app/(dashboard)/compliance/frameworks/[id]/page.tsx`):**
   - Switched framework control verdicts from `ClusterComplianceReport.status.detailReport.results[].checks` to paginated (`limit=200` with `metadata.continue` and single `410 Gone` restart) reads of per-resource Trivy reports (`configauditreports`, `clusterconfigauditreports`, `rbacassessmentreports`, `clusterrbacassessmentreports`, `infraassessmentreports`, `clusterinfraassessmentreports`, already permitted by `ClusterRole/narwhal-portal` without RBAC changes), joined via `ClusterComplianceReport.spec.compliance.controls[].checks[].id` and normalized with `resolveCanonicalCheckId` (including `AVD-KSV-0001`/`KSV001`/`KSV-0001`/`KCV0033` without colliding `KSV0012` and `KSV012`).
-  - A control is `failed` if any mapped check has `success: false` on any scanned resource (preserving exact acceptance rules and `kube-bench` failure-first merge/`sourceDisagreement`), `tested-passed` (`testedByReport: true`, counted in optional `reportTestedPassCount` and deduplicated `testedPassCount`) only when at least one mapped check has an explicit `success: true` record and none failed, and otherwise retains existing honest `no failure recorded` / `not_evaluated` states without inferring a pass from absence. Ignoring `status.detailReport` checks and inflated `status.summary.failCount` prevents `trivy-operator` `0.36.1` (`reportRecordFailedChecksOnly: "false"`) from misclassifying passed checks as failures while keeping `0.25.0` live output identical (verified read-only against `narwhal-portal` ServiceAccount on 2026-11-25 across all 5 frameworks).
+  - A control is `failed` if any mapped check has `success: false` on any scanned resource (preserving exact acceptance rules and `kube-bench` failure-first merge/`sourceDisagreement`), `tested-passed` (`testedByReport: true`, counted in optional `reportTestedPassCount` and deduplicated `testedPassCount`) only when at least one mapped check has an explicit `success: true` record on a resource inside the control's scope (node type, namespace, kinds) and none failed; a mapped check missing from the trivy-checks catalogue keeps the control not evaluated (`D-VERDICT-UNKNOWN-CHECK`), and otherwise retains existing honest `no failure recorded` / `not_evaluated` states without inferring a pass from absence. Ignoring `status.detailReport` checks and inflated `status.summary.failCount` prevents `trivy-operator` `0.36.1` (`reportRecordFailedChecksOnly: "false"`) from misclassifying passed checks as failures while keeping `0.25.0` live output identical (verified read-only against `narwhal-portal` ServiceAccount on 2026-11-25 across all 5 frameworks).
 
 ## [1.1.27] - 2026-11-25
 
@@ -1031,7 +1033,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.27...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.28...HEAD
+[1.1.28]: https://github.com/dasomel/narwhal/compare/portal/v1.1.27...portal/v1.1.28
 [1.1.27]: https://github.com/dasomel/narwhal/compare/portal/v1.1.26...portal/v1.1.27
 [1.1.26]: https://github.com/dasomel/narwhal/compare/portal/v1.1.25...portal/v1.1.26
 [1.1.25]: https://github.com/dasomel/narwhal/compare/portal/v1.1.24...portal/v1.1.25

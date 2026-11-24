@@ -1,12 +1,13 @@
 "use client"
 import { useState, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { useT } from "@/lib/i18n-client"
+import { useT, useLocale } from "@/lib/i18n-client"
+import { pick } from "@/lib/i18n-utils"
 import { DataState } from "@/components/ui/data-state"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { fetchComplianceJson } from "./fetch-json"
-import type { KisaResponse, KisaControl, KisaStatus } from "@/types/kisa"
+import type { KisaResponse, KisaControl, KisaReasonKey, KisaStatus } from "@/types/kisa"
 import type { Severity } from "@/types/security"
 
 const severityBadgeClass: Record<Severity, string> = {
@@ -32,18 +33,98 @@ function SummaryBadge({ label, count, className }: { label: string; count: numbe
   )
 }
 
+function kisaReasonLabel(key: KisaReasonKey, t: ReturnType<typeof useT>): string {
+  switch (key) {
+    case "compliance.kisa.reason.apiForbidden": return t("compliance.kisa.reason.apiForbidden")
+    case "compliance.kisa.reason.apiUnavailable": return t("compliance.kisa.reason.apiUnavailable")
+    case "compliance.kisa.reason.listTruncated": return t("compliance.kisa.reason.listTruncated")
+    case "compliance.kisa.reason.resourceMissing": return t("compliance.kisa.reason.resourceMissing")
+    case "compliance.kisa.reason.etcdNoTlsBaseline": return t("compliance.kisa.reason.etcdNoTlsBaseline")
+    case "compliance.kisa.reason.etcdIsolatedPlainHttp": return t("compliance.kisa.reason.etcdIsolatedPlainHttp")
+    case "compliance.kisa.reason.etcdPolicyMissing": return t("compliance.kisa.reason.etcdPolicyMissing")
+    case "compliance.kisa.reason.etcdPolicyBroad": return t("compliance.kisa.reason.etcdPolicyBroad")
+    case "compliance.kisa.reason.etcdPolicyUnreviewed": return t("compliance.kisa.reason.etcdPolicyUnreviewed")
+    case "compliance.kisa.reason.etcdPolicySelectorMismatch": return t("compliance.kisa.reason.etcdPolicySelectorMismatch")
+    case "compliance.kisa.reason.etcdContainerMissing": return t("compliance.kisa.reason.etcdContainerMissing")
+    case "compliance.kisa.reason.secCronJobNotEvaluated": return t("compliance.kisa.reason.secCronJobNotEvaluated")
+    case "compliance.kisa.reason.secNoExternalKms": return t("compliance.kisa.reason.secNoExternalKms")
+    case "compliance.kisa.reason.secSecretMetaNotEvaluated": return t("compliance.kisa.reason.secSecretMetaNotEvaluated")
+    case "compliance.kisa.reason.secCronJobWeak": return t("compliance.kisa.reason.secCronJobWeak")
+    case "compliance.kisa.reason.secSecretExposed": return t("compliance.kisa.reason.secSecretExposed")
+    case "compliance.kisa.reason.imgNodeManual": return t("compliance.kisa.reason.imgNodeManual")
+    case "compliance.kisa.reason.tlsStrictNoExceptions": return t("compliance.kisa.reason.tlsStrictNoExceptions")
+    case "compliance.kisa.reason.tlsStrictWithExceptions": return t("compliance.kisa.reason.tlsStrictWithExceptions")
+    case "compliance.kisa.reason.tlsNotStrict": return t("compliance.kisa.reason.tlsNotStrict")
+    case "compliance.kisa.reason.tlsMultipleMeshWide": return t("compliance.kisa.reason.tlsMultipleMeshWide")
+    case "compliance.kisa.reason.tlsMeshWideMissing": return t("compliance.kisa.reason.tlsMeshWideMissing")
+    case "compliance.kisa.reason.obsConfigured": return t("compliance.kisa.reason.obsConfigured")
+    case "compliance.kisa.reason.obsNoChannel": return t("compliance.kisa.reason.obsNoChannel")
+    case "compliance.kisa.reason.obsInvalidDestination": return t("compliance.kisa.reason.obsInvalidDestination")
+    case "compliance.kisa.reason.obsFalcoDown": return t("compliance.kisa.reason.obsFalcoDown")
+    case "compliance.kisa.reason.obsConfigMissing": return t("compliance.kisa.reason.obsConfigMissing")
+    case "compliance.kisa.reason.imgPolicyEnforced": return t("compliance.kisa.reason.imgPolicyEnforced")
+    case "compliance.kisa.reason.imgVerifyAudit": return t("compliance.kisa.reason.imgVerifyAudit")
+    case "compliance.kisa.reason.imgPolicyBaselineDiff": return t("compliance.kisa.reason.imgPolicyBaselineDiff")
+    case "compliance.kisa.reason.imgPolicyNotReady": return t("compliance.kisa.reason.imgPolicyNotReady")
+    case "compliance.kisa.reason.imgPolicyInvalidRule": return t("compliance.kisa.reason.imgPolicyInvalidRule")
+    case "compliance.kisa.reason.imgViolations": return t("compliance.kisa.reason.imgViolations")
+    case "compliance.kisa.reason.imgPolicyReportsNotEvaluated": return t("compliance.kisa.reason.imgPolicyReportsNotEvaluated")
+    case "compliance.kisa.reason.imgInventoryNotEvaluated": return t("compliance.kisa.reason.imgInventoryNotEvaluated")
+    case "compliance.kisa.reason.rbacClean": return t("compliance.kisa.reason.rbacClean")
+    case "compliance.kisa.reason.rbacHighBindings": return t("compliance.kisa.reason.rbacHighBindings")
+    case "compliance.kisa.reason.rbacCriticalBindings": return t("compliance.kisa.reason.rbacCriticalBindings")
+    case "compliance.kisa.reason.cpAuditEnabled": return t("compliance.kisa.reason.cpAuditEnabled")
+    case "compliance.kisa.reason.cpAuditPartialOrUnready": return t("compliance.kisa.reason.cpAuditPartialOrUnready")
+    case "compliance.kisa.reason.cpAuditMissing": return t("compliance.kisa.reason.cpAuditMissing")
+    case "compliance.kisa.reason.cpPodNotReady": return t("compliance.kisa.reason.cpPodNotReady")
+    case "compliance.kisa.reason.apiserverContainerMissing": return t("compliance.kisa.reason.apiserverContainerMissing")
+    case "compliance.kisa.reason.etcdEncEnabled": return t("compliance.kisa.reason.etcdEncEnabled")
+    case "compliance.kisa.reason.etcdEncPartialOrUnready": return t("compliance.kisa.reason.etcdEncPartialOrUnready")
+    case "compliance.kisa.reason.etcdEncMissing": return t("compliance.kisa.reason.etcdEncMissing")
+    case "compliance.kisa.reason.podPsaEnforced": return t("compliance.kisa.reason.podPsaEnforced")
+    case "compliance.kisa.reason.podPsaPartial": return t("compliance.kisa.reason.podPsaPartial")
+    case "compliance.kisa.reason.podPsaMissing": return t("compliance.kisa.reason.podPsaMissing")
+    case "compliance.kisa.reason.netDenyAll": return t("compliance.kisa.reason.netDenyAll")
+    case "compliance.kisa.reason.netDenyPartial": return t("compliance.kisa.reason.netDenyPartial")
+    case "compliance.kisa.reason.netDenyMissing": return t("compliance.kisa.reason.netDenyMissing")
+    case "compliance.kisa.reason.imgCveClean": return t("compliance.kisa.reason.imgCveClean")
+    case "compliance.kisa.reason.imgCveCritical": return t("compliance.kisa.reason.imgCveCritical")
+    case "compliance.kisa.reason.imgCveHigh": return t("compliance.kisa.reason.imgCveHigh")
+    case "compliance.kisa.reason.imgCveNoReports": return t("compliance.kisa.reason.imgCveNoReports")
+    case "compliance.kisa.reason.imgCveTruncated": return t("compliance.kisa.reason.imgCveTruncated")
+    case "compliance.kisa.reason.cfgClean": return t("compliance.kisa.reason.cfgClean")
+    case "compliance.kisa.reason.cfgActionableFail": return t("compliance.kisa.reason.cfgActionableFail")
+    case "compliance.kisa.reason.cfgUnevaluated": return t("compliance.kisa.reason.cfgUnevaluated")
+    case "compliance.kisa.reason.cfgEmpty": return t("compliance.kisa.reason.cfgEmpty")
+    case "compliance.kisa.reason.tlsCertOk": return t("compliance.kisa.reason.tlsCertOk")
+    case "compliance.kisa.reason.tlsCertInvalid": return t("compliance.kisa.reason.tlsCertInvalid")
+    case "compliance.kisa.reason.tlsCertMissingExpiry": return t("compliance.kisa.reason.tlsCertMissingExpiry")
+    case "compliance.kisa.reason.admEnforced": return t("compliance.kisa.reason.admEnforced")
+    case "compliance.kisa.reason.admPartialOrDiffers": return t("compliance.kisa.reason.admPartialOrDiffers")
+    case "compliance.kisa.reason.etcdWorkloadNotReady": return t("compliance.kisa.reason.etcdWorkloadNotReady")
+  }
+}
+
 function ExpandedPanel({ control }: { control: KisaControl }) {
   const t = useT()
+  const locale = useLocale()
+  const detailText = pick(control.detailLocalized ?? control.detail, locale)
+  const evidenceText = pick(control.evidenceLocalized ?? control.evidence, locale)
   return (
     <div className="px-6 py-4 bg-muted/10 border-t border-dashed space-y-3 text-xs">
       <div>
         <p className="font-medium text-muted-foreground mb-1">{t("compliance.kisa.evidence")}</p>
-        <p className="text-foreground">{control.evidence}</p>
+        <p className="text-foreground">{evidenceText}</p>
       </div>
-      {control.detail && (
+      {(control.reasonKey || detailText) && (
         <div>
           <p className="font-medium text-muted-foreground mb-1">{t("compliance.kisa.statusDetail")}</p>
-          <p className="text-foreground">{control.detail}</p>
+          {control.reasonKey && (
+            <p className="font-medium text-foreground mb-0.5">
+              {kisaReasonLabel(control.reasonKey, t)}
+            </p>
+          )}
+          {detailText && <p className="text-foreground">{detailText}</p>}
         </div>
       )}
       <div>

@@ -1,5 +1,10 @@
+import fs from "node:fs"
+import path from "node:path"
+import yaml from "js-yaml"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ComplianceFramework, ConfigAuditRow } from "@/types/compliance"
+import type { SecuritySummary } from "@/types/security"
+import type { KisaFetchResult, KisaRawCiliumClusterwideNetworkPolicy, KisaRawCiliumNetworkPolicy, KisaRawNetworkPolicy, KisaWorkloadInventory } from "./k8s-client"
 
 vi.mock("server-only", () => ({}))
 
@@ -24,8 +29,31 @@ vi.mock("./compliance", () => ({
   getConfigAuditList: () => mockGetConfigAuditList(),
 }))
 
+const mockGetKisaKyvernoClusterPolicies = vi.fn(async () => ({ status: "ok" as const, data: [] as unknown[] }))
+const mockGetKisaWorkloadInventory = vi.fn<() => Promise<KisaWorkloadInventory>>(async () => ({
+  pods: { status: "ok", data: [] },
+  replicasets: { status: "ok", data: [] },
+  deployments: { status: "ok", data: [] },
+  statefulsets: { status: "ok", data: [] },
+  daemonsets: { status: "ok", data: [] },
+  cronjobs: { status: "ok", data: [] },
+}))
+const mockGetSecuritySummary = vi.fn<() => Promise<SecuritySummary>>(async () => ({
+  totals: { Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0 },
+  scannedImages: 1,
+  scannedWorkloads: 1,
+  lastUpdated: "2026-11-24T00:00:00Z",
+}))
+const mockGetKisaCertificates = vi.fn<() => Promise<KisaFetchResult<unknown[]>>>(async () => ({ status: "ok", data: [] }))
+const mockGetKisaKyvernoPolicies = vi.fn<() => Promise<KisaFetchResult<unknown[]>>>(async () => ({ status: "ok", data: [] }))
+const mockGetKisaApiServerPods = vi.fn<() => Promise<KisaFetchResult<unknown[]>>>(async () => ({ status: "ok", data: [] }))
+const mockGetKisaNamespaces = vi.fn<() => Promise<KisaFetchResult<unknown[]>>>(async () => ({ status: "ok", data: [] }))
+const mockGetKisaNetworkPolicies = vi.fn<() => Promise<KisaFetchResult<KisaRawNetworkPolicy[]>>>(async () => ({ status: "ok", data: [] }))
+const mockGetKisaCiliumNetworkPolicies = vi.fn<() => Promise<KisaFetchResult<KisaRawCiliumNetworkPolicy[]>>>(async () => ({ status: "ok", data: [] }))
+const mockGetKisaCiliumClusterwideNetworkPolicies = vi.fn<() => Promise<KisaFetchResult<KisaRawCiliumClusterwideNetworkPolicy[]>>>(async () => ({ status: "ok", data: [] }))
+
 vi.mock("./trivy", () => ({
-  getSecuritySummary: vi.fn(async () => ({ totals: { Critical: 0, High: 0, Medium: 0, Low: 0 } })),
+  getSecuritySummary: () => mockGetSecuritySummary(),
 }))
 
 vi.mock("./k8s-client", () => ({
@@ -37,9 +65,36 @@ vi.mock("./k8s-client", () => ({
   getRbacBindings: vi.fn(async () => []),
   getClusterRoles: vi.fn(async () => []),
   getRoles: vi.fn(async () => []),
+  getKisaCertificates: () => mockGetKisaCertificates(),
+  getKisaKyvernoPolicies: () => mockGetKisaKyvernoPolicies(),
+  getKisaApiServerPods: () => mockGetKisaApiServerPods(),
+  getKisaNamespaces: () => mockGetKisaNamespaces(),
+  getKisaNetworkPolicies: () => mockGetKisaNetworkPolicies(),
+  getKisaCiliumNetworkPolicies: () => mockGetKisaCiliumNetworkPolicies(),
+  getKisaCiliumClusterwideNetworkPolicies: () => mockGetKisaCiliumClusterwideNetworkPolicies(),
+  getKisaDeployment: vi.fn(async () => ({ status: "not-found" })),
+  getKisaStatefulSet: vi.fn(async () => ({ status: "not-found" })),
+  getKisaCronJob: vi.fn(async () => ({ status: "not-found" })),
+  getKisaSecretMetadata: vi.fn(async () => ({ status: "not-found" })),
+  getKisaNamespacedNetworkPolicies: vi.fn(async () => ({ status: "ok", data: [] })),
+  getKisaNamespacedCiliumNetworkPolicies: vi.fn(async () => ({ status: "ok", data: [] })),
+  getKisaPeerAuthentications: vi.fn(async () => ({ status: "ok", data: [] })),
+  getKisaNotificationConfig: vi.fn(async () => ({ status: "not-found" })),
+  getKisaNamespacedPods: vi.fn(async () => ({ status: "ok", data: [] })),
+  getKisaKyvernoClusterPolicies: () => mockGetKisaKyvernoClusterPolicies(),
+  getKisaPolicyReports: vi.fn(async () => ({ status: "ok", data: [] })),
+  getKisaWorkloadInventory: () => mockGetKisaWorkloadInventory(),
+  getKisaRbacSnapshot: vi.fn(async () => ({
+    clusterRoleBindings: { status: "ok", data: [] },
+    roleBindings: { status: "ok", data: [] },
+    clusterRoles: { status: "ok", data: [] },
+    roles: { status: "ok", data: [] },
+  })),
 }))
 
-import { getKisaControls } from "./kisa"
+import policyBaselineData from "@/data/kisa-policy-baseline.json"
+import { checkAdm01, checkNet01, getKisaControls } from "./kisa"
+import type { KisaPolicyBaseline } from "./kisa-checks-ops"
 
 describe("KISA CFG-01 evaluated verdict", () => {
   beforeEach(() => {
@@ -237,4 +292,410 @@ it("J3 (MAJOR 3): actionable framework failure + infra 403 stays fail and names 
   mockGetConfigAuditList.mockResolvedValue([])
   mockGetRbacAuditList.mockResolvedValue([])
   mockGetInfraAuditList.mockResolvedValue([])
+})
+
+it("skips Valkey caching and marks partialSources when KISA-IMG-02 workload inventory has 403", async () => {
+  mockCache.clear()
+  mockGetComplianceFrameworks.mockResolvedValue([{
+    id: "clean", title: "Clean", totalControls: 1, passCount: 1, failCount: 0, passRate: 1,
+    evaluatedPassCount: 1, notEvaluatedCount: 0, actionableFailCount: 0,
+  }])
+  mockGetConfigAuditList.mockResolvedValue([])
+  mockGetRbacAuditList.mockResolvedValue([])
+  mockGetInfraAuditList.mockResolvedValue([])
+  mockGetKisaKyvernoClusterPolicies.mockResolvedValueOnce({
+    status: "ok",
+    data: [
+      {
+        metadata: { name: "disallow-latest-tag" },
+        spec: {
+          validationFailureAction: "Enforce",
+          rules: [{
+            name: "validate-image-tag",
+            match: { any: [{ resources: { kinds: ["Pod"] } }] },
+            validate: { pattern: { spec: { containers: [{ image: "!*:latest" }] } } },
+          }],
+        },
+      },
+      {
+        metadata: { name: "verify-image-signatures" },
+        spec: {
+          validationFailureAction: "Enforce",
+          rules: [{
+            name: "verify-signature",
+            match: { any: [{ resources: { kinds: ["Pod"] } }] },
+            verifyImages: [{
+              imageReferences: ["*"],
+              required: true,
+              attestors: [{ count: 1, entries: [{ keys: { publicKeys: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----" } }] }],
+            }],
+          }],
+        },
+      },
+    ],
+  })
+  mockGetKisaWorkloadInventory.mockResolvedValueOnce({
+    pods: { status: "ok", data: [] },
+    replicasets: { status: "ok", data: [] },
+    deployments: { status: "forbidden", resource: "deployments.apps" },
+    statefulsets: { status: "ok", data: [] },
+    daemonsets: { status: "ok", data: [] },
+    cronjobs: { status: "ok", data: [] },
+  })
+
+  const res = await getKisaControls()
+  const img02 = res.controls.find((c) => c.id === "KISA-IMG-02")
+  expect(img02?.status).toBe("warn")
+  expect(img02?.partial).toBe(true)
+  expect(img02?.partialSources).toContain("deployments(forbidden)")
+  expect(res.partial).toBe(true)
+  expect(res.partialSources).toContain("deployments(forbidden)")
+  expect(mockCache.size).toBe(0)
+})
+
+describe("KISA sweep closed-world invariants (D-KISA-CLOSED-WORLD)", () => {
+  beforeEach(() => {
+    mockCache.clear()
+    mockGetComplianceFrameworks.mockResolvedValue([{
+      id: "clean", title: "Clean", totalControls: 1, passCount: 1, failCount: 0, passRate: 1,
+      evaluatedPassCount: 1, notEvaluatedCount: 0, actionableFailCount: 0,
+    }])
+    mockGetConfigAuditList.mockResolvedValue([])
+    mockGetRbacAuditList.mockResolvedValue([])
+    mockGetInfraAuditList.mockResolvedValue([])
+    mockGetSecuritySummary.mockResolvedValue({
+      totals: { Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0 },
+      scannedImages: 1,
+      scannedWorkloads: 1,
+      lastUpdated: "2026-11-24T00:00:00Z",
+    })
+  })
+
+  it("IMG-03 never passes on API error, zero scanned reports, or truncated list", async () => {
+    mockGetSecuritySummary.mockResolvedValueOnce({
+      totals: { Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0 },
+      scannedImages: 0,
+      scannedWorkloads: 0,
+      lastUpdated: "2026-11-24T00:00:00Z",
+      failed: true,
+    })
+    const errRes = await getKisaControls()
+    const imgErr = errRes.controls.find((c) => c.id === "KISA-IMG-03")
+    expect(imgErr?.status).toBe("manual")
+    expect(imgErr?.partial).toBe(true)
+
+    mockCache.clear()
+    mockGetSecuritySummary.mockResolvedValueOnce({
+      totals: { Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0 },
+      scannedImages: 0,
+      scannedWorkloads: 0,
+      lastUpdated: "2026-11-24T00:00:00Z",
+    })
+    const emptyRes = (await getKisaControls()).controls.find((c) => c.id === "KISA-IMG-03")
+    expect(emptyRes?.status).toBe("manual")
+
+    mockCache.clear()
+    mockGetSecuritySummary.mockResolvedValueOnce({
+      totals: { Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0 },
+      scannedImages: 5,
+      scannedWorkloads: 5,
+      lastUpdated: "2026-11-24T00:00:00Z",
+      partial: true,
+      partialReason: "max-pages",
+    })
+    const partRes = (await getKisaControls()).controls.find((c) => c.id === "KISA-IMG-03")
+    expect(partRes?.status).toBe("warn")
+    expect(partRes?.partial).toBe(true)
+  })
+
+  it("POD-01 does not pass on audit/warn-only or privileged PSA labels; passes only when all namespaces enforce baseline/restricted", async () => {
+    mockGetKisaNamespaces.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        { name: "default", status: "Active", labels: { "pod-security.kubernetes.io/audit": "baseline", "pod-security.kubernetes.io/warn": "baseline" }, createdAt: "" },
+        { name: "kube-system", status: "Active", labels: { "pod-security.kubernetes.io/enforce": "privileged" }, createdAt: "" },
+      ],
+    })
+    const podWarn = (await getKisaControls()).controls.find((c) => c.id === "KISA-POD-01")
+    expect(podWarn?.status).toBe("warn")
+
+    mockCache.clear()
+    mockGetKisaNamespaces.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        { name: "default", status: "Active", labels: { "pod-security.kubernetes.io/enforce": "baseline" }, createdAt: "" },
+        { name: "app", status: "Active", labels: { "pod-security.kubernetes.io/enforce": "restricted" }, createdAt: "" },
+      ],
+    })
+    const podPass = (await getKisaControls()).controls.find((c) => c.id === "KISA-POD-01")
+    expect(podPass?.status).toBe("pass")
+  })
+
+  it("NET-01 closed-world baseline: rejects unreviewed Exists selector, 1-field drift, and extra unreviewed policies; passes only when all target namespaces equal baseline; 403/truncated returns manual", async () => {
+    const loadYamlDocs = (relPath: string) =>
+      yaml.loadAll(fs.readFileSync(path.resolve(__dirname, "../../..", relPath), "utf8")).filter(
+        (d): d is Record<string, unknown> & { kind: string; metadata: { name: string; namespace: string }; spec: Record<string, unknown> } =>
+          Boolean(d && typeof d === "object"),
+      )
+
+    const repoDocs = [
+      ...loadYamlDocs("gitops/resources/database-ingress-policy.yaml"),
+      ...loadYamlDocs("gitops/resources/iam-ingress-policy.yaml"),
+      ...loadYamlDocs("gitops/resources/monitoring-ingress-policy.yaml"),
+      ...loadYamlDocs("gitops/resources/storage-ingress-policy.yaml"),
+      ...loadYamlDocs("gitops/resources/alloy-logs-ingress-policy.yaml"),
+      ...loadYamlDocs("gitops/resources/network-policies.yaml"),
+    ]
+    const netPols = repoDocs.filter((d) => d.kind === "NetworkPolicy") as unknown as KisaRawNetworkPolicy[]
+    const ciliumPols = repoDocs.filter((d) => d.kind === "CiliumNetworkPolicy") as unknown as KisaRawCiliumNetworkPolicy[]
+    const baselineCcnp = loadYamlDocs("gitops/resources/ambient-kubelet-probes-ccnp.yaml")[0] as unknown as KisaRawCiliumClusterwideNetworkPolicy
+
+    // Simulate Kubernetes API server omitting empty ingress: [] on readback
+    const liveSimulatedNetPols = netPols.map((p) => {
+      const cloned = JSON.parse(JSON.stringify(p)) as KisaRawNetworkPolicy
+      if (Array.isArray(cloned.spec?.ingress) && cloned.spec.ingress.length === 0) {
+        delete cloned.spec.ingress
+      }
+      return cloned
+    })
+
+    // 1. Reproduction (R8): baseline default-deny + namespaceSelector matchExpressions Exists in all 5 namespaces MUST NOT pass (warn, unreviewed policy present)
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        ...liveSimulatedNetPols,
+        ...["iam", "devtools", "monitoring", "storage", "database"].map((ns) => ({
+          metadata: { name: `${ns}-exists-allow`, namespace: ns },
+          spec: {
+            podSelector: {},
+            policyTypes: ["Ingress"],
+            ingress: [{ from: [{ namespaceSelector: { matchExpressions: [{ key: "kubernetes.io/metadata.name", operator: "Exists" }] } }] }],
+          },
+        })),
+      ],
+    })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
+    const existsRes = (await getKisaControls()).controls.find((c) => c.id === "KISA-NET-01")
+    expect(existsRes?.status).toBe("warn")
+    expect(existsRes?.detailLocalized?.en).toContain("unreviewed policy present")
+    expect(existsRes?.detail).toContain("iam-exists-allow")
+
+    // 2. Baseline-equal in 4/5 namespaces (database, iam, monitoring, storage) + devtools uncovered -> warn naming devtools
+    mockCache.clear()
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
+    const fourOfFive = (await getKisaControls()).controls.find((c) => c.id === "KISA-NET-01")
+    expect(fourOfFive?.status).toBe("warn")
+    expect(fourOfFive?.detail).toContain("4/5")
+    expect(fourOfFive?.detail).toContain("devtools")
+
+    // 3. Baseline-equal across all 5 target namespaces (custom baseline adding devtools default-deny) + baseline CCNP -> pass
+    const repoBaseline = policyBaselineData as KisaPolicyBaseline
+    const customBaseline: KisaPolicyBaseline = {
+      ...repoBaseline,
+      net01DefaultDenyByNamespace: {
+        ...repoBaseline.net01DefaultDenyByNamespace,
+        devtools: "NetworkPolicy/devtools/devtools-egress",
+      },
+    }
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: [baselineCcnp] })
+    const allClean = await checkNet01(customBaseline)
+    expect(allClean.status).toBe("pass")
+    expect(allClean.reasonKey).toBe("compliance.kisa.reason.netDenyAll")
+
+    // 3b. Reproduction (R9 MAJOR 1): baseline CNP with extra specs[] entry -> warn (not satisfied)
+    const cnpWithSpecs = ciliumPols.map((c) => {
+      if (c.metadata?.namespace === "monitoring" && c.metadata?.name === "prometheus-operator-webhook-ingress") {
+        return {
+          ...JSON.parse(JSON.stringify(c)),
+          specs: [{ endpointSelector: {}, ingress: [{ fromEntities: ["all"] }] }],
+        }
+      }
+      return c
+    })
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: cnpWithSpecs })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: [baselineCcnp] })
+    const cnpSpecsRes = await checkNet01(customBaseline)
+    expect(cnpSpecsRes.status).toBe("warn")
+    expect(cnpSpecsRes.detailLocalized.en).toContain("unreviewed policy present")
+    expect(cnpSpecsRes.detail).toContain("prometheus-operator-webhook-ingress(differs)")
+
+    // 3c. Reproduction (R9 MAJOR 3 + R10 MAJOR 2): unreviewed or drifted CCNP -> warn, 0/5 namespaces covered, 'unreviewed cluster-wide policy present: <names>'
+    const driftedCcnp: KisaRawCiliumClusterwideNetworkPolicy = JSON.parse(JSON.stringify(baselineCcnp))
+    ;(driftedCcnp.spec as Record<string, unknown> & { ingress: unknown[] }).ingress.push({ fromEntities: ["all"] })
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: [driftedCcnp] })
+    const ccnpDriftRes = await checkNet01(customBaseline)
+    expect(ccnpDriftRes.status).toBe("warn")
+    expect(ccnpDriftRes.detailLocalized.en).toContain("0/5 namespace(s) covered")
+    expect(ccnpDriftRes.detailLocalized.en).toContain("unreviewed cluster-wide policy present: CiliumClusterwideNetworkPolicy/allow-ambient-kubelet-probes(differs)")
+    expect(ccnpDriftRes.detail).toContain("0/5")
+
+    // Reproduction (R10 MAJOR 2): with repo baseline (4/5 namespaces otherwise clean), adding ingress to existing CCNP MUST drop covered count to 0/5 (never 4/5)
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: [driftedCcnp] })
+    const ccnpDriftRepoRes = await checkNet01(repoBaseline)
+    expect(ccnpDriftRepoRes.status).toBe("warn")
+    expect(ccnpDriftRepoRes.detailLocalized.en).toContain("0/5 namespace(s) covered")
+    expect(ccnpDriftRepoRes.detailLocalized.en).not.toContain("4/5")
+    expect(ccnpDriftRepoRes.detailLocalized.en).toContain("unreviewed cluster-wide policy present: CiliumClusterwideNetworkPolicy/allow-ambient-kubelet-probes(differs)")
+
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [baselineCcnp, { metadata: { name: "open-all-ccnp" }, spec: { endpointSelector: {}, ingress: [{ fromEntities: ["all"] }] } }],
+    })
+    const ccnpExtraRes = await checkNet01(customBaseline)
+    expect(ccnpExtraRes.status).toBe("warn")
+    expect(ccnpExtraRes.detailLocalized.en).toContain("0/5 namespace(s) covered")
+    expect(ccnpExtraRes.detailLocalized.en).toContain("unreviewed cluster-wide policy present: CiliumClusterwideNetworkPolicy/open-all-ccnp")
+
+    // 3d. CCNP list forbidden -> manual
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({
+      status: "forbidden",
+      resource: "ciliumclusterwidenetworkpolicies.cilium.io",
+    })
+    const ccnpForb = await checkNet01(customBaseline)
+    expect(ccnpForb.status).toBe("manual")
+    expect(ccnpForb.partial).toBe(true)
+    expect(ccnpForb.reasonKey).toBe("compliance.kisa.reason.apiForbidden")
+
+    // 4. One-field deviation on a baseline policy -> warn (never pass)
+    const driftedNetPols = liveSimulatedNetPols.map((p) => {
+      if (p.metadata?.namespace === "database" && p.metadata?.name === "database-prometheus-ingress") {
+        const copy = JSON.parse(JSON.stringify(p)) as KisaRawNetworkPolicy
+        copy.spec!.ingress![0].ports!.push({ protocol: "TCP", port: 9188 })
+        return copy
+      }
+      return p
+    })
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: driftedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
+    const driftedRes = await checkNet01(customBaseline)
+    expect(driftedRes.status).toBe("warn")
+    expect(driftedRes.detailLocalized.en).toContain("unreviewed policy present")
+    expect(driftedRes.detail).toContain("database-prometheus-ingress(differs)")
+
+    // 5. Extra unreviewed CiliumNetworkPolicy in an otherwise clean namespace -> warn naming it
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [...ciliumPols, { metadata: { name: "extra-cnp", namespace: "storage" }, spec: { endpointSelector: {} } }],
+    })
+    const extraCnpRes = await checkNet01(customBaseline)
+    expect(extraCnpRes.status).toBe("warn")
+    expect(extraCnpRes.detail).toContain("CiliumNetworkPolicy/extra-cnp")
+
+    // 6. Zero policies -> fail
+    mockCache.clear()
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: [] })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: [] })
+    expect((await getKisaControls()).controls.find((c) => c.id === "KISA-NET-01")?.status).toBe("fail")
+
+    // 7. Forbidden NetworkPolicy or CiliumNetworkPolicy -> manual (never pass)
+    mockCache.clear()
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "forbidden", resource: "networkpolicies.networking.k8s.io" })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: [] })
+    const netForb = (await getKisaControls()).controls.find((c) => c.id === "KISA-NET-01")
+    expect(netForb?.status).toBe("manual")
+    expect(netForb?.partial).toBe(true)
+
+    mockCache.clear()
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "forbidden", resource: "ciliumnetworkpolicies.cilium.io" })
+    const cnpForb = (await getKisaControls()).controls.find((c) => c.id === "KISA-NET-01")
+    expect(cnpForb?.status).toBe("manual")
+    expect(cnpForb?.partial).toBe(true)
+  })
+
+  it("ADM-01 warns when any validate/verifyImages policy is Audit, Mixed, disabled (admission=false), notReady, or unreviewed against baseline", async () => {
+    // Reproduction (R7): single unreviewed Enforce+Ready policy with false precondition/deny MUST NOT pass
+    mockGetKisaKyvernoPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        { name: "arbitrary-always-false", namespace: null, scope: "cluster", background: true, validationFailureAction: "Enforce", effectiveEnforcement: "Enforce", hasValidateOrVerifyRules: true, specSha256: "deadbeef", hasOverrides: false, ready: true, rulesCount: 1, rules: [], title: null, description: null, category: null, severity: null },
+      ],
+    })
+    const admUnreviewed = (await getKisaControls()).controls.find((c) => c.id === "KISA-ADM-01")
+    expect(admUnreviewed?.status).toBe("warn")
+    expect(admUnreviewed?.detail).toContain("unreviewed")
+    expect(admUnreviewed?.detailLocalized?.en).toContain("unreviewed")
+
+    mockCache.clear()
+    mockGetKisaKyvernoPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        { name: "p1", namespace: null, scope: "cluster", background: true, validationFailureAction: "Enforce", effectiveEnforcement: "Disabled", hasValidateOrVerifyRules: true, ready: true, rulesCount: 1, rules: [], title: null, description: null, category: null, severity: null },
+      ],
+    })
+    expect((await getKisaControls()).controls.find((c) => c.id === "KISA-ADM-01")?.status).toBe("warn")
+
+    // Positive: custom baseline where all admissionRelevant entries match digest, Ready=True, and Enforce -> pass
+    const repoBaseline = policyBaselineData as KisaPolicyBaseline
+    const sample = repoBaseline.policies["disallow-latest-tag"]
+    const allEnforcedBaseline: KisaPolicyBaseline = {
+      ...repoBaseline,
+      policies: {
+        "disallow-latest-tag": sample,
+      },
+    }
+    mockGetKisaKyvernoPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        { name: "disallow-latest-tag", namespace: null, scope: "cluster", background: true, validationFailureAction: "Enforce", effectiveEnforcement: "Enforce", hasValidateOrVerifyRules: true, specSha256: sample.specSha256, hasOverrides: false, ready: true, rulesCount: 1, rules: [], title: null, description: null, category: null, severity: null },
+      ],
+    })
+    expect((await checkAdm01(allEnforcedBaseline)).status).toBe("pass")
+  })
+
+  it("TLS-02 warns when a Ready certificate lacks valid notAfter; CP-01/ETCD-01 reject empty flags, missing container, or unready/statusless Pod", async () => {
+    mockGetKisaCertificates.mockResolvedValueOnce({
+      status: "ok",
+      data: [{ name: "c1", namespace: "ns", ready: true, issuing: false, revision: 1, notAfter: null, notBefore: null, dnsNames: [], issuer: "ca", renewalTime: null }],
+    })
+    expect((await getKisaControls()).controls.find((c) => c.id === "KISA-TLS-02")?.status).toBe("warn")
+
+    mockCache.clear()
+    mockGetKisaApiServerPods.mockResolvedValueOnce({
+      status: "ok",
+      data: [{ name: "apiserver-1", hasApiserverContainer: false, ready: true, containerArgs: ["--audit-log-path=/var/log/a.log", "--audit-policy-file=/etc/a.yaml", "--encryption-provider-config=/etc/enc.yaml"] }],
+    })
+    const res = await getKisaControls()
+    expect(res.controls.find((c) => c.id === "KISA-CP-01")?.status).toBe("manual")
+    expect(res.controls.find((c) => c.id === "KISA-ETCD-01")?.status).toBe("manual")
+
+    // Reproduction (R7): Pod without status / Ready=True (ready=false) -> manual, never pass
+    mockCache.clear()
+    mockGetKisaApiServerPods.mockResolvedValue({
+      status: "ok",
+      data: [{ name: "apiserver-1", hasApiserverContainer: true, ready: false, containerArgs: ["--audit-log-path=/var/log/a.log", "--audit-policy-file=/etc/a.yaml", "--encryption-provider-config=/etc/enc.yaml"] }],
+    })
+    const unreadyRes = await getKisaControls()
+    expect(unreadyRes.controls.find((c) => c.id === "KISA-CP-01")?.status).toBe("manual")
+    expect(unreadyRes.controls.find((c) => c.id === "KISA-ETCD-01")?.status).toBe("manual")
+
+    // Positive: Ready=True with valid flags -> pass, and every control has ko + en detailLocalized
+    mockCache.clear()
+    mockGetKisaApiServerPods.mockResolvedValue({
+      status: "ok",
+      data: [{ name: "apiserver-1", hasApiserverContainer: true, ready: true, containerArgs: ["--audit-log-path=/var/log/a.log", "--audit-policy-file=/etc/a.yaml", "--encryption-provider-config=/etc/enc.yaml"] }],
+    })
+    const readyRes = await getKisaControls()
+    mockGetKisaApiServerPods.mockResolvedValue({ status: "ok", data: [] })
+    expect(readyRes.controls.find((c) => c.id === "KISA-CP-01")?.status).toBe("pass")
+    expect(readyRes.controls.find((c) => c.id === "KISA-ETCD-01")?.status).toBe("pass")
+    for (const c of readyRes.controls) {
+      expect(c.detailLocalized?.ko?.trim().length, `${c.id} missing ko detail`).toBeGreaterThan(0)
+      expect(c.detailLocalized?.en?.trim().length, `${c.id} missing en detail`).toBeGreaterThan(0)
+      expect(c.reasonKey, `${c.id} missing reasonKey`).toBeTruthy()
+    }
+  })
 })

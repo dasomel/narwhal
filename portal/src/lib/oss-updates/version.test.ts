@@ -8,6 +8,7 @@ import {
   normalizeImageRepo,
   normalizeTag,
   normalizeVersion,
+  parseImageRefStrict,
   parseSemver,
   repoMatches,
   sameVersion,
@@ -62,6 +63,30 @@ describe("extractImageRef / normalizeImageRepo / repoMatches / normalizeTag", ()
       digest: null,
     })
     expect(shortenDigest("sha256:0123456789abcdef0123456789abcdef")).toBe("sha256:0123456789ab")
+
+    expect(parseImageRefStrict("registry.example:5000/team/app:v1")).toEqual({
+      repo: "registry.example:5000/team/app",
+      rawTag: "v1",
+      digest: null,
+    })
+    expect(parseImageRefStrict("localhost:5000/app")).toEqual({
+      repo: "localhost:5000/app",
+      rawTag: null,
+      digest: null,
+    })
+    expect(parseImageRefStrict(`repo@${digB}`)).toEqual({
+      repo: "repo",
+      rawTag: null,
+      digest: digB,
+    })
+    expect(parseImageRefStrict(`repo:tag@${digB}`)).toEqual({
+      repo: "repo",
+      rawTag: "tag",
+      digest: digB,
+    })
+    for (const bad of ["", "repo:tag:extra", "repo@sha256:nothex", "host:badport/app:v1", "repo/with space:v1", "repo//app:v1"]) {
+      expect(parseImageRefStrict(bad), `parseImageRefStrict(${bad})`).toBeNull()
+    }
   })
 
   it("table-driven: enforces explicit per-component suffix allow-list (never blanket-strips)", () => {

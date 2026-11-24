@@ -11,6 +11,7 @@ FILES = {
     'data': 'portal/src/data/compliance-acceptance-rules.json',
     'loader': 'portal/src/lib/compliance-acceptance.ts',
     'matcher': 'portal/src/lib/compliance-accepted.ts',
+    'kisa_ops': 'portal/src/lib/kisa-checks-ops.ts',
     'comp': 'portal/src/lib/compliance.ts',
     'ui': 'portal/src/components/compliance/failure-counters.tsx',
     'i18n': 'portal/src/lib/i18n.ts',
@@ -67,13 +68,87 @@ def check(texts):
             paths = re.findall(r'(?:gitops|scripts|portal)/[\w./-]+', rule.get('owner', ''))
             if not paths or any(not (ROOT / path).is_file() for path in paths):
                 errors.append('owner must identify existing repo pin/source')
+
+    binding_rules = data.get('rbacBindings')
+    if not isinstance(binding_rules, list) or len(binding_rules) < 44:
+        errors.append('rbacBindings must list >= 44 explicit bootstrap rules')
+    else:
+        allowed_binding_fields = {
+            'id', 'scope', 'namespace', 'kind', 'name', 'roleRefKind', 'roleRefName',
+            'requireBootstrapMetadata', 'checks', 'subjects', 'class', 'reasonKey', 'owner', 'reviewedAt',
+        }
+        for rule in binding_rules:
+            if set(rule) - allowed_binding_fields:
+                errors.append('rbacBindings: unknown selector or rule field')
+            for field in ('id', 'scope', 'kind', 'name', 'roleRefKind', 'roleRefName', 'reasonKey', 'owner', 'reviewedAt'):
+                if not isinstance(rule.get(field), str) or not rule[field].strip():
+                    errors.append(f'rbacBindings: missing {field}')
+            if rule.get('id') in seen:
+                errors.append('rbacBindings: duplicate id')
+            seen.add(rule.get('id'))
+            ns = rule.get('namespace')
+            if rule.get('scope') not in ('cluster', 'namespace') or not isinstance(ns, str):
+                errors.append('rbacBindings: invalid scope/namespace')
+            elif (rule['scope'] == 'cluster') != (ns == ''):
+                errors.append('rbacBindings: scope/namespace mismatch')
+            if (rule.get('kind'), rule.get('scope')) not in (('ClusterRoleBinding', 'cluster'), ('RoleBinding', 'namespace')):
+                errors.append('rbacBindings: kind/scope mismatch')
+            if rule.get('roleRefKind') not in ('ClusterRole', 'Role'):
+                errors.append('rbacBindings: invalid roleRefKind')
+            for field in ('name', 'namespace', 'roleRefName'):
+                value = rule.get(field, '')
+                if value != value.strip() or re.search(r'[*?\[\]()^$|\\]', value):
+                    errors.append('rbacBindings: pattern target')
+            if rule.get('requireBootstrapMetadata') is not True:
+                errors.append('rbacBindings: requireBootstrapMetadata must be true')
+            if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', rule.get('reviewedAt', '')):
+                errors.append('rbacBindings: missing review date')
+            checks = rule.get('checks')
+            if not isinstance(checks, list) or not checks:
+                errors.append('rbacBindings: checks must be explicit and nonempty')
+            else:
+                for cid in checks:
+                    if not isinstance(cid, str) or not re.fullmatch(r'(KSV\d{3}|KCV\d{4})', cid):
+                        errors.append('rbacBindings: invalid check ID')
+            subjects = rule.get('subjects')
+            if not isinstance(subjects, list):
+                errors.append('rbacBindings: subjects must be an explicit list')
+            else:
+                for subj in subjects:
+                    if not isinstance(subj, dict) or set(subj) - {'kind', 'name', 'namespace'}:
+                        errors.append('rbacBindings: invalid subject entry')
+                    elif subj.get('kind') not in ('User', 'Group', 'ServiceAccount') or not isinstance(subj.get('name'), str) or not subj['name'].strip():
+                        errors.append('rbacBindings: invalid subject kind/name')
+                    elif subj['kind'] == 'ServiceAccount' and (not isinstance(subj.get('namespace'), str) or not subj['namespace'].strip()):
+                        errors.append('rbacBindings: ServiceAccount subject requires namespace')
+            reason = re.escape(rule.get('reasonKey', ''))
+            if len(re.findall(r'"' + reason + r'": "[^"\n]+"', texts['i18n'])) != 2:
+                errors.append('rbacBindings: missing bilingual reason')
+            paths = re.findall(r'(?:gitops|scripts|portal)/[\w./-]+', rule.get('owner', ''))
+            if not paths or any(not (ROOT / path).is_file() for path in paths):
+                errors.append('rbacBindings: owner must identify existing repo pin/source')
     required = {
         'matcher': [
             'if (kind === "ReplicaSet" && deploymentOwners === undefined) return null',
             'configRuleIndex.get(`${scope}\\0${namespace}\\0${kind}\\0${normalizedName}`)',
             'rbacRuleIndex.get(`${scope}\\0${namespace}\\0${kind}\\0${roleName}`)',
+            'if (!Array.isArray(binding.subjects) || !Array.isArray(binding.checkIds) || binding.checkIds.length === 0)',
+            '`${scope}\\0${binding.namespace}\\0${binding.kind}\\0${binding.name}\\0${binding.roleRefKind}\\0${binding.roleRefName}`',
+            'bootstrapping !== "rbac-defaults" || autoupdate !== "true"',
+            'if (!subjectsMatchExact(rule.subjects, binding.subjects))',
+            'if (!normalizedChecks.every((cid) => rule.checks.has(cid)))',
         ],
-        'loader': ['reason: common.reason', 'owner: raw.owner', 'reviewedAt: raw.reviewedAt'],
+        'loader': [
+            'reason: common.reason',
+            'owner: raw.owner',
+            'reviewedAt: raw.reviewedAt',
+            '`${rule.scope}\\0${rule.namespace}\\0${rule.kind}\\0${rule.name}\\0${rule.roleRefKind}\\0${rule.roleRefName}`',
+            'if (!Array.isArray(raw.checks) || raw.checks.length === 0)',
+        ],
+        'kisa_ops': [
+            'if (triggeredCheckIds.length === 0) return false',
+            'triggeredCheckIds.every((cid) => matchRbacException(name, cid, roleNs, kind) !== null)',
+        ],
         'comp': ['unusedAcceptanceRules = findUnusedAcceptanceRules(',
                  'unusedAcceptanceRuleCount: unusedAcceptanceRules.length',
                  'for (const id of classified.matchedRuleIds) matchedRuleIds.add(id)',
@@ -92,6 +167,8 @@ def check(texts):
         pre_lookup = re.sub(r'//[^\n]*|/\*[\s\S]*?\*/', '', pre_lookup)
         if re.search(r'\breturn\s+(?!null\b)', pre_lookup):
             errors.append(f'{name}: acceptance bypasses exact lookup')
+        if name == 'matchRbacException' and 'rbacRuleIndex.get(`${scope}\\0${namespace}\\0${kind}\\0${roleName}`)' not in body:
+            errors.append(f'{name}: missing kind in rbacRuleIndex lookup')
         if 'rule.checks.has(normalizedCheck)' not in body:
             errors.append(f'{name}: no explicit check membership')
         if re.search(r'\.(?:includes|startsWith|endsWith|test|exec|match)\(', body):
@@ -123,11 +200,25 @@ def main():
         data = json.loads(texts['data'])
         data['rbac'][0][selector] = 'system:'
         mutations.append((f'forbidden {selector}', 'data', json.dumps(data)))
+    for field in ('checks', 'subjects'):
+        data = json.loads(texts['data'])
+        del data['rbacBindings'][0][field]
+        mutations.append((f'rbacBindings missing {field}', 'data', json.dumps(data)))
+    data_noboot = json.loads(texts['data'])
+    data_noboot['rbacBindings'][0]['requireBootstrapMetadata'] = False
+    mutations.append(('rbacBindings drop requireBootstrapMetadata', 'data', json.dumps(data_noboot)))
     replacements = [
         ('prefix acceptance', 'matcher', 'rule.checks.has(normalizedCheck)', 'roleName.startsWith("system:")'),
         ('regex acceptance', 'matcher', 'rule.checks.has(normalizedCheck)', '/system:/.test(roleName)'),
         ('label-only acceptance', 'matcher', 'if (kind !== "Role" && kind !== "ClusterRole") return null',
          'if (labels["kubernetes.io/bootstrapping"]) return fakeMatch;\n  if (kind !== "Role" && kind !== "ClusterRole") return null'),
+        ('drop bootstrap label+annotation check in matcher', 'matcher', 'if (bootstrapping !== "rbac-defaults" || autoupdate !== "true") {', 'if (false) {'),
+        ('drop binding checks restriction in matcher', 'matcher', 'if (!normalizedChecks.every((cid) => rule.checks.has(cid))) {', 'if (false) {'),
+        ('drop binding subjects pin in matcher', 'matcher', 'if (!subjectsMatchExact(rule.subjects, binding.subjects)) {', 'if (false) {'),
+        ('remove roleRef pin in matcher', 'matcher', '`${scope}\\0${binding.namespace}\\0${binding.kind}\\0${binding.name}\\0${binding.roleRefKind}\\0${binding.roleRefName}`', '`${scope}\\0${binding.namespace}\\0${binding.kind}\\0${binding.name}`'),
+        ('remove roleRef pin in loader', 'loader', '`${rule.scope}\\0${rule.namespace}\\0${rule.kind}\\0${rule.name}\\0${rule.roleRefKind}\\0${rule.roleRefName}`', '`${rule.scope}\\0${rule.namespace}\\0${rule.kind}\\0${rule.name}`'),
+        ('remove empty-checks rejection in matcher', 'matcher', ' || binding.checkIds.length === 0', ''),
+        ('role check every->some in kisa-checks-ops', 'kisa_ops', 'triggeredCheckIds.every((cid) => matchRbacException(name, cid, roleNs, kind) !== null)', 'triggeredCheckIds.some((cid) => matchRbacException(name, cid, roleNs, kind) !== null)'),
         ('drop namespace', 'matcher', '${scope}\\0${namespace}\\0${kind}\\0${normalizedName}', '${scope}\\0${kind}\\0${normalizedName}'),
         ('drop kind', 'matcher', '${scope}\\0${namespace}\\0${kind}\\0${roleName}', '${scope}\\0${namespace}\\0${roleName}'),
         ('all checks', 'matcher', 'rule.checks.has(normalizedCheck)', 'true'),

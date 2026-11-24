@@ -229,7 +229,7 @@ export async function getSecuritySummary(): Promise<SecuritySummary> {
     return result
   } catch (err) {
     console.warn("[trivy] getSecuritySummary failed:", err instanceof Error ? err.message : err)
-    return emptySummary
+    return { ...emptySummary, failed: true }
   }
 }
 

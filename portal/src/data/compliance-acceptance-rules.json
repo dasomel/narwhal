@@ -1441,5 +1441,1077 @@
       "reviewedAt": "2026-11-23"
     }
   ],
-  "infra": []
+  "infra": [],
+  "rbacBindings": [
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:cluster-admin:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "cluster-admin",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "cluster-admin",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV041",
+        "KSV044",
+        "KSV046",
+        "KSV047",
+        "KSV048",
+        "KSV049",
+        "KSV050",
+        "KSV053",
+        "KSV056",
+        "KSV111",
+        "KSV114"
+      ],
+      "subjects": [
+        {
+          "kind": "Group",
+          "name": "system:masters"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:basic-user:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:basic-user",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:basic-user",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "Group",
+          "name": "system:authenticated"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:attachdetach-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:attachdetach-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:attachdetach-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "attachdetach-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:certificate-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:certificate-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:certificate-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "certificate-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:clusterrole-aggregation-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:clusterrole-aggregation-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:clusterrole-aggregation-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV049",
+        "KSV050"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "clusterrole-aggregation-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:cronjob-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:cronjob-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:cronjob-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV048"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "cronjob-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:daemon-set-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:daemon-set-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:daemon-set-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV048"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "daemon-set-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:deployment-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:deployment-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:deployment-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV048"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "deployment-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:disruption-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:disruption-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:disruption-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "disruption-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:endpoint-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:endpoint-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:endpoint-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV056"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "endpoint-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:endpointslice-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:endpointslice-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:endpointslice-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV056"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "endpointslice-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:endpointslicemirroring-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:endpointslicemirroring-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:endpointslicemirroring-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV056"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "endpointslicemirroring-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:ephemeral-volume-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:ephemeral-volume-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:ephemeral-volume-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "ephemeral-volume-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:expand-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:expand-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:expand-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "expand-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:generic-garbage-collector:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:generic-garbage-collector",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:generic-garbage-collector",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV041",
+        "KSV046",
+        "KSV047",
+        "KSV048",
+        "KSV049",
+        "KSV056",
+        "KSV114"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "generic-garbage-collector",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:horizontal-pod-autoscaler:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:horizontal-pod-autoscaler",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:horizontal-pod-autoscaler",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV046"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "horizontal-pod-autoscaler",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:job-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:job-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:job-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV048"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "job-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:legacy-service-account-token-cleaner:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:legacy-service-account-token-cleaner",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:legacy-service-account-token-cleaner",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV041"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "legacy-service-account-token-cleaner",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:namespace-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:namespace-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:namespace-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV041",
+        "KSV046",
+        "KSV047",
+        "KSV048",
+        "KSV049",
+        "KSV056",
+        "KSV114"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "namespace-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:node-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:node-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:node-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV048"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "node-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:persistent-volume-binder:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:persistent-volume-binder",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:persistent-volume-binder",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV048"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "persistent-volume-binder",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:pod-garbage-collector:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:pod-garbage-collector",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:pod-garbage-collector",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV048"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "pod-garbage-collector",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:pv-protection-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:pv-protection-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:pv-protection-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "pv-protection-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:pvc-protection-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:pvc-protection-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:pvc-protection-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "pvc-protection-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:replicaset-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:replicaset-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:replicaset-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV048"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "replicaset-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:replication-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:replication-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:replication-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV048"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "replication-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:resource-claim-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:resource-claim-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:resource-claim-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "resource-claim-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:resourcequota-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:resourcequota-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:resourcequota-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV041",
+        "KSV046"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "resourcequota-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:root-ca-cert-publisher:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:root-ca-cert-publisher",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:root-ca-cert-publisher",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV049"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "root-ca-cert-publisher",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:route-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:route-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:route-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "route-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:selinux-warning-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:selinux-warning-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:selinux-warning-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "selinux-warning-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:service-account-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:service-account-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:service-account-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "service-account-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:service-cidrs-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:service-cidrs-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:service-cidrs-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "service-cidrs-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:service-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:service-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:service-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "service-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:statefulset-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:statefulset-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:statefulset-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV048"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "statefulset-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:ttl-after-finished-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:ttl-after-finished-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:ttl-after-finished-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV048"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "ttl-after-finished-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:ttl-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:ttl-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:ttl-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "ttl-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:validatingadmissionpolicy-status-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:validatingadmissionpolicy-status-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:validatingadmissionpolicy-status-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "validatingadmissionpolicy-status-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:controller:volumeattributesclass-protection-controller:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:controller:volumeattributesclass-protection-controller",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:controller:volumeattributesclass-protection-controller",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "ServiceAccount",
+          "name": "volumeattributesclass-protection-controller",
+          "namespace": "kube-system"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:kube-controller-manager:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:kube-controller-manager",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:kube-controller-manager",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV041",
+        "KSV046"
+      ],
+      "subjects": [
+        {
+          "kind": "User",
+          "name": "system:kube-controller-manager"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:kube-scheduler:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:kube-scheduler",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:kube-scheduler",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV048"
+      ],
+      "subjects": [
+        {
+          "kind": "User",
+          "name": "system:kube-scheduler"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:node:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:node",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:node",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV041",
+        "KSV048"
+      ],
+      "subjects": [],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:node-proxier:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:node-proxier",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:node-proxier",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "User",
+          "name": "system:kube-proxy"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "rbac-binding:cluster:ClusterRoleBinding:system:volume-scheduler:verified",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRoleBinding",
+      "name": "system:volume-scheduler",
+      "roleRefKind": "ClusterRole",
+      "roleRefName": "system:volume-scheduler",
+      "requireBootstrapMetadata": true,
+      "checks": [
+        "KSV111"
+      ],
+      "subjects": [
+        {
+          "kind": "User",
+          "name": "system:kube-scheduler"
+        }
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
+      "reviewedAt": "2026-11-24"
+    }
+  ]
 }

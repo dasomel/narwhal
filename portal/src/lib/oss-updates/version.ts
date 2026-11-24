@@ -106,6 +106,51 @@ export function extractImageRef(image: string): ParsedImageRef {
   return { repo: withoutDigest, rawTag: null, digest }
 }
 
+const OCI_TAG_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$/
+const OCI_PORT_RE = /^\d{1,5}$/
+const OCI_PATH_SEGMENT_RE = /^[^\s:@]+$/
+
+/** Strict OCI image reference parser: returns `null` when the input is empty, contains
+ * whitespace, has an invalid `@digest` or `:tag`, empty path segments, or an invalid
+ * registry `host:port`. Reused by KISA-IMG-02 so unparseable refs stay in scope. */
+export function parseImageRefStrict(image: string): ParsedImageRef | null {
+  const trimmed = image.trim()
+  if (!trimmed || /\s/.test(trimmed)) return null
+
+  const digestMatch = DIGEST_SUFFIX_RE.exec(trimmed)
+  const digest = digestMatch ? digestMatch[1] : null
+  const withoutDigest = digestMatch ? trimmed.slice(0, digestMatch.index) : trimmed
+  if (!withoutDigest || withoutDigest.includes("@")) return null
+
+  const lastSlash = withoutDigest.lastIndexOf("/")
+  const colonIdx = withoutDigest.indexOf(":", lastSlash + 1)
+  let repo = withoutDigest
+  let rawTag: string | null = null
+  if (colonIdx > lastSlash) {
+    repo = withoutDigest.slice(0, colonIdx)
+    rawTag = withoutDigest.slice(colonIdx + 1)
+    if (!rawTag || !OCI_TAG_RE.test(rawTag)) return null
+  }
+
+  const segments = repo.split("/")
+  if (segments.some((s) => !s)) return null
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i]
+    if (i === 0 && segments.length > 1 && seg.includes(":")) {
+      const portColon = seg.indexOf(":")
+      const host = seg.slice(0, portColon)
+      const port = seg.slice(portColon + 1)
+      if (!host || !OCI_PATH_SEGMENT_RE.test(host) || !OCI_PORT_RE.test(port)) return null
+      const portNum = Number(port)
+      if (portNum < 1 || portNum > 65535) return null
+    } else if (!OCI_PATH_SEGMENT_RE.test(seg)) {
+      return null
+    }
+  }
+
+  return { repo, rawTag, digest }
+}
+
 /** Shortens `sha256:0123456789abcdef...` to `sha256:0123456789ab` for display. */
 export function shortenDigest(digest: string): string {
   const idx = digest.indexOf(":")

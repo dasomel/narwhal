@@ -5,10 +5,12 @@ import { en, ko } from "./i18n"
 import {
   ACCEPTED_CONFIG_AUDIT_RULES,
   ACCEPTED_INFRA_RULES,
+  ACCEPTED_RBAC_BINDING_RULES,
   ACCEPTED_RBAC_RULES,
   findUnusedAcceptanceRules,
   matchConfigAuditException,
   matchInfraException,
+  matchRbacBindingException,
   matchRbacException,
   normalizeCheckId,
   normalizeWorkloadName,
@@ -336,5 +338,98 @@ describe("allowlist integrity and docs parity", () => {
       expect(en[rule.reasonKey]).toBe(rule.reason)
       expect(ko[rule.reasonKey]).toMatch(/[\uAC00-\uD7A3]/)
     }
+  })
+
+  it("validates exact RBAC bootstrap binding acceptance rules and requires metadata, checks, and subjects", () => {
+    expect(ACCEPTED_RBAC_BINDING_RULES.length).toBeGreaterThanOrEqual(44)
+    for (const rule of ACCEPTED_RBAC_BINDING_RULES) {
+      expect(rule.owner.trim().length).toBeGreaterThan(0)
+      expect(rule.reviewedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(rule.checks.size).toBeGreaterThan(0)
+      expect(Array.isArray(rule.subjects)).toBe(true)
+      expect(en[rule.reasonKey]).toBe(rule.reason)
+    }
+    expect(
+      matchRbacBindingException({
+        kind: "ClusterRoleBinding",
+        namespace: "",
+        name: "system:controller:clusterrole-aggregation-controller",
+        roleRefKind: "ClusterRole",
+        roleRefName: "system:controller:clusterrole-aggregation-controller",
+        subjects: [{ kind: "ServiceAccount", name: "clusterrole-aggregation-controller", namespace: "kube-system" }],
+        checkIds: ["KSV049", "KSV050"],
+        labels: { "kubernetes.io/bootstrapping": "rbac-defaults" },
+        annotations: { "rbac.authorization.kubernetes.io/autoupdate": "true" },
+      }),
+    ).not.toBeNull()
+    expect(
+      matchRbacBindingException({
+        kind: "ClusterRoleBinding",
+        namespace: "",
+        name: "system:controller:clusterrole-aggregation-controller",
+        roleRefKind: "ClusterRole",
+        roleRefName: "system:controller:clusterrole-aggregation-controller",
+        subjects: [{ kind: "ServiceAccount", name: "clusterrole-aggregation-controller", namespace: "kube-system" }],
+        checkIds: ["KSV049", "KSV050"],
+      }),
+    ).toBeNull()
+    // Extra ServiceAccount added to subjects -> rejected
+    expect(
+      matchRbacBindingException({
+        kind: "ClusterRoleBinding",
+        namespace: "",
+        name: "system:basic-user",
+        roleRefKind: "ClusterRole",
+        roleRefName: "system:basic-user",
+        subjects: [
+          { kind: "Group", name: "system:authenticated" },
+          { kind: "ServiceAccount", name: "evil", namespace: "dev" },
+        ],
+        checkIds: ["KSV111"],
+        labels: { "kubernetes.io/bootstrapping": "rbac-defaults" },
+        annotations: { "rbac.authorization.kubernetes.io/autoupdate": "true" },
+      }),
+    ).toBeNull()
+    // Dangerous check ID outside rule's checks -> rejected
+    expect(
+      matchRbacBindingException({
+        kind: "ClusterRoleBinding",
+        namespace: "",
+        name: "system:basic-user",
+        roleRefKind: "ClusterRole",
+        roleRefName: "system:basic-user",
+        subjects: [{ kind: "Group", name: "system:authenticated" }],
+        checkIds: ["KSV053"],
+        labels: { "kubernetes.io/bootstrapping": "rbac-defaults" },
+        annotations: { "rbac.authorization.kubernetes.io/autoupdate": "true" },
+      }),
+    ).toBeNull()
+    // system:node expects empty subjects []
+    expect(
+      matchRbacBindingException({
+        kind: "ClusterRoleBinding",
+        namespace: "",
+        name: "system:node",
+        roleRefKind: "ClusterRole",
+        roleRefName: "system:node",
+        subjects: [],
+        checkIds: ["KSV041", "KSV048"],
+        labels: { "kubernetes.io/bootstrapping": "rbac-defaults" },
+        annotations: { "rbac.authorization.kubernetes.io/autoupdate": "true" },
+      }),
+    ).not.toBeNull()
+    expect(
+      matchRbacBindingException({
+        kind: "ClusterRoleBinding",
+        namespace: "",
+        name: "system:custom-dangerous",
+        roleRefKind: "ClusterRole",
+        roleRefName: "custom-impersonator",
+        subjects: [{ kind: "ServiceAccount", name: "app", namespace: "dev" }],
+        checkIds: ["KSV053"],
+        labels: { "kubernetes.io/bootstrapping": "rbac-defaults" },
+        annotations: { "rbac.authorization.kubernetes.io/autoupdate": "true" },
+      }),
+    ).toBeNull()
   })
 })

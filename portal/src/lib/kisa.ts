@@ -1,84 +1,114 @@
 import "server-only"
+import policyBaselineData from "@/data/kisa-policy-baseline.json"
 import { cacheGet, cacheSet } from "./valkey"
 import { cacheKeys, cacheTtl } from "./cache-keys"
 import { KISA_CATALOG } from "./kisa-controls"
-import type { KisaControl, KisaResponse, KisaStatus } from "@/types/kisa"
+import {
+  checkEtcd02,
+  checkImg01,
+  checkSec01,
+  checkTls01,
+  evaluateClusterwideNetworkPolicies,
+  fetchErrorOutcome,
+  makeOutcome,
+  type KisaCheckOutcome,
+} from "./kisa-checks"
+import {
+  checkImg02,
+  checkObs01,
+  checkRbacLive,
+  type KisaPolicyBaseline,
+} from "./kisa-checks-ops"
+import { computeNetworkPolicyDigest } from "./kisa-policy-canonical.mjs"
+import type { Localized } from "./i18n-utils"
+import type { KisaControl, KisaReasonKey, KisaResponse, KisaStatus } from "@/types/kisa"
 
-// Static status map for non-LIVE controls.
-//
-// These 6 remain static because they are node/host-level or process-level facts that are
-// NOT observable via the K8s API the portal has access to (SSH-only config, external service
-// config outside the cluster API, or signing/registry infra state). Their statuses reflect the
-// last manual security audit and must be updated by hand whenever the underlying cluster
-// configuration changes:
-//   - KISA-SEC-01  (OpenBao unseal key isolation)     — Secret *contents* need a value read,
-//                                                        not just existence; out of API scope.
-//   - KISA-ETCD-02 (APISIX etcd access protection)     — etcd transport security is a
-//                                                        host/process-level fact (TLS+auth on
-//                                                        the APISIX-internal etcd endpoint).
-//   - KISA-IMG-01  (Registry TLS certificate verify)   — containerd skip_verify is a per-node
-//                                                        config file setting, not a K8s object.
-//   - KISA-TLS-01  (Service mesh mTLS coverage)        — mesh dataplane-mode opt-out is a pod
-//                                                        annotation audit across many services;
-//                                                        kept manual pending a dedicated scan.
-//   - KISA-OBS-01  (Security event real-time alerting) — Alertmanager receiver wiring lives in
-//                                                        its own config, not a simple K8s read.
-//   - KISA-IMG-02  (Image tag/signature management)    — Cosign signature verification state
-//                                                        isn't exposed via any K8s API object.
-const STATIC_STATUS: Record<string, KisaStatus> = {
-  "KISA-SEC-01": "fail",
-  "KISA-ETCD-02": "fail",
-  "KISA-IMG-01": "fail",
-  "KISA-TLS-01": "warn",
-  "KISA-OBS-01": "warn",
-  "KISA-IMG-02": "warn",
-}
-
-const LIVE_IDS = new Set([
-  "KISA-CP-01",
-  "KISA-ETCD-01",
-  "KISA-POD-01",
-  "KISA-NET-01",
-  "KISA-RBAC-01",
-  "KISA-RBAC-02",
-  "KISA-IMG-03",
-  "KISA-ADM-01",
-  "KISA-TLS-02",
-  "KISA-CFG-01",
-])
+// THREAT MODEL (D-KISA-CLOSED-WORLD):
+// The KISA tab is a compliance indicator for operators; it must be correct under
+// misconfiguration, drift, partial API failure and stale/incomplete objects, and it
+// must not accept by name or pattern; it is NOT a tamper-proof detector against an
+// adversary who already holds cluster-admin and forges Kubernetes object content
+// byte-for-byte equal to the reviewed shapes.
 
 const KISA_NET01_NAMESPACES = ["iam", "devtools", "monitoring", "storage", "database"]
+const PSA_ENFORCED_LEVELS = new Set(["baseline", "restricted"])
+const KISA_ADM_BASELINE: KisaPolicyBaseline = policyBaselineData as KisaPolicyBaseline
 
-// Bindings that are unavoidable K8s builtins — excluded from the RBAC-01/02 verdict because the
-// cluster/operators cannot function without them (kubeadm bootstrap, control-plane component
-// identities, the built-in cluster-admin binding to system:masters).
-function isUnavoidableRbacBuiltin(b: { name: string; subjects: Array<{ kind: string; name: string }> }): boolean {
-  if (b.name === "cluster-admin") return true
-  if (b.name.startsWith("system:") || b.name.startsWith("kubeadm:")) return true
-  if (
-    b.subjects.length > 0 &&
-    b.subjects.every((s) => s.kind === "Group" && (s.name === "system:masters" || s.name.startsWith("system:")))
-  ) {
-    return true
+function hasCliFlagWithValue(args: string[], flag: string): boolean {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (a.startsWith(`${flag}=`)) {
+      return a.slice(flag.length + 1).trim().length > 0
+    }
+    if (a === flag && i + 1 < args.length) {
+      const next = args[i + 1].trim()
+      return next.length > 0 && !next.startsWith("-")
+    }
   }
   return false
 }
 
 // --- Live check helpers ---
 
-async function checkImg03(): Promise<{ status: KisaStatus; detail: string }> {
+async function checkImg03(): Promise<KisaCheckOutcome> {
   const { getSecuritySummary } = await import("./trivy")
   const summary = await getSecuritySummary()
   if (summary.totals.Critical > 0) {
-    return { status: "fail", detail: `Critical CVE ${summary.totals.Critical}건` }
+    const partialSources = summary.partial ? [`vulnerabilityreports(${summary.partialReason ?? "truncated"})`] : undefined
+    return makeOutcome(
+      "fail",
+      "compliance.kisa.reason.imgCveCritical",
+      `Critical CVE ${summary.totals.Critical}건${summary.partial ? " (목록 일부 잘림)" : ""}`,
+      `Critical CVEs: ${summary.totals.Critical}${summary.partial ? " (list truncated)" : ""}`,
+      { partial: Boolean(summary.partial), partialSources },
+    )
+  }
+  if (summary.failed) {
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.apiUnavailable",
+      "Trivy VulnerabilityReport 조회 실패 — 평가 불가",
+      "Trivy VulnerabilityReport read failed — not evaluated",
+      { live: false, partial: true, partialSources: ["vulnerabilityreports"] },
+    )
+  }
+  if (summary.scannedWorkloads === 0 && summary.scannedImages === 0) {
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.imgCveNoReports",
+      "Trivy 취약점 스캔 리포트 없음 — 평가 불가",
+      "No Trivy vulnerability scan reports — not evaluated",
+      { live: false },
+    )
   }
   if (summary.totals.High > 0) {
-    return { status: "warn", detail: `High CVE ${summary.totals.High}건` }
+    const partialSources = summary.partial ? [`vulnerabilityreports(${summary.partialReason ?? "truncated"})`] : undefined
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.imgCveHigh",
+      `High CVE ${summary.totals.High}건${summary.partial ? " (목록 일부 잘림)" : ""}`,
+      `High CVEs: ${summary.totals.High}${summary.partial ? " (list truncated)" : ""}`,
+      { partial: Boolean(summary.partial), partialSources },
+    )
   }
-  return { status: "pass", detail: "Critical/High CVE 없음" }
+  if (summary.partial) {
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.imgCveTruncated",
+      "Trivy VulnerabilityReport 목록 잘림 — 전체 스캔 통과 확정 불가",
+      "Trivy VulnerabilityReport list truncated — full pass cannot be certified",
+      { partial: true, partialSources: [`vulnerabilityreports(${summary.partialReason ?? "truncated"})`] },
+    )
+  }
+  return makeOutcome(
+    "pass",
+    "compliance.kisa.reason.imgCveClean",
+    `Critical/High CVE 없음 (스캔 이미지 ${summary.scannedImages}건)`,
+    `No Critical/High CVEs (${summary.scannedImages} scanned image(s))`,
+  )
 }
 
-async function checkCfg01(): Promise<{ status: KisaStatus; detail: string; partial?: boolean }> {
+async function checkCfg01(): Promise<KisaCheckOutcome> {
   const { getComplianceFrameworks, getConfigAuditList, getRbacAuditList, getInfraAuditList } =
     await import("./compliance")
   // D-CFG01-ALLSETTLED: Evaluate all 4 compliance sources independently so one unreadable source
@@ -130,9 +160,12 @@ async function checkCfg01(): Promise<{ status: KisaStatus; detail: string; parti
   const rbacActionableFailures = sumActionableRows(rbacRows)
   const infraActionableFailures = sumActionableRows(infraRows)
   const auditFailures = rbacActionableFailures + infraActionableFailures
-  const breakdown = `(config-audit 조치가능 ${actionableFailures}건, 위생 ${lowSeverityFailures}건, 수용 ${acceptedFailures}건; RBAC/infra 조치가능 ${auditFailures}건)`
-  const unavailableNote =
+  const breakdownKo = `(config-audit 조치가능 ${actionableFailures}건, 위생 ${lowSeverityFailures}건, 수용 ${acceptedFailures}건; RBAC/infra 조치가능 ${auditFailures}건)`
+  const breakdownEn = `(config-audit actionable ${actionableFailures}, hygiene ${lowSeverityFailures}, accepted ${acceptedFailures}; RBAC/infra actionable ${auditFailures})`
+  const unavailableNoteKo =
     unavailableSources.length > 0 ? ` · 조회 불가 소스: ${unavailableSources.join(", ")}` : ""
+  const unavailableNoteEn =
+    unavailableSources.length > 0 ? `; unavailable source(s): ${unavailableSources.join(", ")}` : ""
 
   const totalControls = frameworks.reduce((acc, f) => acc + f.totalControls, 0)
   const actionableControls = frameworks.reduce((acc, f) => acc + (f.actionableFailCount ?? f.failCount), 0)
@@ -144,233 +177,505 @@ async function checkCfg01(): Promise<{ status: KisaStatus; detail: string; parti
 
   // D3: Audit findings can precede CCR aggregation. Cost: two list reads; escape: shared snapshot API.
   if (actionableControls > 0 || actionableFailures > 0 || auditFailures > 0) {
-    const failingSources: string[] = []
-    if (actionableControls > 0) failingSources.push(`frameworks(${actionableControls}건)`)
-    if (actionableFailures > 0) failingSources.push(`config-audit(${actionableFailures}건)`)
-    if (rbacActionableFailures > 0) failingSources.push(`rbac(${rbacActionableFailures}건)`)
-    if (infraActionableFailures > 0) failingSources.push(`infra(${infraActionableFailures}건)`)
-    return {
-      status: "fail",
-      detail: `조치가능 프레임워크 컨트롤 실패 ${actionableControls}건 [실패 소스: ${failingSources.join(", ")}] (실패 기록 없음 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 미평가 ${notEvaluatedControls}) ${breakdown}${unavailableNote}`,
-      partial,
+    const failingSourcesKo: string[] = []
+    const failingSourcesEn: string[] = []
+    if (actionableControls > 0) {
+      failingSourcesKo.push(`frameworks(${actionableControls}건)`)
+      failingSourcesEn.push(`frameworks(${actionableControls})`)
     }
+    if (actionableFailures > 0) {
+      failingSourcesKo.push(`config-audit(${actionableFailures}건)`)
+      failingSourcesEn.push(`config-audit(${actionableFailures})`)
+    }
+    if (rbacActionableFailures > 0) {
+      failingSourcesKo.push(`rbac(${rbacActionableFailures}건)`)
+      failingSourcesEn.push(`rbac(${rbacActionableFailures})`)
+    }
+    if (infraActionableFailures > 0) {
+      failingSourcesKo.push(`infra(${infraActionableFailures}건)`)
+      failingSourcesEn.push(`infra(${infraActionableFailures})`)
+    }
+    return makeOutcome(
+      "fail",
+      "compliance.kisa.reason.cfgActionableFail",
+      `조치가능 프레임워크 컨트롤 실패 ${actionableControls}건 [실패 소스: ${failingSourcesKo.join(", ")}] (실패 기록 없음 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 미평가 ${notEvaluatedControls}) ${breakdownKo}${unavailableNoteKo}`,
+      `${actionableControls} actionable framework control failure(s) [failing source(s): ${failingSourcesEn.join(", ")}] (no failure recorded ${evaluatedPassControls}/${totalControls}, accepted ${acceptedControls}, not evaluated ${notEvaluatedControls}) ${breakdownEn}${unavailableNoteEn}`,
+      { partial, partialSources: unavailableSources },
+    )
   }
   if (notEvaluatedControls > 0 || hasUnknownCoverage || unavailableSources.length > 0) {
-    const lead =
+    const leadKo =
       unavailableSources.length > 0 && notEvaluatedControls === 0
         ? `컴플라이언스 소스 일부 조회 불가 (${unavailableSources.join(", ")})`
         : `미평가 프레임워크 컨트롤 ${notEvaluatedControls}건`
-    return {
-      status: "warn",
-      detail: `${lead} (실패 기록 없음 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 조치가능 0건) ${breakdown}${unavailableNote}`,
-      partial,
-    }
+    const leadEn =
+      unavailableSources.length > 0 && notEvaluatedControls === 0
+        ? `Compliance source(s) unavailable (${unavailableSources.join(", ")})`
+        : `${notEvaluatedControls} unevaluated framework control(s)`
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.cfgUnevaluated",
+      `${leadKo} (실패 기록 없음 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 조치가능 0건) ${breakdownKo}${unavailableNoteKo}`,
+      `${leadEn} (no failure recorded ${evaluatedPassControls}/${totalControls}, accepted ${acceptedControls}, actionable 0) ${breakdownEn}${unavailableNoteEn}`,
+      { partial, partialSources: unavailableSources },
+    )
   }
   if (frameworks.length === 0) {
-    return { status: "manual", detail: `프레임워크 데이터 없음 ${breakdown}` }
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.cfgEmpty",
+      `프레임워크 데이터 없음 ${breakdownKo}`,
+      `No compliance framework data ${breakdownEn}`,
+      { live: false },
+    )
   }
-  return {
-    status: "pass",
-    detail: `전 프레임워크 ${totalControls}개 컨트롤 평가 완료·조치가능 실패 없음 (실패 기록 없음 ${evaluatedPassControls}, 수용 ${acceptedControls}) ${breakdown}`,
+  if (totalControls === 0) {
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.cfgUnevaluated",
+      `평가된 프레임워크 컨트롤 0건 — 통과 불가 ${breakdownKo}`,
+      `0 evaluated framework controls — cannot pass ${breakdownEn}`,
+    )
   }
+  return makeOutcome(
+    "pass",
+    "compliance.kisa.reason.cfgClean",
+    `전 프레임워크 ${totalControls}개 컨트롤 평가 완료·조치가능 실패 없음 (실패 기록 없음 ${evaluatedPassControls}, 수용 ${acceptedControls}) ${breakdownKo}`,
+    `All ${totalControls} framework control(s) evaluated with 0 actionable failures (no failure recorded ${evaluatedPassControls}, accepted ${acceptedControls}) ${breakdownEn}`,
+  )
 }
 
-async function checkTls02(): Promise<{ status: KisaStatus; detail: string }> {
-  const { getCertificates } = await import("./k8s-client")
-  const certs = await getCertificates()
+async function checkTls02(): Promise<KisaCheckOutcome> {
+  const { getKisaCertificates } = await import("./k8s-client")
+  const certRes = await getKisaCertificates()
+  if (certRes.status !== "ok") {
+    return fetchErrorOutcome(certRes, "cert-manager Certificate", "cert-manager Certificates")
+  }
+  const certs = certRes.data
   if (certs.length === 0) {
-    return { status: "manual", detail: "인증서 데이터 없음" }
+    return makeOutcome("manual", "compliance.kisa.reason.resourceMissing", "인증서 데이터 없음", "No certificate data", { live: false })
   }
   const now = Date.now()
   const thirtyDays = 30 * 24 * 60 * 60 * 1000
   const notReady = certs.filter((c) => !c.ready)
+  const missingExpiry = certs.filter((c) => !c.notAfter || !Number.isFinite(new Date(c.notAfter).getTime()))
   const expiring = certs.filter(
-    (c) => c.notAfter && new Date(c.notAfter).getTime() - now < thirtyDays,
+    (c) => c.notAfter && Number.isFinite(new Date(c.notAfter).getTime()) && new Date(c.notAfter).getTime() - now < thirtyDays,
   )
   if (notReady.length > 0 || expiring.length > 0) {
-    const parts: string[] = []
-    if (notReady.length > 0) parts.push(`미준비 ${notReady.length}건`)
-    if (expiring.length > 0) parts.push(`30일 내 만료 ${expiring.length}건`)
-    return { status: "fail", detail: parts.join(", ") }
+    const partsKo: string[] = []
+    const partsEn: string[] = []
+    if (notReady.length > 0) {
+      partsKo.push(`미준비 ${notReady.length}건`)
+      partsEn.push(`not ready: ${notReady.length}`)
+    }
+    if (expiring.length > 0) {
+      partsKo.push(`30일 내 만료 ${expiring.length}건`)
+      partsEn.push(`expiring within 30d: ${expiring.length}`)
+    }
+    return makeOutcome("fail", "compliance.kisa.reason.tlsCertInvalid", partsKo.join(", "), partsEn.join("; "))
   }
-  return { status: "pass", detail: `전체 ${certs.length}건 정상` }
+  if (missingExpiry.length > 0) {
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.tlsCertMissingExpiry",
+      `만료일(notAfter) 미확인 인증서 ${missingExpiry.length}/${certs.length}건 — 수동 검토 필요`,
+      `${missingExpiry.length}/${certs.length} certificate(s) missing valid notAfter — manual review required`,
+    )
+  }
+  return makeOutcome(
+    "pass",
+    "compliance.kisa.reason.tlsCertOk",
+    `전체 ${certs.length}건 정상`,
+    `All ${certs.length} certificate(s) healthy`,
+  )
 }
 
-async function checkAdm01(): Promise<{ status: KisaStatus; detail: string }> {
-  const { getKyvernoPolicies } = await import("./k8s-client")
-  const policies = await getKyvernoPolicies()
+export async function checkAdm01(baseline: KisaPolicyBaseline = KISA_ADM_BASELINE): Promise<KisaCheckOutcome> {
+  const { getKisaKyvernoPolicies } = await import("./k8s-client")
+  const polRes = await getKisaKyvernoPolicies()
+  if (polRes.status !== "ok") {
+    return fetchErrorOutcome(polRes, "Kyverno 정책", "Kyverno policies")
+  }
+  const policies = polRes.data
   if (policies.length === 0) {
-    return { status: "manual", detail: "Kyverno 정책 없음" }
+    return makeOutcome("manual", "compliance.kisa.reason.resourceMissing", "Kyverno 정책 없음", "No Kyverno policies found", { live: false })
   }
-  const notReady = policies.filter((p) => !p.ready)
-  const allAudit = policies.every((p) => p.validationFailureAction === "Audit")
-  if (notReady.length > 0 || allAudit) {
-    const parts: string[] = []
-    if (notReady.length > 0) parts.push(`미준비 ${notReady.length}건`)
-    if (allAudit) parts.push("전 정책 Audit 모드")
-    return { status: "warn", detail: parts.join(", ") }
+
+  // D-KISA-CLOSED-WORLD (R7): Compare against reviewed baseline entries marked admissionRelevant.
+  // Arbitrary Enforce+Ready policies not in the baseline never count toward pass (listed as unreviewed).
+  const baselineEntries = Object.values(baseline.policies).filter((e) => e.admissionRelevant === true)
+  if (baselineEntries.length === 0) {
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.resourceMissing",
+      "기준선 admission 정책 정의 없음 — 평가 불가",
+      "No admission-relevant baseline policies defined — not evaluated",
+      { live: false },
+    )
   }
-  return { status: "pass", detail: `Enforce 정책 ${policies.filter((p) => p.validationFailureAction === "Enforce").length}건 활성` }
+
+  const missing: string[] = []
+  const notReady: string[] = []
+  const disabled: string[] = []
+  const differs: string[] = []
+  const nonEnforce: string[] = []
+  let enforcedCount = 0
+
+  for (const entry of baselineEntries) {
+    const p = policies.find((item) => item.scope === "cluster" && item.name === entry.name)
+    if (!p) {
+      missing.push(entry.name)
+      continue
+    }
+    if (!p.ready) {
+      notReady.push(entry.name)
+      continue
+    }
+    if (p.effectiveEnforcement === "Disabled") {
+      disabled.push(entry.name)
+      continue
+    }
+    const hasValidateOrVerify = p.hasValidateOrVerifyRules !== false
+    const digestMatches = Boolean(p.specSha256) && p.specSha256 === entry.specSha256
+    const noOverrides = p.hasOverrides !== true && entry.hasOverrides !== true
+    if (!hasValidateOrVerify || !digestMatches || !noOverrides) {
+      differs.push(entry.name)
+      continue
+    }
+    const liveAction = p.effectiveEnforcement ?? p.validationFailureAction
+    if (entry.validationFailureAction !== "Enforce" || !entry.enforceEligible || liveAction !== "Enforce") {
+      nonEnforce.push(entry.name)
+      continue
+    }
+    enforcedCount++
+  }
+
+  const unreviewed = policies
+    .filter((p) => p.scope !== "cluster" || !(p.name in baseline.policies))
+    .map((p) => (p.namespace ? `${p.namespace}/${p.name}` : p.name))
+    .sort()
+  const unreviewedKo = unreviewed.length > 0 ? ` · 미검토(unreviewed): ${unreviewed.join(", ")}` : ""
+  const unreviewedEn = unreviewed.length > 0 ? `; unreviewed: ${unreviewed.join(", ")}` : ""
+
+  if (missing.length > 0 || notReady.length > 0 || disabled.length > 0 || differs.length > 0 || nonEnforce.length > 0) {
+    const partsKo: string[] = [`Enforce ${enforcedCount}/${baselineEntries.length}건`]
+    const partsEn: string[] = [`Enforce ${enforcedCount}/${baselineEntries.length}`]
+    if (nonEnforce.length > 0) {
+      partsKo.push(`Audit/Mixed ${nonEnforce.length}건`)
+      partsEn.push(`Audit/Mixed ${nonEnforce.length}`)
+    }
+    if (differs.length > 0) {
+      partsKo.push(`기준선 불일치 ${differs.length}건(${differs.join(", ")})`)
+      partsEn.push(`differs from baseline ${differs.length} (${differs.join(", ")})`)
+    }
+    if (notReady.length > 0) {
+      partsKo.push(`미준비 ${notReady.length}건(${notReady.join(", ")})`)
+      partsEn.push(`not ready ${notReady.length} (${notReady.join(", ")})`)
+    }
+    if (disabled.length > 0) {
+      partsKo.push(`admission=false ${disabled.length}건(${disabled.join(", ")})`)
+      partsEn.push(`admission=false ${disabled.length} (${disabled.join(", ")})`)
+    }
+    if (missing.length > 0) {
+      partsKo.push(`누락 ${missing.length}건(${missing.join(", ")})`)
+      partsEn.push(`missing ${missing.length} (${missing.join(", ")})`)
+    }
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.admPartialOrDiffers",
+      `${partsKo.join(" · ")}${unreviewedKo}`,
+      `${partsEn.join("; ")}${unreviewedEn}`,
+    )
+  }
+
+  return makeOutcome(
+    "pass",
+    "compliance.kisa.reason.admEnforced",
+    `기준선 검증 정책 ${enforcedCount}/${baselineEntries.length}건 SHA-256 일치·Enforce·Ready=True 활성${unreviewedKo}`,
+    `All ${enforcedCount}/${baselineEntries.length} baseline admission policies match SHA-256, Enforce, Ready=True${unreviewedEn}`,
+  )
 }
 
-async function checkCp01(): Promise<{ status: KisaStatus; detail: string }> {
-  const { getApiServerPods } = await import("./k8s-client")
-  const pods = await getApiServerPods()
-  if (pods.length === 0) return { status: "manual", detail: "API 서버 파드 정보 없음" }
+async function checkCp01(): Promise<KisaCheckOutcome> {
+  const { getKisaApiServerPods } = await import("./k8s-client")
+  const podsRes = await getKisaApiServerPods()
+  if (podsRes.status !== "ok") {
+    return fetchErrorOutcome(podsRes, "API 서버 파드", "API server pods")
+  }
+  const pods = podsRes.data
+  if (pods.length === 0) {
+    return makeOutcome("manual", "compliance.kisa.reason.resourceMissing", "API 서버 파드 정보 없음", "No API server pod data", { live: false })
+  }
 
+  const missingContainer = pods.filter((p) => p.hasApiserverContainer === false)
+  if (missingContainer.length > 0) {
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.apiserverContainerMissing",
+      `kube-apiserver 컨테이너 미식별 파드 ${missingContainer.length}/${pods.length}건 — 평가 불가`,
+      `kube-apiserver container not identified in ${missingContainer.length}/${pods.length} pod(s) — not evaluated`,
+      { live: false },
+    )
+  }
+  const notReady = pods.filter((p) => p.ready !== true)
+  if (notReady.length === pods.length) {
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.cpPodNotReady",
+      `kube-apiserver 파드 ${notReady.length}/${pods.length}건 Ready=True 미확인(status 누락 또는 미준비) — 평가 불가`,
+      `kube-apiserver pod Ready=True missing/false on ${notReady.length}/${pods.length} pod(s) — not evaluated`,
+      { live: false },
+    )
+  }
   const hasBoth = pods.filter(
     (p) =>
-      p.containerArgs.some((a) => a.includes("--audit-log-path")) &&
-      p.containerArgs.some((a) => a.includes("--audit-policy-file")),
+      hasCliFlagWithValue(p.containerArgs, "--audit-log-path") &&
+      hasCliFlagWithValue(p.containerArgs, "--audit-policy-file"),
   )
-  if (hasBoth.length === pods.length) {
-    return { status: "pass", detail: `apiserver ${pods.length}건 모두 감사 로그 설정 확인` }
+  if (hasBoth.length === pods.length && notReady.length === 0) {
+    return makeOutcome(
+      "pass",
+      "compliance.kisa.reason.cpAuditEnabled",
+      `apiserver ${pods.length}건 모두 감사 로그 설정 확인`,
+      `All ${pods.length} kube-apiserver pod(s) Ready=True with audit log flags configured`,
+    )
   }
   if (hasBoth.length > 0) {
-    return { status: "warn", detail: `apiserver ${hasBoth.length}/${pods.length}건만 감사 로그 설정` }
+    const suffixKo = notReady.length > 0 ? ` · 미준비 ${notReady.length}건` : ""
+    const suffixEn = notReady.length > 0 ? `; not ready: ${notReady.length}` : ""
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.cpAuditPartialOrUnready",
+      `apiserver ${hasBoth.length}/${pods.length}건 감사 로그 설정${suffixKo}`,
+      `Audit log flags configured on ${hasBoth.length}/${pods.length} kube-apiserver pod(s)${suffixEn}`,
+    )
   }
-  return { status: "fail", detail: `apiserver ${pods.length}건 모두 --audit-log-path/--audit-policy-file 미설정` }
+  return makeOutcome(
+    "fail",
+    "compliance.kisa.reason.cpAuditMissing",
+    `apiserver ${pods.length}건 모두 --audit-log-path/--audit-policy-file 미설정`,
+    `All ${pods.length} kube-apiserver pod(s) missing --audit-log-path/--audit-policy-file`,
+  )
 }
 
-async function checkEtcd01(): Promise<{ status: KisaStatus; detail: string }> {
-  const { getApiServerPods } = await import("./k8s-client")
-  const pods = await getApiServerPods()
-  if (pods.length === 0) return { status: "manual", detail: "API 서버 파드 정보 없음" }
-
-  const encrypted = pods.filter((p) => p.containerArgs.some((a) => a.includes("--encryption-provider-config")))
-  if (encrypted.length === pods.length) {
-    return { status: "pass", detail: `apiserver ${pods.length}건 모두 --encryption-provider-config 설정` }
+async function checkEtcd01(): Promise<KisaCheckOutcome> {
+  const { getKisaApiServerPods } = await import("./k8s-client")
+  const podsRes = await getKisaApiServerPods()
+  if (podsRes.status !== "ok") {
+    return fetchErrorOutcome(podsRes, "API 서버 파드", "API server pods")
   }
-  return { status: "fail", detail: `apiserver ${pods.length - encrypted.length}/${pods.length}건 암호화 미설정` }
+  const pods = podsRes.data
+  if (pods.length === 0) {
+    return makeOutcome("manual", "compliance.kisa.reason.resourceMissing", "API 서버 파드 정보 없음", "No API server pod data", { live: false })
+  }
+
+  const missingContainer = pods.filter((p) => p.hasApiserverContainer === false)
+  if (missingContainer.length > 0) {
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.apiserverContainerMissing",
+      `kube-apiserver 컨테이너 미식별 파드 ${missingContainer.length}/${pods.length}건 — 평가 불가`,
+      `kube-apiserver container not identified in ${missingContainer.length}/${pods.length} pod(s) — not evaluated`,
+      { live: false },
+    )
+  }
+  const notReady = pods.filter((p) => p.ready !== true)
+  if (notReady.length === pods.length) {
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.cpPodNotReady",
+      `kube-apiserver 파드 ${notReady.length}/${pods.length}건 Ready=True 미확인(status 누락 또는 미준비) — 평가 불가`,
+      `kube-apiserver pod Ready=True missing/false on ${notReady.length}/${pods.length} pod(s) — not evaluated`,
+      { live: false },
+    )
+  }
+  const encrypted = pods.filter((p) => hasCliFlagWithValue(p.containerArgs, "--encryption-provider-config"))
+  if (encrypted.length === pods.length && notReady.length === 0) {
+    return makeOutcome(
+      "pass",
+      "compliance.kisa.reason.etcdEncEnabled",
+      `apiserver ${pods.length}건 모두 --encryption-provider-config 설정`,
+      `All ${pods.length} kube-apiserver pod(s) Ready=True with --encryption-provider-config`,
+    )
+  }
+  if (encrypted.length > 0) {
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.etcdEncPartialOrUnready",
+      `apiserver ${encrypted.length}/${pods.length}건 암호화 설정 · 미준비 ${notReady.length}건`,
+      `Encryption configured on ${encrypted.length}/${pods.length} kube-apiserver pod(s); not ready: ${notReady.length}`,
+    )
+  }
+  return makeOutcome(
+    "fail",
+    "compliance.kisa.reason.etcdEncMissing",
+    `apiserver ${pods.length - encrypted.length}/${pods.length}건 암호화 미설정`,
+    `${pods.length - encrypted.length}/${pods.length} kube-apiserver pod(s) missing --encryption-provider-config`,
+  )
 }
 
-async function checkPod01(): Promise<{ status: KisaStatus; detail: string }> {
-  const { getNamespaces } = await import("./k8s-client")
-  const namespaces = await getNamespaces()
-  const considered = namespaces.filter((n) => n.name !== "kube-node-lease" && n.name !== "kube-public")
-  if (considered.length === 0) return { status: "manual", detail: "네임스페이스 정보 없음" }
+async function checkPod01(): Promise<KisaCheckOutcome> {
+  const { getKisaNamespaces } = await import("./k8s-client")
+  const nsRes = await getKisaNamespaces()
+  if (nsRes.status !== "ok") {
+    return fetchErrorOutcome(nsRes, "네임스페이스 목록", "Namespace list")
+  }
+  const considered = nsRes.data.filter((n) => n.name !== "kube-node-lease" && n.name !== "kube-public")
+  if (considered.length === 0) {
+    return makeOutcome("manual", "compliance.kisa.reason.resourceMissing", "네임스페이스 정보 없음", "No namespace data", { live: false })
+  }
 
-  const psaKeys = [
-    "pod-security.kubernetes.io/enforce",
-    "pod-security.kubernetes.io/audit",
-    "pod-security.kubernetes.io/warn",
-  ]
-  const labeled = considered.filter((n) => psaKeys.some((k) => k in n.labels))
-  const ratio = labeled.length / considered.length
-  if (ratio === 1) {
-    return { status: "pass", detail: `대상 네임스페이스 ${considered.length}건 모두 PSA 라벨 적용` }
+  const enforced = considered.filter((n) => PSA_ENFORCED_LEVELS.has(n.labels["pod-security.kubernetes.io/enforce"] ?? ""))
+  const auditOrWarnNonPriv = considered.filter(
+    (n) =>
+      !PSA_ENFORCED_LEVELS.has(n.labels["pod-security.kubernetes.io/enforce"] ?? "") &&
+      (PSA_ENFORCED_LEVELS.has(n.labels["pod-security.kubernetes.io/audit"] ?? "") ||
+        PSA_ENFORCED_LEVELS.has(n.labels["pod-security.kubernetes.io/warn"] ?? "")),
+  )
+  const privilegedOnly = considered.length - enforced.length - auditOrWarnNonPriv.length
+
+  if (enforced.length === considered.length) {
+    return makeOutcome(
+      "pass",
+      "compliance.kisa.reason.podPsaEnforced",
+      `대상 네임스페이스 ${considered.length}건 모두 PSA enforce(baseline/restricted) 적용`,
+      `All ${considered.length} target namespace(s) enforce PSA baseline/restricted`,
+    )
   }
-  if (ratio >= 0.5) {
-    return { status: "warn", detail: `PSA 라벨 적용 ${labeled.length}/${considered.length}건` }
+  if (enforced.length > 0 || auditOrWarnNonPriv.length > 0) {
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.podPsaPartial",
+      `PSA enforce(baseline/restricted) ${enforced.length}/${considered.length}건 · audit/warn만 ${auditOrWarnNonPriv.length}건 (privileged/미설정 ${privilegedOnly}건)`,
+      `PSA enforce(baseline/restricted) ${enforced.length}/${considered.length}; audit/warn only ${auditOrWarnNonPriv.length} (privileged/unset ${privilegedOnly})`,
+    )
   }
-  return { status: "fail", detail: `PSA 라벨 적용 ${labeled.length}/${considered.length}건` }
+  return makeOutcome(
+    "fail",
+    "compliance.kisa.reason.podPsaMissing",
+    `PSA baseline/restricted 라벨 적용 네임스페이스 없음 (0/${considered.length}건)`,
+    `No namespace applies PSA baseline/restricted (0/${considered.length})`,
+  )
 }
 
-async function checkNet01(): Promise<{ status: KisaStatus; detail: string }> {
-  const { getNetworkPolicies } = await import("./k8s-client")
-  const policies = await getNetworkPolicies()
-
-  const hasDefaultDeny = (ns: string) =>
-    policies.some((p) => p.namespace === ns && p.policyTypes.includes("Ingress") && p.podSelectorEmpty)
-  const covered = KISA_NET01_NAMESPACES.filter(hasDefaultDeny)
-
-  if (covered.length === KISA_NET01_NAMESPACES.length) {
-    return { status: "pass", detail: `대상 네임스페이스 ${KISA_NET01_NAMESPACES.length}건 모두 default-deny 적용` }
-  }
-  if (covered.length > 0) {
-    return { status: "warn", detail: `default-deny 적용 ${covered.length}/${KISA_NET01_NAMESPACES.length}건` }
-  }
-  return { status: "fail", detail: "대상 네임스페이스에 ingress default-deny NetworkPolicy 없음" }
-}
-
-async function checkRbac(id: "KISA-RBAC-01" | "KISA-RBAC-02"): Promise<{ status: KisaStatus; detail: string }> {
-  const { getRbacBindings, getClusterRoles, getRoles } = await import("./k8s-client")
-  const [bindings, clusterRoles, roles] = await Promise.all([
-    getRbacBindings(),
-    getClusterRoles(),
-    getRoles(),
+export async function checkNet01(baseline: KisaPolicyBaseline = KISA_ADM_BASELINE): Promise<KisaCheckOutcome> {
+  const {
+    getKisaNetworkPolicies,
+    getKisaCiliumNetworkPolicies,
+    getKisaCiliumClusterwideNetworkPolicies,
+  } = await import("./k8s-client")
+  const [npRes, cnpRes, ccnpRes] = await Promise.all([
+    getKisaNetworkPolicies(),
+    getKisaCiliumNetworkPolicies(),
+    getKisaCiliumClusterwideNetworkPolicies(),
   ])
-
-  // Build a quick risk counter matching the governance/rbac route logic
-  const clusterRolesMap = new Map(clusterRoles.map((r) => [r.name, r]))
-  const rolesMap = new Map<string, Map<string, typeof roles[0]>>()
-  for (const r of roles) {
-    if (!rolesMap.has(r.namespace)) rolesMap.set(r.namespace, new Map())
-    rolesMap.get(r.namespace)!.set(r.name, r)
+  if (npRes.status !== "ok") {
+    return fetchErrorOutcome(npRes, "NetworkPolicy 목록", "NetworkPolicy list")
+  }
+  if (cnpRes.status !== "ok") {
+    return fetchErrorOutcome(cnpRes, "CiliumNetworkPolicy 목록", "CiliumNetworkPolicy list")
+  }
+  if (ccnpRes.status !== "ok") {
+    return fetchErrorOutcome(ccnpRes, "CiliumClusterwideNetworkPolicy 목록", "CiliumClusterwideNetworkPolicy list")
   }
 
-  const writeVerbs = new Set(["create", "update", "patch", "delete", "deletecollection"])
-  const escalationTokens = new Set(["bind", "escalate", "impersonate"])
+  const baselineMap = baseline.networkPolicies ?? {}
+  const defaultDenyMap = baseline.net01DefaultDenyByNamespace ?? {}
+  const unreviewedClusterwide = evaluateClusterwideNetworkPolicies(ccnpRes.data, baseline)
 
-  function classify(b: (typeof bindings)[number]) {
-    let matchedRole: { rules?: unknown[] } | undefined
-    if (b.roleRef.kind === "ClusterRole") {
-      matchedRole = clusterRolesMap.get(b.roleRef.name)
-    } else if (b.roleRef.kind === "Role" && b.namespace) {
-      matchedRole = rolesMap.get(b.namespace)?.get(b.roleRef.name)
-    }
+  // D-KISA-CLOSED-WORLD (R8+R9): Never interpret arbitrary selector expressions.
+  // A namespace counts as default-deny ONLY when (a) its reviewed baseline default-deny
+  // policy is present with equal canonical SHA-256 digest, AND (b) EVERY NetworkPolicy
+  // and CiliumNetworkPolicy (both spec and specs[]) present in that namespace is in the
+  // baseline with equal digest, AND (c) EVERY CiliumClusterwideNetworkPolicy in the cluster
+  // is in the baseline with equal digest.
+  const covered: string[] = []
+  const uncovered: string[] = []
+  const unreviewedByNs: string[] = []
 
-    const rules = matchedRole?.rules ?? []
-    let wildcardVerbs = false
-    let wildcardResources = false
-    let escalation = false
-    let writeAccess = false
-    let secretsAccess = false
+  for (const ns of KISA_NET01_NAMESPACES) {
+    const nsPolicies: Array<{ kind: "NetworkPolicy" | "CiliumNetworkPolicy"; name: string; raw: unknown }> = [
+      ...npRes.data
+        .filter((p) => p.metadata?.namespace === ns)
+        .map((p) => ({ kind: "NetworkPolicy" as const, name: p.metadata?.name ?? "unknown", raw: p })),
+      ...cnpRes.data
+        .filter((c) => c.metadata?.namespace === ns)
+        .map((c) => ({ kind: "CiliumNetworkPolicy" as const, name: c.metadata?.name ?? "unknown", raw: c })),
+    ]
 
-    for (const r of rules as Array<{ verbs?: string[]; resources?: string[] }>) {
-      const verbs = r.verbs ?? []
-      const resources = r.resources ?? []
-      if (verbs.includes("*")) wildcardVerbs = true
-      if (resources.includes("*")) wildcardResources = true
-      if (resources.includes("secrets")) secretsAccess = true
-      if (verbs.some((v) => writeVerbs.has(v.toLowerCase()))) writeAccess = true
-      if (
-        verbs.some((v) => escalationTokens.has(v.toLowerCase())) ||
-        resources.some((res) => escalationTokens.has(res.toLowerCase()))
-      ) {
-        escalation = true
+    const defaultDenyKey = defaultDenyMap[ns] ?? null
+    const defaultDenyEntry = defaultDenyKey ? baselineMap[defaultDenyKey] : undefined
+    let hasBaselineDefaultDeny = false
+    if (defaultDenyEntry) {
+      const match = nsPolicies.find(
+        (p) => p.kind === defaultDenyEntry.kind && p.name === defaultDenyEntry.name,
+      )
+      if (match && computeNetworkPolicyDigest(match.kind, match.raw) === defaultDenyEntry.specSha256) {
+        hasBaselineDefaultDeny = true
       }
     }
 
-    return { wildcardVerbs, wildcardResources, escalation, writeAccess, secretsAccess }
-  }
-
-  // Unavoidable K8s builtins (cluster-admin's own binding, system:*/kubeadm:* bindings, and
-  // bindings whose only subjects are system:masters/system:* groups) are never actionable —
-  // exclude them from both verdicts.
-  const nonBuiltin = bindings.filter((b) => !isUnavoidableRbacBuiltin(b))
-
-  if (id === "KISA-RBAC-01") {
-    const clusterAdminBindings = nonBuiltin.filter((b) => b.roleRef.name === "cluster-admin")
-    if (clusterAdminBindings.length > 0) {
-      return {
-        status: "fail",
-        detail: `불필요한 cluster-admin 바인딩 ${clusterAdminBindings.length}건 (${clusterAdminBindings.map((b) => b.name).join(", ")})`,
+    const nsUnreviewed: string[] = []
+    for (const pol of nsPolicies) {
+      const key = `${pol.kind}/${ns}/${pol.name}`
+      const entry = baselineMap[key]
+      if (!entry) {
+        nsUnreviewed.push(`${pol.kind}/${pol.name}`)
+      } else if (computeNetworkPolicyDigest(pol.kind, pol.raw) !== entry.specSha256) {
+        nsUnreviewed.push(`${pol.kind}/${pol.name}(differs)`)
       }
     }
-    return { status: "pass", detail: "built-in 외 cluster-admin 바인딩 없음" }
-  }
 
-  // KISA-RBAC-02: risky bindings among the remaining non-builtin, non-cluster-admin bindings.
-  const remaining = nonBuiltin.filter((b) => b.roleRef.name !== "cluster-admin")
-  let criticalCount = 0
-  let highCount = 0
-  for (const b of remaining) {
-    const { wildcardVerbs, wildcardResources, escalation, writeAccess, secretsAccess } = classify(b)
-    if ((wildcardVerbs && wildcardResources) || escalation) {
-      criticalCount++
-    } else if (b.scope === "cluster" && (writeAccess || secretsAccess || wildcardVerbs || wildcardResources)) {
-      highCount++
+    if (unreviewedClusterwide.length === 0 && hasBaselineDefaultDeny && nsUnreviewed.length === 0) {
+      covered.push(ns)
+    } else {
+      uncovered.push(ns)
+      if (nsUnreviewed.length > 0) {
+        unreviewedByNs.push(`${ns}: ${nsUnreviewed.sort().join(", ")}`)
+      }
     }
   }
 
-  if (criticalCount > 0) {
-    return { status: "fail", detail: `위험 바인딩 Critical ${criticalCount}건` }
+  const unreviewedNoteKo =
+    unreviewedByNs.length > 0 ? ` · 미검토/불일치 정책 존재(unreviewed policy present): ${unreviewedByNs.join("; ")}` : ""
+  const unreviewedNoteEn =
+    unreviewedByNs.length > 0 ? `; unreviewed policy present: ${unreviewedByNs.join("; ")}` : ""
+  const clusterwideNoteKo =
+    unreviewedClusterwide.length > 0 ? ` · 미검토 클러스터 전역 정책 존재(unreviewed cluster-wide policy present): ${unreviewedClusterwide.join(", ")}` : ""
+  const clusterwideNoteEn =
+    unreviewedClusterwide.length > 0 ? `; unreviewed cluster-wide policy present: ${unreviewedClusterwide.join(", ")}` : ""
+
+  if (covered.length === KISA_NET01_NAMESPACES.length && unreviewedClusterwide.length === 0) {
+    return makeOutcome(
+      "pass",
+      "compliance.kisa.reason.netDenyAll",
+      `대상 네임스페이스 ${KISA_NET01_NAMESPACES.length}건 모두 기준선 default-deny 일치·미검토 정책(클러스터 전역 포함) 없음`,
+      `All ${KISA_NET01_NAMESPACES.length} target namespace(s) match baseline default-deny with zero unreviewed namespaced or cluster-wide policies`,
+    )
   }
-  if (highCount > 0) {
-    return { status: "warn", detail: `위험 바인딩 High ${highCount}건` }
+  if (covered.length > 0 || unreviewedByNs.length > 0 || unreviewedClusterwide.length > 0) {
+    if (unreviewedClusterwide.length > 0) {
+      return makeOutcome(
+        "warn",
+        "compliance.kisa.reason.netDenyPartial",
+        `기준선 default-deny 일치 0/${KISA_NET01_NAMESPACES.length}건 (미검토 클러스터 전역 정책 존재로 전 네임스페이스 미충족: ${uncovered.join(", ")}) · 미검토 클러스터 전역 정책 존재(unreviewed cluster-wide policy present): ${unreviewedClusterwide.join(", ")}${unreviewedNoteKo}`,
+        `0/${KISA_NET01_NAMESPACES.length} namespace(s) covered (uncovered: ${uncovered.join(", ")}); unreviewed cluster-wide policy present: ${unreviewedClusterwide.join(", ")}${unreviewedNoteEn}`,
+      )
+    }
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.netDenyPartial",
+      `기준선 default-deny 일치 ${covered.length}/${KISA_NET01_NAMESPACES.length}건 (미충족: ${uncovered.length > 0 ? uncovered.join(", ") : "없음"})${unreviewedNoteKo}${clusterwideNoteKo}`,
+      `baseline default-deny matched in ${covered.length}/${KISA_NET01_NAMESPACES.length} namespace(s) (uncovered: ${uncovered.length > 0 ? uncovered.join(", ") : "none"})${unreviewedNoteEn}${clusterwideNoteEn}`,
+    )
   }
-  return { status: "pass", detail: "위험 바인딩 없음" }
+  return makeOutcome(
+    "fail",
+    "compliance.kisa.reason.netDenyMissing",
+    `대상 네임스페이스에 검토된 ingress default-deny 격리 없음 (미충족: ${uncovered.join(", ")})`,
+    `No target namespace has reviewed ingress default-deny isolation (uncovered: ${uncovered.join(", ")})`,
+  )
 }
 
 // --- Main export ---
@@ -382,71 +687,102 @@ export async function getKisaControls(): Promise<KisaResponse> {
 
   const controls: KisaControl[] = []
   let hasPartialCheck = false
+  const allPartialSources = new Set<string>()
 
   for (const entry of KISA_CATALOG) {
-    if (!LIVE_IDS.has(entry.id)) {
+    if (entry.id === "KISA-IMG-01") {
+      const r = checkImg01()
       controls.push({
         ...entry,
-        status: STATIC_STATUS[entry.id] ?? "manual",
-        live: false,
+        status: r.status,
+        live: r.live,
+        detail: r.detail,
+        detailLocalized: r.detailLocalized,
+        reasonKey: r.reasonKey,
       })
       continue
     }
 
-    // Live checks — each wrapped in its own try/catch
     let status: KisaStatus = "manual"
+    let live = false
     let detail: string | undefined
+    let detailLocalized: Localized | undefined
+    let reasonKey: KisaReasonKey | undefined
+    let partial = false
+    let partialSources: string[] | undefined
+
+    const applyRich = (r: KisaCheckOutcome) => {
+      status = r.status
+      live = r.live
+      detail = r.detail
+      detailLocalized = r.detailLocalized
+      reasonKey = r.reasonKey
+      if (r.partial) {
+        hasPartialCheck = true
+        partial = true
+      }
+      if (r.partialSources && r.partialSources.length > 0) {
+        partialSources = r.partialSources
+        for (const s of r.partialSources) allPartialSources.add(s)
+      }
+    }
 
     try {
       if (entry.id === "KISA-CP-01") {
-        const r = await checkCp01()
-        status = r.status
-        detail = r.detail
+        applyRich(await checkCp01())
       } else if (entry.id === "KISA-ETCD-01") {
-        const r = await checkEtcd01()
-        status = r.status
-        detail = r.detail
+        applyRich(await checkEtcd01())
+      } else if (entry.id === "KISA-SEC-01") {
+        applyRich(await checkSec01())
+      } else if (entry.id === "KISA-ETCD-02") {
+        applyRich(await checkEtcd02())
+      } else if (entry.id === "KISA-TLS-01") {
+        applyRich(await checkTls01())
+      } else if (entry.id === "KISA-OBS-01") {
+        applyRich(await checkObs01())
+      } else if (entry.id === "KISA-IMG-02") {
+        applyRich(await checkImg02())
       } else if (entry.id === "KISA-POD-01") {
-        const r = await checkPod01()
-        status = r.status
-        detail = r.detail
+        applyRich(await checkPod01())
       } else if (entry.id === "KISA-NET-01") {
-        const r = await checkNet01()
-        status = r.status
-        detail = r.detail
+        applyRich(await checkNet01())
       } else if (entry.id === "KISA-IMG-03") {
-        const r = await checkImg03()
-        status = r.status
-        detail = r.detail
+        applyRich(await checkImg03())
       } else if (entry.id === "KISA-CFG-01") {
-        const r = await checkCfg01()
-        status = r.status
-        detail = r.detail
-        if (r.partial) hasPartialCheck = true
+        applyRich(await checkCfg01())
       } else if (entry.id === "KISA-TLS-02") {
-        const r = await checkTls02()
-        status = r.status
-        detail = r.detail
+        applyRich(await checkTls02())
       } else if (entry.id === "KISA-ADM-01") {
-        const r = await checkAdm01()
-        status = r.status
-        detail = r.detail
+        applyRich(await checkAdm01())
       } else if (entry.id === "KISA-RBAC-01" || entry.id === "KISA-RBAC-02") {
-        const r = await checkRbac(entry.id)
-        status = r.status
-        detail = r.detail
+        applyRich(await checkRbacLive(entry.id))
       }
     } catch (err) {
-      console.warn(`[kisa] Live check ${entry.id} failed (non-fatal):`, err instanceof Error ? err.message : err)
+      const msg = err instanceof Error ? err.message : String(err)
+      console.warn(`[kisa] Live check ${entry.id} failed (non-fatal):`, msg)
       status = "manual"
-      detail = undefined
+      live = false
+      detail = `점검 실행 오류로 평가 불가 (${entry.id})`
+      detailLocalized = {
+        ko: `점검 실행 오류로 평가 불가 (${entry.id})`,
+        en: `Check execution failed; not evaluated (${entry.id})`,
+      }
+      reasonKey = "compliance.kisa.reason.apiUnavailable"
+      hasPartialCheck = true
+      partial = true
+      partialSources = [entry.id]
+      allPartialSources.add(entry.id)
     }
 
     controls.push({
       ...entry,
       status,
-      live: status !== "manual",
+      live,
       detail,
+      ...(detailLocalized ? { detailLocalized } : {}),
+      ...(reasonKey ? { reasonKey } : {}),
+      ...(partial ? { partial: true } : {}),
+      ...(partialSources && partialSources.length > 0 ? { partialSources } : {}),
     })
   }
 
@@ -459,7 +795,12 @@ export async function getKisaControls(): Promise<KisaResponse> {
     lastUpdated: new Date().toISOString(),
   }
 
-  const result: KisaResponse = { controls, summary }
+  const result: KisaResponse = {
+    controls,
+    summary,
+    ...(hasPartialCheck ? { partial: true } : {}),
+    ...(allPartialSources.size > 0 ? { partialSources: [...allPartialSources] } : {}),
+  }
   if (!hasPartialCheck) {
     await cacheSet(cacheKey, result, cacheTtl("kisaComplianceList"))
   }

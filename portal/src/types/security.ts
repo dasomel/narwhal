@@ -95,6 +95,8 @@ export interface SecuritySummary {
   /** true when the VulnerabilityReport walk ended early; totals are an undercount. */
   partial?: boolean
   partialReason?: "max-pages" | "expired" | "error"
+  /** true when listVulnerabilityReports() failed (API error/403) rather than returning 0 reports. */
+  failed?: boolean
 }
 
 export type FalcoEventPriority =

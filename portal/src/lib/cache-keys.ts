@@ -197,12 +197,12 @@ export const cacheKeys = {
     join("falco", "events", priority ?? "all", sinceMinutes, limit),
   falcoCritical: () => "falco:critical",
 
-  // D-P2-5: Bump compliance caches to v3 because exact acceptance replaces blanket
-  // SYSTEM_NAMESPACES / UPSTREAM_RBAC_ROLE_PATTERNS / built-in rules, AuditCheck adds
-  // rule metadata (acceptedRuleId/acceptedOwner/acceptedReviewedAt), and ComplianceSummary
-  // adds unusedAcceptanceRules/unusedAcceptanceRuleCount. Cost: one cold read after upgrade;
-  // escape hatch: advance version on future shape or classification changes.
-  kisaComplianceList: () => "compliance:v3:kisa:list",
+  // D-KISA-LIVE: Bump KISA compliance cache to v4 because the 6 previously static KISA
+  // controls now evaluate live (with KISA-IMG-01 explicitly manual + check command),
+  // KISA-RBAC-02 uses single-rule apiGroups matching + exact acceptance, and KisaControl
+  // adds detailLocalized/reasonKey. Cost: one cold read after upgrade; escape hatch:
+  // advance version on future shape or verdict changes.
+  kisaComplianceList: () => "compliance:v4:kisa:list",
 
   heroSummary: (scopeFingerprint: string) => join("hero", "summary", scopeFingerprint),
 
@@ -599,8 +599,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide runtime security events, not per-caller." },
   },
-  "compliance:v3:kisa:list": {
-    example: "compliance:v3:kisa:list",
+  "compliance:v4:kisa:list": {
+    example: "compliance:v4:kisa:list",
     dimensions: [],
     ttlSeconds: 60,
     owner: "src/lib/kisa.ts",
@@ -1269,7 +1269,7 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
   falcoEvents: { registryKey: "falco:events", ttlSeconds: 30, args: ["Critical", 60, 100], dimensionArgIndex: { query: 0 } },
   falcoCritical: { registryKey: "falco:critical", ttlSeconds: 30, args: [], dimensionArgIndex: {} },
 
-  kisaComplianceList: { registryKey: "compliance:v3:kisa:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
+  kisaComplianceList: { registryKey: "compliance:v4:kisa:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
 
   heroSummary: { registryKey: "hero:summary", ttlSeconds: 10, args: ["fp-1"], dimensionArgIndex: { scope: 0 } },
 

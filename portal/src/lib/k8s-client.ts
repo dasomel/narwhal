@@ -5,6 +5,7 @@ import { assertK8sName, assertK8sNamespace, assertK8sNodeName, safeK8sSegment } 
 import { getK8sApiServer } from "./config"
 import { getK8sBearerToken, invalidateK8sBearerToken } from "./k8s-token"
 import { fetchWithPolicy, readJsonWithPolicy, type RetryOptions } from "./http-client"
+import { computeKyvernoPolicyDigest, specHasOverrides } from "./kisa-policy-canonical.mjs"
 
 export type { Localized, MaybeLocalized } from "./i18n-utils"
 export { pick } from "./i18n-utils"
@@ -790,6 +791,14 @@ export interface KyvernoPolicy {
   background: boolean
   /** spec.validationFailureAction, else the rules' failureAction ("Mixed" when they differ), else "Audit". */
   validationFailureAction: string
+  /** Effective enforcement accounting for spec.admission, overrides, and rule-level actions. */
+  effectiveEnforcement?: "Enforce" | "Audit" | "Mixed" | "Disabled"
+  /** True when the policy has at least one validate or verifyImages rule. */
+  hasValidateOrVerifyRules?: boolean
+  /** Canonical spec SHA-256 digest (after stripping only documented Kyverno admission defaults). */
+  specSha256?: string
+  /** True when policy-level or rule-level failureAction overrides are present. */
+  hasOverrides?: boolean
   ready: boolean
   rulesCount: number
   rules: KyvernoRule[]
@@ -813,16 +822,34 @@ interface PolicyMatchBlock {
 interface PolicyItem {
   metadata: { name: string; namespace?: string; annotations?: Record<string, string> }
   spec: {
+    admission?: boolean
     background?: boolean
     validationFailureAction?: string
+    failureAction?: string
+    validationFailureActionOverrides?: Array<{ action?: string }>
+    failureActionOverrides?: Array<{ action?: string }>
     rules?: Array<{
       name: string
       match?: PolicyMatchBlock
       exclude?: PolicyMatchBlock
-      validate?: { message?: string; failureAction?: string }
+      failureAction?: string
+      validationFailureAction?: string
+      validationActions?: string[]
+      validate?: {
+        message?: string
+        failureAction?: string
+        validationFailureAction?: string
+        validationActions?: string[]
+        failureActionOverrides?: Array<{ action?: string }>
+      }
       mutate?: unknown
       generate?: unknown
-      verifyImages?: unknown
+      verifyImages?: Array<{
+        failureAction?: string
+        validationFailureAction?: string
+        validationActions?: string[]
+        failureActionOverrides?: Array<{ action?: string }>
+      }>
     }>
   }
   status?: {
@@ -852,12 +879,24 @@ function annotation(item: PolicyItem, key: string): string | null {
   return v ? v.slice(0, MAX_POLICY_TEXT) : null
 }
 
+function normalizeKyvernoActionToken(raw: string | undefined): "Enforce" | "Audit" | null {
+  if (!raw) return null
+  const lower = raw.trim().toLowerCase()
+  if (lower === "enforce" || lower === "deny") return "Enforce"
+  if (lower === "audit") return "Audit"
+  return null
+}
+
+function hasAuditOverrideList(overrides: Array<{ action?: string }> | undefined): boolean {
+  return (overrides ?? []).some((o) => normalizeKyvernoActionToken(o.action) === "Audit")
+}
+
 export function mapPolicy(item: PolicyItem, scope: "cluster" | "namespace"): KyvernoPolicy {
   const rules: KyvernoRule[] = (item.spec.rules ?? []).map((r) => ({
     name: r.name,
     type: r.validate ? "validate" : r.mutate ? "mutate" : r.generate ? "generate" : r.verifyImages ? "verifyImages" : "unknown",
     message: r.validate?.message?.trim().slice(0, MAX_POLICY_TEXT) || null,
-    failureAction: r.validate?.failureAction ?? null,
+    failureAction: r.validate?.failureAction ?? r.failureAction ?? null,
     matchKinds: uniq(filterResources(r.match).flatMap((f) => f.kinds ?? [])),
     excludeKinds: uniq(filterResources(r.exclude).flatMap((f) => f.kinds ?? [])),
     excludeNamespaces: uniq(filterResources(r.exclude).flatMap((f) => f.namespaces ?? [])),
@@ -865,12 +904,62 @@ export function mapPolicy(item: PolicyItem, scope: "cluster" | "namespace"): Kyv
   // Kyverno 1.13+ moved the action to validate.failureAction per rule.
   const ruleActions = uniq(rules.flatMap((r) => (r.failureAction ? [r.failureAction] : [])))
   const action = item.spec.validationFailureAction ?? (ruleActions.length > 1 ? "Mixed" : ruleActions[0] ?? "Audit")
+
+  const hasValidateOrVerifyRules = (item.spec.rules ?? []).some(
+    (r) => Boolean(r.validate) || (Array.isArray(r.verifyImages) && r.verifyImages.length > 0),
+  )
+
+  let effectiveEnforcement: "Enforce" | "Audit" | "Mixed" | "Disabled" = "Audit"
+  if (item.spec.admission === false) {
+    effectiveEnforcement = "Disabled"
+  } else {
+    const policyBase =
+      normalizeKyvernoActionToken(item.spec.validationFailureAction) ??
+      normalizeKyvernoActionToken(item.spec.failureAction) ??
+      "Audit"
+    const policyHasAuditOverride =
+      hasAuditOverrideList(item.spec.validationFailureActionOverrides) ||
+      hasAuditOverrideList(item.spec.failureActionOverrides)
+    const perRuleEffective: Array<"Enforce" | "Audit"> = []
+    for (const r of item.spec.rules ?? []) {
+      const ruleAction =
+        normalizeKyvernoActionToken(r.validate?.failureAction) ??
+        normalizeKyvernoActionToken(r.validate?.validationFailureAction) ??
+        normalizeKyvernoActionToken(r.validate?.validationActions?.[0]) ??
+        normalizeKyvernoActionToken(r.failureAction) ??
+        normalizeKyvernoActionToken(r.validationFailureAction) ??
+        normalizeKyvernoActionToken(r.validationActions?.[0]) ??
+        policyBase
+      const ruleAuditOverride =
+        policyHasAuditOverride ||
+        hasAuditOverrideList(r.validate?.failureActionOverrides) ||
+        (r.verifyImages ?? []).some((vi) =>
+          normalizeKyvernoActionToken(vi.failureAction ?? vi.validationFailureAction ?? vi.validationActions?.[0]) === "Audit" ||
+          hasAuditOverrideList(vi.failureActionOverrides),
+        )
+      perRuleEffective.push(ruleAction === "Enforce" && !ruleAuditOverride ? "Enforce" : "Audit")
+    }
+    if (perRuleEffective.length === 0) {
+      effectiveEnforcement = policyBase === "Enforce" && !policyHasAuditOverride ? "Enforce" : "Audit"
+    } else if (perRuleEffective.every((a) => a === "Enforce")) {
+      effectiveEnforcement = "Enforce"
+    } else if (perRuleEffective.every((a) => a === "Audit")) {
+      effectiveEnforcement = "Audit"
+    } else {
+      effectiveEnforcement = "Mixed"
+    }
+  }
+
   return {
     name: item.metadata.name,
     namespace: item.metadata.namespace ?? null,
     scope,
     background: item.spec.background ?? true,
     validationFailureAction: action,
+    effectiveEnforcement,
+    hasValidateOrVerifyRules,
+    specSha256: computeKyvernoPolicyDigest(item),
+    hasOverrides: specHasOverrides(item.spec ?? {}),
     ready: item.status?.conditions?.some((c) => c.type === "Ready" && c.status === "True") ?? false,
     rulesCount: rules.length,
     rules,
@@ -908,16 +997,44 @@ export async function getKyvernoPolicies(): Promise<KyvernoPolicy[]> {
 export interface ApiServerPodInfo {
   name: string
   containerArgs: string[]
+  hasApiserverContainer?: boolean
+  ready?: boolean
 }
 
 interface ApiServerPodList {
   items: Array<{
-    metadata: { name: string }
-    spec: { containers?: Array<{ command?: string[]; args?: string[] }> }
+    metadata: { name: string; deletionTimestamp?: string }
+    spec: { containers?: Array<{ name?: string; command?: string[]; args?: string[] }> }
+    status?: {
+      phase?: string
+      conditions?: Array<{ type?: string; status?: string }>
+    }
   }>
 }
 
-/** kube-apiserver pods (kube-system, label component=kube-apiserver) with flattened command+args. */
+export function mapApiServerPod(p: ApiServerPodList["items"][number]): ApiServerPodInfo {
+  // D-KISA-CLOSED-WORLD: isolate the exact "kube-apiserver" container; never merge
+  // command/args from sidecars or helper containers.
+  // D-KISA-CLOSED-WORLD (R7): a Pod without status or without an explicit Ready=True
+  // condition is NOT ready (missing data => manual / not evaluated, never pass).
+  const apiserverContainer = (p.spec.containers ?? []).find((c) => c.name === "kube-apiserver")
+  const conditions = p.status?.conditions ?? []
+  const hasReadyCondition = conditions.some((c) => c.type === "Ready" && c.status === "True")
+  const isReady =
+    !p.metadata.deletionTimestamp &&
+    p.status?.phase === "Running" &&
+    hasReadyCondition
+  return {
+    name: p.metadata.name,
+    hasApiserverContainer: Boolean(apiserverContainer),
+    ready: isReady,
+    containerArgs: apiserverContainer
+      ? [...(apiserverContainer.command ?? []), ...(apiserverContainer.args ?? [])]
+      : [],
+  }
+}
+
+/** kube-apiserver pods (kube-system, label component=kube-apiserver) using only the kube-apiserver container. */
 export async function getApiServerPods(): Promise<ApiServerPodInfo[]> {
   const cached = await cacheGet<ApiServerPodInfo[]>(cacheKeys.k8sApiserverPods())
   if (cached) return cached
@@ -925,10 +1042,7 @@ export async function getApiServerPods(): Promise<ApiServerPodInfo[]> {
     const data = await k8sFetch<ApiServerPodList>(
       "/api/v1/namespaces/kube-system/pods?labelSelector=component%3Dkube-apiserver",
     )
-    const pods = (data.items ?? []).map((p) => ({
-      name: p.metadata.name,
-      containerArgs: (p.spec.containers ?? []).flatMap((c) => [...(c.command ?? []), ...(c.args ?? [])]),
-    }))
+    const pods = (data.items ?? []).map(mapApiServerPod)
     await cacheSet(cacheKeys.k8sApiserverPods(), pods, cacheTtl("k8sApiserverPods"))
     return pods
   } catch (err) {
@@ -2746,5 +2860,499 @@ export async function getOssClusterInventory(): Promise<OssClusterInventory> {
     replicasets,
     pods,
     gatewayApiCrdAnnotations,
+  }
+}
+
+// --- KISA live control read-only fetchers (D-KISA-LIVE) ---
+// Explicit discriminated outcomes (ok | not-found | forbidden | truncated | error) so KISA
+// controls never silently convert 403/5xx/truncation into an empty list or false pass.
+
+export type KisaFetchResult<T> =
+  | { status: "ok"; data: T }
+  | { status: "not-found" }
+  | { status: "forbidden"; resource: string }
+  | { status: "truncated"; resource: string }
+  | { status: "error"; resource: string; message: string }
+
+export interface KisaRawContainer {
+  name?: string
+  image?: string
+  command?: string[]
+  args?: string[]
+  env?: Array<{
+    name?: string
+    value?: string
+    valueFrom?: { secretKeyRef?: { name?: string; key?: string } }
+  }>
+}
+
+export interface KisaRawPodSpec {
+  serviceAccountName?: string
+  serviceAccount?: string
+  automountServiceAccountToken?: boolean
+  containers?: KisaRawContainer[]
+  initContainers?: KisaRawContainer[]
+}
+
+export interface KisaRawDeployment {
+  metadata?: { name?: string; namespace?: string; labels?: Record<string, string>; generation?: number }
+  spec?: {
+    replicas?: number
+    paused?: boolean
+    template?: {
+      metadata?: { labels?: Record<string, string> }
+      spec?: KisaRawPodSpec
+    }
+  }
+  status?: {
+    observedGeneration?: number
+    replicas?: number
+    updatedReplicas?: number
+    readyReplicas?: number
+    availableReplicas?: number
+  }
+}
+
+export interface KisaRawStatefulSet {
+  metadata?: { name?: string; namespace?: string }
+  spec?: {
+    template?: {
+      spec?: KisaRawPodSpec
+    }
+  }
+}
+
+export interface KisaRawCronJob {
+  metadata?: { name?: string; namespace?: string }
+  spec?: {
+    suspend?: boolean
+    jobTemplate?: {
+      spec?: {
+        template?: {
+          spec?: KisaRawPodSpec
+        }
+      }
+    }
+  }
+}
+
+export interface KisaSecretMetadata {
+  name: string
+  namespace: string
+  labels: Record<string, string>
+  annotationKeys: string[]
+}
+
+export interface KisaNetworkPolicyPeer {
+  podSelector?: { matchLabels?: Record<string, string>; matchExpressions?: Array<{ key: string; operator: string; values?: string[] }> }
+  namespaceSelector?: { matchLabels?: Record<string, string>; matchExpressions?: Array<{ key: string; operator: string; values?: string[] }> }
+  ipBlock?: { cidr?: string; except?: string[] }
+}
+
+export interface KisaRawNetworkPolicy {
+  metadata?: { name?: string; namespace?: string }
+  spec?: {
+    podSelector?: { matchLabels?: Record<string, string>; matchExpressions?: Array<{ key: string; operator: string; values?: string[] }> }
+    policyTypes?: string[]
+    ingress?: Array<{
+      from?: KisaNetworkPolicyPeer[]
+      ports?: Array<{ port?: number | string; protocol?: string }>
+    }>
+    egress?: unknown[]
+    [key: string]: unknown
+  }
+}
+
+export interface KisaCiliumPolicyRule {
+  endpointSelector?: { matchLabels?: Record<string, string>; matchExpressions?: Array<{ key: string; operator: string; values?: string[] }> }
+  [key: string]: unknown
+}
+
+export interface KisaRawCiliumNetworkPolicy {
+  metadata?: { name?: string; namespace?: string }
+  spec?: KisaCiliumPolicyRule
+  specs?: KisaCiliumPolicyRule[]
+  [key: string]: unknown
+}
+
+export interface KisaRawCiliumClusterwideNetworkPolicy {
+  metadata?: { name?: string }
+  spec?: KisaCiliumPolicyRule
+  specs?: KisaCiliumPolicyRule[]
+  [key: string]: unknown
+}
+
+export interface KisaRawPeerAuthentication {
+  metadata?: { name?: string; namespace?: string; creationTimestamp?: string }
+  spec?: {
+    selector?: { matchLabels?: Record<string, string>; matchExpressions?: unknown[] }
+    mtls?: { mode?: string }
+    portLevelMtls?: Record<string, { mode?: string }>
+  }
+}
+
+export interface KisaRawAlertmanagerReceiver {
+  name?: string
+  slackConfigs?: unknown[]
+  emailConfigs?: unknown[]
+  webhookConfigs?: unknown[]
+  pagerdutyConfigs?: unknown[]
+  opsgenieConfigs?: unknown[]
+  msteamsConfigs?: unknown[]
+  msteamsv2Configs?: unknown[]
+  wechatConfigs?: unknown[]
+  victoropsConfigs?: unknown[]
+  pushoverConfigs?: unknown[]
+  snsConfigs?: unknown[]
+  telegramConfigs?: unknown[]
+  webexConfigs?: unknown[]
+  discordConfigs?: unknown[]
+  rocketchatConfigs?: unknown[]
+  [key: string]: unknown
+}
+
+export interface KisaRawAlertmanagerRoute {
+  receiver?: string
+  routes?: KisaRawAlertmanagerRoute[]
+}
+
+export interface KisaRawAlertmanagerConfig {
+  metadata?: { name?: string; namespace?: string }
+  spec?: {
+    route?: KisaRawAlertmanagerRoute
+    receivers?: KisaRawAlertmanagerReceiver[]
+  }
+}
+
+export interface KisaRawPodStatus {
+  metadata?: {
+    name?: string
+    namespace?: string
+    labels?: Record<string, string>
+    deletionTimestamp?: string
+  }
+  spec?: {
+    containers?: Array<{ name?: string; image?: string }>
+    initContainers?: Array<{ name?: string; image?: string }>
+  }
+  status?: {
+    phase?: string
+    conditions?: Array<{ type?: string; status?: string }>
+    containerStatuses?: Array<{ name?: string; ready?: boolean; image?: string }>
+  }
+}
+
+export interface KisaRawClusterPolicyRuleValidate {
+  failureAction?: string
+  validationFailureAction?: string
+  validationActions?: string[]
+  failureActionOverrides?: Array<{ action?: string; namespaceSelector?: unknown }>
+  pattern?: unknown
+  anyPattern?: unknown[]
+  deny?: unknown
+  foreach?: unknown[]
+  cel?: { expressions?: Array<{ expression?: string }> }
+}
+
+export interface KisaRawClusterPolicyVerifyImage {
+  imageReferences?: string[]
+  required?: boolean
+  failureAction?: string
+  validationFailureAction?: string
+  validationActions?: string[]
+  attestors?: unknown[]
+  key?: string
+  attestations?: unknown[]
+}
+
+export interface KisaRawClusterPolicyRule {
+  name?: string
+  match?: Record<string, unknown>
+  exclude?: Record<string, unknown>
+  validationFailureAction?: string
+  validationActions?: string[]
+  failureAction?: string
+  validate?: KisaRawClusterPolicyRuleValidate
+  verifyImages?: KisaRawClusterPolicyVerifyImage[]
+}
+
+export interface KisaRawClusterPolicy {
+  metadata?: {
+    name?: string
+    generation?: number
+    managedFields?: Array<{ time?: string }>
+  }
+  spec?: {
+    admission?: boolean
+    emitWarning?: boolean
+    validationFailureAction?: string
+    failureAction?: string
+    validationFailureActionOverrides?: Array<{ action?: string; namespaceSelector?: unknown }>
+    failureActionOverrides?: Array<{ action?: string; namespaceSelector?: unknown }>
+    background?: boolean
+    rules?: KisaRawClusterPolicyRule[]
+    [key: string]: unknown
+  }
+  status?: {
+    conditions?: Array<{ type?: string; status?: string }>
+  }
+}
+
+export interface KisaRawPolicyReport {
+  metadata?: { name?: string; namespace?: string }
+  scope?: { kind?: string; name?: string; namespace?: string }
+  results?: Array<{
+    policy?: string
+    rule?: string
+    result?: string
+    message?: string
+    timestamp?: { seconds?: number }
+    resources?: Array<{ kind?: string; name?: string; namespace?: string }>
+  }>
+}
+
+export interface KisaRawReplicaSet {
+  metadata?: {
+    name?: string
+    namespace?: string
+    annotations?: Record<string, string>
+    ownerReferences?: Array<{ kind?: string; name?: string }>
+  }
+  spec?: { replicas?: number }
+  status?: { replicas?: number; terminatingReplicas?: number }
+}
+
+export interface KisaRawNamedObject {
+  metadata?: { name?: string; namespace?: string }
+}
+
+export interface KisaWorkloadInventory {
+  pods: KisaFetchResult<KisaRawPodStatus[]>
+  replicasets: KisaFetchResult<KisaRawReplicaSet[]>
+  deployments: KisaFetchResult<KisaRawNamedObject[]>
+  statefulsets: KisaFetchResult<KisaRawNamedObject[]>
+  daemonsets: KisaFetchResult<KisaRawNamedObject[]>
+  cronjobs: KisaFetchResult<KisaRawNamedObject[]>
+}
+
+export interface KisaRbacSnapshot {
+  clusterRoleBindings: KisaFetchResult<Array<{
+    metadata: { name: string; labels?: Record<string, string>; annotations?: Record<string, string> }
+    roleRef: { kind: string; name: string }
+    subjects?: Array<{ kind: string; name: string; namespace?: string }>
+  }>>
+  roleBindings: KisaFetchResult<Array<{
+    metadata: { name: string; namespace: string; labels?: Record<string, string>; annotations?: Record<string, string> }
+    roleRef: { kind: string; name: string }
+    subjects?: Array<{ kind: string; name: string; namespace?: string }>
+  }>>
+  clusterRoles: KisaFetchResult<Array<{ metadata: { name: string }; rules?: K8sPolicyRule[] }>>
+  roles: KisaFetchResult<Array<{ metadata: { name: string; namespace: string }; rules?: K8sPolicyRule[] }>>
+}
+
+function mapKisaFetchError<T>(resource: string, err: unknown): KisaFetchResult<T> {
+  if (err instanceof K8sCredentialError) return { status: "forbidden", resource }
+  if (err instanceof K8sHttpError && err.status === 404) return { status: "not-found" }
+  return { status: "error", resource, message: err instanceof Error ? err.message : String(err) }
+}
+
+async function fetchKisaSingle<T>(resource: string, path: string, init?: RequestInit): Promise<KisaFetchResult<T>> {
+  try {
+    return { status: "ok", data: await k8sFetch<T>(path, init) }
+  } catch (err) {
+    return mapKisaFetchError(resource, err)
+  }
+}
+
+async function fetchKisaList<T>(resource: string, path: string, maxPages = DEFAULT_LIST_MAX_PAGES): Promise<KisaFetchResult<T[]>> {
+  try {
+    const list = await listBounded<T>(path, { maxPages })
+    if (list.truncated) return { status: "truncated", resource }
+    return { status: "ok", data: list.items }
+  } catch (err) {
+    return mapKisaFetchError(resource, err)
+  }
+}
+
+export async function getKisaDeployment(namespace: string, name: string): Promise<KisaFetchResult<KisaRawDeployment>> {
+  return fetchKisaSingle(
+    `deployments.apps/${namespace}/${name}`,
+    `/apis/apps/v1/namespaces/${safeK8sSegment(namespace)}/deployments/${safeK8sSegment(name)}`,
+  )
+}
+
+export async function getKisaStatefulSet(namespace: string, name: string): Promise<KisaFetchResult<KisaRawStatefulSet>> {
+  return fetchKisaSingle(
+    `statefulsets.apps/${namespace}/${name}`,
+    `/apis/apps/v1/namespaces/${safeK8sSegment(namespace)}/statefulsets/${safeK8sSegment(name)}`,
+  )
+}
+
+export async function getKisaCronJob(namespace: string, name: string): Promise<KisaFetchResult<KisaRawCronJob>> {
+  return fetchKisaSingle(
+    `cronjobs.batch/${namespace}/${name}`,
+    `/apis/batch/v1/namespaces/${safeK8sSegment(namespace)}/cronjobs/${safeK8sSegment(name)}`,
+  )
+}
+
+// D-KISA-SECRET-META: request PartialObjectMetadata so Secret .data never crosses the wire.
+// ClusterRole narwhal-portal intentionally has NO secrets read in storage; under the portal SA
+// this returns { status: "forbidden" } and KISA-SEC-01 degrades that sub-signal to not evaluated.
+export async function getKisaSecretMetadata(namespace: string, name: string): Promise<KisaFetchResult<KisaSecretMetadata>> {
+  const res = await fetchKisaSingle<{
+    kind?: string
+    metadata?: { name?: string; namespace?: string; labels?: Record<string, string>; annotations?: Record<string, string> }
+  }>(
+    `secrets/${namespace}/${name}`,
+    `/api/v1/namespaces/${safeK8sSegment(namespace)}/secrets/${safeK8sSegment(name)}`,
+    { headers: { Accept: "application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1" } },
+  )
+  if (res.status !== "ok") return res
+  const meta = res.data.metadata ?? {}
+  return {
+    status: "ok",
+    data: {
+      name: meta.name ?? name,
+      namespace: meta.namespace ?? namespace,
+      labels: meta.labels ?? {},
+      annotationKeys: Object.keys(meta.annotations ?? {}),
+    },
+  }
+}
+
+export async function getKisaNamespacedNetworkPolicies(namespace: string): Promise<KisaFetchResult<KisaRawNetworkPolicy[]>> {
+  return fetchKisaList(
+    `networkpolicies.networking.k8s.io/${namespace}`,
+    `/apis/networking.k8s.io/v1/namespaces/${safeK8sSegment(namespace)}/networkpolicies`,
+  )
+}
+
+export async function getKisaCiliumNetworkPolicies(): Promise<KisaFetchResult<KisaRawCiliumNetworkPolicy[]>> {
+  return fetchKisaList<KisaRawCiliumNetworkPolicy>(
+    "ciliumnetworkpolicies.cilium.io",
+    "/apis/cilium.io/v2/ciliumnetworkpolicies",
+  )
+}
+
+export async function getKisaNamespacedCiliumNetworkPolicies(namespace: string): Promise<KisaFetchResult<KisaRawCiliumNetworkPolicy[]>> {
+  return fetchKisaList<KisaRawCiliumNetworkPolicy>(
+    `ciliumnetworkpolicies.cilium.io/${namespace}`,
+    `/apis/cilium.io/v2/namespaces/${safeK8sSegment(namespace)}/ciliumnetworkpolicies`,
+  )
+}
+
+export async function getKisaCiliumClusterwideNetworkPolicies(): Promise<KisaFetchResult<KisaRawCiliumClusterwideNetworkPolicy[]>> {
+  return fetchKisaList<KisaRawCiliumClusterwideNetworkPolicy>(
+    "ciliumclusterwidenetworkpolicies.cilium.io",
+    "/apis/cilium.io/v2/ciliumclusterwidenetworkpolicies",
+  )
+}
+
+export async function getKisaPeerAuthentications(): Promise<KisaFetchResult<KisaRawPeerAuthentication[]>> {
+  return fetchKisaList("peerauthentications.security.istio.io", "/apis/security.istio.io/v1/peerauthentications")
+}
+
+export async function getKisaNotificationConfig(): Promise<KisaFetchResult<KisaRawAlertmanagerConfig>> {
+  return fetchKisaSingle("alertmanagerconfigs.monitoring.coreos.com/monitoring/narwhal-notification-channels", notificationConfigPath)
+}
+
+export async function getKisaNamespacedPods(namespace: string): Promise<KisaFetchResult<KisaRawPodStatus[]>> {
+  return fetchKisaList(`pods/${namespace}`, `/api/v1/namespaces/${safeK8sSegment(namespace)}/pods`)
+}
+
+export async function getKisaKyvernoClusterPolicies(): Promise<KisaFetchResult<KisaRawClusterPolicy[]>> {
+  return fetchKisaList("clusterpolicies.kyverno.io", "/apis/kyverno.io/v1/clusterpolicies")
+}
+
+export async function getKisaPolicyReports(): Promise<KisaFetchResult<KisaRawPolicyReport[]>> {
+  return fetchKisaList("policyreports.wgpolicyk8s.io", "/apis/wgpolicyk8s.io/v1alpha2/policyreports", CLUSTER_WIDE_POD_MAX_PAGES)
+}
+
+export async function getKisaWorkloadInventory(): Promise<KisaWorkloadInventory> {
+  const [pods, replicasets, deployments, statefulsets, daemonsets, cronjobs] = await Promise.all([
+    fetchKisaList<KisaRawPodStatus>("pods", "/api/v1/pods", CLUSTER_WIDE_POD_MAX_PAGES),
+    fetchKisaList<KisaRawReplicaSet>("replicasets.apps", "/apis/apps/v1/replicasets", CLUSTER_WIDE_POD_MAX_PAGES),
+    fetchKisaList<KisaRawNamedObject>("deployments.apps", "/apis/apps/v1/deployments"),
+    fetchKisaList<KisaRawNamedObject>("statefulsets.apps", "/apis/apps/v1/statefulsets"),
+    fetchKisaList<KisaRawNamedObject>("daemonsets.apps", "/apis/apps/v1/daemonsets"),
+    fetchKisaList<KisaRawNamedObject>("cronjobs.batch", "/apis/batch/v1/cronjobs"),
+  ])
+  return { pods, replicasets, deployments, statefulsets, daemonsets, cronjobs }
+}
+
+export async function getKisaRbacSnapshot(): Promise<KisaRbacSnapshot> {
+  const [clusterRoleBindings, roleBindings, clusterRoles, roles] = await Promise.all([
+    fetchKisaList<{
+      metadata: { name: string; labels?: Record<string, string>; annotations?: Record<string, string> }
+      roleRef: { kind: string; name: string }
+      subjects?: Array<{ kind: string; name: string; namespace?: string }>
+    }>(
+      "clusterrolebindings.rbac.authorization.k8s.io",
+      "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings",
+    ),
+    fetchKisaList<{
+      metadata: { name: string; namespace: string; labels?: Record<string, string>; annotations?: Record<string, string> }
+      roleRef: { kind: string; name: string }
+      subjects?: Array<{ kind: string; name: string; namespace?: string }>
+    }>(
+      "rolebindings.rbac.authorization.k8s.io",
+      "/apis/rbac.authorization.k8s.io/v1/rolebindings",
+    ),
+    fetchKisaList<{ metadata: { name: string }; rules?: K8sPolicyRule[] }>(
+      "clusterroles.rbac.authorization.k8s.io",
+      "/apis/rbac.authorization.k8s.io/v1/clusterroles",
+    ),
+    fetchKisaList<{ metadata: { name: string; namespace: string }; rules?: K8sPolicyRule[] }>(
+      "roles.rbac.authorization.k8s.io",
+      "/apis/rbac.authorization.k8s.io/v1/roles",
+    ),
+  ])
+  return { clusterRoleBindings, roleBindings, clusterRoles, roles }
+}
+
+export async function getKisaApiServerPods(): Promise<KisaFetchResult<ApiServerPodInfo[]>> {
+  const res = await fetchKisaList<ApiServerPodList["items"][number]>(
+    "pods/kube-system",
+    "/api/v1/namespaces/kube-system/pods?labelSelector=component%3Dkube-apiserver",
+  )
+  if (res.status !== "ok") return res
+  return { status: "ok", data: res.data.map(mapApiServerPod) }
+}
+
+export async function getKisaNamespaces(): Promise<KisaFetchResult<NamespaceInfo[]>> {
+  const res = await fetchKisaList<RawNamespace>("namespaces", "/api/v1/namespaces")
+  if (res.status !== "ok") return res
+  return { status: "ok", data: res.data.map(toNamespaceInfo) }
+}
+
+export async function getKisaNetworkPolicies(): Promise<KisaFetchResult<KisaRawNetworkPolicy[]>> {
+  return fetchKisaList<KisaRawNetworkPolicy>(
+    "networkpolicies.networking.k8s.io",
+    "/apis/networking.k8s.io/v1/networkpolicies",
+  )
+}
+
+export async function getKisaCertificates(): Promise<KisaFetchResult<Certificate[]>> {
+  const res = await fetchKisaList<RawCertificate>(
+    "certificates.cert-manager.io",
+    "/apis/cert-manager.io/v1/certificates",
+  )
+  if (res.status !== "ok") return res
+  return { status: "ok", data: res.data.map(mapCertificate) }
+}
+
+export async function getKisaKyvernoPolicies(): Promise<KisaFetchResult<KyvernoPolicy[]>> {
+  const [cluster, namespaced] = await Promise.all([
+    fetchKisaList<PolicyItem>("clusterpolicies.kyverno.io", "/apis/kyverno.io/v1/clusterpolicies"),
+    fetchKisaList<PolicyItem>("policies.kyverno.io", "/apis/kyverno.io/v1/policies"),
+  ])
+  if (cluster.status !== "ok") return cluster
+  if (namespaced.status !== "ok") return namespaced
+  return {
+    status: "ok",
+    data: [
+      ...cluster.data.map((i) => mapPolicy(i, "cluster")),
+      ...namespaced.data.map((i) => mapPolicy(i, "namespace")),
+    ],
   }
 }

@@ -88,6 +88,23 @@ rules:
     resources: [customresourcedefinitions]
     resourceNames: [gateways.gateway.networking.k8s.io]
     verbs: [get]
+  # Owner-approved (2026-11-24, KISA live controls): read-only least-privilege verbs for live
+  # evaluation of KISA-TLS-01 (Istio PeerAuthentications: list), KISA-SEC-01/IMG-02 (CronJobs:
+  # get+list), KISA-IMG-02 (Kyverno PolicyReports: list), and KISA-NET-01/ETCD-02
+  # (CiliumNetworkPolicies + further read-only widening to CiliumClusterwideNetworkPolicies: list-only).
+  # No watch or write verbs and no Secret read added (get only on cronjobs).
+  - apiGroups: [security.istio.io]
+    resources: [peerauthentications]
+    verbs: [list]
+  - apiGroups: [batch]
+    resources: [cronjobs]
+    verbs: [get, list]
+  - apiGroups: [wgpolicyk8s.io]
+    resources: [policyreports]
+    verbs: [list]
+  - apiGroups: [cilium.io]
+    resources: [ciliumnetworkpolicies, ciliumclusterwidenetworkpolicies]
+    verbs: [list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

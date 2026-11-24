@@ -316,7 +316,7 @@ describe("cacheKeys builders reproduce the pre-existing key strings byte-for-byt
     expect(cacheKeys.falcoEvents("Critical", 60, 100)).toBe("falco:events:Critical:60:100")
     expect(cacheKeys.falcoEvents(undefined, 60, 100)).toBe("falco:events:all:60:100")
     expect(cacheKeys.falcoCritical()).toBe("falco:critical")
-    expect(cacheKeys.kisaComplianceList()).toBe("compliance:v3:kisa:list")
+    expect(cacheKeys.kisaComplianceList()).toBe("compliance:v4:kisa:list")
     expect(cacheKeys.heroSummary("fp")).toBe("hero:summary:fp")
     expect(cacheKeys.costV2("cluster", "fp", "price")).toBe("cost:v2:cluster:fp:price")
     expect(cacheKeys.costServiceV2("fp", "ns", "svc", "price")).toBe("cost:service:v2:fp:ns:svc:price")

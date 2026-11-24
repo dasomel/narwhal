@@ -14,8 +14,9 @@ data:
       tostring | if test("(?i)(token|password|passwd|secret|credential|private.key|client.key|bearer|-----BEGIN|eyJ[A-Za-z0-9_-]+\\.|://[^ /]+:[^ /]+@)")
       then "[REDACTED]" else .[:$limit] end;
     def rows:
-      [.Controls[] | .tests[] | .section as $section | .results[] |
-        {controlId: .test_number, section: $section, text: (.test_desc | safe(400)),
+      [.Controls[] | .tests[] | .section as $section |
+        if ($section | type) != "string" then error("invalid section type") else . end | .results[] |
+        {controlId: .test_number, section: ($section | safe(400)), text: (.test_desc | safe(400)),
          status, scored, type: (if .type == "manual" then "manual" else "automated" end),
          actualValue: ((.actual_value // "") | safe(400)),
          expectedResult: ((.expected_result // "") | safe(400)),
@@ -32,7 +33,7 @@ data:
      info: ([$results[] | select(.status == "INFO")] | length)} as $totals |
     if $raw.Totals != {total_pass: $totals.pass, total_fail: $totals.fail,
                            total_warn: $totals.warn, total_info: $totals.info}
-       or any($raw.Controls[]; .version != "cis-1.23")
+       or any($raw.Controls[]; .version != $meta.benchmarkId)
     then error("benchmark or totals mismatch") else . end |
     ($meta | del(.reason)) + {status: "complete", totals: $totals, results: $results}
   recorder.sh: |
@@ -49,7 +50,7 @@ data:
     export KUBECONFIG=/tmp/config
     publish() {
       # Merge patches retain no old result key; whole record.json is replaced.
-      jq -n --rawfile record /work/record.json '{data:{"record.json":$record}}' > /tmp/patch.json
+      jq -n --rawfile record /tmp/record.json '{data:{"record.json":$record}}' > /tmp/patch.json
       kubectl patch configmap "${RECORD_NAME}" --type=merge --patch-file=/tmp/patch.json >/dev/null
     }
     if [[ "${1:-}" == begin ]]; then
@@ -59,273 +60,41 @@ data:
         --arg started "${started}" --arg version "${version}" --arg image "${BENCH_IMAGE}" \
         '{schemaVersion:1,runId:$run,tool:"kube-bench",toolVersion:"0.16.0",image:$image,
           benchmarkId:"cis-1.23",node:$node,nodeRoles:($roles|split(",")),kubernetesVersion:$version,
-          startedAt:$started,finishedAt:null,status:"error",reason:"scan not completed",totals:null,results:[]}' > /work/meta.json
-      cp /work/meta.json /work/record.json
+          startedAt:$started,finishedAt:null,status:"error",reason:"scan not completed",totals:null,results:[]}' > /tmp/run-meta.json
+      cp /tmp/run-meta.json /tmp/record.json
       publish
       exit 0
     fi
     finished=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    jq -c --arg finished "${finished}" '.finishedAt=$finished' /work/meta.json > /tmp/meta.json
+    jq -c --arg finished "${finished}" --arg node "${NODE_NAME}" \
+      '.finishedAt=$finished | .node=$node' /tmp/run-meta.json > /tmp/meta.json
+    # D4: metadata and published record stay on the recorder-only tmp volume.
+    # Cost: shared init state; escape hatch: fail the run if protected metadata is lost.
     # D3: nonzero exit, malformed/truncated JSON, wrong benchmark or empty results
     # all overwrite the placeholder with error, and make the Job fail visibly.
+    # kube-bench prints its version with a leading v (measured live 2026-11-24: "v0.16.0").
+    if [[ "$(cat /work/version 2>/dev/null || echo missing)" != v0.16.0 ]]; then
+      jq -c '. + {status:"error",reason:"scanner version mismatch (expected v0.16.0)",totals:null,results:[]}' \
+        /tmp/meta.json > /tmp/record.json
+      publish
+      exit 1
+    fi
+    if jq -e --arg benchmark "$(jq -r .benchmarkId /tmp/meta.json)" '
+      if (.Controls | type) == "array" and (.Controls | length) > 0
+      then any(.Controls[]; .version != $benchmark) else false end' /work/raw.json >/dev/null 2>&1; then
+      jq -c '. + {status:"error",reason:"scanner benchmark mismatch (expected cis-1.23)",totals:null,results:[]}' \
+        /tmp/meta.json > /tmp/record.json
+      publish
+      exit 1
+    fi
     if [[ "$(cat /work/exit-code 2>/dev/null || echo missing)" == 0 ]] && \
-      jq -ce --argjson meta "$(cat /tmp/meta.json)" -f /scripts/record.jq /work/raw.json > /work/record.json; then
-      if [[ $(wc -c < /work/record.json) -lt 900000 ]]; then
+      jq -ce --argjson meta "$(cat /tmp/meta.json)" -f /scripts/record.jq /work/raw.json > /tmp/record.json; then
+      if [[ $(wc -c < /tmp/record.json) -lt 900000 ]]; then
         publish
         exit 0
       fi
     fi
     jq -c '. + {status:"error",reason:"scanner failed, invalid output or record too large",totals:null,results:[]}' \
-      /tmp/meta.json > /work/record.json
+      /tmp/meta.json > /tmp/record.json
     publish
     exit 1
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: cis-bench-974178c0082e-latest
-  namespace: security-system
-  labels:
-    narwhal.io/compliance-tool: kube-bench
-    narwhal.io/benchmark-node: narwhal-master-1
-data: {}
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: cis-bench-974178c0082e
-  namespace: security-system
-automountServiceAccountToken: false
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: cis-bench-974178c0082e
-  namespace: security-system
-rules:
-  - apiGroups:
-      - ''
-    resources:
-      - configmaps
-    resourceNames:
-      - cis-bench-974178c0082e-latest
-    verbs:
-      - get
-      - update
-      - patch
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: cis-bench-974178c0082e
-  namespace: security-system
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: cis-bench-974178c0082e
-subjects:
-  - kind: ServiceAccount
-    name: cis-bench-974178c0082e
-    namespace: security-system
----
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: cis-bench-974178c0082e
-  namespace: security-system
-spec:
-  schedule: 17 2 * * *
-  timeZone: Etc/UTC
-  concurrencyPolicy: Forbid
-  startingDeadlineSeconds: 3600
-  successfulJobsHistoryLimit: 1
-  failedJobsHistoryLimit: 2
-  jobTemplate:
-    spec:
-      backoffLimit: 0
-      activeDeadlineSeconds: 900
-      ttlSecondsAfterFinished: 86400
-      template:
-        metadata:
-          labels:
-            app.kubernetes.io/name: cis-benchmark
-            istio.io/dataplane-mode: none
-        spec:
-          serviceAccountName: cis-bench-974178c0082e
-          automountServiceAccountToken: false
-          hostPID: true
-          restartPolicy: Never
-          tolerations:
-            - operator: Exists
-          securityContext:
-            fsGroup: 1000
-            seccompProfile:
-              type: RuntimeDefault
-          initContainers:
-            - name: record-start
-              image: docker.io/alpine/k8s:1.31.4@sha256:9c4976d47656d78cf53a92b0203fc54ac45eae18a2b45001ac221c27da4c8036
-              command: &id001
-                - /bin/bash
-                - /scripts/recorder.sh
-              env: &id002
-                - name: NODE_ROLES
-                  value: control-plane
-                - name: RECORD_NAME
-                  value: cis-bench-974178c0082e-latest
-                - name: BENCH_IMAGE
-                  value: docker.io/aquasec/kube-bench:v0.16.0@sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679
-                - name: NODE_NAME
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: spec.nodeName
-                - name: POD_UID
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.uid
-              securityContext: &id003
-                runAsUser: 1000
-                runAsNonRoot: true
-                allowPrivilegeEscalation: false
-                readOnlyRootFilesystem: true
-                capabilities:
-                  drop:
-                    - ALL
-              resources: &id004
-                requests:
-                  cpu: 10m
-                  memory: 32Mi
-                limits:
-                  cpu: 200m
-                  memory: 128Mi
-              volumeMounts: &id005
-                - name: work
-                  mountPath: /work
-                - name: tmp
-                  mountPath: /tmp
-                - name: scripts
-                  mountPath: /scripts
-                  readOnly: true
-                - name: auth
-                  mountPath: /auth
-                  readOnly: true
-              args:
-                - begin
-            - name: kube-bench
-              image: docker.io/aquasec/kube-bench:v0.16.0@sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679
-              command:
-                - /bin/sh
-                - -c
-                - kube-bench run --benchmark cis-1.23 --targets master,etcd,controlplane,node,policies --json > /work/raw.json 2> /work/stderr; rc=$?; printf "%s\n"
-                  "$rc" > /work/exit-code; exit 0
-              securityContext:
-                runAsUser: 0
-                allowPrivilegeEscalation: false
-                readOnlyRootFilesystem: true
-                capabilities:
-                  drop:
-                    - ALL
-                  add:
-                    - DAC_READ_SEARCH
-              resources:
-                requests:
-                  cpu: 100m
-                  memory: 128Mi
-                limits:
-                  cpu: '1'
-                  memory: 256Mi
-              volumeMounts:
-                - name: var-lib-etcd
-                  mountPath: /var/lib/etcd
-                  readOnly: true
-                - name: var-lib-kubelet
-                  mountPath: /var/lib/kubelet
-                  readOnly: true
-                - name: etc-systemd
-                  mountPath: /etc/systemd
-                  readOnly: true
-                - name: lib-systemd
-                  mountPath: /lib/systemd
-                  readOnly: true
-                - name: etc-kubernetes
-                  mountPath: /etc/kubernetes
-                  readOnly: true
-                - name: etc-cni
-                  mountPath: /etc/cni/net.d
-                  readOnly: true
-                - name: usr-bin
-                  mountPath: /usr/local/mount-from-host/bin
-                  readOnly: true
-                - name: work
-                  mountPath: /work
-          containers:
-            - name: recorder
-              image: docker.io/alpine/k8s:1.31.4@sha256:9c4976d47656d78cf53a92b0203fc54ac45eae18a2b45001ac221c27da4c8036
-              command: *id001
-              env: *id002
-              securityContext: *id003
-              resources: *id004
-              volumeMounts: *id005
-          volumes:
-            - name: var-lib-etcd
-              hostPath:
-                path: /var/lib/etcd
-            - name: var-lib-kubelet
-              hostPath:
-                path: /var/lib/kubelet
-            - name: etc-systemd
-              hostPath:
-                path: /etc/systemd
-            - name: lib-systemd
-              hostPath:
-                path: /lib/systemd
-            - name: etc-kubernetes
-              hostPath:
-                path: /etc/kubernetes
-            - name: etc-cni
-              hostPath:
-                path: /etc/cni/net.d
-            - name: usr-bin
-              hostPath:
-                path: /usr/bin
-            - name: work
-              emptyDir:
-                medium: Memory
-                sizeLimit: 16Mi
-            - name: tmp
-              emptyDir:
-                medium: Memory
-                sizeLimit: 4Mi
-            - name: scripts
-              configMap:
-                name: cis-benchmark-scripts
-            - name: auth
-              projected:
-                sources:
-                  - serviceAccountToken:
-                      path: token
-                      expirationSeconds: 3600
-                  - configMap:
-                      name: kube-root-ca.crt
-                      items:
-                        - key: ca.crt
-                          path: ca.crt
-          affinity:
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                  - matchExpressions:
-                      - key: node-role.kubernetes.io/control-plane
-                        operator: Exists
-                    matchFields:
-                      - key: metadata.name
-                        operator: In
-                        values:
-                          - narwhal-master-1
-                  - matchExpressions:
-                      - key: node-role.kubernetes.io/master
-                        operator: Exists
-                    matchFields:
-                      - key: metadata.name
-                        operator: In
-                        values:
-                          - narwhal-master-1

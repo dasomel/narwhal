@@ -49,12 +49,18 @@ esac
 
     for name, data, code in (
       ('success', (ROOT / 'scripts/test/fixtures/cis-benchmark/cis-1.23.json').read_text(), '0'),
+      ('version-mismatch', (ROOT / 'scripts/test/fixtures/cis-benchmark/cis-1.23.json').read_text(), '0'),
+      ('benchmark-mismatch', (ROOT / 'scripts/test/fixtures/cis-benchmark/cis-1.23.json').read_text().replace('cis-1.23', 'cis-1.12'), '0'),
       ('nonzero-exit', '{}', '2'), ('malformed-json', '{broken', '0'),
       ('empty-json', '{}', '0'), ('missing-exit', '{}', None),
     ):
       assert run('begin').returncode == 0
       pending = record()
       assert pending['status'] == 'error' and pending['finishedAt'] is None and pending['results'] == []
+      # A compromised scanner can forge everything under /work, but not tmp metadata.
+      (base / 'work/meta.json').write_text(json.dumps({'node': 'forged', 'runId': 'forged', 'benchmarkId': 'forged'}))
+      (base / 'work/record.json').write_text('{}')
+      (base / 'work/version').write_text('v0.15.0\n' if name == 'version-mismatch' else 'v0.16.0\n')
       (base / 'work/raw.json').write_text(data)
       exit_file = base / 'work/exit-code'
       if code is None:
@@ -64,13 +70,19 @@ esac
       out = run()
       result = record()
       assert result['finishedAt'] is not None
+      for key in ('runId', 'node', 'benchmarkId', 'startedAt', 'image'):
+        assert result[key] == pending[key], (name, key)
+      if name == 'benchmark-mismatch':
+        assert 'benchmark mismatch' in result['reason']
+      if name == 'version-mismatch':
+        assert 'version mismatch' in result['reason']
       if name == 'success':
         assert out.returncode == 0 and result['status'] == 'complete'
         assert 'reason' not in result and result['totals']['pass'] == 74
       else:
         assert out.returncode == 1 and result['status'] == 'error'
         assert result['results'] == [] and result['totals'] is None
-    print('PASS: recorder 5 behavioral cases (success/nonzero/malformed/empty/missing exit), error-before-scan')
+    print('PASS: recorder 7 behavioral cases + forged /work metadata ignored, error-before-scan')
 
 
 if __name__ == '__main__':

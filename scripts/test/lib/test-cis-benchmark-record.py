@@ -40,21 +40,31 @@ def main():
                 'Bearer do-not-publish', 'https://user:do-not-publish@example.org',
                 '-----BEGIN PRIVATE KEY-----\ndo-not-publish', 'eyJhbGciOiJIUzI1NiJ9.payload.sig',
                 'x' * 500 + '--secret=do-not-publish']:
+    raw['Controls'][0]['tests'][0]['section'] = value
     result['actual_value'] = value
     result['expected_result'] = value
     result['reason'] = value
     out = transform(raw)
     assert out.returncode == 0, out.stderr
     item = json.loads(out.stdout)['results'][0]
-    assert all(item[k] == '[REDACTED]' for k in ('actualValue', 'expectedResult', 'reason'))
+    assert all(item[k] == '[REDACTED]' for k in ('section', 'actualValue', 'expectedResult', 'reason'))
     assert 'do-not-publish' not in out.stdout
   result['actual_value'] = 'x' * 501
   assert len(json.loads(transform(raw).stdout)['results'][0]['actualValue']) == 400
+  raw['Controls'][0]['tests'][0]['section'] = 'x' * 501
+  assert len(json.loads(transform(raw).stdout)['results'][0]['section']) == 400
+  for value in (None, 42, {}, []):
+    raw['Controls'][0]['tests'][0]['section'] = value
+    assert transform(raw).returncode != 0
+  raw['Controls'][0]['tests'][0]['section'] = '1.1'
+  raw['Controls'][0]['version'] = 'cis-1.12'
+  assert transform(raw).returncode != 0
+  raw['Controls'][0]['version'] = 'cis-1.23'
   raw['Totals']['total_pass'] = 999
   assert transform(raw).returncode != 0
   raw['Controls'] = []
   assert transform(raw).returncode != 0
-  print('PASS: redaction (8 cases, before truncation), truncation, totals mismatch, empty output rejected')
+  print('PASS: redaction (8 cases, before truncation), truncation, section type, benchmark/totals mismatch, empty output rejected')
 
 
 if __name__ == '__main__':

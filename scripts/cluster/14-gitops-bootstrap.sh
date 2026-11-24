@@ -134,6 +134,17 @@ fi
 cp -r /home/vagrant/configs/gitops/* .
 bash "/home/vagrant/scripts/gitops/apply-topology.sh" "$PWD"
 
+# D5: measure nodes before publishing; role/hostname coverage needs no static inventory.
+# Cost: rerun generation after node changes; escape hatch: warn and keep Phase 2 alive.
+if ! CIS_NODES_FILE="$(mktemp)" ||
+  ! kubectl get nodes -o json > "${CIS_NODES_FILE}" ||
+  ! python3 /home/vagrant/scripts/ops/render-cis-benchmark.py \
+    --nodes "${CIS_NODES_FILE}" --output-root "$PWD"; then
+  echo "WARN: CIS generation failed; Phase 2 continues. Re-render and push CIS resources later." >&2
+fi
+rm -f "${CIS_NODES_FILE}"
+CIS_MANIFEST="$PWD/resources/cis-benchmark.yaml"
+
 # D-FALCO-045 (2026-10-28): falco is staged on every OS. Until then this block removed
 # charts/narwhal-apps/templates/falco.yaml on Ubuntu 26.04 (kernel 7.0) because Falco 0.39.2
 # could not open the modern BPF probe there; 0.45.1 carries the upstream kernel-7.0 fixes
@@ -559,25 +570,10 @@ if [ "${SECONDS}" -ge "${chart_gate_deadline}" ]; then
   exit 1
 fi
 
-# D1: node-bound CronJobs must cover the actual topology before deployment.
-# No discovery permission is granted to the benchmark workload itself.
-CIS_NODES_FILE="$(mktemp)"
-if ! kubectl get nodes -o json > "${CIS_NODES_FILE}"; then
-  rm -f "${CIS_NODES_FILE}"
-  exit 1
+# ArgoCD owns the generated tree; seed records without making CIS fatal to Phase 2.
+if ! kubectl apply -f "${CIS_MANIFEST}"; then
+  echo "WARN: CIS resource seed failed; ArgoCD will retry. Phase 2 continues." >&2
 fi
-if ! python3 /home/vagrant/scripts/ops/render-cis-benchmark.py --check-nodes "${CIS_NODES_FILE}"; then
-  rm -f "${CIS_NODES_FILE}"
-  echo "ERROR: regenerate CIS GitOps node inventory for this cluster before provisioning." >&2
-  exit 1
-fi
-rm -f "${CIS_NODES_FILE}"
-CIS_MANIFEST=/home/vagrant/configs/gitops/resources/cis-benchmark.yaml
-if [ ! -f "${CIS_MANIFEST}" ]; then
-  echo "ERROR: cis-benchmark.yaml missing from staged GitOps resources." >&2
-  exit 1
-fi
-kubectl apply -f "${CIS_MANIFEST}"
 
 # D-PSA-LABELS-14 (KISA-POD-01): strict final PSA convergence pass (--require-all).
 # The earlier call in 08-3-security.sh is tolerant (no --require-all) because security-system,

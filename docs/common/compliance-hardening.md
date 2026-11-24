@@ -593,19 +593,41 @@ before rollout. No Kyverno exception, PSA label change or portal RBAC change is
 introduced: admission of the one-off trial was measured by the orchestrator;
 admission of this scheduled workload remains a live trial requirement.
 
-D1 (inventory/coverage): a role-affinity CronJob can repeatedly choose the same
-node and misses its siblings. A DaemonSet fan-out controller would need additional
-write permissions and lifecycle handling. Instead, the GitOps inventory
-`scripts/ops/cis-benchmark-nodes.json` produces one node-name-bound CronJob, SA,
-Role and record ConfigMap **per node**, with no discovery or create permission.
-The current inventory contains only the measured `narwhal-master-1`. This is not
-auto-discovery: before adding/removing nodes or changing their role, capture
-`kubectl get nodes -o json`, run `render-cis-benchmark.py --import-nodes FILE`, then
-run the renderer and deliver both generated files through GitOps. Its
-`--check-nodes FILE` and Phase 2 bootstrap reject mismatched topology. Existing
-clusters managed only by ArgoCD must run that check during topology changes;
-ArgoCD cannot detect unlisted nodes. The renderer also supports multiple masters
-and workers; an offline four-node topology is covered by R401.
+D1 (coverage): Phase 2 measures `kubectl get nodes -o json` before its Gitea
+push and generates one node-name-bound CronJob, SA, named Role and record
+ConfigMap per node. The repository carries the renderer and shared script
+ConfigMap template, with no per-cluster inventory. The live list handles
+`NARWHAL_TOPOLOGY=single`, default `ha` (3+3), and Kakao provisioning without
+assuming hostnames. R401 tests 1-node, 3+3 and renamed-node inputs, including
+idempotent CLI rendering. Generation or seed failure warns and continues Phase 2;
+ArgoCD owns the published result. This avoids always-on host-reading DaemonSet
+pods and a fan-out CronJob's node-list/create-Jobs permissions. Cost: new or
+renamed nodes need explicit regeneration; no automatic controller is introduced.
+
+After topology changes, from a checkout with cluster access:
+
+```bash
+kubectl get nodes -o json > /tmp/cis-nodes.json
+python3 scripts/ops/render-cis-benchmark.py --nodes /tmp/cis-nodes.json
+scripts/gitops/push-to-gitea.sh "fix(cis): refresh node coverage" resources/cis-benchmark.yaml
+```
+
+Also publish `charts/narwhal-apps/templates/cis-benchmark.yaml` when upgrading
+from the old named-ignore Application. On a guest, render with
+`--output-root /home/vagrant/configs/gitops` and pass that tree as `GITOPS_DIR`
+to the push helper. The existing `narwhal-master-1` hash/name
+`cis-bench-974178c0082e` and its `-latest` ConfigMap are preserved. Avoid pushing
+the repository's unrendered script-only template over a deployed per-node file.
+
+Run this coverage/freshness check after a daily run and after topology changes;
+exit 1 reports each live node lacking a complete record within 26 hours:
+
+```bash
+kubectl get nodes -o json > /tmp/cis-nodes.json
+kubectl -n security-system get configmaps -o json > /tmp/cis-records.json
+python3 scripts/ops/render-cis-benchmark.py --check-nodes /tmp/cis-nodes.json --records /tmp/cis-records.json
+```
+
 Control-plane nodes target `master,etcd,controlplane,node,policies`; workers target
 `node`. `nodeRoles` records the normalized scheduling role (control-plane or worker);
 unlabeled non-control-plane nodes are treated as workers, not untested control planes; `kubernetesVersion` is the API server's
@@ -618,13 +640,16 @@ toolVersion, pinned image reference, benchmarkId, node, nodeRoles,
 kubernetesVersion, startedAt, finishedAt, totals and per-control results. The
 existing portal SA already reads ConfigMaps; interpretation is a separate lane.
 The recorder's namespaced Role only gets/updates/patches its one precreated named
-ConfigMap. The Application copies the notification-channels convention: named
-ConfigMaps ignore `/data`, with `RespectIgnoreDifferences=true` as well as
+ConfigMap. The Application ignores `.data` only for ConfigMaps labeled
+`narwhal.io/compliance-tool=kube-bench`, with `RespectIgnoreDifferences=true` as well as
 selfHeal. All other fields and the script ConfigMap remain GitOps reconciled.
 Cost: runtime evidence data drift is intentional. Escape hatch: remove the ignore
 rule and sync option to reset records. One latest record per node is retained;
 there is no historical archive. Only recorder containers mount an explicit
-short-lived API token. The scanner has hostPID and the trial's read-only host
+short-lived API token and the memory-backed `/tmp` holding run metadata and
+published records. The scanner mounts only its output `/work` volume plus
+read-only hostPaths; metadata identity never comes from `/work`. R401 rejects
+metadata-volume sharing and checks both recorder security contexts. The scanner has hostPID and the trial's read-only host
 mounts, UID 0, read-only root filesystem, no privilege escalation, and exactly
 `drop ALL` + `DAC_READ_SEARCH` (needed for etcd data directory access).
 
@@ -632,8 +657,8 @@ D3 (failure/freshness): record-start first publishes `status: error`, no results
 null totals/finishedAt and `reason: scan not completed`. The tokenless kube-bench
 initContainer writes JSON and its exit code into memory-backed emptyDir; the
 main recorder replaces the record. Only validated, nonempty, matching-benchmark
-JSON with consistent totals and scanner exit 0 becomes `status: complete`.
-Nonzero exits, bad JSON, mismatched totals and oversized output become `error`
+JSON and reported `kube-bench version` equal to `0.16.0` with consistent totals and scanner exit 0 becomes `status: complete`.
+Version/benchmark mismatches carry explicit error reasons. Nonzero exits, bad JSON, mismatched totals and oversized output become `error`
 and fail the Job. An init OOM, image pull failure after record-start, or deadline
 leaves the error placeholder; a failure before record-start leaves an older
 record with its **old** time. Consumers must enforce freshness and complete
@@ -645,7 +670,7 @@ with an active scheduled/manual Job for that node.
 
 The standalone `scripts/ops/cis-benchmark-record.jq` drops audit commands and
 remediation, truncates evidence fields to 400 characters and redacts whole
-fields containing token/password/secret/credential/key markers, PEM/JWT material
+fields (including string-validated section) containing token/password/secret/credential/key markers, PEM/JWT material
 or URL userinfo **before** truncation. The measured fixture has repeated process
 arguments with key/token-related options pointing to files and the bootstrap-token-auth boolean; no PEM, JWT or URL
 credentials were found by the offline pattern check. Path evidence is hidden

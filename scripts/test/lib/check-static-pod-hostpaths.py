@@ -23,15 +23,7 @@ HOSTPATH_ALLOWLIST = (
     },
 )
 
-# D3: exact CIS resource/namespace, read-only trial paths only. R401 separately
-# checks each scanner identity/capability and rejects mounts on the recorder.
-# Cost: seven explicit entries; escape hatch: remove with benchmark component.
-HOSTPATH_ALLOWLIST += tuple({
-    "path": path, "file": "gitops/resources/cis-benchmark.yaml",
-    "namespace": "security-system", "readOnly": True,
-    "reason": "CIS benchmark read-only host inspection, hardened tokenless init (R401)",
-} for path in ("/var/lib/etcd", "/var/lib/kubelet", "/etc/systemd", "/lib/systemd",
-               "/etc/kubernetes", "/etc/cni/net.d", "/usr/bin"))
+# D3: dynamically generated CIS mounts are checked by R401, not a stale file allowlist.
 
 
 def workload_pod_spec(document):

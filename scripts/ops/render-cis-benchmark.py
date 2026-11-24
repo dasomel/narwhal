@@ -47,7 +47,7 @@ def scalar(value, key=False):
     raise ValueError('multiline mapping keys are unsupported')
   # C1 controls and the BOM are not printable YAML: refuse instead of emitting text that
   # parsers reject or silently alter.
-  if any(0x80 <= ord(c) <= 0x9f or c == '\ufeff' for c in value):
+  if any((0x80 <= ord(c) <= 0x9f and c != '\u0085') or c == '\ufeff' for c in value):
     raise ValueError('unsupported C1 control character or BOM')
   ambiguous = (not value or value != value.strip() or
     value.lower() in {'true', 'false', 'null', 'yes', 'no', 'on', 'off', '~', 'y', 'n'} or

@@ -7,6 +7,8 @@ import type {
   KisaRawAlertmanagerReceiver,
   KisaRawAlertmanagerRoute,
   KisaRawClusterPolicy,
+  KisaRawClusterPolicyRule,
+  KisaRawClusterPolicyVerifyImage,
   KisaRawPodStatus,
   KisaRawReplicaSet,
 } from "./k8s-client"
@@ -200,17 +202,221 @@ function buildSupersededReplicaSetKeys(rss: KisaRawReplicaSet[]): Set<string> {
   return superseded
 }
 
-function extractVerifyImageRefs(policy: KisaRawClusterPolicy | undefined): string[] {
-  if (!policy) return []
-  const refs: string[] = []
-  for (const rule of policy.spec?.rules ?? []) {
-    for (const vi of rule.verifyImages ?? []) {
-      for (const ref of vi.imageReferences ?? []) {
-        if (typeof ref === "string" && ref.length > 0) refs.push(ref)
-      }
-    }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function normalizePolicyAction(raw: unknown): "Enforce" | "Audit" | null {
+  if (typeof raw !== "string") return null
+  const lower = raw.trim().toLowerCase()
+  if (lower === "enforce") return "Enforce"
+  if (lower === "audit") return "Audit"
+  return null
+}
+
+function actionFromValidationActions(actions: unknown): "Enforce" | "Audit" | null {
+  if (!Array.isArray(actions) || actions.length === 0) return null
+  const normalized = actions
+    .filter((a): a is string => typeof a === "string")
+    .map((a) => a.trim().toLowerCase())
+  if (normalized.length === 0) return null
+  return normalized.some((a) => a === "deny" || a === "enforce") ? "Enforce" : "Audit"
+}
+
+function hasAuditOverride(overrides: unknown): boolean {
+  if (!Array.isArray(overrides)) return false
+  return overrides.some((o) => isRecord(o) && normalizePolicyAction(o.action) === "Audit")
+}
+
+// Honour Kyverno 1.18 per-rule/validate/verifyImages action fields (failureAction,
+// validationFailureAction, validationActions) and failureActionOverrides/validationFailureActionOverrides.
+// Policy-level Enforce with any Audit override or rule-level Audit is NOT Enforce.
+function resolveRuleEffectiveAction(
+  policy: KisaRawClusterPolicy,
+  rule: KisaRawClusterPolicyRule,
+  entry?: {
+    failureAction?: string
+    validationFailureAction?: string
+    validationActions?: string[]
+    failureActionOverrides?: Array<{ action?: string }>
+  },
+): "Enforce" | "Audit" {
+  const baseAction =
+    normalizePolicyAction(entry?.failureAction) ??
+    normalizePolicyAction(entry?.validationFailureAction) ??
+    actionFromValidationActions(entry?.validationActions) ??
+    normalizePolicyAction(rule.failureAction) ??
+    normalizePolicyAction(rule.validationFailureAction) ??
+    actionFromValidationActions(rule.validationActions) ??
+    normalizePolicyAction(policy.spec?.validationFailureAction) ??
+    normalizePolicyAction(policy.spec?.failureAction) ??
+    "Audit"
+
+  if (baseAction !== "Enforce") return "Audit"
+  if (hasAuditOverride(entry?.failureActionOverrides) || hasAuditOverride(policy.spec?.validationFailureActionOverrides)) {
+    return "Audit"
   }
-  return refs
+  return "Enforce"
+}
+
+function isPodKind(kind: unknown): boolean {
+  if (typeof kind !== "string") return false
+  const lower = kind.trim().toLowerCase()
+  return lower === "pod" || lower === "v1/pod" || lower === "*"
+}
+
+function matchBlockTargetsPod(block: unknown): boolean {
+  if (!isRecord(block)) return false
+  const res = block.resources
+  if (isRecord(res) && Array.isArray(res.kinds) && res.kinds.some(isPodKind)) return true
+  for (const branchKey of ["any", "all"] as const) {
+    const branches = block[branchKey]
+    if (Array.isArray(branches) && branches.some(matchBlockTargetsPod)) return true
+  }
+  return false
+}
+
+function excludeBlockUnconditionallyExcludesPods(block: unknown): boolean {
+  if (!isRecord(block)) return false
+  const res = block.resources
+  if (isRecord(res) && Array.isArray(res.kinds) && res.kinds.some(isPodKind)) {
+    const hasNarrowing =
+      (Array.isArray(res.namespaces) && res.namespaces.length > 0) ||
+      (Array.isArray(res.names) && res.names.length > 0) ||
+      isRecord(res.selector) ||
+      isRecord(res.namespaceSelector)
+    if (!hasNarrowing) return true
+  }
+  for (const branchKey of ["any", "all"] as const) {
+    const branches = block[branchKey]
+    if (Array.isArray(branches) && branches.some(excludeBlockUnconditionallyExcludesPods)) return true
+  }
+  return false
+}
+
+export function ruleMatchesPod(rule: KisaRawClusterPolicyRule): boolean {
+  if (!matchBlockTargetsPod(rule.match)) return false
+  if (excludeBlockUnconditionallyExcludesPods(rule.exclude)) return false
+  return true
+}
+
+function imagePatternRejectsLatest(pattern: unknown): boolean {
+  if (typeof pattern !== "string") return false
+  const branches = pattern.split("|").map((s) => s.trim()).filter(Boolean)
+  if (branches.length === 0) return false
+  return branches.every((branch) =>
+    branch
+      .split("&")
+      .map((c) => c.trim())
+      .some((clause) => /^![^|&]*:latest\*?$/i.test(clause) || /^[^!|&]*@sha256:\*$/i.test(clause)),
+  )
+}
+
+function patternNodeChecksContainersImage(node: unknown): boolean {
+  if (!isRecord(node)) return false
+  const spec = node.spec
+  if (!isRecord(spec)) return false
+  const containers = spec.containers ?? spec["=(containers)"]
+  if (!Array.isArray(containers) || containers.length === 0) return false
+  return containers.some((c) => isRecord(c) && imagePatternRejectsLatest(c.image))
+}
+
+function collectDenyConditions(node: unknown, out: Array<Record<string, unknown>>): void {
+  if (Array.isArray(node)) {
+    for (const item of node) collectDenyConditions(item, out)
+    return
+  }
+  if (!isRecord(node)) return
+  if ("key" in node || "operator" in node || "value" in node) {
+    out.push(node)
+    return
+  }
+  if ("conditions" in node) collectDenyConditions(node.conditions, out)
+  if ("any" in node) collectDenyConditions(node.any, out)
+  if ("all" in node) collectDenyConditions(node.all, out)
+}
+
+function denyConditionsRejectLatest(denyObj: unknown, insideContainerForeach: boolean): boolean {
+  const conds: Array<Record<string, unknown>> = []
+  collectDenyConditions(denyObj, conds)
+  return conds.some((c) => {
+    const keyStr = typeof c.key === "string" ? c.key : ""
+    const valStr = JSON.stringify(c.value ?? "")
+    const refsImage = insideContainerForeach
+      ? /\b(?:element(?:\.\w+)*\.image|image)\b/i.test(keyStr)
+      : /containers/i.test(keyStr) && /image/i.test(keyStr)
+    if (!refsImage) return false
+    return /:latest\b/i.test(keyStr) || /:latest\b/i.test(valStr) || /!contains\([^)]*,\s*['"]:['"]\)/i.test(keyStr)
+  })
+}
+
+function celRejectsLatest(celObj: unknown, insideContainerForeach: boolean): boolean {
+  if (!isRecord(celObj) || !Array.isArray(celObj.expressions)) return false
+  return celObj.expressions.some((item) => {
+    if (!isRecord(item) || typeof item.expression !== "string") return false
+    const expr = item.expression
+    const refsImage = insideContainerForeach
+      ? /\bimage\b/i.test(expr)
+      : /containers/i.test(expr) && /image/i.test(expr)
+    return refsImage && /:latest/i.test(expr) && (/!/.test(expr) || /endsWith/i.test(expr))
+  })
+}
+
+// Accepted Pod :latest/untagged rejection rule shapes:
+// 1. validate.pattern (repo gitops/resources/kyverno-policies.yaml shape: spec.containers[].image = "!*:latest")
+// 2. validate.anyPattern (every branch enforces containers[].image rejecting :latest)
+// 3. validate.deny (conditions referencing containers.*.image and :latest or missing tag)
+// 4. validate.foreach over spec.containers / images.containers with pattern, deny, or cel checking :latest
+// 5. validate.cel expressions referencing containers + image + :latest
+export function ruleHasLatestTagValidation(rule: KisaRawClusterPolicyRule): boolean {
+  if (!ruleMatchesPod(rule) || !isRecord(rule.validate)) return false
+  const v = rule.validate
+  if (patternNodeChecksContainersImage(v.pattern)) return true
+  if (Array.isArray(v.anyPattern) && v.anyPattern.length > 0 && v.anyPattern.every(patternNodeChecksContainersImage)) {
+    return true
+  }
+  if (denyConditionsRejectLatest(v.deny, false)) return true
+  if (Array.isArray(v.foreach)) {
+    const hasForeachMatch = v.foreach.some((fe) => {
+      if (!isRecord(fe)) return false
+      if (typeof fe.list !== "string" || !/containers/i.test(fe.list)) return false
+      if (isRecord(fe.pattern) && imagePatternRejectsLatest(fe.pattern.image)) return true
+      if (denyConditionsRejectLatest(fe.deny, true)) return true
+      if (celRejectsLatest(fe.cel, true)) return true
+      return false
+    })
+    if (hasForeachMatch) return true
+  }
+  if (celRejectsLatest(v.cel, false)) return true
+  return false
+}
+
+function hasValidAttestorEntry(entry: unknown): boolean {
+  if (!isRecord(entry)) return false
+  if (isRecord(entry.keys)) {
+    if (typeof entry.keys.publicKeys === "string" && entry.keys.publicKeys.trim().length > 0) return true
+    if (typeof entry.keys.kms === "string" && entry.keys.kms.trim().length > 0) return true
+    if (isRecord(entry.keys.secret) && typeof entry.keys.secret.name === "string" && entry.keys.secret.name.trim().length > 0) return true
+  }
+  if (isRecord(entry.keyless)) return true
+  if (isRecord(entry.certificates)) {
+    if (typeof entry.certificates.cert === "string" && entry.certificates.cert.trim().length > 0) return true
+    if (typeof entry.certificates.certChain === "string" && entry.certificates.certChain.trim().length > 0) return true
+    if (typeof entry.certificates.rootCert === "string" && entry.certificates.rootCert.trim().length > 0) return true
+  }
+  return false
+}
+
+function isValidVerifyImageEntry(vi: KisaRawClusterPolicyVerifyImage): boolean {
+  const refs = (vi.imageReferences ?? []).filter((r): r is string => typeof r === "string" && r.trim().length > 0)
+  if (refs.length === 0) return false
+  if (typeof vi.key === "string" && vi.key.trim().length > 0) return true
+  if (!Array.isArray(vi.attestors)) return false
+  return vi.attestors.some((att) => isRecord(att) && Array.isArray(att.entries) && att.entries.some(hasValidAttestorEntry))
+}
+
+function isGlobalImageScopePattern(pattern: string): boolean {
+  return pattern === "*" || pattern === "*:*" || pattern === "*/*" || pattern === "*/*:*"
 }
 
 const FAILED_IMAGE_PREFIX_RE = /failed to verify image\s+(\S+)/
@@ -220,6 +426,139 @@ function extractFailedImageRef(message: string): string | null {
   if (!m) return null
   const candidate = m[1].endsWith(":") ? m[1].slice(0, -1) : m[1]
   return parseImageRefStrict(candidate) ? candidate : null
+}
+
+interface ImgLatestPolicyEval {
+  status: "enforced" | "audit" | "invalid-rule" | "missing"
+  actionLabel: string
+  policyNames: Set<string>
+  invalidReasonKo?: string
+  invalidReasonEn?: string
+}
+
+interface ImgVerifyPolicyEval {
+  status: "enforced" | "audit" | "invalid-rule" | "missing"
+  actionLabel: string
+  requiredFlag: "true" | "false" | "default" | "unknown"
+  imageRefs: string[]
+  policyNames: Set<string>
+  invalidReasonKo?: string
+  invalidReasonEn?: string
+}
+
+function evaluateLatestPolicies(policies: KisaRawClusterPolicy[]): ImgLatestPolicyEval {
+  const candidates: Array<{ name: string; action: "Enforce" | "Audit" }> = []
+  for (const pol of policies) {
+    const matchingRules = (pol.spec?.rules ?? []).filter(ruleHasLatestTagValidation)
+    if (matchingRules.length === 0) continue
+    const action: "Enforce" | "Audit" = matchingRules.every((rule) =>
+      resolveRuleEffectiveAction(pol, rule, rule.validate) === "Enforce",
+    )
+      ? "Enforce"
+      : "Audit"
+    candidates.push({ name: pol.metadata?.name ?? "unnamed", action })
+  }
+
+  if (candidates.length > 0) {
+    const best = candidates.find((c) => c.action === "Enforce") ?? candidates[0]
+    return {
+      status: best.action === "Enforce" ? "enforced" : "audit",
+      actionLabel: `${best.name}=${best.action}`,
+      policyNames: new Set(candidates.map((c) => c.name)),
+    }
+  }
+
+  const named = policies.find((p) => p.metadata?.name === "disallow-latest-tag")
+  if (named) {
+    return {
+      status: "invalid-rule",
+      actionLabel: "disallow-latest-tag=Invalid",
+      policyNames: new Set(["disallow-latest-tag"]),
+      invalidReasonKo: "policy disallow-latest-tag 존재하나 Pod :latest 차단 validate 규칙 없음",
+      invalidReasonEn: "policy disallow-latest-tag present but does not contain a Pod :latest/untagged validate rule",
+    }
+  }
+
+  return {
+    status: "missing",
+    actionLabel: "disallow-latest-tag=Missing",
+    policyNames: new Set(["disallow-latest-tag"]),
+  }
+}
+
+function evaluateVerifyPolicies(policies: KisaRawClusterPolicy[]): ImgVerifyPolicyEval {
+  const candidates: Array<{
+    name: string
+    action: "Enforce" | "Audit"
+    requiredFlag: "true" | "false" | "default"
+    imageRefs: string[]
+  }> = []
+
+  for (const pol of policies) {
+    const matchedEntries: Array<{
+      action: "Enforce" | "Audit"
+      required: boolean | undefined
+      refs: string[]
+    }> = []
+
+    for (const rule of pol.spec?.rules ?? []) {
+      if (!ruleMatchesPod(rule)) continue
+      for (const vi of rule.verifyImages ?? []) {
+        if (!isValidVerifyImageEntry(vi)) continue
+        const refs = (vi.imageReferences ?? []).filter((r): r is string => typeof r === "string" && r.trim().length > 0)
+        matchedEntries.push({
+          action: resolveRuleEffectiveAction(pol, rule, vi),
+          required: vi.required,
+          refs,
+        })
+      }
+    }
+
+    if (matchedEntries.length === 0) continue
+    const action: "Enforce" | "Audit" = matchedEntries.every((e) => e.action === "Enforce") ? "Enforce" : "Audit"
+    const requiredFlag: "true" | "false" | "default" = matchedEntries.some((e) => e.required === false)
+      ? "false"
+      : matchedEntries.every((e) => e.required === true)
+        ? "true"
+        : "default"
+    const imageRefs = [...new Set(matchedEntries.flatMap((e) => e.refs))]
+    candidates.push({ name: pol.metadata?.name ?? "unnamed", action, requiredFlag, imageRefs })
+  }
+
+  if (candidates.length > 0) {
+    const best =
+      candidates.find((c) => c.action === "Enforce" && c.requiredFlag !== "false") ??
+      candidates.find((c) => c.action === "Enforce") ??
+      candidates[0]
+    return {
+      status: best.action === "Enforce" ? "enforced" : "audit",
+      actionLabel: `${best.name}=${best.action}(required=${best.requiredFlag})`,
+      requiredFlag: best.requiredFlag,
+      imageRefs: best.imageRefs,
+      policyNames: new Set(candidates.map((c) => c.name)),
+    }
+  }
+
+  const named = policies.find((p) => p.metadata?.name === "verify-image-signatures")
+  if (named) {
+    return {
+      status: "invalid-rule",
+      actionLabel: "verify-image-signatures=Invalid",
+      requiredFlag: "unknown",
+      imageRefs: [],
+      policyNames: new Set(["verify-image-signatures"]),
+      invalidReasonKo: "policy verify-image-signatures 존재하나 imageReferences·attestors/keys 포함 verifyImages 규칙 없음",
+      invalidReasonEn: "policy verify-image-signatures present but does not contain a verifyImages rule with imageReferences and attestors/keys",
+    }
+  }
+
+  return {
+    status: "missing",
+    actionLabel: "verify-image-signatures=Missing",
+    requiredFlag: "unknown",
+    imageRefs: [],
+    policyNames: new Set(["verify-image-signatures"]),
+  }
 }
 
 export async function checkImg02(): Promise<KisaCheckOutcome> {
@@ -238,11 +577,9 @@ export async function checkImg02(): Promise<KisaCheckOutcome> {
   }
 
   const policies = polRes.data
-  const latestPol = policies.find((p) => p.metadata?.name === "disallow-latest-tag")
-  const verifyPol = policies.find((p) => p.metadata?.name === "verify-image-signatures")
-  const latestAction = latestPol?.spec?.validationFailureAction ?? "Missing"
-  const verifyAction = verifyPol?.spec?.validationFailureAction ?? "Missing"
-  const verifyImageRefs = extractVerifyImageRefs(verifyPol)
+  const latestEval = evaluateLatestPolicies(policies)
+  const verifyEval = evaluateVerifyPolicies(policies)
+  const verifyImageRefs = verifyEval.imageRefs
 
   const uniqueImages = new Set<string>()
   const latestOffenders: string[] = []
@@ -262,6 +599,24 @@ export async function checkImg02(): Promise<KisaCheckOutcome> {
     }
   }
 
+  const uncoveredImagesCount = verifyImageRefs.length > 0
+    ? [...uniqueImages].filter((img) => !verifyImageRefs.some((pat) => globMatchesImage(pat, img))).length
+    : uniqueImages.size
+  const fullVerifyScope = uniqueImages.size > 0
+    ? uncoveredImagesCount === 0
+    : verifyImageRefs.some(isGlobalImageScopePattern)
+
+  const invalidNotesKo = [latestEval.invalidReasonKo, verifyEval.invalidReasonKo].filter((s): s is string => Boolean(s))
+  const invalidNotesEn = [latestEval.invalidReasonEn, verifyEval.invalidReasonEn].filter((s): s is string => Boolean(s))
+  const invalidSuffixKo = invalidNotesKo.length > 0 ? ` · ${invalidNotesKo.join(" · ")}` : ""
+  const invalidSuffixEn = invalidNotesEn.length > 0 ? `; ${invalidNotesEn.join("; ")}` : ""
+  const scopeNoteKo = verifyImageRefs.length > 0
+    ? ` [범위: ${verifyImageRefs.join(", ")}${uncoveredImagesCount > 0 ? ` · 미적용 이미지 ${uncoveredImagesCount}/${uniqueImages.size}건` : ""}]`
+    : ""
+  const scopeNoteEn = verifyImageRefs.length > 0
+    ? ` [scope: ${verifyImageRefs.join(", ")}${uncoveredImagesCount > 0 ? `; uncovered images ${uncoveredImagesCount}/${uniqueImages.size}` : ""}]`
+    : ""
+
   const invChecks: Array<[string, KisaFetchResult<unknown>]> = [
     ["replicasets", inv.replicasets],
     ["deployments", inv.deployments],
@@ -273,18 +628,23 @@ export async function checkImg02(): Promise<KisaCheckOutcome> {
     .filter(([, res]) => res.status !== "ok")
     .map(([label, res]) => `${label}(${res.status})`)
 
+  const hasInvalidRule = latestEval.status === "invalid-rule" || verifyEval.status === "invalid-rule"
+
   if (repRes.status !== "ok") {
     const partialReasonKo = repRes.status === "forbidden" ? "PolicyReport 조회 권한 없음" : `PolicyReport 조회 불가(${repRes.status})`
     const partialReasonEn = repRes.status === "forbidden" ? "PolicyReports read forbidden" : `PolicyReports unavailable (${repRes.status})`
     const invSuffixKo = failedInvSources.length > 0 ? ` · 조회 불가 소스: ${failedInvSources.join(", ")}` : ""
     const invSuffixEn = failedInvSources.length > 0 ? `; unavailable source(s): ${failedInvSources.join(", ")}` : ""
-    const failLatest = latestOffenders.length > 0 || latestAction !== "Enforce"
+    const failEarly = latestOffenders.length > 0 || latestEval.status !== "enforced" || verifyEval.status === "invalid-rule"
     const partialSources = [`policyreports(${repRes.status})`, ...failedInvSources]
+    const reasonKey = failEarly
+      ? (hasInvalidRule && latestOffenders.length === 0 ? "compliance.kisa.reason.imgPolicyInvalidRule" : "compliance.kisa.reason.imgViolations")
+      : "compliance.kisa.reason.imgPolicyReportsNotEvaluated"
     return makeOutcome(
-      failLatest ? "fail" : "warn",
-      failLatest ? "compliance.kisa.reason.imgViolations" : "compliance.kisa.reason.imgPolicyReportsNotEvaluated",
-      `:latest ${latestOffenders.length}/${uniqueImages.size}건 · disallow-latest-tag=${latestAction} · verify-image-signatures=${verifyAction} · ${partialReasonKo}${invSuffixKo}`,
-      `:latest ${latestOffenders.length}/${uniqueImages.size}; disallow-latest-tag=${latestAction}; verify-image-signatures=${verifyAction}; ${partialReasonEn}${invSuffixEn}`,
+      failEarly ? "fail" : "warn",
+      reasonKey,
+      `:latest ${latestOffenders.length}/${uniqueImages.size}건 · ${latestEval.actionLabel} · ${verifyEval.actionLabel} · ${partialReasonKo}${invalidSuffixKo}${scopeNoteKo}${invSuffixKo}`,
+      `:latest ${latestOffenders.length}/${uniqueImages.size}; ${latestEval.actionLabel}; ${verifyEval.actionLabel}; ${partialReasonEn}${invalidSuffixEn}${scopeNoteEn}${invSuffixEn}`,
       { partial: true, partialSources },
     )
   }
@@ -318,7 +678,9 @@ export async function checkImg02(): Promise<KisaCheckOutcome> {
     const prNs = pr.metadata?.namespace ?? ""
     for (const r of pr.results ?? []) {
       const pol = r.policy ?? ""
-      if (pol !== "disallow-latest-tag" && pol !== "verify-image-signatures") continue
+      const isLatestPol = latestEval.policyNames.has(pol)
+      const isVerifyPol = verifyEval.policyNames.has(pol)
+      if (!isLatestPol && !isVerifyPol) continue
       if (r.result !== "fail" && r.result !== "error") continue
 
       const targets = (r.resources && r.resources.length > 0 ? r.resources : pr.scope ? [pr.scope] : [])
@@ -342,7 +704,7 @@ export async function checkImg02(): Promise<KisaCheckOutcome> {
           excludedMissingOrZeroRs++
           continue
         }
-        if (pol === "verify-image-signatures" && verifyImageRefs.length > 0) {
+        if (isVerifyPol && verifyImageRefs.length > 0) {
           const parsedImg = extractFailedImageRef(r.message ?? "")
           if (parsedImg !== null && !verifyImageRefs.some((pat) => globMatchesImage(pat, parsedImg))) {
             excludedOutOfScope++
@@ -364,13 +726,16 @@ export async function checkImg02(): Promise<KisaCheckOutcome> {
   const partialNoteKo = failedInvSources.length > 0 ? ` · 조회 불가 소스: ${failedInvSources.join(", ")}` : ""
   const partialNoteEn = failedInvSources.length > 0 ? `; unavailable source(s): ${failedInvSources.join(", ")}` : ""
 
-  const baseKo = `:latest ${latestOffenders.length}/${uniqueImages.size}건 · disallow-latest-tag=${latestAction} · verify-image-signatures=${verifyAction} · 현재 위반 ${currentViolations}건${exclKo}${partialNoteKo}`
-  const baseEn = `:latest ${latestOffenders.length}/${uniqueImages.size}; disallow-latest-tag=${latestAction}; verify-image-signatures=${verifyAction}; current violations ${currentViolations}${exclEn}${partialNoteEn}`
+  const baseKo = `:latest ${latestOffenders.length}/${uniqueImages.size}건 · ${latestEval.actionLabel} · ${verifyEval.actionLabel} · 현재 위반 ${currentViolations}건${exclKo}${invalidSuffixKo}${scopeNoteKo}${partialNoteKo}`
+  const baseEn = `:latest ${latestOffenders.length}/${uniqueImages.size}; ${latestEval.actionLabel}; ${verifyEval.actionLabel}; current violations ${currentViolations}${exclEn}${invalidSuffixEn}${scopeNoteEn}${partialNoteEn}`
 
-  if (latestOffenders.length > 0 || latestAction !== "Enforce" || currentViolations > 0) {
+  if (latestOffenders.length > 0 || latestEval.status !== "enforced" || currentViolations > 0 || verifyEval.status === "invalid-rule") {
+    const reasonKey = hasInvalidRule && latestOffenders.length === 0 && currentViolations === 0
+      ? "compliance.kisa.reason.imgPolicyInvalidRule"
+      : "compliance.kisa.reason.imgViolations"
     return makeOutcome(
       "fail",
-      "compliance.kisa.reason.imgViolations",
+      reasonKey,
       baseKo,
       baseEn,
       failedInvSources.length > 0 ? { partial: true, partialSources: failedInvSources } : undefined,
@@ -387,10 +752,8 @@ export async function checkImg02(): Promise<KisaCheckOutcome> {
     )
   }
 
-  if (verifyAction !== "Enforce") {
-    const scopeNoteKo = verifyImageRefs.length > 0 ? ` [범위: ${verifyImageRefs.join(", ")}]` : ""
-    const scopeNoteEn = verifyImageRefs.length > 0 ? ` [scope: ${verifyImageRefs.join(", ")}]` : ""
-    return makeOutcome("warn", "compliance.kisa.reason.imgVerifyAudit", `${baseKo}${scopeNoteKo}`, `${baseEn}${scopeNoteEn}`)
+  if (verifyEval.status !== "enforced" || verifyEval.requiredFlag === "false" || !fullVerifyScope) {
+    return makeOutcome("warn", "compliance.kisa.reason.imgVerifyAudit", baseKo, baseEn)
   }
 
   return makeOutcome("pass", "compliance.kisa.reason.imgPolicyEnforced", baseKo, baseEn)
@@ -436,8 +799,9 @@ const CORE_IMPERSONATE_RESOURCES = ["users", "groups", "serviceaccounts"] as con
 // (apiGroup in apiGroups or '*') && (verb in verbs or '*') && (resource matches resources).
 // Concrete subresources follow Kubernetes pkg/apis/rbac/v1/evaluation_helpers.go ResourceMatches
 // (only '*', exact 'resource/subresource', or '*/subresource' — never 'resource/*').
-// A 'parent/*' query is used internally by evaluateRbacRules to detect any concrete
-// 'parent/<key>' grant (e.g. 'userextras/scopes', '*', or '*/scopes').
+// A 'parent/*' query is used for both the literal '*' extra key (upstream impersonation.go allows
+// impersonating key '*' via 'userextras/*' or '*/*') and to detect any concrete 'parent/<key>'
+// grant (e.g. 'userextras/scopes', 'userextras/*', '*', '*/*', or '*/scopes').
 // resourceNames is intentionally not exempted (fail-closed: a named privileged target
 // such as 'system:admin' or 'cluster-admin' still confers the dangerous capability).
 export function ruleGrants(
@@ -468,8 +832,8 @@ export function ruleGrants(
     return resources.some(
       (res) =>
         res === "*" ||
-        (res.startsWith(`${parent}/`) && res.length > parent.length + 1 && res !== `${parent}/*`) ||
-        (res.startsWith("*/") && res.length > 2 && res !== "*/*"),
+        (res.startsWith(`${parent}/`) && res.length > parent.length + 1) ||
+        (res.startsWith("*/") && res.length > 2),
     )
   }
 

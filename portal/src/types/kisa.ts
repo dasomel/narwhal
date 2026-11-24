@@ -27,6 +27,7 @@ export type KisaReasonKey =
   | "compliance.kisa.reason.obsConfigMissing"
   | "compliance.kisa.reason.imgPolicyEnforced"
   | "compliance.kisa.reason.imgVerifyAudit"
+  | "compliance.kisa.reason.imgPolicyInvalidRule"
   | "compliance.kisa.reason.imgViolations"
   | "compliance.kisa.reason.imgPolicyReportsNotEvaluated"
   | "compliance.kisa.reason.imgInventoryNotEvaluated"

@@ -2896,6 +2896,40 @@ export interface KisaRawPodStatus {
   }
 }
 
+export interface KisaRawClusterPolicyRuleValidate {
+  failureAction?: string
+  validationFailureAction?: string
+  validationActions?: string[]
+  failureActionOverrides?: Array<{ action?: string; namespaceSelector?: unknown }>
+  pattern?: unknown
+  anyPattern?: unknown[]
+  deny?: unknown
+  foreach?: unknown[]
+  cel?: { expressions?: Array<{ expression?: string }> }
+}
+
+export interface KisaRawClusterPolicyVerifyImage {
+  imageReferences?: string[]
+  required?: boolean
+  failureAction?: string
+  validationFailureAction?: string
+  validationActions?: string[]
+  attestors?: unknown[]
+  key?: string
+  attestations?: unknown[]
+}
+
+export interface KisaRawClusterPolicyRule {
+  name?: string
+  match?: Record<string, unknown>
+  exclude?: Record<string, unknown>
+  validationFailureAction?: string
+  validationActions?: string[]
+  failureAction?: string
+  validate?: KisaRawClusterPolicyRuleValidate
+  verifyImages?: KisaRawClusterPolicyVerifyImage[]
+}
+
 export interface KisaRawClusterPolicy {
   metadata?: {
     name?: string
@@ -2904,14 +2938,10 @@ export interface KisaRawClusterPolicy {
   }
   spec?: {
     validationFailureAction?: string
+    failureAction?: string
+    validationFailureActionOverrides?: Array<{ action?: string; namespaceSelector?: unknown }>
     background?: boolean
-    rules?: Array<{
-      name?: string
-      verifyImages?: Array<{
-        imageReferences?: string[]
-        required?: boolean
-      }>
-    }>
+    rules?: KisaRawClusterPolicyRule[]
   }
   status?: {
     conditions?: Array<{ type?: string; status?: string }>

@@ -279,8 +279,32 @@ it("skips Valkey caching and marks partialSources when KISA-IMG-02 workload inve
   mockGetKisaKyvernoClusterPolicies.mockResolvedValueOnce({
     status: "ok",
     data: [
-      { metadata: { name: "disallow-latest-tag" }, spec: { validationFailureAction: "Enforce" } },
-      { metadata: { name: "verify-image-signatures" }, spec: { validationFailureAction: "Enforce" } },
+      {
+        metadata: { name: "disallow-latest-tag" },
+        spec: {
+          validationFailureAction: "Enforce",
+          rules: [{
+            name: "validate-image-tag",
+            match: { any: [{ resources: { kinds: ["Pod"] } }] },
+            validate: { pattern: { spec: { containers: [{ image: "!*:latest" }] } } },
+          }],
+        },
+      },
+      {
+        metadata: { name: "verify-image-signatures" },
+        spec: {
+          validationFailureAction: "Enforce",
+          rules: [{
+            name: "verify-signature",
+            match: { any: [{ resources: { kinds: ["Pod"] } }] },
+            verifyImages: [{
+              imageReferences: ["*"],
+              required: true,
+              attestors: [{ count: 1, entries: [{ keys: { publicKeys: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----" } }] }],
+            }],
+          }],
+        },
+      },
     ],
   })
   mockGetKisaWorkloadInventory.mockResolvedValueOnce({

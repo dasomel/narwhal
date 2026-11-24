@@ -364,13 +364,42 @@ describe("KISA-OBS-01 live evaluation", () => {
 })
 
 describe("KISA-IMG-02 live evaluation", () => {
+  const validLatestRule = {
+    name: "validate-image-tag",
+    match: { any: [{ resources: { kinds: ["Pod"] } }] },
+    validate: {
+      pattern: {
+        spec: {
+          containers: [{ image: "!*:latest" }],
+          "=(initContainers)": [{ image: "!*:latest" }],
+          "=(ephemeralContainers)": [{ image: "!*:latest" }],
+        },
+      },
+    },
+  }
+  const validAttestors = [{
+    count: 1,
+    entries: [{ keys: { publicKeys: "-----BEGIN PUBLIC KEY-----\nMFkw\n-----END PUBLIC KEY-----" } }],
+  }]
+
   const basePolicies: KisaRawClusterPolicy[] = [
-    { metadata: { name: "disallow-latest-tag" }, spec: { validationFailureAction: "Enforce" } },
+    {
+      metadata: { name: "disallow-latest-tag" },
+      spec: { validationFailureAction: "Enforce", rules: [validLatestRule] },
+    },
     {
       metadata: { name: "verify-image-signatures" },
       spec: {
         validationFailureAction: "Audit",
-        rules: [{ verifyImages: [{ imageReferences: ["ghcr.io/dasomel/narwhal-portal:*"] }] }],
+        rules: [{
+          name: "verify-signature-and-sbom",
+          match: { any: [{ resources: { kinds: ["Pod"] } }] },
+          verifyImages: [{
+            imageReferences: ["ghcr.io/dasomel/narwhal-portal:*"],
+            required: false,
+            attestors: validAttestors,
+          }],
+        }],
       },
     },
   ]
@@ -396,7 +425,7 @@ describe("KISA-IMG-02 live evaluation", () => {
     }
   }
 
-  it("excludes deleted resources, 0-replica superseded RS, and out-of-scope stale remnants, reporting warn when verify is Audit", async () => {
+  it("excludes deleted resources, 0-replica superseded RS, and out-of-scope stale remnants, reporting warn with required=false and scope when verify is Audit", async () => {
     mockGetKisaKyvernoClusterPolicies.mockResolvedValue({ status: "ok", data: basePolicies })
     mockGetKisaWorkloadInventory.mockResolvedValue(makeInv())
     mockGetKisaPolicyReports.mockResolvedValue({
@@ -422,16 +451,27 @@ describe("KISA-IMG-02 live evaluation", () => {
     const r = await checkImg02()
     expect(r.status).toBe("warn")
     expect(r.reasonKey).toBe("compliance.kisa.reason.imgVerifyAudit")
+    expect(r.detail).toContain("Audit(required=false)")
     expect(r.detail).toContain("현재 위반 0건")
     expect(r.detail).toContain("제외 3건")
   })
 
-  it("passes when both policies are Enforce and zero current violations exist", async () => {
+  it("passes when both policies have valid rules in Enforce mode with required=true, full scope, and zero violations", async () => {
     mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
       status: "ok",
       data: [
-        { metadata: { name: "disallow-latest-tag" }, spec: { validationFailureAction: "Enforce" } },
-        { metadata: { name: "verify-image-signatures" }, spec: { validationFailureAction: "Enforce" } },
+        { metadata: { name: "disallow-latest-tag" }, spec: { validationFailureAction: "Enforce", rules: [validLatestRule] } },
+        {
+          metadata: { name: "verify-image-signatures" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              name: "verify-signature",
+              match: { any: [{ resources: { kinds: ["Pod"] } }] },
+              verifyImages: [{ imageReferences: ["*"], required: true, attestors: validAttestors }],
+            }],
+          },
+        },
       ],
     })
     mockGetKisaWorkloadInventory.mockResolvedValue(makeInv())
@@ -439,6 +479,314 @@ describe("KISA-IMG-02 live evaluation", () => {
     const r = await checkImg02()
     expect(r.status).toBe("pass")
     expect(r.reasonKey).toBe("compliance.kisa.reason.imgPolicyEnforced")
+    expect(r.detail).toContain("required=true")
+  })
+
+  it("reproduction: two same-named Enforce policies with unrelated label validation and zero reports MUST NOT pass", async () => {
+    const labelOnlyRule = {
+      name: "require-team-label",
+      match: { any: [{ resources: { kinds: ["Pod"] } }] },
+      validate: { pattern: { metadata: { labels: { team: "?*" } } } },
+    }
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
+      status: "ok",
+      data: [
+        { metadata: { name: "disallow-latest-tag" }, spec: { validationFailureAction: "Enforce", rules: [labelOnlyRule] } },
+        { metadata: { name: "verify-image-signatures" }, spec: { validationFailureAction: "Enforce", rules: [labelOnlyRule] } },
+      ],
+    })
+    mockGetKisaWorkloadInventory.mockResolvedValue(makeInv())
+    mockGetKisaPolicyReports.mockResolvedValue({ status: "ok", data: [] })
+    const r = await checkImg02()
+    expect(r.status).toBe("fail")
+    expect(r.reasonKey).toBe("compliance.kisa.reason.imgPolicyInvalidRule")
+    expect(r.detailLocalized.en).toContain("policy disallow-latest-tag present but does not contain")
+    expect(r.detailLocalized.en).toContain("policy verify-image-signatures present but does not contain")
+
+    // Registry-only pattern on spec.containers[].image (restrict-image-registries) must also not satisfy latest-tag check
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
+      status: "ok",
+      data: [
+        {
+          metadata: { name: "disallow-latest-tag" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              name: "validate-registries",
+              match: { any: [{ resources: { kinds: ["Pod"] } }] },
+              validate: { pattern: { spec: { containers: [{ image: "ghcr.io/* | registry.k8s.io/*" }] } } },
+            }],
+          },
+        },
+      ],
+    })
+    expect((await checkImg02()).status).toBe("fail")
+  })
+
+  it("accepts policies matched by content under custom names (pattern, deny, foreach, cel) and counts their PolicyReport violations", async () => {
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
+      status: "ok",
+      data: [
+        {
+          metadata: { name: "org-pod-no-latest" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              name: "deny-latest",
+              match: { any: [{ resources: { kinds: ["Pod"] } }] },
+              validate: {
+                foreach: [{
+                  list: "request.object.spec.containers",
+                  deny: { conditions: { all: [{ key: "{{ element.image }}", operator: "Equals", value: "*:latest" }] } },
+                }],
+              },
+            }],
+          },
+        },
+        {
+          metadata: { name: "org-cosign-verify" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              name: "cosign-check",
+              match: { any: [{ resources: { kinds: ["Pod"] } }] },
+              verifyImages: [{ imageReferences: ["*"], required: true, attestors: validAttestors }],
+            }],
+          },
+        },
+      ],
+    })
+    mockGetKisaWorkloadInventory.mockResolvedValue(makeInv())
+    mockGetKisaPolicyReports.mockResolvedValue({ status: "ok", data: [] })
+    const passRes = await checkImg02()
+    expect(passRes.status).toBe("pass")
+    expect(passRes.detail).toContain("org-pod-no-latest=Enforce")
+    expect(passRes.detail).toContain("org-cosign-verify=Enforce(required=true)")
+
+    // Also accepts validate.cel and counts PolicyReport under custom policy name
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
+      status: "ok",
+      data: [
+        {
+          metadata: { name: "org-cel-no-latest" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              name: "cel-latest",
+              match: { resources: { kinds: ["Pod"] } },
+              validate: {
+                cel: { expressions: [{ expression: "object.spec.containers.all(c, !c.image.endsWith(':latest'))" }] },
+              },
+            }],
+          },
+        },
+        {
+          metadata: { name: "org-cosign-verify" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              name: "cosign-check",
+              match: { any: [{ resources: { kinds: ["Pod"] } }] },
+              verifyImages: [{ imageReferences: ["*"], required: true, attestors: validAttestors }],
+            }],
+          },
+        },
+      ],
+    })
+    mockGetKisaPolicyReports.mockResolvedValue({
+      status: "ok",
+      data: [{
+        metadata: { name: "rep-custom", namespace: "devtools" },
+        scope: { kind: "Deployment", name: "narwhal-portal", namespace: "devtools" },
+        results: [{ policy: "org-cel-no-latest", result: "fail", message: "cel denied" }],
+      }],
+    })
+    const failCustom = await checkImg02()
+    expect(failCustom.status).toBe("fail")
+    expect(failCustom.detail).toContain("현재 위반 1건")
+  })
+
+  it("honours rule-level Audit overrides (failureAction, validationActions, validationFailureActionOverrides) even when policy spec is Enforce", async () => {
+    const verifyEnforce: KisaRawClusterPolicy = {
+      metadata: { name: "verify-image-signatures" },
+      spec: {
+        validationFailureAction: "Enforce",
+        rules: [{
+          name: "verify-sig",
+          match: { any: [{ resources: { kinds: ["Pod"] } }] },
+          verifyImages: [{ imageReferences: ["*"], required: true, attestors: validAttestors }],
+        }],
+      },
+    }
+    mockGetKisaWorkloadInventory.mockResolvedValue(makeInv())
+    mockGetKisaPolicyReports.mockResolvedValue({ status: "ok", data: [] })
+
+    // 1. validate.failureAction: "Audit" overrides spec.validationFailureAction: "Enforce" -> fail
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
+      status: "ok",
+      data: [
+        {
+          metadata: { name: "disallow-latest-tag" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              ...validLatestRule,
+              validate: { ...validLatestRule.validate, failureAction: "Audit" },
+            }],
+          },
+        },
+        verifyEnforce,
+      ],
+    })
+    expect((await checkImg02()).status).toBe("fail")
+
+    // 2. validate.validationActions: ["Audit"] overrides spec.validationFailureAction: "Enforce" -> fail
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
+      status: "ok",
+      data: [
+        {
+          metadata: { name: "disallow-latest-tag" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              ...validLatestRule,
+              validate: { ...validLatestRule.validate, validationActions: ["Audit"] },
+            }],
+          },
+        },
+        verifyEnforce,
+      ],
+    })
+    expect((await checkImg02()).status).toBe("fail")
+
+    // 3. spec.validationFailureActionOverrides with action: Audit -> fail
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
+      status: "ok",
+      data: [
+        {
+          metadata: { name: "disallow-latest-tag" },
+          spec: {
+            validationFailureAction: "Enforce",
+            validationFailureActionOverrides: [{ action: "Audit", namespaceSelector: {} }],
+            rules: [validLatestRule],
+          },
+        },
+        verifyEnforce,
+      ],
+    })
+    expect((await checkImg02()).status).toBe("fail")
+
+    // 4. verifyImages[].failureAction: "Audit" on Enforce policy -> warn (never pass)
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
+      status: "ok",
+      data: [
+        { metadata: { name: "disallow-latest-tag" }, spec: { validationFailureAction: "Enforce", rules: [validLatestRule] } },
+        {
+          metadata: { name: "verify-image-signatures" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              name: "verify-sig",
+              match: { any: [{ resources: { kinds: ["Pod"] } }] },
+              verifyImages: [{ imageReferences: ["*"], required: true, failureAction: "Audit", attestors: validAttestors }],
+            }],
+          },
+        },
+      ],
+    })
+    const verifyOverrideWarn = await checkImg02()
+    expect(verifyOverrideWarn.status).toBe("warn")
+    expect(verifyOverrideWarn.reasonKey).toBe("compliance.kisa.reason.imgVerifyAudit")
+  })
+
+  it("handles verifyImages present/absent, missing attestors, required=false, and partial image scope honestly", async () => {
+    const validLatest: KisaRawClusterPolicy = {
+      metadata: { name: "disallow-latest-tag" },
+      spec: { validationFailureAction: "Enforce", rules: [validLatestRule] },
+    }
+    mockGetKisaWorkloadInventory.mockResolvedValue(makeInv())
+    mockGetKisaPolicyReports.mockResolvedValue({ status: "ok", data: [] })
+
+    // 1. verify-image-signatures absent -> warn (not pass)
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({ status: "ok", data: [validLatest] })
+    const absentRes = await checkImg02()
+    expect(absentRes.status).toBe("warn")
+    expect(absentRes.detail).toContain("verify-image-signatures=Missing")
+
+    // 2. verify-image-signatures present with verifyImages lacking attestors/key -> fail (invalid-rule)
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
+      status: "ok",
+      data: [
+        validLatest,
+        {
+          metadata: { name: "verify-image-signatures" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              name: "verify-sig",
+              match: { any: [{ resources: { kinds: ["Pod"] } }] },
+              verifyImages: [{ imageReferences: ["*"] }],
+            }],
+          },
+        },
+      ],
+    })
+    const noAttestors = await checkImg02()
+    expect(noAttestors.status).toBe("fail")
+    expect(noAttestors.detailLocalized.en).toContain("policy verify-image-signatures present but does not contain")
+
+    // 3. verifyImages Enforce with required=false -> warn (never pass)
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
+      status: "ok",
+      data: [
+        validLatest,
+        {
+          metadata: { name: "verify-image-signatures" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              name: "verify-sig",
+              match: { any: [{ resources: { kinds: ["Pod"] } }] },
+              verifyImages: [{ imageReferences: ["*"], required: false, attestors: validAttestors }],
+            }],
+          },
+        },
+      ],
+    })
+    const reqFalse = await checkImg02()
+    expect(reqFalse.status).toBe("warn")
+    expect(reqFalse.detail).toContain("required=false")
+
+    // 4. verifyImages Enforce with required=true but partial scope (portal only while another image runs) -> warn
+    mockGetKisaWorkloadInventory.mockResolvedValue(makeInv({
+      pods: {
+        status: "ok",
+        data: [
+          { metadata: { name: "portal-1", namespace: "devtools" }, spec: { containers: [{ image: "ghcr.io/dasomel/narwhal-portal:1.1.24" }] }, status: { phase: "Running" } },
+          { metadata: { name: "other-1", namespace: "default" }, spec: { containers: [{ image: "registry.k8s.io/pause:3.10" }] }, status: { phase: "Running" } },
+        ],
+      },
+    }))
+    mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
+      status: "ok",
+      data: [
+        validLatest,
+        {
+          metadata: { name: "verify-image-signatures" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              name: "verify-sig",
+              match: { any: [{ resources: { kinds: ["Pod"] } }] },
+              verifyImages: [{ imageReferences: ["ghcr.io/dasomel/narwhal-portal:*"], required: true, attestors: validAttestors }],
+            }],
+          },
+        },
+      ],
+    })
+    const partialScope = await checkImg02()
+    expect(partialScope.status).toBe("warn")
+    expect(partialScope.detail).toContain("미적용 이미지 1/2건")
   })
 
   it("fails on active current violation or :latest tag, and degrades to warn/manual on 403", async () => {
@@ -471,12 +819,14 @@ describe("KISA-IMG-02 live evaluation", () => {
     mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
       status: "ok",
       data: [
-        { metadata: { name: "disallow-latest-tag" }, spec: { validationFailureAction: "Enforce" } },
+        { metadata: { name: "disallow-latest-tag" }, spec: { validationFailureAction: "Enforce", rules: [validLatestRule] } },
         {
           metadata: { name: "verify-image-signatures" },
           spec: {
             validationFailureAction: "Enforce",
             rules: [{
+              name: "verify-sig",
+              match: { any: [{ resources: { kinds: ["Pod"] } }] },
               verifyImages: [{
                 imageReferences: [
                   "registry.example:5000/team/*",
@@ -484,6 +834,8 @@ describe("KISA-IMG-02 live evaluation", () => {
                   "repo@*",
                   "repo:tag@*",
                 ],
+                required: true,
+                attestors: validAttestors,
               }],
             }],
           },
@@ -539,8 +891,18 @@ describe("KISA-IMG-02 live evaluation", () => {
     mockGetKisaKyvernoClusterPolicies.mockResolvedValue({
       status: "ok",
       data: [
-        { metadata: { name: "disallow-latest-tag" }, spec: { validationFailureAction: "Enforce" } },
-        { metadata: { name: "verify-image-signatures" }, spec: { validationFailureAction: "Enforce" } },
+        { metadata: { name: "disallow-latest-tag" }, spec: { validationFailureAction: "Enforce", rules: [validLatestRule] } },
+        {
+          metadata: { name: "verify-image-signatures" },
+          spec: {
+            validationFailureAction: "Enforce",
+            rules: [{
+              name: "verify-sig",
+              match: { any: [{ resources: { kinds: ["Pod"] } }] },
+              verifyImages: [{ imageReferences: ["*"], required: true, attestors: validAttestors }],
+            }],
+          },
+        },
       ],
     })
     mockGetKisaPolicyReports.mockResolvedValue({ status: "ok", data: [] })
@@ -579,6 +941,9 @@ describe("KISA-RBAC-02 RBAC rule semantics, truth-table, and exact acceptance co
     { name: "uids in authentication.k8s.io grants impersonate", rule: { apiGroups: ["authentication.k8s.io"], resources: ["uids"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "uids", verb: "impersonate", expected: true },
     { name: "uids in core group does not grant authentication.k8s.io uids", rule: { apiGroups: [""], resources: ["uids"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "uids", verb: "impersonate", expected: false },
     { name: "userextras/scopes matches userextras/* query", rule: { apiGroups: ["authentication.k8s.io"], resources: ["userextras/scopes"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "userextras/*", verb: "impersonate", expected: true },
+    { name: "userextras/* grants literal '*' extra key per upstream impersonation.go + ResourceMatches", rule: { apiGroups: ["authentication.k8s.io"], resources: ["userextras/*"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "userextras/*", verb: "impersonate", expected: true },
+    { name: "*/* grants literal '*' extra key per upstream impersonation.go + ResourceMatches", rule: { apiGroups: ["authentication.k8s.io"], resources: ["*/*"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "userextras/*", verb: "impersonate", expected: true },
+    { name: "*/* does not grant concrete userextras/scopes per upstream ResourceMatches", rule: { apiGroups: ["authentication.k8s.io"], resources: ["*/*"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "userextras/scopes", verb: "impersonate", expected: false },
     { name: "userextras/* does not grant userextras/scopes per upstream ResourceMatches", rule: { apiGroups: ["authentication.k8s.io"], resources: ["userextras/*"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "userextras/scopes", verb: "impersonate", expected: false },
     { name: "*/scopes matches userextras/* query", rule: { apiGroups: ["authentication.k8s.io"], resources: ["*/scopes"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "userextras/*", verb: "impersonate", expected: true },
     { name: "bare userextras without subresource does not match userextras/*", rule: { apiGroups: ["authentication.k8s.io"], resources: ["userextras"], verbs: ["impersonate"] }, apiGroup: "authentication.k8s.io", resource: "userextras/*", verb: "impersonate", expected: false },
@@ -729,6 +1094,26 @@ describe("KISA-RBAC-02 RBAC rule semantics, truth-table, and exact acceptance co
     {
       name: "impersonate on authentication.k8s.io userextras/scopes is escalation KSV053",
       rules: [{ apiGroups: ["authentication.k8s.io"], resources: ["userextras/scopes"], verbs: ["impersonate"] }],
+      criticalWildcard: false,
+      escalation: true,
+      writeAccess: false,
+      secretsAccess: false,
+      includeIds: ["KSV053"],
+      excludeIds: ["KSV050"],
+    },
+    {
+      name: "impersonate on authentication.k8s.io userextras/* (literal '*' extra key) is escalation KSV053",
+      rules: [{ apiGroups: ["authentication.k8s.io"], resources: ["userextras/*"], verbs: ["impersonate"] }],
+      criticalWildcard: false,
+      escalation: true,
+      writeAccess: false,
+      secretsAccess: false,
+      includeIds: ["KSV053"],
+      excludeIds: ["KSV050"],
+    },
+    {
+      name: "impersonate on authentication.k8s.io */* (literal '*' extra key) is escalation KSV053",
+      rules: [{ apiGroups: ["authentication.k8s.io"], resources: ["*/*"], verbs: ["impersonate"] }],
       criticalWildcard: false,
       escalation: true,
       writeAccess: false,

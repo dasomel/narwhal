@@ -58,6 +58,7 @@ function kisaReasonLabel(key: KisaReasonKey, t: ReturnType<typeof useT>): string
     case "compliance.kisa.reason.obsConfigMissing": return t("compliance.kisa.reason.obsConfigMissing")
     case "compliance.kisa.reason.imgPolicyEnforced": return t("compliance.kisa.reason.imgPolicyEnforced")
     case "compliance.kisa.reason.imgVerifyAudit": return t("compliance.kisa.reason.imgVerifyAudit")
+    case "compliance.kisa.reason.imgPolicyInvalidRule": return t("compliance.kisa.reason.imgPolicyInvalidRule")
     case "compliance.kisa.reason.imgViolations": return t("compliance.kisa.reason.imgViolations")
     case "compliance.kisa.reason.imgPolicyReportsNotEvaluated": return t("compliance.kisa.reason.imgPolicyReportsNotEvaluated")
     case "compliance.kisa.reason.imgInventoryNotEvaluated": return t("compliance.kisa.reason.imgInventoryNotEvaluated")

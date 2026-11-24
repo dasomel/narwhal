@@ -157,6 +157,9 @@ def check(texts: dict[str, str]) -> list[str]:
     if "res === `${parent}/*`" in checks_ops:
         errors.append("kisa-checks-ops.ts must not match resource/* as a subresource wildcard (Kubernetes ResourceMatches allows only *, exact, */sub)")
 
+    if 'res !== `${parent}/*`' in checks_ops or 'res !== "*/*"' in checks_ops:
+        errors.append("kisa-checks-ops.ts must allow userextras/* and */* for literal '*' extra key impersonation per upstream impersonation.go")
+
     if "export async function checkImg02()" not in checks_ops or "// --- KISA-RBAC-01" not in checks_ops:
         errors.append("kisa-checks-ops.ts missing checkImg02 boundaries")
     else:
@@ -171,6 +174,12 @@ def check(texts: dict[str, str]) -> list[str]:
         "parseImageRefStrict",
         "return parseImageRefStrict(candidate) ? candidate : null",
         "buildSupersededReplicaSetKeys(inv.replicasets.data)",
+        "ruleHasLatestTagValidation",
+        "isValidVerifyImageEntry",
+        "resolveRuleEffectiveAction",
+        "if (hasAuditOverride(entry?.failureActionOverrides) || hasAuditOverride(policy.spec?.validationFailureActionOverrides))",
+        "evaluateLatestPolicies",
+        "evaluateVerifyPolicies",
         "excludedMissingOrZeroRs",
         "excludedOutOfScope",
         "failedInvSources",
@@ -283,6 +292,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop uids or userextras/* authentication.k8s.io impersonate check", "checks_ops", 'const impersonatesAuth = grantsAnyVerb(r, "authentication.k8s.io", ["uids", "userextras/*"], ["impersonate"])', 'const impersonatesAuth = grantsAnyVerb(r, "authentication.k8s.io", ["userextras"], ["impersonate"])'),
     ("allow bind/escalate escalation on rolebindings/clusterrolebindings", "checks_ops", 'const RBAC_ESCALATION_RESOURCES = ["roles", "clusterroles"] as const', 'const RBAC_ESCALATION_RESOURCES = ["roles", "clusterroles", "rolebindings", "clusterrolebindings"] as const'),
     ("allow res/* subresource wildcard in ruleGrants", "checks_ops", "res === `*/${sub}`", "res === `${parent}/*` || res === `*/${sub}`"),
+    ("exclude literal * extra key userextras/* from sub === * query", "checks_ops", "(res.startsWith(`${parent}/`) && res.length > parent.length + 1)", "(res.startsWith(`${parent}/`) && res.length > parent.length + 1 && res !== `${parent}/*`)"),
+    ("ignore rule-level Audit override in resolveRuleEffectiveAction", "checks_ops", "if (baseAction !== \"Enforce\") return \"Audit\"\n  if (hasAuditOverride(entry?.failureActionOverrides) || hasAuditOverride(policy.spec?.validationFailureActionOverrides)) {", "if (baseAction !== \"Enforce\") return \"Audit\"\n  if (false) {"),
     ("let nonResourceURLs-only rules feed writeAccess/anyWildcard", "checks_ops", "if (apiGroupsLower.length === 0 || resourcesLower.length === 0) continue", "// no-op"),
     ("reintroduce unused get verb on peerauthentications", "rbac", "    resources: [peerauthentications]\n    verbs: [list]", "    resources: [peerauthentications]\n    verbs: [get, list]"),
     ("reintroduce unused get verb on policyreports", "rbac", "    resources: [policyreports]\n    verbs: [list]", "    resources: [policyreports]\n    verbs: [get, list]"),

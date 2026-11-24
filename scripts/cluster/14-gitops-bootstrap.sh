@@ -131,9 +131,14 @@ if [ ! -d /home/vagrant/configs/gitops ]; then
   echo "       The Vagrantfile syncs gitops/ there; check the synced_folder." >&2
   exit 1
 fi
-# D8: never copy the nodes=0 template over an existing rendered inventory.
-# Cost: separate CIS staging; escape hatch: regenerate once node discovery recovers.
-tar -C /home/vagrant/configs/gitops --exclude='./resources/cis-benchmark.yaml' -cf - . | tar -xf -
+# D8: save the existing inventory before the source template is copied.
+# Cost: one temporary backup; escape hatch: regenerate after discovery recovers.
+CIS_BACKUP=""
+if [[ -f resources/cis-benchmark.yaml ]] && grep -Eq "^kind: [\"']?CronJob" resources/cis-benchmark.yaml; then
+  CIS_BACKUP="$(mktemp)"
+  cp resources/cis-benchmark.yaml "${CIS_BACKUP}"
+fi
+cp -r /home/vagrant/configs/gitops/* .
 bash "/home/vagrant/scripts/gitops/apply-topology.sh" "$PWD"
 
 # D5/D8: publish CIS only after discovery and rendering both succeed.
@@ -143,11 +148,14 @@ if ! CIS_NODES_FILE="$(mktemp)" || ! CIS_STAGE="$(mktemp -d)" ||
   ! kubectl get nodes -o json > "${CIS_NODES_FILE}" ||
   ! python3 /home/vagrant/scripts/ops/render-cis-benchmark.py \
     --nodes "${CIS_NODES_FILE}" --output-root "${CIS_STAGE}"; then
+  if [[ -n "${CIS_BACKUP}" ]]; then
+    mv "${CIS_BACKUP}" resources/cis-benchmark.yaml
+  fi
   echo "WARN: CIS generation failed; existing rendered file retained; Phase 2 continues. Re-render and push CIS resources later." >&2
 else
   mv "${CIS_STAGE}/resources/cis-benchmark.yaml" resources/cis-benchmark.yaml
 fi
-rm -f "${CIS_NODES_FILE:-}"
+rm -f "${CIS_NODES_FILE:-}" "${CIS_BACKUP}"
 if [[ -n "${CIS_STAGE:-}" ]]; then rm -rf "${CIS_STAGE}"; fi
 CIS_MANIFEST="$PWD/resources/cis-benchmark.yaml"
 

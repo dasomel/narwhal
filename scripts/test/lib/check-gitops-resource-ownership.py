@@ -27,9 +27,12 @@ EXCLUSIONS = {
 def owned_resources(template_dir):
     names = set()
     for template in template_dir.glob("*.yaml"):
-        match = re.search(r"include:\s*[\"']([^\"']+)[\"']", template.read_text())
+        # D11: plain includes are valid YAML too; cost: two scalar forms.
+        # Escape hatch: use a YAML parser if include values become structured.
+        match = re.search(r"^\s*include:[ \t]*(?:[\"']([^\"'\n]+)[\"']|([^\s\"'\n][^\n]*?))[ \t]*$",
+                          template.read_text(), re.MULTILINE)
         if match:
-            names.update(Path(name.strip()).name for name in match.group(1).split(","))
+            names.update(Path(name.strip()).name for name in (match.group(1) or match.group(2)).split(","))
     return names
 
 
@@ -54,6 +57,11 @@ def main():
         with tempfile.TemporaryDirectory() as tmp:
             copied = Path(tmp) / "templates"
             shutil.copytree(TEMPLATES, copied)
+            probe = copied / "scalar-forms.yaml"
+            for scalar in ('plain.yaml', '"double.yaml"', "'single.yaml'"):
+                probe.write_text("directory:\n  include: " + scalar + "\n")
+                assert scalar.strip("\"'") in owned_resources(copied)
+            probe.unlink()
             (copied / "ambient-kubelet-probes-ccnp.yaml").unlink()
             if "ambient-kubelet-probes-ccnp.yaml" not in uncovered(copied):
                 raise SystemExit("removing the probe Application was not detected")

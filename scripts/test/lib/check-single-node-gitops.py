@@ -26,7 +26,8 @@ def cluster(text):
 def publication(source, path, tree, target, topology):
     """Execute the publisher's actual copy section, without Git/network/cluster commands."""
     if path.endswith('14-gitops-bootstrap.sh'):
-        snippet = source[source.index('cp -r /home/vagrant/configs/gitops/* .'):
+        snippet = source[source.index('CIS_BACKUP=""') if 'CIS_BACKUP=""' in source else
+                         source.index('cp -r /home/vagrant/configs/gitops/* .'):
                          source.index('# D-FALCO-045')]
         snippet = snippet.replace('/home/vagrant/configs/gitops', str(tree))
         snippet = snippet.replace('/home/vagrant/scripts/gitops/apply-topology.sh', str(HELPER))
@@ -34,9 +35,21 @@ def publication(source, path, tree, target, topology):
         snippet = source[source.index('  #--- copy changed file(s)'):
                          source.index('#--- commit + push')]
         snippet = snippet[:snippet.rfind('\nfi')]
-    command(['bash', '-ec', 'PATHS=(); log() { :; }; git() { :; };\n' + snippet],
-            cwd=target, env=dict(os.environ, NARWHAL_TOPOLOGY=topology,
-                                 GITOPS_DIR=str(tree), REPO_ROOT=str(HELPER.parents[2])))
+    # D12: publication-copy tests isolate live discovery; R401/R308 test rendering.
+    # Cost: fake clients here; escape hatch: run their behavioral suites on changes.
+    clients = '''
+PATHS=(); log() { :; }; git() { :; };
+kubectl() { printf '%s\\n' '{"items":[]}'; };
+python3() {
+  while [[ "$1" != --output-root ]]; do shift; done
+  cp "${GITOPS_DIR}/resources/cis-benchmark.yaml" "$2/resources/cis-benchmark.yaml"
+};
+'''
+    with tempfile.TemporaryDirectory() as work:
+        command(['bash', '-ec', clients + snippet],
+                cwd=target, env=dict(os.environ, NARWHAL_TOPOLOGY=topology,
+                                     GITOPS_DIR=str(tree), WORK=work,
+                                     REPO_ROOT=str(HELPER.parents[2])))
 
 
 def check_publication(compare_head=False):

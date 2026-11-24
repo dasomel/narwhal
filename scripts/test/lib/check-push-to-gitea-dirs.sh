@@ -166,7 +166,7 @@ MOCK
       return 1
     fi
     content_cis="$(git --git-dir="${bare}" show main:resources/cis-benchmark.yaml)"
-    echo "${content_cis}" | grep -q 'kind: "CronJob"' || return 1
+    echo "${content_cis}" | grep -q '^kind: CronJob$' || return 1
     echo "${content_cis}" | grep -q 'live-node' || return 1
   done
   before_sha="$(git --git-dir="${bare}" rev-parse main)"

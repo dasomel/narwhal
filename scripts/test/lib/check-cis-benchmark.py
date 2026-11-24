@@ -109,12 +109,44 @@ def check_renderer(source):
       assert (node.module or '').split('.')[0] != 'yaml'
 
 
+def check_preservation(bootstrap, renderer):
+  # Run the actual save/copy/generate block twice: failure and success must converge.
+  generation = bootstrap[bootstrap.index('CIS_BACKUP=""'):bootstrap.index('# D-FALCO-045')]
+  generation = generation.replace('bash "/home/vagrant/scripts/gitops/apply-topology.sh" "$PWD"', ':')
+  for fail in ('kubectl', 'python3', 'success'):
+    for existing in (False, True):
+      with tempfile.TemporaryDirectory() as directory:
+        base = Path(directory)
+        destination = base / 'resources/cis-benchmark.yaml'
+        destination.parent.mkdir()
+        old = renderer.render([{'name': 'old-node', 'roles': ['worker']}])
+        if existing:
+          destination.write_text(old)
+        source = base / 'source'
+        (source / 'resources').mkdir(parents=True)
+        (source / 'resources/cis-benchmark.yaml').write_text(renderer.render([]))
+        block = generation.replace('/home/vagrant/configs/gitops', str(source))
+        clients = ('kubectl() { return ' + ('1' if fail == 'kubectl' else '0') + '; }; '
+          'python3() { while [[ "$1" != --output-root ]]; do shift; done; '
+          'printf fresh > "$2/resources/cis-benchmark.yaml"; return ' +
+          ('0' if fail == 'success' else '1') + '; }; ')
+        for _ in range(2):
+          result = subprocess.run(['bash', '-c', 'set -euo pipefail; ' + clients + block +
+            '\nprintf "CONTINUED\\n"'], cwd=base, text=True, capture_output=True)
+          assert result.returncode == 0 and 'CONTINUED' in result.stdout, result.stderr
+          expected = 'fresh' if fail == 'success' else old if existing else renderer.render([])
+          assert destination.read_text() == expected, 'template overwrote existing inventory'
+          if fail != 'success':
+            assert 'WARN: CIS generation failed' in result.stderr
+
+
 def main():
   renderer_source = (ROOT / 'scripts/ops/render-cis-benchmark.py').read_text()
   check_renderer(renderer_source)
   spec = importlib.util.spec_from_file_location('renderer', ROOT / 'scripts/ops/render-cis-benchmark.py')
   renderer = importlib.util.module_from_spec(spec)
   spec.loader.exec_module(renderer)
+  subprocess.run(['python3', 'scripts/test/lib/test-cis-benchmark-yaml.py'], cwd=ROOT, check=True)
   app = yaml.safe_load((ROOT / 'gitops/charts/narwhal-apps/templates/cis-benchmark.yaml').read_text())
   bootstrap = (ROOT / 'scripts/cluster/14-gitops-bootstrap.sh').read_text()
   recorder = (ROOT / 'scripts/ops/cis-benchmark-recorder.sh').read_text()
@@ -167,27 +199,14 @@ def main():
         'narwhal.io/compliance-tool': 'kube-bench', 'narwhal.io/benchmark-node': 'removed-node'}}}]}))
       stale = subprocess.run(coverage, capture_output=True, text=True)
       assert stale.returncode == 1 and 'removed-node' in stale.stdout and 'manual cleanup' in stale.stdout
-  # Execute only the isolated CIS bootstrap blocks with failing clients; Phase 2 must continue.
-  generation = bootstrap[bootstrap.index('if ! CIS_NODES_FILE='):bootstrap.index('# D-FALCO-045')]
-  seed = bootstrap[bootstrap.index('if ! kubectl apply -f "${CIS_MANIFEST}"'):bootstrap.index('# D-PSA-LABELS-14')]
-  for fail in ('kubectl', 'python3'):
-    with tempfile.TemporaryDirectory() as directory:
-      base = Path(directory)
-      destination = base / 'resources/cis-benchmark.yaml'
-      destination.parent.mkdir()
-      destination.write_text('existing per-node content')
-      source = base / 'source'
-      (source / 'resources').mkdir(parents=True)
-      (source / 'resources/cis-benchmark.yaml').write_text(renderer.render([]))
-      copy_line = next(line for line in bootstrap.splitlines() if line.startswith('tar -C '))
-      copy_line = copy_line.replace('/home/vagrant/configs/gitops', str(source))
-      clients = ('kubectl() { return ' + ('1' if fail == 'kubectl' else '0') + '; }; '
-        'python3() { while [[ "$1" != --output-root ]]; do shift; done; '
-        'printf partial > "$2/resources/cis-benchmark.yaml"; return 1; }; ')
-      result = subprocess.run(['bash', '-c', 'set -euo pipefail; ' + clients + copy_line + '\n' +
-        generation + seed + '\nprintf "CONTINUED\\n"'], cwd=base, text=True, capture_output=True)
-      assert destination.read_text() == 'existing per-node content'
-      assert result.returncode == 0 and 'CONTINUED' in result.stdout and 'WARN: CIS generation failed' in result.stderr
+  check_preservation(bootstrap, renderer)
+  if '--mutation-verify' in sys.argv:
+    try:
+      check_preservation(bootstrap.replace('cp resources/cis-benchmark.yaml "${CIS_BACKUP}"', ':'), renderer)
+    except AssertionError:
+      pass
+    else:
+      raise AssertionError('template overwrite mutation escaped')
   docs = list(yaml.safe_load_all(renderer.render(single)))
   assert any(d['metadata']['name'] == 'cis-bench-974178c0082e' for d in docs)
   mutations = []

@@ -7,6 +7,15 @@
     "paths": [
       "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
       "portal/src/types/kisa.ts",
+      "portal/src/lib/kisa-policy-canonical.mjs",
+      "portal/src/lib/kisa-policy-canonical.d.mts",
+      "portal/src/data/kisa-policy-baseline.json",
+      "portal/scripts/gen-kisa-policy-baseline.mjs",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/compliance-acceptance.ts",
+      "portal/src/lib/compliance-accepted.ts",
+      "portal/src/lib/trivy.ts",
+      "portal/src/types/security.ts",
       "portal/src/lib/k8s-client.ts",
       "portal/src/lib/kisa.ts",
       "portal/src/lib/kisa-checks.ts",
@@ -24,6 +33,7 @@
       "scripts/test/lib/check-portal-replicasets-rbac.py",
       "scripts/test/lib/check-portal-evidence-precedence.py",
       "scripts/test/lib/check-portal-kisa-live-controls.py",
+      "scripts/test/lib/check-portal-kisa-policy-baseline.py",
       "scripts/test/regression-check-kakao.sh",
       ".agents/evals/traces/2026-11-portal-kisa-live-controls.json"
     ]
@@ -46,21 +56,19 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Removed STATIC_STATUS and implemented live evaluators for KISA-ETCD-02, KISA-SEC-01 (PartialObjectMetadata Secret metadata degrading to not evaluated on 403; never infers external KMS from env vars or returns pass; missing/suspended CronJob degrades to manual), KISA-TLS-01 (including portLevelMtls), KISA-OBS-01 (routed external receivers + Falco/falcosidekick Ready), and KISA-IMG-02 (structural Pod :latest/untagged validate.pattern/anyPattern/deny/foreach/cel and verifyImages imageReferences+attestors/key inspection matching by content rather than name alone, honouring Kyverno 1.18 rule-level failureAction/validationActions/overrides, failing hollow named policies, reporting mode/required/image scope honestly, excluding deleted/0-replica RS/out-of-scope remnants using parseImageRefStrict, and skipping pass/cache on partial inventory). Kept KISA-IMG-01 explicitly manual with host check command because #765 publishes no cluster object. Fixed KISA-RBAC-02 single-rule apiGroups/resources/verbs wildcard semantics (including verbs:['*'] escalation, upstream ResourceMatches, and literal '*' extra-key impersonation via userextras/* and */* per impersonation.go) with matchRbacException. Bumped KISA cache key to compliance:v4:kisa:list, added ko/en i18n reason keys, pinned all 3 RBAC rules in R378, and strengthened R397 (34 mutations)."
+      "summary": "Applied D-KISA-CLOSED-WORLD across KISA live controls: replaced Kyverno rule semantic helpers in IMG-02 with canonical spec SHA-256 comparison against kisa-policy-baseline.json (generated from gitops/resources/kyverno-policies.yaml stripping 9 documented Kyverno 1.18 admission defaults) + Ready=True + specHasOverrides + enforceEligible; isolated ETCD-02 strictly to 'etcd' and CP-01/ETCD-01 strictly to 'kube-apiserver' containers; restricted OBS-01 Falco match to Kubernetes labels; deleted isUnavoidableRbacBuiltin and system:/kubeadm: prefix exclusions in RBAC-01/02 in favor of 44 exact rbacBindings bootstrap rules requiring kubernetes.io/bootstrapping=rbac-defaults + autoupdate=true; hardened remaining controls in the 11-control sweep (TLS-01 rootPa portLevelMtls, NET-01 allow-all ingress:[{}], POD-01 audit/warn-only & privileged, ADM-01 partial-Enforce/disabled/notReady, TLS-02 missing notAfter, IMG-03 failed/0/truncated summary, CFG-01 totalControls=0)."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Portal typecheck/lint/vitest/build/harness-rules, all check-portal-*.py --mutation-verify, make validate, make test, make lint, and read-only live measurement via kubectl proxy (admin rights).",
-      "summary": "Live after-r5 measurement via kubectl proxy (admin rights) yielded pass 6, fail 3, warn 6, manual 1 (KISA-SEC-01 warn, KISA-ETCD-02 warn, KISA-IMG-01 manual, KISA-TLS-01 warn with 5 live exceptions, KISA-OBS-01 warn null-only + Falco/falcosidekick Ready, KISA-IMG-02 warn disallow-latest-tag=Enforce + verify-image-signatures=Audit(required=false) portal-only scope with 86/87 uncovered images and 0 active violations / 58 excluded, KISA-RBAC-02 fail with 2 actionable Critical and 13 exact-accepted High).",
+      "scope": "Portal typecheck/lint/vitest/build/harness-rules, all check-portal-*.py --mutation-verify (incl. R395, R397, R399), make validate, make test, make lint, and read-only live measurement via kubectl proxy (admin rights).",
+      "summary": "Live after-r6 measurement via kubectl proxy (admin rights) yielded pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r6.json): KISA-RBAC-01 now fail (kubeadm:cluster-admins lacks bootstrapping metadata; only cluster-admin accepted), KISA-POD-01 now warn (0/14 enforced PSA), KISA-ADM-01 now warn (5/9 enforced), KISA-RBAC-02 fail (Critical 2, High 39 with 4 unbootstrapped kubeadm:* bindings surfaced, 56 exact-accepted), KISA-IMG-02 warn matching canonical baseline SHA-256 + Ready=True with verify-image-signatures Audit limited.",
       "evidence": [
-        "test:live measurement via kubectl proxy (admin rights) getKisaControls() after r5 -> summary pass 6, fail 3, warn 6, manual 1 (.review/kisa-live-after-r5.json)",
+        "test:live measurement via kubectl proxy (admin rights) getKisaControls() after r6 -> summary pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r6.json)",
         "test:cd portal && pnpm typecheck && pnpm lint && pnpm exec vitest run && pnpm build && bash scripts/harness-rules.sh",
-        "test:python3 scripts/test/lib/check-portal-replicasets-rbac.py --mutation-verify -> PASS: 26 mutations rejected",
-        "test:python3 scripts/test/lib/check-portal-kisa-live-controls.py --mutation-verify -> PASS: R397 portal KISA live controls (34 mutations rejected)",
-        "test:make validate -> exit 0",
-        "test:make test -> passed 506 failed 0"
+        "test:python3 scripts/test/lib/check-portal-kisa-live-controls.py --mutation-verify -> PASS (40 mutations rejected)",
+        "test:python3 scripts/test/lib/check-portal-kisa-policy-baseline.py --mutation-verify -> PASS (6 mutations + 9 behavioral checks rejected)"
       ]
     },
     {

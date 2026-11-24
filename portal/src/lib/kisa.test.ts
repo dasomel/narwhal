@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ComplianceFramework, ConfigAuditRow } from "@/types/compliance"
-import type { KisaWorkloadInventory } from "./k8s-client"
+import type { SecuritySummary } from "@/types/security"
+import type { KisaFetchResult, KisaWorkloadInventory } from "./k8s-client"
 
 vi.mock("server-only", () => ({}))
 
@@ -25,10 +26,6 @@ vi.mock("./compliance", () => ({
   getConfigAuditList: () => mockGetConfigAuditList(),
 }))
 
-vi.mock("./trivy", () => ({
-  getSecuritySummary: vi.fn(async () => ({ totals: { Critical: 0, High: 0, Medium: 0, Low: 0 } })),
-}))
-
 const mockGetKisaKyvernoClusterPolicies = vi.fn(async () => ({ status: "ok" as const, data: [] as unknown[] }))
 const mockGetKisaWorkloadInventory = vi.fn<() => Promise<KisaWorkloadInventory>>(async () => ({
   pods: { status: "ok", data: [] },
@@ -37,6 +34,21 @@ const mockGetKisaWorkloadInventory = vi.fn<() => Promise<KisaWorkloadInventory>>
   statefulsets: { status: "ok", data: [] },
   daemonsets: { status: "ok", data: [] },
   cronjobs: { status: "ok", data: [] },
+}))
+const mockGetSecuritySummary = vi.fn<() => Promise<SecuritySummary>>(async () => ({
+  totals: { Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0 },
+  scannedImages: 1,
+  scannedWorkloads: 1,
+  lastUpdated: "2026-11-24T00:00:00Z",
+}))
+const mockGetKisaCertificates = vi.fn<() => Promise<KisaFetchResult<unknown[]>>>(async () => ({ status: "ok", data: [] }))
+const mockGetKisaKyvernoPolicies = vi.fn<() => Promise<KisaFetchResult<unknown[]>>>(async () => ({ status: "ok", data: [] }))
+const mockGetKisaApiServerPods = vi.fn<() => Promise<KisaFetchResult<unknown[]>>>(async () => ({ status: "ok", data: [] }))
+const mockGetKisaNamespaces = vi.fn<() => Promise<KisaFetchResult<unknown[]>>>(async () => ({ status: "ok", data: [] }))
+const mockGetKisaNetworkPolicies = vi.fn<() => Promise<KisaFetchResult<unknown[]>>>(async () => ({ status: "ok", data: [] }))
+
+vi.mock("./trivy", () => ({
+  getSecuritySummary: () => mockGetSecuritySummary(),
 }))
 
 vi.mock("./k8s-client", () => ({
@@ -48,6 +60,11 @@ vi.mock("./k8s-client", () => ({
   getRbacBindings: vi.fn(async () => []),
   getClusterRoles: vi.fn(async () => []),
   getRoles: vi.fn(async () => []),
+  getKisaCertificates: () => mockGetKisaCertificates(),
+  getKisaKyvernoPolicies: () => mockGetKisaKyvernoPolicies(),
+  getKisaApiServerPods: () => mockGetKisaApiServerPods(),
+  getKisaNamespaces: () => mockGetKisaNamespaces(),
+  getKisaNetworkPolicies: () => mockGetKisaNetworkPolicies(),
   getKisaDeployment: vi.fn(async () => ({ status: "not-found" })),
   getKisaStatefulSet: vi.fn(async () => ({ status: "not-found" })),
   getKisaCronJob: vi.fn(async () => ({ status: "not-found" })),
@@ -324,4 +341,138 @@ it("skips Valkey caching and marks partialSources when KISA-IMG-02 workload inve
   expect(res.partial).toBe(true)
   expect(res.partialSources).toContain("deployments(forbidden)")
   expect(mockCache.size).toBe(0)
+})
+
+describe("KISA sweep closed-world invariants (D-KISA-CLOSED-WORLD)", () => {
+  beforeEach(() => {
+    mockCache.clear()
+    mockGetComplianceFrameworks.mockResolvedValue([{
+      id: "clean", title: "Clean", totalControls: 1, passCount: 1, failCount: 0, passRate: 1,
+      evaluatedPassCount: 1, notEvaluatedCount: 0, actionableFailCount: 0,
+    }])
+    mockGetConfigAuditList.mockResolvedValue([])
+    mockGetRbacAuditList.mockResolvedValue([])
+    mockGetInfraAuditList.mockResolvedValue([])
+    mockGetSecuritySummary.mockResolvedValue({
+      totals: { Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0 },
+      scannedImages: 1,
+      scannedWorkloads: 1,
+      lastUpdated: "2026-11-24T00:00:00Z",
+    })
+  })
+
+  it("IMG-03 never passes on API error, zero scanned reports, or truncated list", async () => {
+    mockGetSecuritySummary.mockResolvedValueOnce({
+      totals: { Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0 },
+      scannedImages: 0,
+      scannedWorkloads: 0,
+      lastUpdated: "2026-11-24T00:00:00Z",
+      failed: true,
+    })
+    const errRes = await getKisaControls()
+    const imgErr = errRes.controls.find((c) => c.id === "KISA-IMG-03")
+    expect(imgErr?.status).toBe("manual")
+    expect(imgErr?.partial).toBe(true)
+
+    mockCache.clear()
+    mockGetSecuritySummary.mockResolvedValueOnce({
+      totals: { Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0 },
+      scannedImages: 0,
+      scannedWorkloads: 0,
+      lastUpdated: "2026-11-24T00:00:00Z",
+    })
+    const emptyRes = (await getKisaControls()).controls.find((c) => c.id === "KISA-IMG-03")
+    expect(emptyRes?.status).toBe("manual")
+
+    mockCache.clear()
+    mockGetSecuritySummary.mockResolvedValueOnce({
+      totals: { Critical: 0, High: 0, Medium: 0, Low: 0, Unknown: 0 },
+      scannedImages: 5,
+      scannedWorkloads: 5,
+      lastUpdated: "2026-11-24T00:00:00Z",
+      partial: true,
+      partialReason: "max-pages",
+    })
+    const partRes = (await getKisaControls()).controls.find((c) => c.id === "KISA-IMG-03")
+    expect(partRes?.status).toBe("warn")
+    expect(partRes?.partial).toBe(true)
+  })
+
+  it("POD-01 does not pass on audit/warn-only or privileged PSA labels; passes only when all namespaces enforce baseline/restricted", async () => {
+    mockGetKisaNamespaces.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        { name: "default", status: "Active", labels: { "pod-security.kubernetes.io/audit": "baseline", "pod-security.kubernetes.io/warn": "baseline" }, createdAt: "" },
+        { name: "kube-system", status: "Active", labels: { "pod-security.kubernetes.io/enforce": "privileged" }, createdAt: "" },
+      ],
+    })
+    const podWarn = (await getKisaControls()).controls.find((c) => c.id === "KISA-POD-01")
+    expect(podWarn?.status).toBe("warn")
+
+    mockCache.clear()
+    mockGetKisaNamespaces.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        { name: "default", status: "Active", labels: { "pod-security.kubernetes.io/enforce": "baseline" }, createdAt: "" },
+        { name: "app", status: "Active", labels: { "pod-security.kubernetes.io/enforce": "restricted" }, createdAt: "" },
+      ],
+    })
+    const podPass = (await getKisaControls()).controls.find((c) => c.id === "KISA-POD-01")
+    expect(podPass?.status).toBe("pass")
+  })
+
+  it("NET-01 rejects podSelector:{} Ingress NetworkPolicy with allow-all ingress:[{}] and 403/truncated returns manual", async () => {
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        { metadata: { name: "fake-deny", namespace: "iam" }, spec: { podSelector: {}, policyTypes: ["Ingress"], ingress: [{}] } },
+        { metadata: { name: "ns-wide-allow", namespace: "devtools" }, spec: { podSelector: {}, policyTypes: ["Ingress"], ingress: [{ from: [{ namespaceSelector: {} }] }] } },
+      ],
+    })
+    const netFail = (await getKisaControls()).controls.find((c) => c.id === "KISA-NET-01")
+    expect(netFail?.status).toBe("fail")
+
+    mockCache.clear()
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "forbidden", resource: "networkpolicies.networking.k8s.io" })
+    const netForb = (await getKisaControls()).controls.find((c) => c.id === "KISA-NET-01")
+    expect(netForb?.status).toBe("manual")
+    expect(netForb?.partial).toBe(true)
+  })
+
+  it("ADM-01 warns when any validate/verifyImages policy is Audit, Mixed, disabled (admission=false), or notReady", async () => {
+    mockGetKisaKyvernoPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        { name: "p1", namespace: null, scope: "cluster", background: true, validationFailureAction: "Enforce", effectiveEnforcement: "Enforce", hasValidateOrVerifyRules: true, ready: true, rulesCount: 1, rules: [], title: null, description: null, category: null, severity: null },
+        { name: "p2", namespace: null, scope: "cluster", background: true, validationFailureAction: "Audit", effectiveEnforcement: "Audit", hasValidateOrVerifyRules: true, ready: true, rulesCount: 1, rules: [], title: null, description: null, category: null, severity: null },
+      ],
+    })
+    expect((await getKisaControls()).controls.find((c) => c.id === "KISA-ADM-01")?.status).toBe("warn")
+
+    mockCache.clear()
+    mockGetKisaKyvernoPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        { name: "p1", namespace: null, scope: "cluster", background: true, validationFailureAction: "Enforce", effectiveEnforcement: "Disabled", hasValidateOrVerifyRules: true, ready: true, rulesCount: 1, rules: [], title: null, description: null, category: null, severity: null },
+      ],
+    })
+    expect((await getKisaControls()).controls.find((c) => c.id === "KISA-ADM-01")?.status).toBe("warn")
+  })
+
+  it("TLS-02 warns when a Ready certificate lacks valid notAfter; CP-01/ETCD-01 reject empty flags or missing kube-apiserver container", async () => {
+    mockGetKisaCertificates.mockResolvedValueOnce({
+      status: "ok",
+      data: [{ name: "c1", namespace: "ns", ready: true, issuing: false, revision: 1, notAfter: null, notBefore: null, dnsNames: [], issuer: "ca", renewalTime: null }],
+    })
+    expect((await getKisaControls()).controls.find((c) => c.id === "KISA-TLS-02")?.status).toBe("warn")
+
+    mockCache.clear()
+    mockGetKisaApiServerPods.mockResolvedValueOnce({
+      status: "ok",
+      data: [{ name: "apiserver-1", hasApiserverContainer: false, ready: true, containerArgs: ["--audit-log-path=/var/log/a.log", "--audit-policy-file=/etc/a.yaml", "--encryption-provider-config=/etc/enc.yaml"] }],
+    })
+    const res = await getKisaControls()
+    expect(res.controls.find((c) => c.id === "KISA-CP-01")?.status).toBe("manual")
+    expect(res.controls.find((c) => c.id === "KISA-ETCD-01")?.status).toBe("manual")
+  })
 })

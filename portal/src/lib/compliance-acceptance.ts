@@ -42,6 +42,7 @@ export const COMPLIANCE_EXCEPTIONS_DOC_URL = `https://github.com/dasomel/narwhal
 export type AcceptanceScope = "cluster" | "namespace"
 export type WorkloadKind = "ReplicaSet" | "DaemonSet" | "StatefulSet" | "Pod" | "CronJob"
 export type RbacRuleKind = "ClusterRole" | "Role"
+export type RbacBindingKind = "ClusterRoleBinding" | "RoleBinding"
 export type AcceptedReasonKey = Extract<TranslationKey, `compliance.acceptedReason.${string}`>
 
 export interface AcceptedConfigAuditRule {
@@ -88,6 +89,24 @@ export interface AcceptedInfraRule {
   docAnchor: string
 }
 
+export interface AcceptedRbacBindingRule {
+  id: string
+  scope: AcceptanceScope
+  /** Empty string "" for ClusterRoleBinding (scope "cluster"), exact namespace for RoleBinding (scope "namespace"). */
+  namespace: string
+  kind: RbacBindingKind
+  name: string
+  roleRefKind: RbacRuleKind
+  roleRefName: string
+  requireBootstrapMetadata: boolean
+  class: AcceptedClass
+  reasonKey: AcceptedReasonKey
+  reason: string
+  owner: string
+  reviewedAt: string
+  docAnchor: string
+}
+
 export interface AcceptedMatch {
   ruleId: string
   class: AcceptedClass
@@ -111,15 +130,32 @@ interface RawRuleEntry {
   reviewedAt: string
 }
 
+interface RawRbacBindingEntry {
+  id: string
+  scope: string
+  namespace: string
+  kind: string
+  name: string
+  roleRefKind: string
+  roleRefName: string
+  requireBootstrapMetadata: boolean
+  class: string
+  reasonKey: string
+  owner: string
+  reviewedAt: string
+}
+
 interface RawAcceptanceRulesFile {
   schemaVersion: number
   configAudit: RawRuleEntry[]
   rbac: RawRuleEntry[]
+  rbacBindings?: RawRbacBindingEntry[]
   infra: RawRuleEntry[]
 }
 
 const VALID_WORKLOAD_KINDS = new Set<string>(["ReplicaSet", "DaemonSet", "StatefulSet", "Pod", "CronJob"])
 const VALID_RBAC_KINDS = new Set<string>(["ClusterRole", "Role"])
+const VALID_RBAC_BINDING_KINDS = new Set<string>(["ClusterRoleBinding", "RoleBinding"])
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const PATTERN_METACHAR_RE = /[*?[\]()^$|\\]/
 
@@ -214,6 +250,7 @@ function assertCommonRuleFields(raw: RawRuleEntry, seenIds: Set<string>): {
 function loadAcceptanceRules(rawFile: RawAcceptanceRulesFile): {
   configAudit: readonly AcceptedConfigAuditRule[]
   rbac: readonly AcceptedRbacRule[]
+  rbacBindings: readonly AcceptedRbacBindingRule[]
 } {
   const seenIds = new Set<string>()
   const configAudit: AcceptedConfigAuditRule[] = []
@@ -267,13 +304,98 @@ function loadAcceptanceRules(rawFile: RawAcceptanceRulesFile): {
     })
   }
 
-  return { configAudit, rbac }
+  const rbacBindings: AcceptedRbacBindingRule[] = []
+  const bindingAllowedFields = new Set([
+    "id",
+    "scope",
+    "namespace",
+    "kind",
+    "name",
+    "roleRefKind",
+    "roleRefName",
+    "requireBootstrapMetadata",
+    "class",
+    "reasonKey",
+    "owner",
+    "reviewedAt",
+  ])
+  for (const raw of rawFile.rbacBindings ?? []) {
+    if (Object.keys(raw).some((field) => !bindingAllowedFields.has(field))) {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: unknown rule field`)
+    }
+    if (!raw.id || typeof raw.id !== "string" || seenIds.has(raw.id)) {
+      throw new Error(`Invalid or duplicate RBAC binding acceptance rule id: ${String(raw.id)}`)
+    }
+    seenIds.add(raw.id)
+    if (raw.scope !== "cluster" && raw.scope !== "namespace") {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: invalid scope`)
+    }
+    if (raw.scope === "cluster" && raw.namespace !== "") {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: cluster-scoped rule must have empty namespace`)
+    }
+    if (raw.scope === "namespace" && raw.namespace.trim().length === 0) {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: namespace-scoped rule requires non-empty namespace`)
+    }
+    if (!VALID_RBAC_BINDING_KINDS.has(raw.kind)) {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: unsupported kind "${raw.kind}"`)
+    }
+    if (raw.kind === "ClusterRoleBinding" && raw.scope !== "cluster") {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: ClusterRoleBinding must use scope "cluster"`)
+    }
+    if (raw.kind === "RoleBinding" && raw.scope !== "namespace") {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: RoleBinding must use scope "namespace"`)
+    }
+    assertExactName(raw.name, raw.id)
+    if (!VALID_RBAC_KINDS.has(raw.roleRefKind)) {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: invalid roleRefKind "${raw.roleRefKind}"`)
+    }
+    assertExactName(raw.roleRefName, raw.id)
+    if (typeof raw.requireBootstrapMetadata !== "boolean") {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: requireBootstrapMetadata must be boolean`)
+    }
+    if (raw.class !== "accept" && raw.class !== "upstream") {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: class must be "accept" or "upstream"`)
+    }
+    if (!raw.reasonKey.startsWith("compliance.acceptedReason.") || !(raw.reasonKey in en)) {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: unknown reasonKey "${raw.reasonKey}"`)
+    }
+    const reasonKey = raw.reasonKey as AcceptedReasonKey
+    const reason = en[reasonKey]
+    if (!reason || reason.trim().length === 0) {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: empty en translation for "${reasonKey}"`)
+    }
+    if (typeof raw.owner !== "string" || raw.owner.trim().length === 0) {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: owner is required`)
+    }
+    if (typeof raw.reviewedAt !== "string" || !ISO_DATE_RE.test(raw.reviewedAt)) {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: reviewedAt must be YYYY-MM-DD`)
+    }
+    rbacBindings.push({
+      id: raw.id,
+      scope: raw.scope,
+      namespace: raw.namespace,
+      kind: raw.kind as RbacBindingKind,
+      name: raw.name,
+      roleRefKind: raw.roleRefKind as RbacRuleKind,
+      roleRefName: raw.roleRefName,
+      requireBootstrapMetadata: raw.requireBootstrapMetadata,
+      class: raw.class,
+      reasonKey,
+      reason,
+      owner: raw.owner,
+      reviewedAt: raw.reviewedAt,
+      docAnchor: COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
+    })
+  }
+
+  return { configAudit, rbac, rbacBindings }
 }
 
 const loaded = loadAcceptanceRules(rulesData as RawAcceptanceRulesFile)
 
 export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = loaded.configAudit
 export const ACCEPTED_RBAC_RULES: readonly AcceptedRbacRule[] = loaded.rbac
+export const ACCEPTED_RBAC_BINDING_RULES: readonly AcceptedRbacBindingRule[] = loaded.rbacBindings
 
 export const configRuleIndex = new Map<string, AcceptedConfigAuditRule[]>()
 for (const rule of ACCEPTED_CONFIG_AUDIT_RULES) {
@@ -289,6 +411,14 @@ for (const rule of ACCEPTED_RBAC_RULES) {
   const bucket = rbacRuleIndex.get(key)
   if (bucket) bucket.push(rule)
   else rbacRuleIndex.set(key, [rule])
+}
+
+export const rbacBindingRuleIndex = new Map<string, AcceptedRbacBindingRule[]>()
+for (const rule of ACCEPTED_RBAC_BINDING_RULES) {
+  const key = `${rule.scope}\0${rule.namespace}\0${rule.kind}\0${rule.name}\0${rule.roleRefKind}\0${rule.roleRefName}`
+  const bucket = rbacBindingRuleIndex.get(key)
+  if (bucket) bucket.push(rule)
+  else rbacBindingRuleIndex.set(key, [rule])
 }
 
 export function findUnusedAcceptanceRules(

@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "sourceManifest": "gitops/resources/kyverno-policies.yaml",
+  "normalizedOutServerDefaults": [
+    "spec.admission (when true)",
+    "spec.emitWarning (when false)",
+    "spec.rules[].skipBackgroundRequests (when true)",
+    "spec.rules[].validate.allowExistingViolations (when true)",
+    "spec.rules[].verifyImages[].useCache (when true)",
+    "spec.rules[].verifyImages[].attestors[].entries[].signatureAlgorithm (when sha256)",
+    "spec.rules[].verifyImages[].attestors[].entries[].keys.signatureAlgorithm (when sha256)",
+    "spec.rules[].verifyImages[].attestations[].attestors[].entries[].signatureAlgorithm (when sha256)",
+    "spec.rules[].verifyImages[].attestations[].attestors[].entries[].keys.signatureAlgorithm (when sha256)"
+  ],
+  "policies": {
+    "disallow-latest-tag": {
+      "name": "disallow-latest-tag",
+      "role": "latest-tag",
+      "specSha256": "973bb1dc3010217cf25cbbe21208c32c64ca1f3c36ff7b04ee215fedff20e96d",
+      "validationFailureAction": "Enforce",
+      "hasOverrides": false,
+      "enforceEligible": true,
+      "knownLimitations": []
+    },
+    "verify-image-signatures": {
+      "name": "verify-image-signatures",
+      "role": "verify-images",
+      "specSha256": "54d67e5b2bb8818bd23e5bcada11993c9624b6a3c0e5bc098ac89235e347eb53",
+      "validationFailureAction": "Audit",
+      "hasOverrides": false,
+      "imageReferences": [
+        "ghcr.io/dasomel/narwhal-portal:*",
+        "ghcr.io/dasomel/narwhal-portal@sha256:*"
+      ],
+      "required": false,
+      "enforceEligible": false,
+      "knownLimitations": [
+        "validationFailureAction=Audit",
+        "verifyImages.required=false",
+        "narrow_imageReferences_scope"
+      ]
+    }
+  }
+}

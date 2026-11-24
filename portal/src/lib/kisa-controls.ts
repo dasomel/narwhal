@@ -60,7 +60,7 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail" | "det
     severity: "High",
     standardRefs: ["CIS 5.1", "NSA/CISA", "ISMS-P 2.6"],
     evidence:
-      "Kubernetes 기본(system:*/kubeadm:*/cluster-admin) 외 cluster-admin 바인딩 존재 여부를 실시간 점검. headlamp(view), velero-ui(velero-ui-readonly), velero-server(velero-server-least-privilege), platform-admin은 최소권한으로 전환됨.",
+      "검토된 정확 수용 규칙(compliance-acceptance-rules.json + 부트스트랩 메타데이터 검증) 외 cluster-admin 바인딩 존재 여부를 실시간 점검. headlamp(view), velero-ui(velero-ui-readonly), velero-server(velero-server-least-privilege), platform-admin은 최소권한으로 전환됨.",
     remediation:
       "신규 cluster-admin 직접 부여를 금지하고 최소권한 Role/ClusterRole 유지.",
   },
@@ -113,7 +113,7 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail" | "det
     severity: "Low",
     standardRefs: ["NSA/CISA", "SLSA"],
     evidence:
-      "실행 중 파드의 :latest/미지정 태그 여부, Kyverno ClusterPolicy(disallow-latest-tag·verify-image-signatures) 상태, 및 PolicyReport의 현재 유효 위반 건수(삭제 리소스·0-replica 구 ReplicaSet·구 정책 범위 외 잔재 제외)를 실시간 점검.",
+      "실행 중 파드의 :latest/미지정 태그 여부, Kyverno ClusterPolicy(disallow-latest-tag·verify-image-signatures)의 기준선(kisa-policy-baseline.json) 정규화 SHA-256 일치·Ready=True·오버라이드 부재, 및 PolicyReport의 현재 유효 위반 건수(삭제 리소스·0-replica 구 ReplicaSet·구 정책 범위 외 잔재 제외)를 실시간 점검.",
     remediation: "disallow-latest-tag Enforce 유지, verify-image-signatures Enforce 전환 여부(에어갭 서명 미러링 요건 고려) 검토.",
   },
   {

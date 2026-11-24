@@ -790,6 +790,10 @@ export interface KyvernoPolicy {
   background: boolean
   /** spec.validationFailureAction, else the rules' failureAction ("Mixed" when they differ), else "Audit". */
   validationFailureAction: string
+  /** Effective enforcement accounting for spec.admission, overrides, and rule-level actions. */
+  effectiveEnforcement?: "Enforce" | "Audit" | "Mixed" | "Disabled"
+  /** True when the policy has at least one validate or verifyImages rule. */
+  hasValidateOrVerifyRules?: boolean
   ready: boolean
   rulesCount: number
   rules: KyvernoRule[]
@@ -813,16 +817,34 @@ interface PolicyMatchBlock {
 interface PolicyItem {
   metadata: { name: string; namespace?: string; annotations?: Record<string, string> }
   spec: {
+    admission?: boolean
     background?: boolean
     validationFailureAction?: string
+    failureAction?: string
+    validationFailureActionOverrides?: Array<{ action?: string }>
+    failureActionOverrides?: Array<{ action?: string }>
     rules?: Array<{
       name: string
       match?: PolicyMatchBlock
       exclude?: PolicyMatchBlock
-      validate?: { message?: string; failureAction?: string }
+      failureAction?: string
+      validationFailureAction?: string
+      validationActions?: string[]
+      validate?: {
+        message?: string
+        failureAction?: string
+        validationFailureAction?: string
+        validationActions?: string[]
+        failureActionOverrides?: Array<{ action?: string }>
+      }
       mutate?: unknown
       generate?: unknown
-      verifyImages?: unknown
+      verifyImages?: Array<{
+        failureAction?: string
+        validationFailureAction?: string
+        validationActions?: string[]
+        failureActionOverrides?: Array<{ action?: string }>
+      }>
     }>
   }
   status?: {
@@ -852,12 +874,24 @@ function annotation(item: PolicyItem, key: string): string | null {
   return v ? v.slice(0, MAX_POLICY_TEXT) : null
 }
 
+function normalizeKyvernoActionToken(raw: string | undefined): "Enforce" | "Audit" | null {
+  if (!raw) return null
+  const lower = raw.trim().toLowerCase()
+  if (lower === "enforce" || lower === "deny") return "Enforce"
+  if (lower === "audit") return "Audit"
+  return null
+}
+
+function hasAuditOverrideList(overrides: Array<{ action?: string }> | undefined): boolean {
+  return (overrides ?? []).some((o) => normalizeKyvernoActionToken(o.action) === "Audit")
+}
+
 export function mapPolicy(item: PolicyItem, scope: "cluster" | "namespace"): KyvernoPolicy {
   const rules: KyvernoRule[] = (item.spec.rules ?? []).map((r) => ({
     name: r.name,
     type: r.validate ? "validate" : r.mutate ? "mutate" : r.generate ? "generate" : r.verifyImages ? "verifyImages" : "unknown",
     message: r.validate?.message?.trim().slice(0, MAX_POLICY_TEXT) || null,
-    failureAction: r.validate?.failureAction ?? null,
+    failureAction: r.validate?.failureAction ?? r.failureAction ?? null,
     matchKinds: uniq(filterResources(r.match).flatMap((f) => f.kinds ?? [])),
     excludeKinds: uniq(filterResources(r.exclude).flatMap((f) => f.kinds ?? [])),
     excludeNamespaces: uniq(filterResources(r.exclude).flatMap((f) => f.namespaces ?? [])),
@@ -865,12 +899,60 @@ export function mapPolicy(item: PolicyItem, scope: "cluster" | "namespace"): Kyv
   // Kyverno 1.13+ moved the action to validate.failureAction per rule.
   const ruleActions = uniq(rules.flatMap((r) => (r.failureAction ? [r.failureAction] : [])))
   const action = item.spec.validationFailureAction ?? (ruleActions.length > 1 ? "Mixed" : ruleActions[0] ?? "Audit")
+
+  const hasValidateOrVerifyRules = (item.spec.rules ?? []).some(
+    (r) => Boolean(r.validate) || (Array.isArray(r.verifyImages) && r.verifyImages.length > 0),
+  )
+
+  let effectiveEnforcement: "Enforce" | "Audit" | "Mixed" | "Disabled" = "Audit"
+  if (item.spec.admission === false) {
+    effectiveEnforcement = "Disabled"
+  } else {
+    const policyBase =
+      normalizeKyvernoActionToken(item.spec.validationFailureAction) ??
+      normalizeKyvernoActionToken(item.spec.failureAction) ??
+      "Audit"
+    const policyHasAuditOverride =
+      hasAuditOverrideList(item.spec.validationFailureActionOverrides) ||
+      hasAuditOverrideList(item.spec.failureActionOverrides)
+    const perRuleEffective: Array<"Enforce" | "Audit"> = []
+    for (const r of item.spec.rules ?? []) {
+      const ruleAction =
+        normalizeKyvernoActionToken(r.validate?.failureAction) ??
+        normalizeKyvernoActionToken(r.validate?.validationFailureAction) ??
+        normalizeKyvernoActionToken(r.validate?.validationActions?.[0]) ??
+        normalizeKyvernoActionToken(r.failureAction) ??
+        normalizeKyvernoActionToken(r.validationFailureAction) ??
+        normalizeKyvernoActionToken(r.validationActions?.[0]) ??
+        policyBase
+      const ruleAuditOverride =
+        policyHasAuditOverride ||
+        hasAuditOverrideList(r.validate?.failureActionOverrides) ||
+        (r.verifyImages ?? []).some((vi) =>
+          normalizeKyvernoActionToken(vi.failureAction ?? vi.validationFailureAction ?? vi.validationActions?.[0]) === "Audit" ||
+          hasAuditOverrideList(vi.failureActionOverrides),
+        )
+      perRuleEffective.push(ruleAction === "Enforce" && !ruleAuditOverride ? "Enforce" : "Audit")
+    }
+    if (perRuleEffective.length === 0) {
+      effectiveEnforcement = policyBase === "Enforce" && !policyHasAuditOverride ? "Enforce" : "Audit"
+    } else if (perRuleEffective.every((a) => a === "Enforce")) {
+      effectiveEnforcement = "Enforce"
+    } else if (perRuleEffective.every((a) => a === "Audit")) {
+      effectiveEnforcement = "Audit"
+    } else {
+      effectiveEnforcement = "Mixed"
+    }
+  }
+
   return {
     name: item.metadata.name,
     namespace: item.metadata.namespace ?? null,
     scope,
     background: item.spec.background ?? true,
     validationFailureAction: action,
+    effectiveEnforcement,
+    hasValidateOrVerifyRules,
     ready: item.status?.conditions?.some((c) => c.type === "Ready" && c.status === "True") ?? false,
     rulesCount: rules.length,
     rules,
@@ -908,16 +990,41 @@ export async function getKyvernoPolicies(): Promise<KyvernoPolicy[]> {
 export interface ApiServerPodInfo {
   name: string
   containerArgs: string[]
+  hasApiserverContainer?: boolean
+  ready?: boolean
 }
 
 interface ApiServerPodList {
   items: Array<{
-    metadata: { name: string }
-    spec: { containers?: Array<{ command?: string[]; args?: string[] }> }
+    metadata: { name: string; deletionTimestamp?: string }
+    spec: { containers?: Array<{ name?: string; command?: string[]; args?: string[] }> }
+    status?: {
+      phase?: string
+      conditions?: Array<{ type?: string; status?: string }>
+    }
   }>
 }
 
-/** kube-apiserver pods (kube-system, label component=kube-apiserver) with flattened command+args. */
+function mapApiServerPod(p: ApiServerPodList["items"][number]): ApiServerPodInfo {
+  // D-KISA-CLOSED-WORLD: isolate the exact "kube-apiserver" container; never merge
+  // command/args from sidecars or helper containers.
+  const apiserverContainer = (p.spec.containers ?? []).find((c) => c.name === "kube-apiserver")
+  const conditions = p.status?.conditions ?? []
+  const isReady =
+    !p.metadata.deletionTimestamp &&
+    (p.status?.phase === undefined || p.status.phase === "Running") &&
+    (conditions.length === 0 || conditions.some((c) => c.type === "Ready" && c.status === "True"))
+  return {
+    name: p.metadata.name,
+    hasApiserverContainer: Boolean(apiserverContainer),
+    ready: isReady,
+    containerArgs: apiserverContainer
+      ? [...(apiserverContainer.command ?? []), ...(apiserverContainer.args ?? [])]
+      : [],
+  }
+}
+
+/** kube-apiserver pods (kube-system, label component=kube-apiserver) using only the kube-apiserver container. */
 export async function getApiServerPods(): Promise<ApiServerPodInfo[]> {
   const cached = await cacheGet<ApiServerPodInfo[]>(cacheKeys.k8sApiserverPods())
   if (cached) return cached
@@ -925,10 +1032,7 @@ export async function getApiServerPods(): Promise<ApiServerPodInfo[]> {
     const data = await k8sFetch<ApiServerPodList>(
       "/api/v1/namespaces/kube-system/pods?labelSelector=component%3Dkube-apiserver",
     )
-    const pods = (data.items ?? []).map((p) => ({
-      name: p.metadata.name,
-      containerArgs: (p.spec.containers ?? []).flatMap((c) => [...(c.command ?? []), ...(c.args ?? [])]),
-    }))
+    const pods = (data.items ?? []).map(mapApiServerPod)
     await cacheSet(cacheKeys.k8sApiserverPods(), pods, cacheTtl("k8sApiserverPods"))
     return pods
   } catch (err) {
@@ -2937,11 +3041,15 @@ export interface KisaRawClusterPolicy {
     managedFields?: Array<{ time?: string }>
   }
   spec?: {
+    admission?: boolean
+    emitWarning?: boolean
     validationFailureAction?: string
     failureAction?: string
     validationFailureActionOverrides?: Array<{ action?: string; namespaceSelector?: unknown }>
+    failureActionOverrides?: Array<{ action?: string; namespaceSelector?: unknown }>
     background?: boolean
     rules?: KisaRawClusterPolicyRule[]
+    [key: string]: unknown
   }
   status?: {
     conditions?: Array<{ type?: string; status?: string }>
@@ -2986,8 +3094,16 @@ export interface KisaWorkloadInventory {
 }
 
 export interface KisaRbacSnapshot {
-  clusterRoleBindings: KisaFetchResult<Array<{ metadata: { name: string }; roleRef: { kind: string; name: string }; subjects?: Array<{ kind: string; name: string; namespace?: string }> }>>
-  roleBindings: KisaFetchResult<Array<{ metadata: { name: string; namespace: string }; roleRef: { kind: string; name: string }; subjects?: Array<{ kind: string; name: string; namespace?: string }> }>>
+  clusterRoleBindings: KisaFetchResult<Array<{
+    metadata: { name: string; labels?: Record<string, string>; annotations?: Record<string, string> }
+    roleRef: { kind: string; name: string }
+    subjects?: Array<{ kind: string; name: string; namespace?: string }>
+  }>>
+  roleBindings: KisaFetchResult<Array<{
+    metadata: { name: string; namespace: string; labels?: Record<string, string>; annotations?: Record<string, string> }
+    roleRef: { kind: string; name: string }
+    subjects?: Array<{ kind: string; name: string; namespace?: string }>
+  }>>
   clusterRoles: KisaFetchResult<Array<{ metadata: { name: string }; rules?: K8sPolicyRule[] }>>
   roles: KisaFetchResult<Array<{ metadata: { name: string; namespace: string }; rules?: K8sPolicyRule[] }>>
 }
@@ -3103,11 +3219,19 @@ export async function getKisaWorkloadInventory(): Promise<KisaWorkloadInventory>
 
 export async function getKisaRbacSnapshot(): Promise<KisaRbacSnapshot> {
   const [clusterRoleBindings, roleBindings, clusterRoles, roles] = await Promise.all([
-    fetchKisaList<{ metadata: { name: string }; roleRef: { kind: string; name: string }; subjects?: Array<{ kind: string; name: string; namespace?: string }> }>(
+    fetchKisaList<{
+      metadata: { name: string; labels?: Record<string, string>; annotations?: Record<string, string> }
+      roleRef: { kind: string; name: string }
+      subjects?: Array<{ kind: string; name: string; namespace?: string }>
+    }>(
       "clusterrolebindings.rbac.authorization.k8s.io",
       "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings",
     ),
-    fetchKisaList<{ metadata: { name: string; namespace: string }; roleRef: { kind: string; name: string }; subjects?: Array<{ kind: string; name: string; namespace?: string }> }>(
+    fetchKisaList<{
+      metadata: { name: string; namespace: string; labels?: Record<string, string>; annotations?: Record<string, string> }
+      roleRef: { kind: string; name: string }
+      subjects?: Array<{ kind: string; name: string; namespace?: string }>
+    }>(
       "rolebindings.rbac.authorization.k8s.io",
       "/apis/rbac.authorization.k8s.io/v1/rolebindings",
     ),
@@ -3121,4 +3245,51 @@ export async function getKisaRbacSnapshot(): Promise<KisaRbacSnapshot> {
     ),
   ])
   return { clusterRoleBindings, roleBindings, clusterRoles, roles }
+}
+
+export async function getKisaApiServerPods(): Promise<KisaFetchResult<ApiServerPodInfo[]>> {
+  const res = await fetchKisaList<ApiServerPodList["items"][number]>(
+    "pods/kube-system",
+    "/api/v1/namespaces/kube-system/pods?labelSelector=component%3Dkube-apiserver",
+  )
+  if (res.status !== "ok") return res
+  return { status: "ok", data: res.data.map(mapApiServerPod) }
+}
+
+export async function getKisaNamespaces(): Promise<KisaFetchResult<NamespaceInfo[]>> {
+  const res = await fetchKisaList<RawNamespace>("namespaces", "/api/v1/namespaces")
+  if (res.status !== "ok") return res
+  return { status: "ok", data: res.data.map(toNamespaceInfo) }
+}
+
+export async function getKisaNetworkPolicies(): Promise<KisaFetchResult<KisaRawNetworkPolicy[]>> {
+  return fetchKisaList<KisaRawNetworkPolicy>(
+    "networkpolicies.networking.k8s.io",
+    "/apis/networking.k8s.io/v1/networkpolicies",
+  )
+}
+
+export async function getKisaCertificates(): Promise<KisaFetchResult<Certificate[]>> {
+  const res = await fetchKisaList<RawCertificate>(
+    "certificates.cert-manager.io",
+    "/apis/cert-manager.io/v1/certificates",
+  )
+  if (res.status !== "ok") return res
+  return { status: "ok", data: res.data.map(mapCertificate) }
+}
+
+export async function getKisaKyvernoPolicies(): Promise<KisaFetchResult<KyvernoPolicy[]>> {
+  const [cluster, namespaced] = await Promise.all([
+    fetchKisaList<PolicyItem>("clusterpolicies.kyverno.io", "/apis/kyverno.io/v1/clusterpolicies"),
+    fetchKisaList<PolicyItem>("policies.kyverno.io", "/apis/kyverno.io/v1/policies"),
+  ])
+  if (cluster.status !== "ok") return cluster
+  if (namespaced.status !== "ok") return namespaced
+  return {
+    status: "ok",
+    data: [
+      ...cluster.data.map((i) => mapPolicy(i, "cluster")),
+      ...namespaced.data.map((i) => mapPolicy(i, "namespace")),
+    ],
+  }
 }

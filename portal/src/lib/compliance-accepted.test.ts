@@ -5,10 +5,12 @@ import { en, ko } from "./i18n"
 import {
   ACCEPTED_CONFIG_AUDIT_RULES,
   ACCEPTED_INFRA_RULES,
+  ACCEPTED_RBAC_BINDING_RULES,
   ACCEPTED_RBAC_RULES,
   findUnusedAcceptanceRules,
   matchConfigAuditException,
   matchInfraException,
+  matchRbacBindingException,
   matchRbacException,
   normalizeCheckId,
   normalizeWorkloadName,
@@ -336,5 +338,45 @@ describe("allowlist integrity and docs parity", () => {
       expect(en[rule.reasonKey]).toBe(rule.reason)
       expect(ko[rule.reasonKey]).toMatch(/[\uAC00-\uD7A3]/)
     }
+  })
+
+  it("validates exact RBAC bootstrap binding acceptance rules and requires live bootstrap metadata", () => {
+    expect(ACCEPTED_RBAC_BINDING_RULES.length).toBeGreaterThanOrEqual(44)
+    for (const rule of ACCEPTED_RBAC_BINDING_RULES) {
+      expect(rule.owner.trim().length).toBeGreaterThan(0)
+      expect(rule.reviewedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(en[rule.reasonKey]).toBe(rule.reason)
+    }
+    expect(
+      matchRbacBindingException({
+        kind: "ClusterRoleBinding",
+        namespace: "",
+        name: "system:controller:clusterrole-aggregation-controller",
+        roleRefKind: "ClusterRole",
+        roleRefName: "system:controller:clusterrole-aggregation-controller",
+        labels: { "kubernetes.io/bootstrapping": "rbac-defaults" },
+        annotations: { "rbac.authorization.kubernetes.io/autoupdate": "true" },
+      }),
+    ).not.toBeNull()
+    expect(
+      matchRbacBindingException({
+        kind: "ClusterRoleBinding",
+        namespace: "",
+        name: "system:controller:clusterrole-aggregation-controller",
+        roleRefKind: "ClusterRole",
+        roleRefName: "system:controller:clusterrole-aggregation-controller",
+      }),
+    ).toBeNull()
+    expect(
+      matchRbacBindingException({
+        kind: "ClusterRoleBinding",
+        namespace: "",
+        name: "system:custom-dangerous",
+        roleRefKind: "ClusterRole",
+        roleRefName: "custom-impersonator",
+        labels: { "kubernetes.io/bootstrapping": "rbac-defaults" },
+        annotations: { "rbac.authorization.kubernetes.io/autoupdate": "true" },
+      }),
+    ).toBeNull()
   })
 })

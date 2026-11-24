@@ -7,6 +7,7 @@ import { en } from "./i18n"
 import type { AcceptedClass } from "@/types/compliance"
 import {
   ACCEPTED_CONFIG_AUDIT_RULES,
+  ACCEPTED_RBAC_BINDING_RULES,
   ACCEPTED_RBAC_RULES,
   CHECK_ID_PAD_WIDTH,
   COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
@@ -14,19 +15,23 @@ import {
   configRuleIndex,
   findUnusedAcceptanceRules,
   normalizeCheckId,
+  rbacBindingRuleIndex,
   rbacRuleIndex,
   type AcceptanceScope,
   type AcceptedConfigAuditRule,
   type AcceptedInfraRule,
   type AcceptedMatch,
+  type AcceptedRbacBindingRule,
   type AcceptedRbacRule,
   type AcceptedReasonKey,
+  type RbacBindingKind,
   type RbacRuleKind,
   type WorkloadKind,
 } from "./compliance-acceptance"
 
 export {
   ACCEPTED_CONFIG_AUDIT_RULES,
+  ACCEPTED_RBAC_BINDING_RULES,
   ACCEPTED_RBAC_RULES,
   CHECK_ID_PAD_WIDTH,
   COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
@@ -37,8 +42,10 @@ export {
   type AcceptedConfigAuditRule,
   type AcceptedInfraRule,
   type AcceptedMatch,
+  type AcceptedRbacBindingRule,
   type AcceptedRbacRule,
   type AcceptedReasonKey,
+  type RbacBindingKind,
   type RbacRuleKind,
   type WorkloadKind,
 }
@@ -165,6 +172,44 @@ export function matchRbacException(
         reviewedAt: rule.reviewedAt,
         docAnchor: rule.docAnchor,
       }
+    }
+  }
+  return null
+}
+
+export function matchRbacBindingException(binding: {
+  kind: string
+  namespace: string
+  name: string
+  roleRefKind: string
+  roleRefName: string
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+}): AcceptedMatch | null {
+  if (binding.kind !== "ClusterRoleBinding" && binding.kind !== "RoleBinding") return null
+  if (binding.kind === "ClusterRoleBinding" && binding.namespace !== "") return null
+  if (binding.kind === "RoleBinding" && binding.namespace === "") return null
+  const scope: AcceptanceScope = binding.kind === "ClusterRoleBinding" ? "cluster" : "namespace"
+  const rules = rbacBindingRuleIndex.get(
+    `${scope}\0${binding.namespace}\0${binding.kind}\0${binding.name}\0${binding.roleRefKind}\0${binding.roleRefName}`,
+  )
+  if (!rules) return null
+  for (const rule of rules) {
+    if (rule.requireBootstrapMetadata) {
+      const bootstrapping = binding.labels?.["kubernetes.io/bootstrapping"]
+      const autoupdate = binding.annotations?.["rbac.authorization.kubernetes.io/autoupdate"]
+      if (bootstrapping !== "rbac-defaults" || autoupdate !== "true") {
+        continue
+      }
+    }
+    return {
+      ruleId: rule.id,
+      class: rule.class,
+      reasonKey: rule.reasonKey,
+      reason: rule.reason,
+      owner: rule.owner,
+      reviewedAt: rule.reviewedAt,
+      docAnchor: rule.docAnchor,
     }
   }
   return null

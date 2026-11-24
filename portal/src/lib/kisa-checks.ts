@@ -157,7 +157,20 @@ export async function checkEtcd02(): Promise<KisaCheckOutcome> {
   const dep = depRes.data
   const podLabels = dep.spec?.template?.metadata?.labels ?? { app: "apisix-etcd" }
   const containers = dep.spec?.template?.spec?.containers ?? []
-  const tokens = containers.flatMap((c) => [...(c.command ?? []), ...(c.args ?? [])])
+  // D-KISA-CLOSED-WORLD: inspect ONLY the exact "etcd" container defined in
+  // gitops/charts/narwhal-platform/templates/apisix-infra.yaml; never merge args across
+  // containers (a sidecar's TLS flags must never satisfy ETCD-02).
+  const etcdContainer = containers.find((c) => c.name === "etcd")
+  if (!etcdContainer) {
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.etcdContainerMissing",
+      "Deployment platform-system/apisix-etcd에 'etcd' 컨테이너가 없음 — 평가 불가",
+      "Container 'etcd' not found in Deployment platform-system/apisix-etcd — not evaluated",
+      { live: false },
+    )
+  }
+  const tokens = [...(etcdContainer.command ?? []), ...(etcdContainer.args ?? [])]
 
   const clientUrls = extractFlagValues(tokens, "--listen-client-urls")
     .flatMap((v) => v.split(","))
@@ -435,14 +448,20 @@ export async function checkTls01(): Promise<KisaCheckOutcome> {
   }
 
   const items = paRes.data
+  const isMeshWideSelector = (p: KisaRawPeerAuthentication) => {
+    const sel = p.spec?.selector as { matchLabels?: Record<string, string>; matchExpressions?: unknown[] } | undefined
+    return !sel || (Object.keys(sel.matchLabels ?? {}).length === 0 && (sel.matchExpressions ?? []).length === 0)
+  }
   const rootPa =
-    items.find((p) => p.metadata?.namespace === "istio-system" && p.metadata?.name === "default" && !p.spec?.selector?.matchLabels) ??
-    items.find((p) => p.metadata?.namespace === "istio-system" && (!p.spec?.selector || Object.keys(p.spec.selector.matchLabels ?? {}).length === 0))
+    items.find((p) => p.metadata?.namespace === "istio-system" && p.metadata?.name === "default" && isMeshWideSelector(p)) ??
+    items.find((p) => p.metadata?.namespace === "istio-system" && isMeshWideSelector(p))
 
   const meshMode = (rootPa?.spec?.mtls?.mode ?? "UNSET").toUpperCase()
-  const exceptions = items
-    .filter((p) => p !== rootPa)
-    .map(formatPaException)
+  const rootPortExceptions = rootPa && meshMode === "STRICT" ? formatPaException(rootPa) : null
+  const exceptions = [
+    ...items.filter((p) => p !== rootPa).map(formatPaException),
+    rootPortExceptions,
+  ]
     .filter((x): x is string => x !== null)
     .sort()
 

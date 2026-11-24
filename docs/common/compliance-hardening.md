@@ -477,6 +477,10 @@ security omissions remain actionable. This is snapshot verification, not a live 
 | kube-system | Role/system:controller:cloud-provider | KSV049 | accept | Kubernetes bootstrap RBAC default, reconciled by kube-apiserver; cannot be narrowed |
 | kube-system | Role/system:controller:token-cleaner | KSV113 | accept | Kubernetes bootstrap RBAC default, reconciled by kube-apiserver; cannot be narrowed |
 
+### RBAC bootstrap binding allowlist
+
+`KISA-RBAC-01` and `KISA-RBAC-02` evaluate all cluster and namespaced RBAC bindings under `D-KISA-CLOSED-WORLD` (never exempting by `system:`/`kubeadm:` name prefixes or `cluster-admin` role name). The `"rbacBindings"` array in `portal/src/data/compliance-acceptance-rules.json` explicitly enumerates the 44 verified Kubernetes bootstrap `ClusterRoleBinding` objects (`cluster-admin`, `system:basic-user`, `system:kube-controller-manager`, `system:kube-scheduler`, `system:node`, `system:node-proxier`, `system:volume-scheduler`, and 37 `system:controller:*` bindings) and requires BOTH live metadata entries `labels["kubernetes.io/bootstrapping"] = "rbac-defaults"` AND `annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"`. Bindings without both metadata entries (including `kubeadm:cluster-admins`, `kubeadm:apiserver-kubelet-client`, `kubeadm:kubelet-bootstrap`, `kubeadm:node-autoapprove-bootstrap`, `kubeadm:node-autoapprove-certificate-rotation`, or arbitrary `system:custom-dangerous` bindings) are never exempted.
+
 ### Infra allowlist
 
 | namespace | workload | checks | class | reason |

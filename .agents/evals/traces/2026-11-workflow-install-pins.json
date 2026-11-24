@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-workflow-install-pins",
+  "task": "Remove workflow package-install findings from Scorecard Pinned-Dependencies while preserving the lint and research validation jobs.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-workflow-install-pins.json",
+      ".github/requirements/research-evidence.txt",
+      ".github/tools/markdownlint/package-lock.json",
+      ".github/tools/markdownlint/package.json",
+      ".github/workflows/lint.yml",
+      ".github/workflows/markdown-changed.yml",
+      ".github/workflows/portal-research-evidence.yml",
+      ".github/workflows/research-evidence.yml",
+      "docs/common/lessons-log.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Changed four workflow installs, shared lock inputs, and the lessons log. Preserved triggers, permissions, tool versions, and validator entry points. The OpenForge-owned backfill and three cluster/test scripts were left untouched."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Local Scorecard v5.7.0 on origin/main returned Pinned-Dependencies 6/10 with 2 npm, 3 pip, and 22 downloadThenRun warnings.",
+      "evidence": [
+        "runtime:scorecard --local . --checks=Pinned-Dependencies --show-details --format=json on 4de30e15186f0a24068a13348f5e296952df986a -> exit 0, 6/10, 27 warnings"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Used npm ci --ignore-scripts with a shared integrity lock for markdownlint-cli 0.49.1. Used pip --only-binary=:all: --require-hashes with a shared wheel requirements file for jsonschema 4.25.1 and its five resolved dependencies."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Four changed workflow definitions and the existing script-free install guard",
+      "summary": "actionlint accepted all edited workflow files, and the R245 checker reported zero unreviewed script-running installs.",
+      "evidence": [
+        "test:actionlint .github/workflows/{lint,markdown-changed,portal-research-evidence,research-evidence}.yml -> exit 0",
+        "test:python3 scripts/test/lib/check-install-scripts.py -> exit 0, zero baseline entries"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Markdown and research workflow entry points on the local repository",
+      "summary": "Both Markdown installations returned version 0.49.1 and identical clean full lint results. The changed-line gate passed with the locked executable. Hash-enforced pip installation in a fresh macOS arm64 Python 3.12 venv and the root and portal research checks passed. Hash-enforced download verified the Linux x86_64 wheels.",
+      "evidence": [
+        "runtime:npm ci --ignore-scripts --prefix .github/tools/markdownlint -> exit 0, 74 packages; markdownlint --version -> 0.49.1",
+        "test:markdownlint --config .markdownlint.json --ignore node_modules 'docs/**/*.md' 'README.md' 'CHANGELOG.md' -> exit 0 and empty output for both old and new installs",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main with locked markdownlint on PATH -> exit 0",
+        "test:python3 -m pip install --only-binary=:all: --require-hashes -r .github/requirements/research-evidence.txt and python3 -m pip check in fresh venv -> exit 0",
+        "test:make research-check and make -C portal research-check with the venv on PATH -> exit 0, research evidence: OK for both",
+        "test:python3 -m pip download --only-binary=:all: --require-hashes --platform manylinux2014_x86_64 -r .github/requirements/research-evidence.txt -> exit 0, six wheels"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Removal of the four scoped Scorecard warnings",
+      "summary": "Local Scorecard still reports 6/10, with 23 warnings: one pip install in the OpenForge-owned backfill and 22 shell matches that parse HTTP responses as JSON with fixed Python code.",
+      "evidence": [
+        "runtime:scorecard --local . --checks=Pinned-Dependencies --show-details --format=json after changes -> exit 0, 6/10, 23 warnings"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Local reproduction of the behavior-contract PR job with committed paths and the pinned OpenForge action",
+      "summary": "All 13 applicable steps exited 0, including 120 CI helper tests, the canonical gate canary, and trace evidence correlation. The Dependabot-only step was skipped.",
+      "evidence": [
+        "ci:local behavior-contract reproduction using git diff --name-only origin/main...HEAD and OpenForge action 36b2474951a228338e21196afdeb3fd97d523704 -> exit 0"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "The four workflow warnings were removed and the local job commands passed. The overall score did not increase. GitHub-hosted jobs and live cluster scripts were not run. npm reported three low and four moderate advisories for the locked install."
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Scoped installs and local verification complete. Score impact remains limited by outstanding backfill and shell findings."
+    }
+  ]
+}

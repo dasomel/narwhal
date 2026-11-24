@@ -9,6 +9,10 @@
 
 ## [Unreleased]
 
+### 변경
+
+- **의존성 업데이트**: `next` 및 `eslint-config-next` 16.4.6(#708), `@opentelemetry/auto-instrumentations-node` 0.83.1, `@opentelemetry/exporter-trace-otlp-http` 및 `@opentelemetry/sdk-node` 0.301.2, `@opentelemetry/resources` 3.1.1(#709), `@playwright/test` 1.65.1, `@vitejs/plugin-react` 6.3.0, `vite` 8.3.8(#710), `zustand` 5.1.0(#711), `@grpc/grpc-js` 1.14.7(#712)로 판올림했습니다.
+
 ## [1.1.24] - 2026-11-23
 
 ### 수정

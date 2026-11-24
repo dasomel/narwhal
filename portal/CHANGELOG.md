@@ -9,6 +9,10 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependencies**: Bumped `next` and `eslint-config-next` to 16.4.6 (#708), `@opentelemetry/auto-instrumentations-node` to 0.83.1, `@opentelemetry/exporter-trace-otlp-http` and `@opentelemetry/sdk-node` to 0.301.2, `@opentelemetry/resources` to 3.1.1 (#709), `@playwright/test` to 1.65.1, `@vitejs/plugin-react` to 6.3.0, `vite` to 8.3.8 (#710), `zustand` to 5.1.0 (#711), and `@grpc/grpc-js` to 1.14.7 (#712).
+
 ## [1.1.24] - 2026-11-23
 
 ### Fixed

@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "narwhal-kisa-etcd-openbao-hardening-20261124",
-  "task": "Close KISA-ETCD-02 Stage 1 (APISIX etcd NetworkPolicy isolation across GitOps resources, ArgoCD Application, and 08-1 bootstrap) and harden KISA-SEC-01 (dedicated ServiceAccount without token automount, CA-verified TLS with openbao-tls FQDN SAN, Velero exclusion label and no kubectl apply last-applied-configuration copy on openbao-init)",
+  "task": "Close KISA-ETCD-02 Stage 1 (APISIX etcd NetworkPolicy isolation across GitOps resources, ArgoCD Application, and 08-1 bootstrap) and harden KISA-SEC-01 (dedicated ServiceAccount without token automount, CA-verified TLS dialing openbao-0.openbao-internal already in openbao-tls SANs, Velero exclusion label and 077-umask/EXIT-trap kubectl create/replace on openbao-init)",
   "changeContext": {
     "paths": [
       "gitops/resources/apisix-etcd-ingress-policy.yaml",
@@ -30,11 +30,11 @@
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Read-only inspection of the live cluster and repository verified: (1) platform-system had only apisix-admin-ingress-policy (app.kubernetes.io/name=apisix) and zero NetworkPolicies selecting app=apisix-etcd, while apisix-etcd serves plain HTTP :2379 with dataplane-mode=none and Service/apisix-etcd is bound to platform-system/waypoint; cluster-wide scan confirmed only ConfigMap/platform-system/apisix references apisix-etcd:2379 (apisix-ingress-controller calls apisix-admin:9180; readinessProbe is exec loopback; replicas=1; no ServiceMonitor/PodMonitor/dashboard/backup job). (2) CronJob/storage/openbao-auto-unseal omitted serviceAccountName and automountServiceAccountToken and set BAO_SKIP_VERIFY=true while dialing https://openbao-0.openbao-internal.storage.svc.cluster.local:8200. (3) Live Certificate/storage/openbao-tls dnsNames lacked openbao-0.openbao-internal.storage.svc.cluster.local (had only openbao-0.openbao-internal). (4) Secret/storage/openbao-init metadata showed empty labels (no velero.io/exclude-from-backup=true) and a kubectl.kubernetes.io/last-applied-configuration annotation from 08-4-storage.sh using kubectl apply.",
+      "summary": "Read-only inspection of the live cluster and repository verified: (1) platform-system had only apisix-admin-ingress-policy (app.kubernetes.io/name=apisix) and zero NetworkPolicies selecting app=apisix-etcd, while apisix-etcd serves plain HTTP :2379 with dataplane-mode=none and Service/apisix-etcd is bound to platform-system/waypoint; cluster-wide scan confirmed only ConfigMap/platform-system/apisix references apisix-etcd:2379 (apisix-ingress-controller calls apisix-admin:9180; readinessProbe is exec loopback; replicas=1; no ServiceMonitor/PodMonitor/dashboard/backup job). (2) CronJob/storage/openbao-auto-unseal omitted serviceAccountName and automountServiceAccountToken and set BAO_SKIP_VERIFY=true while dialing https://openbao-0.openbao-internal.storage.svc.cluster.local:8200. (3) Live Certificate/storage/openbao-tls dnsNames already includes openbao-0.openbao-internal (not the full .storage.svc.cluster.local FQDN) and headless Service/storage/openbao-internal has spec.publishNotReadyAddresses=true. (4) Secret/storage/openbao-init metadata showed empty labels (no velero.io/exclude-from-backup=true) and a kubectl.kubernetes.io/last-applied-configuration annotation from 08-4-storage.sh using kubectl apply.",
       "evidence": [
         "runtime:read-only kubectl get deploy,svc,netpol -n platform-system -> only apisix-admin-ingress-policy present; apisix-etcd has app=apisix-etcd, istio.io/dataplane-mode=none, replicas=1, exec readinessProbe",
         "runtime:read-only kubectl get cm,deploy,sts,ds,cj,job,servicemonitor,podmonitor,prometheusrule -A -> only ConfigMap/platform-system/apisix and Deployment/platform-system/apisix-etcd reference apisix-etcd/2379/2380; apisix-ingress-controller-configmap targets http://apisix-admin.platform-system.svc.cluster.local:9180/apisix/admin",
-        "runtime:read-only kubectl get certificate openbao-tls -n storage -> spec.dnsNames lacks openbao-0.openbao-internal.storage.svc.cluster.local",
+        "runtime:read-only kubectl get certificate openbao-tls -n storage -> spec.dnsNames includes openbao-0.openbao-internal; kubectl get svc openbao-internal -n storage -o jsonpath='{.spec.publishNotReadyAddresses}' -> true",
         "runtime:read-only kubectl get cronjob openbao-auto-unseal -n storage -> no serviceAccountName/automountServiceAccountToken, BAO_SKIP_VERIFY=true",
         "runtime:read-only kubectl get secret openbao-init -n storage metadata -> managedFields kubectl-client-side-apply with last-applied-configuration annotation and no velero.io/exclude-from-backup label"
       ]
@@ -42,26 +42,25 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Added gitops/resources/apisix-etcd-ingress-policy.yaml (Ingress-only NetworkPolicy for app=apisix-etcd allowing only platform-system app.kubernetes.io/name=apisix on TCP 2379 + ambient HBONE 15008 per R200; omitting apisix-ingress-controller, waypoint, and peer port 2380), ArgoCD Application gitops/charts/narwhal-apps/templates/apisix-etcd-ingress-policy.yaml (wave 2, ServerSideApply, prune+selfHeal), upgrade-waves.json registration, and fail-loudly bootstrap apply in scripts/cluster/08-1-networking.sh. Hardened gitops/resources/openbao-unseal.yaml with dedicated ServiceAccount storage/openbao-auto-unseal (automountServiceAccountToken: false on SA and PodSpec), removed BAO_SKIP_VERIFY, mounted only ca.crt from Secret openbao-tls at /openbao/ca/ca.crt with BAO_CACERT=/openbao/ca/ca.crt. Updated scripts/cluster/08-4-storage.sh to add openbao-0.openbao-internal.storage.svc.cluster.local and .storage.svc to Certificate/openbao-tls dnsNames, create/replace openbao-init via 077-umask files without kubectl apply or --from-literal, and idempotently label velero.io/exclude-from-backup=true while removing kubectl.kubernetes.io/last-applied-configuration. Added R396 static check with 19 mutations and updated docs and lessons-log."
+      "summary": "Added gitops/resources/apisix-etcd-ingress-policy.yaml (Ingress-only NetworkPolicy for app=apisix-etcd allowing only platform-system app.kubernetes.io/name=apisix on TCP 2379 + ambient HBONE 15008 per R200; omitting apisix-ingress-controller, waypoint, and peer port 2380), ArgoCD Application gitops/charts/narwhal-apps/templates/apisix-etcd-ingress-policy.yaml (wave 2, ServerSideApply, prune+selfHeal), upgrade-waves.json registration, and fail-loudly bootstrap apply in scripts/cluster/08-1-networking.sh. Hardened gitops/resources/openbao-unseal.yaml with dedicated ServiceAccount storage/openbao-auto-unseal (automountServiceAccountToken: false on SA and PodSpec), removed BAO_SKIP_VERIFY, mounted only ca.crt from Secret openbao-tls at /openbao/ca/ca.crt with BAO_CACERT=/openbao/ca/ca.crt, and changed BAO_ADDR to https://openbao-0.openbao-internal:8200 (covered by existing openbao-tls SANs and publishNotReadyAddresses=true in namespace storage, eliminating any certificate re-issue prerequisite on existing clusters). Updated scripts/cluster/08-4-storage.sh to create OPENBAO_INIT_DIR with umask 077 and an EXIT cleanup trap before creating/replacing openbao-init via --from-file without kubectl apply or --from-literal, and idempotently label velero.io/exclude-from-backup=true while removing kubectl.kubernetes.io/last-applied-configuration. Added R396 static check with 22 mutations (pinning BAO_ADDR host against 08-4-storage.sh Certificate dnsNames and enforcing umask 077 + EXIT trap) and updated docs and lessons-log."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
       "scope": "Offline static validation, mutation-verified R396 check, full static regression suite (make test), Helm template render of narwhal-apps (vagrant and kakao), and touched-file shellcheck/yamllint on macOS host. Live cluster rollout and runtime connectivity/unseal trial have NOT yet been executed (deferred to orchestrator live trial before merge).",
-      "summary": "All offline checks passed with 0 failures across 505 static regression tests including R200/R201, R279, R352, R374, R383, R390, and new R396 (19 mutations rejected).",
+      "summary": "All offline checks passed with 0 failures across 505 static regression tests including R200/R201, R279, R352, R374, R383, R390, and new R396 (22 mutations rejected).",
       "evidence": [
-        "test:python3 scripts/test/lib/check-kisa-etcd-openbao-hardening.py --mutation-verify -> PASS: R396 KISA-ETCD-02 Stage 1 & KISA-SEC-01 hardening (19 mutations rejected)",
-        "test:helm template narwhal-apps gitops/charts/narwhal-apps (vagrant and provider=kakao) -> exit 0; apisix-etcd-ingress-policy Application rendered cleanly",
+        "test:python3 scripts/test/lib/check-kisa-etcd-openbao-hardening.py --mutation-verify -> PASS: R396 KISA-ETCD-02 Stage 1 & KISA-SEC-01 hardening (22 mutations rejected)",
         "test:make validate -> ruby -c Vagrantfile Syntax OK; all gitops/apps/*.yaml and gitops/resources/*.yaml OK (exit 0)",
         "test:make test -> passed 505 failed 0 warnings 3 (research/evidence restored via git checkout -- research/evidence)",
-        "test:shellcheck --severity=warning on touched scripts -> exit 0; yamllint on touched YAML -> exit 0 (0 errors); full make lint exited non-zero (rc=2) solely due to pre-existing line-length errors in untouched ghost-pod-reaper.yaml, prometheus-alerts.yaml, and velero-server-rbac.yaml"
+        "test:bash -n scripts/cluster/08-4-storage.sh && shellcheck --severity=warning scripts/cluster/08-4-storage.sh -> exit 0"
       ]
     },
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Offline manifests, bootstrap scripts, docs, lessons-log, and R396 regression checks are complete and verified. Not yet verified: live cluster rollout (re-issuing openbao-tls with the new FQDN SAN + SIGHUP listener reload, migrating openbao-init metadata, applying apisix-etcd-ingress-policy and openbao-unseal.yaml, verifying APISIX routes/OIDC login, verifying non-APISIX pod blocked from apisix-etcd:2379, and verifying a manual openbao-auto-unseal Job succeeds with TLS verification)."
+      "summary": "Offline manifests, bootstrap scripts, docs, lessons-log, and R396 regression checks are complete and verified. Not yet verified: live cluster rollout (non-destructive openbao-init label/annotation migration, applying apisix-etcd-ingress-policy and openbao-unseal.yaml without certificate re-issue, verifying APISIX routes/OIDC login, verifying non-APISIX pod blocked from apisix-etcd:2379, and verifying a manual openbao-auto-unseal Job succeeds with TLS verification against https://openbao-0.openbao-internal:8200)."
     },
     {
       "id": "e6",

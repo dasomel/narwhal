@@ -16,8 +16,9 @@ Verifies:
    with automountServiceAccountToken: false, wires the CronJob pod to it with
    automountServiceAccountToken: false, removes BAO_SKIP_VERIFY / -tls-skip-verify, verifies TLS
    via BAO_CACERT=/openbao/ca/ca.crt, and mounts ONLY ca.crt from Secret openbao-tls (never tls.key).
-5. scripts/cluster/08-4-storage.sh includes the CronJob's dialed FQDN in Certificate/openbao-tls
-   spec.dnsNames, creates/replaces openbao-init from files without kubectl apply or --from-literal
+5. scripts/cluster/08-4-storage.sh includes the CronJob's dialed BAO_ADDR host in
+   Certificate/openbao-tls spec.dnsNames, creates OPENBAO_INIT_DIR with umask 077 and an EXIT
+   cleanup trap, creates/replaces openbao-init from files without kubectl apply or --from-literal
    (no last-applied-configuration copy of keys), labels it velero.io/exclude-from-backup=true,
    and strips kubectl.kubernetes.io/last-applied-configuration idempotently.
 6. scripts/test/regression-check-kakao.sh wires R396 with --mutation-verify.
@@ -48,7 +49,7 @@ FILES = {
 
 EXPECTED_CALLER = {"app.kubernetes.io/name": "apisix"}
 EXPECTED_PORTS = {("TCP", 2379), ("TCP", 15008)}
-EXPECTED_BAO_ADDR = "https://openbao-0.openbao-internal.storage.svc.cluster.local:8200"
+EXPECTED_BAO_ADDR = "https://openbao-0.openbao-internal:8200"
 EXPECTED_BAO_CACERT = "/openbao/ca/ca.crt"
 
 
@@ -224,11 +225,32 @@ def _check_storage_sh(storage_sh: str, dialed_host: str | None, errors: list[str
 
     if cert:
         dns_names = (cert.get("spec") or {}).get("dnsNames") or []
-        want_host = dialed_host or urlparse(EXPECTED_BAO_ADDR).hostname
-        if want_host not in dns_names:
-            errors.append(f"08-4-storage.sh Certificate/openbao-tls spec.dnsNames missing {want_host!r}")
+        if not dialed_host:
+            errors.append("openbao-unseal.yaml BAO_ADDR missing hostname to cross-check against openbao-tls dnsNames")
+        elif dialed_host not in dns_names:
+            errors.append(
+                f"08-4-storage.sh Certificate/openbao-tls spec.dnsNames missing BAO_ADDR host {dialed_host!r}"
+            )
 
     code = _strip_comments(storage_sh)
+    init_block_match = re.search(
+        r"OPENBAO_INIT_DIR=[\s\S]*?(?=kubectl create secret generic openbao-init)",
+        code,
+    )
+    if not init_block_match:
+        errors.append("08-4-storage.sh missing OPENBAO_INIT_DIR setup before openbao-init creation")
+    else:
+        init_block = init_block_match.group(0)
+        if not re.search(r"OPENBAO_INIT_DIR=\$\(\s*umask\s+077\s*(?:&&|;)\s*mktemp\s+-d\s*\)", init_block):
+            errors.append("08-4-storage.sh must create OPENBAO_INIT_DIR with umask 077")
+        if not re.search(
+            r"""trap\s+['"]rm\s+-rf\s+"\$\{OPENBAO_INIT_DIR(?::-[^}]*)?\}"['"]\s+EXIT""",
+            init_block,
+        ):
+            errors.append(
+                "08-4-storage.sh must register an EXIT trap removing OPENBAO_INIT_DIR before kubectl create/replace"
+            )
+
     # Inspect the openbao-init creation block specifically.
     create_cmds = re.findall(r"kubectl create secret generic openbao-init[\s\S]*?(?=\n\s*(?:fi|else|rm |echo ))", code)
     if not create_cmds:
@@ -275,8 +297,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop serviceAccountName on CronJob pod", "unseal", "          serviceAccountName: openbao-auto-unseal\n", ""),
     ("enable automountServiceAccountToken on CronJob pod", "unseal", "          serviceAccountName: openbao-auto-unseal\n          automountServiceAccountToken: false\n", "          serviceAccountName: openbao-auto-unseal\n          automountServiceAccountToken: true\n"),
     ("reintroduce BAO_SKIP_VERIFY", "unseal", "                - name: BAO_CACERT\n                  value: /openbao/ca/ca.crt\n", "                - name: BAO_SKIP_VERIFY\n                  value: \"true\"\n"),
+    ("dial non-SAN FQDN in openbao-unseal BAO_ADDR", "unseal", 'value: "https://openbao-0.openbao-internal:8200"', 'value: "https://openbao-0.openbao-internal.storage.svc.cluster.local:8200"'),
     ("mount whole openbao-tls secret (exposes tls.key)", "unseal", "                items:\n                  - key: ca.crt\n                    path: ca.crt\n", ""),
-    ("drop FQDN SAN from openbao-tls Certificate", "storage_sh", "    - openbao-0.openbao-internal.storage.svc.cluster.local\n", ""),
+    ("drop dialed SAN from openbao-tls Certificate", "storage_sh", "    - openbao-0.openbao-internal\n", ""),
+    ("drop umask 077 on OPENBAO_INIT_DIR", "storage_sh", "OPENBAO_INIT_DIR=$(umask 077 && mktemp -d)", "OPENBAO_INIT_DIR=$(mktemp -d)"),
+    ("drop EXIT trap for OPENBAO_INIT_DIR", "storage_sh", "    trap 'rm -rf \"${OPENBAO_INIT_DIR:-}\"' EXIT\n", ""),
     ("reintroduce kubectl apply for openbao-init", "storage_sh", "--dry-run=client -o yaml | kubectl replace -f -", "--dry-run=client -o yaml | kubectl apply -f -"),
     ("reintroduce --from-literal for openbao-init", "storage_sh", '--from-file=unseal_keys_b64="${OPENBAO_INIT_DIR}/unseal_keys_b64"', '--from-literal=unseal_keys_b64="${UNSEAL_KEY}"'),
     ("drop Velero exclude label on openbao-init", "storage_sh", "  kubectl label secret openbao-init -n storage velero.io/exclude-from-backup=true --overwrite\n", ""),

@@ -270,8 +270,6 @@ spec:
     - openbao.storage.svc.cluster.local
     - openbao.storage.svc
     - openbao
-    - openbao-0.openbao-internal.storage.svc.cluster.local
-    - openbao-0.openbao-internal.storage.svc
     - openbao-0.openbao-internal
     - localhost
   ipAddresses:
@@ -503,7 +501,8 @@ elif [ "${OPENBAO_INITIALIZED}" = "False" ]; then
     # KISA-SEC-01: write keys via 077-umask files (never --from-literal in argv) and use
     # kubectl create/replace (never kubectl apply) so no duplicate copy is stored in
     # metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"].
-    OPENBAO_INIT_DIR=$(mktemp -d)
+    OPENBAO_INIT_DIR=$(umask 077 && mktemp -d)
+    trap 'rm -rf "${OPENBAO_INIT_DIR:-}"' EXIT
     ( umask 077
       printf '%s' "${UNSEAL_KEY}" > "${OPENBAO_INIT_DIR}/unseal_keys_b64"
       printf '%s' "${ROOT_TOKEN}" > "${OPENBAO_INIT_DIR}/root_token" )
@@ -518,6 +517,7 @@ elif [ "${OPENBAO_INITIALIZED}" = "False" ]; then
         --from-file=root_token="${OPENBAO_INIT_DIR}/root_token"
     fi
     rm -rf "${OPENBAO_INIT_DIR}"
+    trap - EXIT
     echo "OpenBao initialized and unsealed"
   else
     echo "WARN: OpenBao init failed — manual init required"

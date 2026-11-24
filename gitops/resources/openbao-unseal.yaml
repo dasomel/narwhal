@@ -13,11 +13,6 @@
 # dedicated ServiceAccount with automountServiceAccountToken=false, TLS verified
 # against the Narwhal CA mounted from openbao-tls (ca.crt only, never tls.key), and
 # openbao-init excluded from Velero backups without a last-applied-configuration copy.
-#
-# Upgrade order on existing clusters: Certificate storage/openbao-tls must include
-# `openbao-0.openbao-internal.storage.svc.cluster.local` in spec.dnsNames and the
-# OpenBao listener must reload the re-issued cert BEFORE deploying this CronJob,
-# otherwise TLS hostname verification will fail.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -80,9 +75,9 @@ spec:
                 # regular Service: a sealed OpenBao fails its readiness probe, so the
                 # Service has no endpoints and could never be reached to unseal it.
                 - name: BAO_ADDR
-                  value: "https://openbao-0.openbao-internal.storage.svc.cluster.local:8200"
+                  value: "https://openbao-0.openbao-internal:8200"
                 # Verify OpenBao's listener certificate against the Narwhal cluster CA
-                # (requires openbao-0.openbao-internal.storage.svc.cluster.local in openbao-tls SANs).
+                # (openbao-0.openbao-internal is in openbao-tls SANs and resolves in storage).
                 - name: BAO_CACERT
                   value: /openbao/ca/ca.crt
                 - name: UNSEAL_KEY

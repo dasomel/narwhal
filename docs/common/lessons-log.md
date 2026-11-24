@@ -9,6 +9,7 @@
 
 ## Mistakes Log (Compounding Engineering)
 
+| 2026-11-25 | Scorecard Pinned-Dependencies 경고는 npm·pip 버전이 고정된 설치에서도 발생했다. 버전만 고정하면 전이 의존성이 다시 해석된다. | D1–D2: Markdown 작업은 공유 npm lock으로 tarball 무결성을 확인하고, 연구 검증은 Python 3.12 wheel 해시를 확인한다. 기존 lifecycle 금지와 wheel 전용 옵션을 유지한다. OpenForge 소유 backfill의 고정은 공용 템플릿에서 반영한다. |
 | 2026-11-25 | CIS 1.3.6 kube-bench gate PASS를 서빙 인증서 회전 충족으로 오인해 KCV0038을 수용했고, 정확 매칭 검사에서 kind/namespace/node 제거 변이가 빠졌다. | KCV0038 수용 제거; serverTLSBootstrap·CSR approver·apiserver CA를 오너 결정으로 유지. R395/R402 변이와 다른 kind/namespace/node 행동 검증으로 범위 확대를 차단한다. |
 | 2026-11-25 | 제어면 적용 helper가 Ready만 확인하고 노드별 백업을 잊었으며 dry-run도 원격 디렉터리를 만들었다. 보강 fixture의 초 단위 시각도 60회 뒤 되감겼다. | D7–D9: 로컬 단일 행 삽입과 의미 검증, 동일 st_dev 외부 임시 파일, 모든 백업 보존, 현재 리더 Lease 갱신 및 복원 대기, 혼합 상태·정확 복원 명령을 R403으로 검사한다. 테스트 시각도 timedelta로 단조 증가시킨다. |
 | 2026-11-24 | Scanner-writable metadata can forge run identity; a committed single-node inventory aborts HA bootstrap after Gitea push. | D1–D5 / R401: keep metadata and publication on recorder-only tmp; validate reported tool/benchmark pins; generate node-bound resources from live NodeList before push and warn/continue on CIS failure. Re-render after node changes and check missing/stale records. Test 1-node/3+3/renamed inputs, metadata mount isolation, both recorder security contexts and section sanitization. No new workload RBAC or always-on scanner. |

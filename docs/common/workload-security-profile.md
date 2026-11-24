@@ -113,3 +113,15 @@ The Helm text-fallback inventory records profile presence only and does not prov
 its effective type or inheritance. Render those templates and inspect the live
 Pod before claiming runtime conformance. Repository ratchets remain offline
 evidence, not proof that the cluster uses the requested seccomp profile.
+
+### CIS evidence scanner (2026-11-24)
+
+The inventory-derived `security-system/cis-bench-<node-hash>` CronJobs need
+hostPID to inspect host process arguments. R234 permits only those exact
+CronJob identities; R227 permits only the seven trial hostPaths read-only in
+`gitops/resources/cis-benchmark.yaml`. R401 separately checks the complete
+scanner hardening, token isolation, named recorder RBAC and generated artifact
+parity. This updates offline inventory ratchets, not admission policy or PSA.
+The recorder never mounts hostPaths. See `compliance-hardening.md` for D1–D3
+and the topology-change prerequisite. No other workload hostPID use is allowed
+by this addition.

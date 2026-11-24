@@ -12,6 +12,9 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 UNKNOWN_REVIEW = {
+    # Upstream repository aquasecurity/kube-bench reports Apache-2.0 (GitHub license API,
+    # measured 2026-11-24); the bundle SBOM itself carries no license source for this image.
+    ("image", "docker.io/aquasec/kube-bench"): ("Upstream repo license Apache-2.0 (GitHub license API, 2026-11-24); image license is not mapped by the bundle SBOM", "supply-chain"),
     # Bundle SBOM records these artifact identities, but has no license source for them yet.
     ("chart", "base@1.30.1"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
     ("chart", "cert-manager@v1.20.2"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),

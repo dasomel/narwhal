@@ -559,6 +559,26 @@ if [ "${SECONDS}" -ge "${chart_gate_deadline}" ]; then
   exit 1
 fi
 
+# D1: node-bound CronJobs must cover the actual topology before deployment.
+# No discovery permission is granted to the benchmark workload itself.
+CIS_NODES_FILE="$(mktemp)"
+if ! kubectl get nodes -o json > "${CIS_NODES_FILE}"; then
+  rm -f "${CIS_NODES_FILE}"
+  exit 1
+fi
+if ! python3 /home/vagrant/scripts/ops/render-cis-benchmark.py --check-nodes "${CIS_NODES_FILE}"; then
+  rm -f "${CIS_NODES_FILE}"
+  echo "ERROR: regenerate CIS GitOps node inventory for this cluster before provisioning." >&2
+  exit 1
+fi
+rm -f "${CIS_NODES_FILE}"
+CIS_MANIFEST=/home/vagrant/configs/gitops/resources/cis-benchmark.yaml
+if [ ! -f "${CIS_MANIFEST}" ]; then
+  echo "ERROR: cis-benchmark.yaml missing from staged GitOps resources." >&2
+  exit 1
+fi
+kubectl apply -f "${CIS_MANIFEST}"
+
 # D-PSA-LABELS-14 (KISA-POD-01): strict final PSA convergence pass (--require-all).
 # The earlier call in 08-3-security.sh is tolerant (no --require-all) because security-system,
 # istio-system, iam, dev, and chaos-testing do not exist yet at step 08-3. By this point every

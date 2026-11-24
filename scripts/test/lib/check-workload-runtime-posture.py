@@ -2,6 +2,8 @@
 """Inventory RuntimeClasses and ratchet risky workload declarations."""
 
 import argparse
+import hashlib
+import json
 import re
 import sys
 from collections import Counter
@@ -194,6 +196,11 @@ def scan(root, mutate=False):
     if runtime_classes != expected:
         problems.append(f"RuntimeClass inventory differs from document: repo={sorted(runtime_classes)}, doc={sorted(expected)}")
 
+    # D3: approved CIS hostPID use is restricted to inventory-derived workload
+    # identities, not a namespace-wide exception. R401 checks full hardening.
+    # Cost: inventory read; escape hatch: remove this with CIS resources.
+    cis_nodes = json.loads((root / "scripts/ops/cis-benchmark-nodes.json").read_text())
+    cis_names = {"cis-bench-" + hashlib.sha256(n["name"].encode()).hexdigest()[:12] for n in cis_nodes}
     gaps = Counter()
     namespace_workloads = Counter()
     for namespace, kind, name, spec in workloads:
@@ -203,7 +210,8 @@ def scan(root, mutate=False):
             problems.append(f"{namespace}/{kind}/{name}: runtimeClassName {runtime!r} is undefined")
         if spec.get("hostNetwork") is True:
             gaps[(namespace, "hostNetwork")] += 1
-        if spec.get("hostPID") is True:
+        if spec.get("hostPID") is True and not (namespace == "security-system"
+                and kind == "CronJob" and name in cis_names):
             gaps[(namespace, "hostPID")] += 1
         if spec.get("hostIPC") is True:
             gaps[(namespace, "hostIPC")] += 1

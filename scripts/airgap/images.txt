@@ -33,7 +33,7 @@ busybox:1.28
 chrislusf/seaweedfs:4.34
 docker.gitea.com/gitea:1.26.2-rootless
 docker.io/alpine/git:v2.54.0@sha256:0b5f57d22181e8b8fbe8ac5ca8754faa0d577f101b9857418f1acc43955ad464
-docker.io/alpine/k8s:1.31.4
+docker.io/alpine/k8s:1.31.4@sha256:9c4976d47656d78cf53a92b0203fc54ac45eae18a2b45001ac221c27da4c8036
 docker.io/falcosecurity/falco:0.45.1
 docker.io/falcosecurity/falcosidekick:2.35.0
 docker.io/grafana/alloy:v1.17.0
@@ -136,3 +136,6 @@ registry.k8s.io/sig-storage/csi-snapshotter:v8.4.0
 registry.k8s.io/sig-storage/livenessprobe:v2.17.0
 registry.k8s.io/sig-storage/nfsplugin:v4.13.2
 velero/velero-plugin-for-aws:v1.14.1
+
+# CIS benchmark; upstream Docker Hub image measured by orchestrator (amd64/arm64).
+docker.io/aquasec/kube-bench:v0.16.0@sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679

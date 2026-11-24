@@ -138,3 +138,4 @@ registry.k8s.io/sig-storage/csi-snapshotter:v8.4.0	sha256:c7e0a3718832b6197ce8b2
 registry.k8s.io/sig-storage/livenessprobe:v2.17.0	sha256:9b75b9ade162136291d5e8f13a1dfc3dec71ee61419b1bfc112e0796ff8a6aa9	2026-09-28T12:06:18Z	crane digest
 registry.k8s.io/sig-storage/nfsplugin:v4.13.2	sha256:4d36099293d06ede941876e6166573830eac41d6d23cd6f86d21257fb29cdb98	2026-09-28T12:06:18Z	crane digest
 velero/velero-plugin-for-aws:v1.14.1	sha256:1493a0039cd5cb31004cfbb52f8a1990bc0ed81497ce72516bc76fa9e21506c1	2026-09-28T12:06:18Z	crane digest
+docker.io/aquasec/kube-bench:v0.16.0	sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679	2026-11-24T11:51:59Z	crane digest

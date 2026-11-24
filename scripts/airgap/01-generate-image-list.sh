@@ -57,10 +57,11 @@ OUT_FILE="${1:-/dev/stdout}"
 TRANSIENT_IMAGES=$(cat <<'EOF'
 gcr.io/kaniko-project/executor:v1.24.0
 docker.io/alpine/git:v2.54.0
-docker.io/alpine/k8s:1.31.4
+docker.io/alpine/k8s:1.31.4@sha256:9c4976d47656d78cf53a92b0203fc54ac45eae18a2b45001ac221c27da4c8036
 velero/velero-plugin-for-aws:v1.14.1
 mirror.gcr.io/aquasec/trivy:0.60.0
 ghcr.io/aquasecurity/node-collector:0.3.1
+docker.io/aquasec/kube-bench:v0.16.0@sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679
 EOF
 )
 # D1: these build images are consumed by digest-pinned portal Jobs, so use the

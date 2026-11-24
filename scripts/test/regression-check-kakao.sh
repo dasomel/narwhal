@@ -3564,6 +3564,9 @@ PYEOF'
   # 2026-11-23/24: portal Settings > OSS Updates truthful running-pod version, ownership/truncation/status-image/digest/CVE invariants + owner-approved single-CRD get & upstream env
   check R394 "Portal Settings > OSS Updates resolves Running pod images via ownerReferences/mirror-node (never label-only), propagates truncated bounded lists as list-truncated unknown, reads runtime status.containerStatuses[].image + state.running + imageID digest dedup with ClusterRole pinned to get-only on single CRD gateways.gateway.networking.k8s.io and OSS_UPDATES_UPSTREAM enabled for connected profiles, never yields in-sync from chart alone or Trivy fallback, flags mixed rollouts (incl. same-tag different digests) as drift, enforces per-component suffix allow-lists, attributes CVEs strictly by running repo+tag/digest (incl. siblings), keeps unreadable/digest-only siblings visible, marks Helm N/A, and renders ko/en reasons; 27 mutations caught" \
     python3 scripts/test/lib/check-portal-oss-updates-truth.py --mutation-verify
+  # 2026-11-24: KISA-ETCD-02 Stage 1 (apisix-etcd NetworkPolicy in resources/app/bootstrap) & KISA-SEC-01 (openbao-auto-unseal SA/TLS + openbao-init trap/umask/Velero exclude & no last-applied-configuration)
+  check R396 "KISA-ETCD-02 Stage 1 & KISA-SEC-01: apisix-etcd ingress NetworkPolicy (apps/resources/08-1 bootstrap, apisix-only TCP 2379 + HBONE 15008, no 2380/waypoint/IC) and openbao-auto-unseal dedicated SA/no-automount/CA-verified TLS dialing openbao-tls SAN + openbao-init 077-umask/EXIT trap/Velero exclude and no kubectl apply; 22 mutations caught" \
+    python3 scripts/test/lib/check-kisa-etcd-openbao-hardening.py --mutation-verify
 }
 
 #=========================================

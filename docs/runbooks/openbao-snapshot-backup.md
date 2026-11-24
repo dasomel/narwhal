@@ -13,7 +13,7 @@ Listener 인증서 갱신·SIGHUP·served/Secret 검증: [OpenBao TLS runbook](o
 | 보호됨 | 보호되지 않음 / 한계 |
 |---|---|
 | OpenBao raft 데이터(KV 등)의 일 1회 스냅샷, 최신 7개 보관 | **Gitea `data`, SeaweedFS master `data-storage`, Harbor jobservice `job-logs`**: 여전히 Velero fs-backup으로 보호되지 않는다(#431은 열려 있음). |
-| 스냅샷 파일은 오프라인 키로만 복호화 가능 | **KNOWN LIMITATION:** unseal 키와 root 토큰이 든 `openbao-init` Secret은 여전히 `daily-openbao` Velero 백업(`storage` 네임스페이스 전체)에 있다. 그 백업을 읽을 수 있는 주체는 unseal 키와 root 토큰(라이브 클러스터 접근)을 얻는다. 스냅샷 복호화에는 여전히 개인키가 필요하다. |
+| 스냅샷 파일은 오프라인 키로만 복호화 가능 | **잔여 한계(KISA-SEC-01):** `08-4-storage.sh`가 `openbao-init`에 `velero.io/exclude-from-backup=true` 라벨을 부여하고 `last-applied-configuration` 복사 없이 생성하므로 신규 Velero 백업에서는 제외된다(기존 클러스터는 일회성 라벨·어노테이션 마이그레이션 필요, 기존 백업은 TTL 만료까지 잔존). 단 외부 KMS가 없어 `openbao-init`은 클러스터 내부에 유지되며, Velero 제외로 인해 재해 복구용 오프라인 사본을 별도로 보관해야 한다. |
 | 인증서 오류 시 fail closed(평문 폴백 없음) | **복구는 드릴로 검증되지 않았다.** 개인키 분실 시 모든 스냅샷은 복구 불가이다. 같은 장애 도메인(NFS/SeaweedFS)이며 외부 사본은 후속 과제이다. |
 | Phase 2/`verify-cluster`/`verify-backup`와 Prometheus 경보(`OpenBaoSnapshotBackupStale`, 개별 실행 실패는 기존 `KubeJobFailed`)로 ConfigMap 누락·불일치·신선도 초과를 감지 | Alertmanager 기본 수신자가 null(#610)이면 경보가 외부로 전달되지 않는다. 클러스터 재구축 후 ConfigMap 재적용은 수동 단계이다(`D-OPENBAO-BACKUP-ACTIVATION`). |
 

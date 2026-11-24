@@ -1,0 +1,105 @@
+---
+# KISA-NET-01: namespace-level ingress default-deny for `iam`, paired with explicit
+# per-workload allow rules for Keycloak.
+#
+# Ambient mesh status: `iam` is intentionally NOT enrolled in Istio ambient
+# (`scripts/cluster/09-istio-ambient.sh` excludes `iam`; `keycloak-0` sets
+# `istio.io/dataplane-mode: none`), so HBONE TCP 15008 is not required here.
+#
+# Host-network / probe callers: local-node kubelet HTTP probes (`keycloak:9000`,
+# `keycloak-operator:8080`) arrive with Cilium `reserved:host`, which Cilium
+# permits implicitly for standard Kubernetes NetworkPolicies on non-ambient pods.
+# No admission webhook or APIService points into `iam`.
+#
+# Single source of truth for `iam` ingress isolation (D-KC-NETPOL-GITOPS):
+#   - `Keycloak/iam/keycloak` sets `spec.networkPolicy.enabled: false` in both
+#     `gitops/charts/narwhal-platform/templates/keycloak-cr.yaml` and
+#     `scripts/cluster/11-keycloak.sh`, disabling the operator-generated allow-all
+#     `keycloak-network-policy` (which opened :8080 and :9000 to all sources).
+#   - `scripts/cluster/11-keycloak.sh` no longer creates the legacy allow-all
+#     `keycloak-allow-hbone` policy (and removes it idempotently on re-run).
+#   - Existing clusters must apply this file FIRST, sync `Keycloak/iam/keycloak`
+#     (`spec.networkPolicy.enabled: false`), and run one-time
+#     `kubectl delete networkpolicy keycloak-allow-hbone -n iam --ignore-not-found`
+#     so `keycloak` (:8080, :9000) and `keycloak-operator` (:8080) are both truly isolated.
+#
+# Verified callers (live cluster + repo audit, 2026-11-24):
+#   1. APISIX gateway (`platform-system`, `app.kubernetes.io/name=apisix`) ->
+#      `keycloak:8080` (`ApisixUpstream/platform-system/keycloak-server`,
+#      `gitops/charts/narwhal-platform/templates/apisix-routes.yaml`).
+#   2. Narwhal Portal (`devtools`, `app=narwhal-portal`) -> `keycloak:8080`
+#      (`KEYCLOAK_INTERNAL_URL` in `scripts/cluster/13-2-narwhal-portal-bindings.sh`,
+#      `portal/src/lib/keycloak-client.ts`).
+#   3. Keycloak peers (same namespace, `app=keycloak`) -> `7800, 57800`
+#      (`Service/iam/keycloak-discovery`, JGroups/Infinispan cluster sync).
+#   - NOT allowed: `keycloak-operator:8080` (no ServiceMonitor/caller; kubelet only),
+#     `keycloak:9000` (no ServiceMonitor in `iam`; kubelet probes only), `keycloak:8443`
+#     (unused; TLS terminates at APISIX).
+#
+# Rollback:
+#   - Pre-GitOps trial: `kubectl delete -f gitops/resources/iam-ingress-policy.yaml`
+#   - Post-GitOps adoption: revert/push main's file or remove the `iam-ingress-policy`
+#     Application (ArgoCD selfHeal recreates manually deleted policies).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: iam-default-deny-ingress
+  namespace: iam
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-ingress-policy
+  namespace: iam
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+      app.kubernetes.io/instance: keycloak
+      app.kubernetes.io/managed-by: keycloak-operator
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. APISIX gateway (platform-system) -> Keycloak HTTP (:8080).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: platform-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apisix
+      ports:
+        - protocol: TCP
+          port: 8080
+    # 2. Narwhal Portal (devtools) -> Keycloak internal Admin/OIDC API (:8080).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devtools
+          podSelector:
+            matchLabels:
+              app: narwhal-portal
+      ports:
+        - protocol: TCP
+          port: 8080
+    # 3. Keycloak cluster peers (same namespace) -> JGroups/Infinispan (:7800, :57800).
+    - from:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+              app.kubernetes.io/instance: keycloak
+              app.kubernetes.io/managed-by: keycloak-operator
+      ports:
+        - protocol: TCP
+          port: 7800
+        - protocol: TCP
+          port: 57800

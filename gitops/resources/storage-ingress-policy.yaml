@@ -1,0 +1,301 @@
+---
+# KISA-NET-01: namespace-level ingress default-deny for `storage`, paired with
+# per-workload allow policies for OpenBao, SeaweedFS, and Velero UI, plus a
+# CiliumNetworkPolicy for kube-apiserver -> openbao-agent-injector webhook traffic.
+#
+# Ambient mesh status: `storage` is Istio ambient enrolled (NO namespace waypoint).
+# Every port-limited Kubernetes NetworkPolicy ingress rule below keeps TCP 15008
+# (HBONE) open for the same restricted peers per R200 (`check-ambient-netpol.py`).
+#
+# Host-network / probe callers:
+#   - Ambient-enrolled pods (`seaweedfs-*`, `velero`, `node-agent`,
+#     `openbao-agent-injector`, `openbao-snapshot-holder`): kubelet probes are
+#     SNATed to 169.254.7.127/32 and allowed cluster-wide by CCNP
+#     `allow-ambient-kubelet-probes`.
+#   - Opted-out pods (`openbao-0`, `velero-ui`): kubelet probes arrive locally as
+#     Cilium `reserved:host` (openbao uses an exec probe; velero-ui probes :3000).
+#   - `kube-apiserver` (hostNetwork static pod on control-plane nodes) calls
+#     `MutatingWebhookConfiguration/openbao-agent-injector-cfg` -> Service
+#     `openbao-agent-injector-svc:443` -> pod containerPort `8080`. Plain K8s
+#     NetworkPolicy cannot match hostNetwork callers across multi-node topologies
+#     without hardcoding provider CIDRs, so `openbao-agent-injector-webhook-ingress`
+#     uses a pod-scoped CiliumNetworkPolicy with narrow `fromEntities`
+#     (`kube-apiserver`, `host`, `remote-node`) on TCP 8080 only.
+#
+# Existing additive policy preserved:
+#   - `storage/velero-metrics` (`gitops/resources/network-policies.yaml`) already
+#     allows `monitoring/prometheus` -> `velero:8085` (+ 15008). Because
+#     `storage-default-deny-ingress` has `ingress: []`, `velero-metrics` is not widened.
+#   - `node-agent` and `openbao-snapshot-holder` have no inbound callers and stay
+#     default-denied.
+#
+# Rollback:
+#   - Pre-GitOps trial: `kubectl delete -f gitops/resources/storage-ingress-policy.yaml`
+#   - Post-GitOps adoption: revert/push main's file or remove the `storage-ingress-policy`
+#     Application (ArgoCD selfHeal recreates manually deleted policies).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: storage-default-deny-ingress
+  namespace: storage
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openbao-ingress-policy
+  namespace: storage
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openbao
+      app.kubernetes.io/instance: openbao
+      component: server
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. APISIX gateway (platform-system) -> OpenBao HTTPS API/UI (:8200).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: platform-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apisix
+      ports:
+        - protocol: TCP
+          port: 8200
+        - protocol: TCP
+          port: 15008
+    # 2. Narwhal Portal (devtools) -> OpenBao HTTPS API (:8200).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devtools
+          podSelector:
+            matchLabels:
+              app: narwhal-portal
+      ports:
+        - protocol: TCP
+          port: 8200
+        - protocol: TCP
+          port: 15008
+    # 3. Same-namespace OpenBao CronJobs (auto-unseal, snapshot) and agent-injector -> :8200.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao-auto-unseal
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao-snapshot
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao-agent-injector
+              app.kubernetes.io/instance: openbao
+              component: webhook
+      ports:
+        - protocol: TCP
+          port: 8200
+        - protocol: TCP
+          port: 15008
+    # 4. OpenBao server peers (same namespace) -> API/Raft cluster (:8200, :8201).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao
+              app.kubernetes.io/instance: openbao
+              component: server
+      ports:
+        - protocol: TCP
+          port: 8200
+        - protocol: TCP
+          port: 8201
+        - protocol: TCP
+          port: 15008
+---
+# D-KISA-NET01-HOST-WEBHOOK: allow host-network kube-apiserver to reach the
+# openbao-agent-injector admission webhook (Service :443 -> pod containerPort :8080)
+# across both single-node (host/kube-apiserver) and multi-node VXLAN
+# (remote-node/kube-apiserver) topologies without hardcoding provider node CIDRs.
+# enableDefaultDeny is false because storage-default-deny-ingress owns default-deny.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: openbao-agent-injector-webhook-ingress
+  namespace: storage
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  description: Allow kube-apiserver admission webhook calls to openbao-agent-injector on TCP 8080.
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: openbao-agent-injector
+      app.kubernetes.io/instance: openbao
+      component: webhook
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  ingress:
+    - fromEntities:
+        - kube-apiserver
+        - host
+        - remote-node
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: seaweedfs-internal-ingress-policy
+  namespace: storage
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: seaweedfs
+      app.kubernetes.io/instance: seaweedfs
+  policyTypes:
+    - Ingress
+  ingress:
+    # SeaweedFS cluster internal mesh (master/volume/filer/s3 HTTP, gRPC, metrics).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: seaweedfs
+              app.kubernetes.io/instance: seaweedfs
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 18080
+        - protocol: TCP
+          port: 8888
+        - protocol: TCP
+          port: 18888
+        - protocol: TCP
+          port: 9333
+        - protocol: TCP
+          port: 19333
+        - protocol: TCP
+          port: 8333
+        - protocol: TCP
+          port: 9327
+        - protocol: TCP
+          port: 15008
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: seaweedfs-s3-ingress-policy
+  namespace: storage
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: seaweedfs
+      app.kubernetes.io/instance: seaweedfs
+      app.kubernetes.io/component: s3
+  policyTypes:
+    - Ingress
+  ingress:
+    # 1. Loki (monitoring) -> SeaweedFS S3 (:8333).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loki
+              app.kubernetes.io/instance: loki
+      ports:
+        - protocol: TCP
+          port: 8333
+        - protocol: TCP
+          port: 15008
+    # 2. Tempo (monitoring) -> SeaweedFS S3 (:8333).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tempo
+              app.kubernetes.io/instance: tempo
+      ports:
+        - protocol: TCP
+          port: 8333
+        - protocol: TCP
+          port: 15008
+    # 3. CloudNative-PG barman WAL/backup (database) -> SeaweedFS S3 (:8333).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: database
+          podSelector:
+            matchLabels:
+              cnpg.io/cluster: narwhal-db
+      ports:
+        - protocol: TCP
+          port: 8333
+        - protocol: TCP
+          port: 15008
+    # 4. Velero server, node-agent, data-mover, and kopia maintenance Jobs (storage) -> S3 (:8333).
+    #    kopia maintenance Jobs carry only velero.io/repo-name (chart 12.0.3 / Velero 1.18.1).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: velero
+              app.kubernetes.io/instance: velero
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: velero-data-mover
+        - podSelector:
+            matchExpressions:
+              - key: velero.io/repo-name
+                operator: Exists
+      ports:
+        - protocol: TCP
+          port: 8333
+        - protocol: TCP
+          port: 15008
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: velero-ui-ingress-policy
+  namespace: storage
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: velero-ui
+      app.kubernetes.io/instance: velero-ui
+  policyTypes:
+    - Ingress
+  ingress:
+    # APISIX gateway (platform-system) -> Velero UI HTTP (:3000).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: platform-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apisix
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 15008

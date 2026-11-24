@@ -91,11 +91,17 @@ def default_deny(policy: dict) -> bool:
     )
 
 
+BASELINE_DEFAULT_DENY = {
+    ("database", "database-default-deny-ingress"),
+    ("storage", "storage-default-deny-ingress"),
+    ("monitoring", "monitoring-default-deny-ingress"),
+}
+
+
 def baseline_default_deny(policy: dict) -> bool:
     meta, spec = policy.get("metadata", {}), policy.get("spec", {})
     return (
-        meta.get("name") == "database-default-deny-ingress"
-        and meta.get("namespace") == "database"
+        (meta.get("namespace"), meta.get("name")) in BASELINE_DEFAULT_DENY
         and spec.get("podSelector") == {}
         and ingress_enabled(spec)
     )

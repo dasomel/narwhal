@@ -65,7 +65,9 @@ while IFS= read -r namespace; do
   done < <(jq -r '
     .items[]
     | select(.metadata.labels["app.kubernetes.io/managed-by"] == "narwhal-gitops")
-    | select(.metadata.name != "database-default-deny-ingress")
+    | select((.metadata.name == "database-default-deny-ingress"
+              or .metadata.name == "storage-default-deny-ingress"
+              or .metadata.name == "monitoring-default-deny-ingress") | not)
     | select(.spec.podSelector == {})
     | select(((.spec.policyTypes // []) | index("Ingress") != null) or (.spec | has("ingress")))
     | .metadata.name

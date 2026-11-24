@@ -30,6 +30,14 @@ spec:
     headers: xforwarded
   ingress:
     enabled: false
+  # D-KC-NETPOL-GITOPS: disable operator-managed keycloak-network-policy (which opens
+  # 8080 and 9000 to all sources whenever spec.networkPolicy.{http,management} are unset,
+  # defeating iam-default-deny-ingress additively). GitOps gitops/resources/iam-ingress-policy.yaml
+  # is the single source of truth for iam ingress isolation.
+  # Cost: Keycloak CR no longer auto-generates a fallback NetworkPolicy if iam-ingress-policy
+  # is absent (unrestricted until ArgoCD wave 2 syncs). Escape hatch: set enabled: true.
+  networkPolicy:
+    enabled: false
   # First-class resources — the operator HONORS spec.resources but IGNORES resources set
   # under unsupported.podTemplate. The old config (podTemplate cpu 200m) was silently
   # dropped, so Keycloak ran with NO CPU request and got starved under node contention:

@@ -159,7 +159,15 @@ is invalid — Kubernetes names can't contain `_`. Use a hyphenated pod name lik
    compares APISIX Admin API object IDs (controller crc32-hex identities across `routes`,
    `stream_routes`, `upstreams`, `ssls`) against CRs, emits `WARN` for extra non-CR objects, and
    annotates `narwhal.io/resync` when CR-derived objects are missing.
-3. **Remaining gap (upstream)**: the empty-prefix `404` bootstrap deadlock when the
+3. **Network isolation (`apisix-etcd-ingress-policy`, KISA-ETCD-02 Stage 1)**:
+   `gitops/resources/apisix-etcd-ingress-policy.yaml` (delivered via ArgoCD Application
+   `apisix-etcd-ingress-policy` and bootstrapped in `08-1-networking.sh`) restricts ingress
+   to `app: apisix-etcd` TCP `2379` (plus ambient HBONE `15008` per R200) to `platform-system`
+   pods labeled `app.kubernetes.io/name: apisix` only. Peer port `2380`, `apisix-ingress-controller`
+   (which calls Admin API `:9180`), and `platform-system/waypoint` are not permitted. Operator
+   `etcdctl` inspection continues to run via `kubectl exec` on loopback; Stage 2 (etcd TLS and
+   client-certificate auth) is tracked separately.
+4. **Remaining gap (upstream)**: the empty-prefix `404` bootstrap deadlock when the
    controller starts against a completely empty etcd remains in the pinned chart/controller
    versions; if `GET /apisix/admin/routes` still returns 404 after controller restart,
    seed the prefixes above.

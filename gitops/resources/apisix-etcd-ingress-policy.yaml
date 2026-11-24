@@ -1,0 +1,45 @@
+---
+# KISA-ETCD-02 (Stage 1): isolate APISIX's backing etcd (`platform-system/apisix-etcd`)
+# at the L3/L4 NetworkPolicy layer. Stage 2 (etcd TLS + client-cert auth) is tracked
+# separately; until then etcd serves plain HTTP on TCP 2379 with auth off and holds
+# routes plus the wildcard TLS private key, so unrestricted pod access is a full
+# gateway-takeover path.
+#
+# Verified callers (live cluster + repo audit, 2026-11-24):
+#   - ALLOWED: `platform-system` pods labeled `app.kubernetes.io/name: apisix`
+#     (APISIX gateway; `ConfigMap/platform-system/apisix`, `apisix.yaml`, `08-1-networking.sh`).
+#     Both `apisix` and `apisix-etcd` opt out of Istio ambient (`istio.io/dataplane-mode: none`),
+#     so gateway -> etcd traffic bypasses ztunnel/waypoint directly to TCP 2379. TCP 15008
+#     (HBONE) is included in the same peer-restricted rule per R200 (`check-ambient-netpol.py`)
+#     for ambient namespaces, without opening a peer-less HBONE hole.
+#   - NOT ALLOWED:
+#     * `apisix-ingress-controller` talks only to APISIX Admin API (:9180), never etcd (:2379).
+#     * `platform-system/waypoint` is deliberately omitted so ambient-enrolled pods cannot
+#       tunnel to `apisix-etcd:2379` via the namespace waypoint.
+#     * Peer port 2380 is left closed (`apisix-etcd` is single-replica `Recreate`, R374).
+#     * Kubelet readinessProbe runs `exec: ["etcdctl", "endpoint", "health"]` over loopback;
+#       if an HTTP/TCP probe is ever added, CCNP `allow-ambient-kubelet-probes` already allows it.
+#     * No dashboard, backup job, or ServiceMonitor scrapes `apisix-etcd:2379`.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apisix-etcd-ingress-policy
+  namespace: platform-system
+  labels:
+    app.kubernetes.io/managed-by: narwhal-gitops
+spec:
+  podSelector:
+    matchLabels:
+      app: apisix-etcd
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apisix
+      ports:
+        - protocol: TCP
+          port: 2379
+        - protocol: TCP
+          port: 15008

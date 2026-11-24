@@ -22,8 +22,10 @@
 #   scripts/ops/openbao-backup-keygen.sh). The private key stays offline with the operator and is in
 #   no Secret/ConfigMap/backup. The job FAILS CLOSED on a missing/empty/malformed/expired/weak
 #   recipient or a PEM containing a private key: nothing is written, there is no plaintext fallback.
-#   KNOWN LIMITATION: `openbao-init` (unseal key + root token) is still in the Velero backup, so
-#   snapshots are protected by the offline key but the cluster unseal secret is not (follow-up).
+#   NOTE (KISA-SEC-01): `08-4-storage.sh` now labels `openbao-init` with
+#   `velero.io/exclude-from-backup=true` and creates it without `last-applied-configuration`
+#   (existing clusters require the one-time label/annotation migration; older backups age out
+#   per TTL). Without an external KMS, `openbao-init` still lives in-cluster.
 # D-plaintext: the plaintext snapshot lives only in a memory-backed emptyDir (`work`, 256Mi) shared
 #   by the initContainer (bao) and the encrypting container, never on the NFS PVC. The Job pod is
 #   excluded from Velero (label velero.io/exclude-from-backup + volume exclude on `work`), so kopia

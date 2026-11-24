@@ -18,6 +18,7 @@ Invariants:
 
 --mutation-verify proves each invariant fails when mutated.
 """
+import datetime
 import os
 import re
 import shutil
@@ -109,12 +110,19 @@ def run_behavioral(push_script_path: Path) -> list[str]:
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
 
+        now = datetime.datetime.now(datetime.timezone.utc)
+        fmt = "%Y%m%d%H%M%SZ"
+        exp_nb = (now - datetime.timedelta(days=365)).strftime(fmt)
+        exp_na = (now - datetime.timedelta(days=30)).strftime(fmt)
+        fut_nb = (now + datetime.timedelta(days=30)).strftime(fmt)
+        fut_na = (now + datetime.timedelta(days=365)).strftime(fmt)
+
         expired_k = tdp / "expired.key"
         expired_f = tdp / "expired.crt"
         subprocess.run(
             ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
              "-keyout", str(expired_k), "-out", str(expired_f),
-             "-not_before", "20190101000000Z", "-not_after", "20200101000000Z",
+             "-not_before", exp_nb, "-not_after", exp_na,
              "-subj", "/CN=expired-test"],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
@@ -124,7 +132,7 @@ def run_behavioral(push_script_path: Path) -> list[str]:
         subprocess.run(
             ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
              "-keyout", str(future_k), "-out", str(future_f),
-             "-not_before", "20300101000000Z", "-not_after", "20350101000000Z",
+             "-not_before", fut_nb, "-not_after", fut_na,
              "-subj", "/CN=future-test"],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )

@@ -1,3 +1,4 @@
+import datetime
 import json
 import pathlib
 import subprocess
@@ -9,8 +10,15 @@ LIB = pathlib.Path(__file__).resolve().parents[1] / 'lib'
 
 
 class UpgradeLicenseGateCliTests(unittest.TestCase):
-    def run_verifier(self, license_value):
+    @staticmethod
+    def _manifest(age_days=0):
         manifest = json.loads((LIB / 'upgrade-bundle-v1.1.0.json').read_text())
+        ts = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=age_days)
+        manifest['created_at'] = ts.strftime('%Y-%m-%dT%H:%M:%SZ')
+        return manifest
+
+    def run_verifier(self, license_value):
+        manifest = self._manifest()
         manifest['artifacts'][0]['license'] = license_value
         with tempfile.TemporaryDirectory() as tmp:
             path = pathlib.Path(tmp) / 'manifest.json'
@@ -55,7 +63,7 @@ class UpgradeLicenseGateCliTests(unittest.TestCase):
             promoted.mkdir()
             sentinel = promoted / 'existing-evidence.txt'
             sentinel.write_text('existing approved bundle')
-            manifest = json.loads((LIB / 'upgrade-bundle-v1.1.0.json').read_text())
+            manifest = self._manifest()
             manifest['artifacts'][0]['license'] = 'UNKNOWN'
             (staged / 'upgrade-bundle.json').write_text(json.dumps(manifest))
             command = ['bash', str(LIB / 'promote-upgrade-bundle.sh'), '--bundle', str(bundle),
@@ -78,6 +86,28 @@ class UpgradeLicenseGateCliTests(unittest.TestCase):
             log = json.loads((root / 'promotion-log.jsonl').read_text())
             self.assertEqual(log['action'], 'promote')
             self.assertEqual(log['approved_by'], 'local-regression-fixture')
+
+    def test_real_promotion_rejects_stale_bundle_before_changing_previous_bundle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = pathlib.Path(tmp)
+            root = bundle / 'upgrade-bundle'
+            staged = root / 'staged'
+            promoted = root / 'promoted'
+            staged.mkdir(parents=True)
+            promoted.mkdir()
+            sentinel = promoted / 'existing-evidence.txt'
+            sentinel.write_text('existing approved bundle')
+            manifest = self._manifest(age_days=91)
+            manifest['artifacts'][0]['license'] = 'Apache-2.0'
+            (staged / 'upgrade-bundle.json').write_text(json.dumps(manifest))
+            command = ['bash', str(LIB / 'promote-upgrade-bundle.sh'), '--bundle', str(bundle),
+                       '--approved-by', 'local-regression-fixture']
+            stale = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(stale.returncode, 0, stale.stdout)
+            self.assertIn('old (max 90d)', stale.stderr)
+            self.assertEqual(sentinel.read_text(), 'existing approved bundle')
+            self.assertFalse((root / 'promoted-previous').exists())
+            self.assertFalse((root / 'promotion-log.jsonl').exists())
 
 
 if __name__ == '__main__':

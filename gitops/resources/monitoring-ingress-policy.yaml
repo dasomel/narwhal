@@ -33,7 +33,10 @@
 #     Cilium without host-firewall (documented limitation, same as tuning-job).
 #   - `k8s-monitoring-alloy-operator` has no inbound callers and stays default-denied.
 #
-# Rollback: `kubectl delete -f gitops/resources/monitoring-ingress-policy.yaml`
+# Rollback:
+#   - Pre-GitOps trial: `kubectl delete -f gitops/resources/monitoring-ingress-policy.yaml`
+#   - Post-GitOps adoption: revert/push main's file or remove the `monitoring-ingress-policy`
+#     Application (ArgoCD selfHeal recreates manually deleted policies).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

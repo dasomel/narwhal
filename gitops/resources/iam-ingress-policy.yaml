@@ -11,15 +11,17 @@
 # permits implicitly for standard Kubernetes NetworkPolicies on non-ambient pods.
 # No admission webhook or APIService points into `iam`.
 #
-# Additive overlap note (honest residual scope):
-#   - `keycloak-network-policy` (owned by `keycloak-operator` via Keycloak CR) and
-#     `keycloak-allow-hbone` (`scripts/cluster/11-keycloak.sh`) remain on `keycloak`
-#     pods as additive policies opening 8080/9000/15008 until a follow-up disables
-#     operator-managed NetworkPolicy generation.
-#   - `iam-default-deny-ingress` immediately isolates `keycloak-operator` and any
-#     unlisted port/pod in `iam`, while `keycloak-ingress-policy` records the exact
-#     verified caller matrix so `keycloak` stays reachable if those legacy policies
-#     are removed.
+# Single source of truth for `iam` ingress isolation (D-KC-NETPOL-GITOPS):
+#   - `Keycloak/iam/keycloak` sets `spec.networkPolicy.enabled: false` in both
+#     `gitops/charts/narwhal-platform/templates/keycloak-cr.yaml` and
+#     `scripts/cluster/11-keycloak.sh`, disabling the operator-generated allow-all
+#     `keycloak-network-policy` (which opened :8080 and :9000 to all sources).
+#   - `scripts/cluster/11-keycloak.sh` no longer creates the legacy allow-all
+#     `keycloak-allow-hbone` policy (and removes it idempotently on re-run).
+#   - Existing clusters must apply this file FIRST, sync `Keycloak/iam/keycloak`
+#     (`spec.networkPolicy.enabled: false`), and run one-time
+#     `kubectl delete networkpolicy keycloak-allow-hbone -n iam --ignore-not-found`
+#     so `keycloak` (:8080, :9000) and `keycloak-operator` (:8080) are both truly isolated.
 #
 # Verified callers (live cluster + repo audit, 2026-11-24):
 #   1. APISIX gateway (`platform-system`, `app.kubernetes.io/name=apisix`) ->
@@ -34,7 +36,10 @@
 #     `keycloak:9000` (no ServiceMonitor in `iam`; kubelet probes only), `keycloak:8443`
 #     (unused; TLS terminates at APISIX).
 #
-# Rollback: `kubectl delete -f gitops/resources/iam-ingress-policy.yaml`
+# Rollback:
+#   - Pre-GitOps trial: `kubectl delete -f gitops/resources/iam-ingress-policy.yaml`
+#   - Post-GitOps adoption: revert/push main's file or remove the `iam-ingress-policy`
+#     Application (ArgoCD selfHeal recreates manually deleted policies).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

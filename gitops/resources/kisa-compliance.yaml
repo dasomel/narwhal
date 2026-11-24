@@ -1,3 +1,7 @@
+# D-CCR-SUMMARY (2026-11-25): reportType is "summary" so CCR status never includes detailReport
+# (reason: etcd 1.5 MiB object size limit + upstream FromDetailReport Success:false bug; cost:
+# detail view no longer in CCR, portal 1.1.28+ reads per-resource reports directly; escape hatch:
+# back to detail/all with failed-only records).
 apiVersion: aquasecurity.github.io/v1alpha1
 kind: ClusterComplianceReport
 metadata:
@@ -6,10 +10,10 @@ metadata:
     app.kubernetes.io/instance: trivy-operator
     app.kubernetes.io/managed-by: kubectl
     app.kubernetes.io/name: trivy-operator
-    app.kubernetes.io/version: 0.25.0
+    app.kubernetes.io/version: 0.36.1
 spec:
   cron: "0 */6 * * *"
-  reportType: all
+  reportType: summary
   compliance:
     id: k8s-kisa-1.0
     title: KISA Kubernetes Security Controls v1.0

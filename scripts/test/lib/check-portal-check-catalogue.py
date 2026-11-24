@@ -174,7 +174,9 @@ def check(texts: dict[str, str]) -> list[str]:
         entry = checks_map.get(required_id)
         if not entry or entry.get("reportFamily") != expected_family:
             errors.append(f"catalogue missing or wrong family for {required_id} (expected {expected_family})")
-    for forbidden_id in ("KSV004", "KSV029", "KSV039", "KSV040", "KSV9999"):
+    # KSV004, KSV039, KSV040 were moved out of advanced/optional/ in trivy-checks v1.12.2 (trivy-operator 0.36.1)
+    # and are now active embedded checks; KSV029 (removed) and KSV9999 (unknown) must remain absent.
+    for forbidden_id in ("KSV029", "KSV9999"):
         if forbidden_id in checks_map:
             errors.append(f"catalogue must not include unexecuted/unknown check {forbidden_id}")
     if checks_map.get("KCV0073", {}).get("nodeTypes") != ["master", "worker"]:
@@ -246,9 +248,9 @@ def check(texts: dict[str, str]) -> list[str]:
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("switch catalogue policyMode to bundle", "cat_json", '"policyMode": "embedded"', '"policyMode": "bundle"'),
-    ("reintroduce optional KSV039 in catalogue", "cat_json", '"KSV038": {', '"KSV039": {"id":"KSV039","avdId":"AVD-KSV-0039","reportFamily":"configAudit","kinds":["LimitRange"],"severity":"Low","title":"opt"}, "KSV038": {'),
+    ("reintroduce removed KSV029 in catalogue", "cat_json", '"KSV038": {', '"KSV029": {"id":"KSV029","avdId":"AVD-KSV-0029","reportFamily":"configAudit","kinds":["Service"],"severity":"Medium","title":"removed"}, "KSV038": {'),
     ("edited entry: remove KSV110 scopeNamespaces", "cat_json", '"scopeNamespaces": [\n        "default"\n      ],\n      "severity": "Low",\n      "title": "Workloads in the default namespace"', '"severity": "Low",\n      "title": "Workloads in the default namespace"'),
-    ("removed alias: drop KSV0012 from KCV0012", "cat_json", '"aliases": [\n        "KSV0012"\n      ]', '"aliases": []'),
+    ("removed alias: drop KSV0012 from KCV0012", "cat_json", '"aliases": [\n        "KCV-0012",\n        "KSV0012"\n      ]', '"aliases": [\n        "KCV-0012"\n      ]'),
     ("changed nodeType: KCV0066 master to worker", "cat_json", '"KCV0066": {\n      "id": "KCV0066",\n      "avdId": "AVD-KCV-0066",\n      "reportFamily": "infra",\n      "kinds": [\n        "Node"\n      ],\n      "nodeTypes": [\n        "master"\n      ]', '"KCV0066": {\n      "id": "KCV0066",\n      "avdId": "AVD-KCV-0066",\n      "reportFamily": "infra",\n      "kinds": [\n        "Node"\n      ],\n      "nodeTypes": [\n        "worker"\n      ]'),
     ("stale digest: alter canonicalDigest in sha256 manifest", "cat_digest", '"algorithm": "sha256",\n  "canonicalDigest": "', '"algorithm": "sha256",\n  "canonicalDigest": "deadbeef'),
     ("drop not_in_catalogue reason in compliance.ts", "compliance", 'notEvaluatedReason: "not_in_catalogue"', 'notEvaluatedReason: "removed" as never'),

@@ -2456,7 +2456,7 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
                 controls: [
                   { id: "UNKNOWN-ID", name: "Unknown check", severity: "HIGH", checks: [{ id: "AVD-KSV-9999" }] },
                   { id: "CLEAN-INFRA", name: "Clean empty infra", severity: "HIGH", checks: [{ id: "AVD-KCV-0048" }], commands: [{ id: "CMD-0001" }] },
-                  { id: "PARTIAL-MULTI", name: "Multi check with optional uncatalogued ID", severity: "MEDIUM", checks: [{ id: "AVD-KSV-0014" }, { id: "AVD-KSV-0039" }] },
+                  { id: "PARTIAL-MULTI", name: "Multi check with uncatalogued ID", severity: "MEDIUM", checks: [{ id: "AVD-KSV-0014" }, { id: "AVD-KSV-0029" }] },
                   { id: "WORKLOAD-CLEAN", name: "In-scope workload check with failed-only report", severity: "MEDIUM", checks: [{ id: "AVD-KSV-0014" }] },
                 ],
               },
@@ -2747,7 +2747,7 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
                 controls: [
                   { id: "B-UNKNOWN", name: "Unknown ID", severity: "HIGH", checks: [{ id: "AVD-KSV-9999" }] },
                   { id: "B-REMOVED", name: "Removed ID (NSA 1.6 KSV029)", severity: "MEDIUM", checks: [{ id: "AVD-KSV-0029" }] },
-                  { id: "B-OPTIONAL", name: "Skipped optional ID (KSV004)", severity: "LOW", checks: [{ id: "AVD-KSV-0004" }] },
+                  { id: "B-OPTIONAL", name: "Uncatalogued ID (KSV9998)", severity: "LOW", checks: [{ id: "AVD-KSV-9998" }] },
                   { id: "B-UNSUP-KIND", name: "Kind not audited (RoleBinding)", severity: "HIGH", checks: [{ id: "AVD-KSV-0111" }] },
                   { id: "B-EXCL-ONLY", name: "Excluded namespace reports only", severity: "HIGH", checks: [{ id: "AVD-KSV-0014" }] },
                   { id: "B-EXCL-DEFAULT", name: "default namespace excluded", severity: "LOW", checks: [{ id: "AVD-KSV-0110" }] },
@@ -2764,7 +2764,7 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
                 results: [
                   { id: "B-UNKNOWN", name: "Unknown ID", severity: "HIGH", checks: [{ checkID: "", success: true }] },
                   { id: "B-REMOVED", name: "Removed ID (NSA 1.6 KSV029)", severity: "MEDIUM", checks: [{ checkID: "", success: true }] },
-                  { id: "B-OPTIONAL", name: "Skipped optional ID (KSV004)", severity: "LOW", checks: [{ checkID: "", success: true }] },
+                  { id: "B-OPTIONAL", name: "Uncatalogued ID (KSV9998)", severity: "LOW", checks: [{ checkID: "", success: true }] },
                   { id: "B-UNSUP-KIND", name: "Kind not audited (RoleBinding)", severity: "HIGH", checks: [{ checkID: "", success: true }] },
                   { id: "B-EXCL-ONLY", name: "Excluded namespace reports only", severity: "HIGH", checks: [{ checkID: "", success: true }] },
                   { id: "B-EXCL-DEFAULT", name: "default namespace excluded", severity: "LOW", checks: [{ checkID: "", success: true }] },

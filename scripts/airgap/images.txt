@@ -74,8 +74,8 @@ ghcr.io/grafana/alloy-operator:1.10.0
 ghcr.io/headlamp-k8s/headlamp:v0.46.0
 ghcr.io/kube-vip/kube-vip:v1.1.2
 kong:3.9
-mirror.gcr.io/aquasec/trivy-operator:0.25.0
-mirror.gcr.io/aquasec/trivy:0.60.0
+mirror.gcr.io/aquasec/trivy-operator:0.36.1
+mirror.gcr.io/aquasec/trivy:0.76.1
 mirror.gcr.io/chrislusf/seaweedfs:4.40
 mirror.gcr.io/curlimages/curl:8.21.0
 # (public.ecr.aws/docker/library/redis intentionally absent — see EXCLUDED at the top)

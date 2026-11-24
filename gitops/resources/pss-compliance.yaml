@@ -8,6 +8,10 @@
 # Cost: keep controls synchronized when upgrading the trivy-operator chart.
 # Escape hatch: re-add k8s-pss-baseline-0.1 and k8s-pss-restricted-0.1 to compliance.specs
 # in trivy-operator.yaml and remove gitops/charts/narwhal-apps/templates/pss-compliance.yaml.
+# D-CCR-SUMMARY (2026-11-25): reportType is "summary" so CCR status never includes detailReport
+# (reason: etcd 1.5 MiB object size limit + upstream FromDetailReport Success:false bug; cost:
+# detail view no longer in CCR, portal 1.1.28+ reads per-resource reports directly; escape hatch:
+# back to detail/all with failed-only records).
 ---
 apiVersion: aquasecurity.github.io/v1alpha1
 kind: ClusterComplianceReport
@@ -16,11 +20,11 @@ metadata:
   labels:
     app.kubernetes.io/name: trivy-operator
     app.kubernetes.io/instance: trivy-operator
-    app.kubernetes.io/version: 0.25.0
+    app.kubernetes.io/version: 0.36.1
     app.kubernetes.io/managed-by: kubectl
 spec:
   cron: "0 */6 * * *"
-  reportType: all
+  reportType: summary
   compliance:
     id: k8s-pss-baseline-0.1
     platform: k8s
@@ -127,11 +131,11 @@ metadata:
   labels:
     app.kubernetes.io/name: trivy-operator
     app.kubernetes.io/instance: trivy-operator
-    app.kubernetes.io/version: 0.25.0
+    app.kubernetes.io/version: 0.36.1
     app.kubernetes.io/managed-by: kubectl
 spec:
   cron: "0 */6 * * *"
-  reportType: all
+  reportType: summary
   compliance:
     id: k8s-pss-restricted-0.1
     platform: k8s

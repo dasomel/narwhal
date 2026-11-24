@@ -78,14 +78,14 @@ FILES = {
     "reg": ROOT / "scripts/test/regression-check-kakao.sh",
 }
 
-PINNED_TRIVY_CHART_VERSION = "0.27.0"
-PINNED_TRIVY_APP_VERSION = "0.25.0"
+PINNED_TRIVY_CHART_VERSION = "0.38.1"
+PINNED_TRIVY_APP_VERSION = "0.36.1"
 
-# Offline pinned snapshot of trivy-operator chart 0.27.0 templates/specs/k8s-pss-*.yaml
-# (extracted from trivy-operator-0.27.0.tgz; raw template SHA-256 recorded for auditability).
+# Offline pinned snapshot of trivy-operator chart 0.38.1 templates/specs/k8s-pss-*.yaml
+# (extracted from trivy-operator-0.38.1.tgz; raw template SHA-256 recorded for auditability).
 UPSTREAM_PSS_RAW_SHA256 = {
-    "k8s-pss-baseline-0.1": "6b65cd6e937b9dd0e3fdb78b3a9b52c8d3942b4013f20676115eb00bfd21a17a",
-    "k8s-pss-restricted-0.1": "1964fa49867fedbcb9e3c90831847c3e031fb0fa0d6f0a1466d3f455c6fc9ffb",
+    "k8s-pss-baseline-0.1": "47d403250cb2f8d2bfc6fb6f63bf28556bcb8d1cff17304b41068de9b0c9f63e",
+    "k8s-pss-restricted-0.1": "4d0f5cf71517785d7c5dbcc6d32a6a38625a2d64ebb0a089b65aecff3ebce08e",
 }
 
 UPSTREAM_PSS_CONTROLS: dict[str, tuple[tuple[str, str, str, tuple[str, ...]], ...]] = {
@@ -580,8 +580,8 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
         if str(labels.get("app.kubernetes.io/version") or "") != PINNED_TRIVY_APP_VERSION:
             errors.append(f"{name} app.kubernetes.io/version must match {PINNED_TRIVY_APP_VERSION!r}")
         spec = doc.get("spec") or {}
-        if spec.get("reportType") != "all":
-            errors.append(f"{name} must set reportType: all")
+        if spec.get("reportType") != "summary":
+            errors.append(f"{name} must set reportType: summary (D-CCR-SUMMARY)")
         controls = ((spec.get("compliance") or {}).get("controls")) or []
         actual_controls = tuple(
             (
@@ -725,11 +725,11 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop RoleBinding from supportedConfigAuditKinds", "trivy", "Role,ClusterRole,RoleBinding,ClusterRoleBinding,NetworkPolicy", "Role,ClusterRole,ClusterRoleBinding,NetworkPolicy"),
     ("drop ClusterRoleBinding from supportedConfigAuditKinds", "trivy", "Role,ClusterRole,RoleBinding,ClusterRoleBinding,NetworkPolicy", "Role,ClusterRole,RoleBinding,NetworkPolicy"),
     ("re-enable broken chart PSS specs", "trivy", "            - k8s-nsa-1.0\n", "            - k8s-nsa-1.0\n            - k8s-pss-restricted-0.1\n"),
-    ("unreviewed trivy-operator chart version bump", "trivy", "    targetRevision: 0.27.0\n", "    targetRevision: 0.28.0\n"),
+    ("unreviewed trivy-operator chart version bump", "trivy", "    targetRevision: 0.38.1\n", "    targetRevision: 0.39.0\n"),
     ("drop ghost-pod-reaper jobTemplate label", "reaper", 'narwhal.dasomel.io/skip-ephemeral-job-scan: "true"', 'other-label: "true"'),
     ("remove PSS HostProcess check AVD-KSV-0103", "pss_res", "        checks:\n          - id: AVD-KSV-0103\n", "        checks: []\n"),
     ("lowercase PSS check id", "pss_res", "id: AVD-KSV-0001", "id: avd-ksv-0001"),
-    ("PSS reportType summary", "pss_res", "reportType: all", "reportType: summary"),
+    ("PSS reportType all", "pss_res", "reportType: summary", "reportType: all"),
     ("drop pss-compliance wave 5", "pss_app", 'sync-wave: "5"', 'sync-wave: "1"'),
     ("re-introduce KCV0004 in KISA-ETCD-01", "kisa", "id: AVD-KCV-0042", "id: AVD-KCV-0004"),
     ("drop KSV111 from KISA-RBAC-01", "kisa", "          - id: AVD-KSV-0111\n", ""),

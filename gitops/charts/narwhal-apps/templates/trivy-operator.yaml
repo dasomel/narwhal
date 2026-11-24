@@ -12,7 +12,7 @@ spec:
   source:
     repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
     chart: trivy-operator
-    targetRevision: 0.27.0
+    targetRevision: 0.38.1
     helm:
       valuesObject:
         # D-SCAN-CONTROL-PLANE (2026-11-22): include kube-system and istio-system so Trivy's
@@ -58,6 +58,13 @@ spec:
           # deploys one of these exact repos it would also skip CVE scanning).
           # Escape hatch: set excludeImages: "" to scan all system images on the 168h TTL.
           excludeImages: "registry.k8s.io/kube-apiserver:*,registry.k8s.io/kube-controller-manager:*,registry.k8s.io/kube-scheduler:*,registry.k8s.io/coredns/coredns:*,registry.k8s.io/metrics-server/metrics-server:*,registry.k8s.io/sig-storage/csi-node-driver-registrar:*,registry.k8s.io/sig-storage/csi-provisioner:*,registry.k8s.io/sig-storage/csi-resizer:*,registry.k8s.io/sig-storage/csi-snapshotter:*,registry.k8s.io/sig-storage/livenessprobe:*,registry.k8s.io/sig-storage/nfsplugin:*,ghcr.io/kube-vip/kube-vip:*,docker.io/kube-vip/kube-vip:*,kube-vip/kube-vip:*,quay.io/cilium/cilium:*,quay.io/cilium/cilium-envoy:*,quay.io/cilium/hubble-relay:*,quay.io/cilium/hubble-ui:*,quay.io/cilium/hubble-ui-backend:*,quay.io/cilium/operator-generic:*,docker.io/istio/install-cni:*,istio/install-cni:*,registry.istio.io/release/install-cni:*,registry.istio.io/release/pilot:*,registry.istio.io/release/ztunnel:*"
+          # D-TRIVY-PASS-RECORDS (2026-11-25): record passing checks (success: true) in per-resource
+          # ConfigAudit/RbacAssessment/InfraAssessment reports so the portal (1.1.28+) shows real
+          # tested-pass verdicts instead of failure-only inference. MUST be the YAML string "false"
+          # (not boolean false): chart 0.38.1 templates/configmaps/operator.yaml guards this key with
+          # a Helm `with` block on .Values.trivyOperator.reportRecordFailedChecksOnly, where boolean
+          # false is falsy and silently omitted (falling back to Go default "true").
+          reportRecordFailedChecksOnly: "false"
           scanJobPodTemplatePodSecurityContext:
             runAsNonRoot: true
             runAsUser: 10000
@@ -141,19 +148,22 @@ spec:
           # ClusterConfigAuditReports computed in-operator (no scan Jobs).
           # Escape hatch: remove RoleBinding,ClusterRoleBinding to restore chart default.
           supportedConfigAuditKinds: "Workload,Service,Role,ClusterRole,RoleBinding,ClusterRoleBinding,NetworkPolicy,Ingress,LimitRange,ResourceQuota"
-        # Compliance report generation (사용자 결정 2026-07-08).
-        # reportType MUST be "all" (not the chart default "summary"): summary only fills
-        # status.summary.passCount, leaving status.detailReport empty — the portal then
-        # shows every control as "✓0 ✗0" (definitions only, per src/lib/compliance.ts).
-        # "all" populates detailReport.controls so per-control pass/fail renders.
-        # D-PSS-SPEC-CASE (2026-11-22): chart 0.27.0's bundled k8s-pss-baseline-0.1 (controls
-        # 6-11) and k8s-pss-restricted-0.1 (controls 6-17) templates hardcode lowercase
+        # D-CCR-SUMMARY (2026-11-25): switch ClusterComplianceReport reportType to "summary" while
+        # keeping CCRs deployed so portal 1.1.28+ still reads spec.compliance.controls for control->check
+        # mapping. Reason: trivy-operator v0.36.1 FromDetailReport hardcodes Success: false on every
+        # check and TotalsCheckCount counts passes as failures, and with reportRecordFailedChecksOnly:
+        # "false" a detail CCR (especially k8s-cis-1.23) can exceed the 1.5 MiB etcd object size limit.
+        # Cost: status.detailReport is omitted from CCRs (portal 1.1.28+ ignores status.detailReport
+        # and status.summary counts and evaluates per-resource report.checks[].success instead).
+        # Escape hatch: set reportType: all with reportRecordFailedChecksOnly: "true".
+        # D-PSS-SPEC-CASE (2026-11-22): chart 0.27.0/0.38.1's bundled k8s-pss-baseline-0.1 (controls
+        # 6-11) and k8s-pss-restricted-0.1 (controls 6-17) templates still hardcode lowercase
         # `avd-ksv-*` check IDs while trivy-operator emits uppercase `AVD-KSV-*`, so failing
-        # checks never link and silently PASS. Restrict chart-rendered specs to CIS+NSA and
+        # checks never link. Restrict chart-rendered specs to CIS+NSA and
         # own the uppercase PSS ClusterComplianceReports in gitops/resources/pss-compliance.yaml
         # (Application/pss-compliance). Escape hatch: re-add both names here and remove that App.
         compliance:
-          reportType: all
+          reportType: summary
           failEntriesLimit: 10
           cron: "0 */6 * * *"
           specs:

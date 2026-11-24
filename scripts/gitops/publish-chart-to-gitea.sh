@@ -23,7 +23,7 @@ set -euo pipefail
 GITEA_NS="devtools"
 GITEA_SVC="gitea-http"
 GITEA_USER="gitea-admin"
-LOCAL_PORT="${GITEA_LOCAL_PORT:-13000}"
+LOCAL_PORT=""
 GITEA_HELM_URL="${GITEA_HELM_URL:-}"
 
 PF_PID=""
@@ -47,6 +47,7 @@ EOF
 cleanup() {
   [[ -n "${PF_PID}" ]] && kill "${PF_PID}" 2>/dev/null || true
   [[ -n "${CURL_CFG}" && -f "${CURL_CFG}" ]] && rm -f "${CURL_CFG}"
+  [[ -n "${PF_LOG:-}" && -f "${PF_LOG}" ]] && rm -f "${PF_LOG}"
   [[ -n "${FETCH_DIR}" && -d "${FETCH_DIR}" ]] && rm -rf "${FETCH_DIR}"
   return 0
 }
@@ -107,20 +108,25 @@ else
   printf 'header = "Authorization: Basic %s"\n' "${AUTH_B64}" > "${CURL_CFG}"
   unset GITEA_PW AUTH_B64
 
-  kubectl port-forward "svc/${GITEA_SVC}" -n "${GITEA_NS}" "${LOCAL_PORT}:3000" >/dev/null 2>&1 &
+  # Let kubectl pick a free local port and read it back from its own output, so the
+  # admin header can never go to another service already listening on a fixed port.
+  PF_LOG="$(mktemp "${TMPDIR:-/tmp}/gitea-pf.XXXXXX")"
+  kubectl port-forward --address 127.0.0.1 "svc/${GITEA_SVC}" -n "${GITEA_NS}" ":3000" >"${PF_LOG}" 2>&1 &
   PF_PID=$!
 
-  READY=0
+  LOCAL_PORT=""
   for _ in $(seq 1 30); do
-    if curl -s -o /dev/null -m 2 "http://localhost:${LOCAL_PORT}/"; then
-      READY=1
+    kill -0 "${PF_PID}" 2>/dev/null || die "port-forward to svc/${GITEA_SVC} exited"
+    LOCAL_PORT="$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9][0-9]*\) .*/\1/p' "${PF_LOG}" | head -1)"
+    if [[ -n "${LOCAL_PORT}" ]] && curl -s -o /dev/null -m 2 "http://127.0.0.1:${LOCAL_PORT}/"; then
       break
     fi
+    LOCAL_PORT=""
     sleep 1
   done
-  [[ "${READY}" -eq 1 ]] || die "port-forward to svc/${GITEA_SVC} did not become ready within 30s"
+  [[ -n "${LOCAL_PORT}" ]] || die "port-forward to svc/${GITEA_SVC} did not become ready within 30s"
 
-  UPLOAD_URL="http://localhost:${LOCAL_PORT}/api/packages/${GITEA_USER}/helm/api/charts"
+  UPLOAD_URL="http://127.0.0.1:${LOCAL_PORT}/api/packages/${GITEA_USER}/helm/api/charts"
 fi
 
 #--- upload chart packages -----------------------------------------------
@@ -129,7 +135,10 @@ for chart in "${CHARTS[@]}"; do
   fname="$(basename "${chart}")"
   code="000"
   for attempt in 1 2 3; do
-    code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 120 --config "${CURL_CFG}" -X POST --upload-file "${chart}" "${UPLOAD_URL}" || echo "000")
+    # No -k: an https GITEA_HELM_URL must present a trusted certificate before the
+    # Authorization header is sent. curl prints 000 itself on connection failure.
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 120 --config "${CURL_CFG}" -X POST --upload-file "${chart}" "${UPLOAD_URL}" || true)
+    code="${code:-000}"
     case "${code}" in
       5*|000)
         if [[ "${attempt}" -lt 3 ]]; then

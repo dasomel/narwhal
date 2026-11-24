@@ -69,7 +69,8 @@
         "test:make validate && bash scripts/ci/check-version-consistency.sh && python3 scripts/ci/markdownlint-changed.py --base origin/main -> passed",
         "test:vitest compliance + versions-sync -> 4 files, 66 tests passed",
         "test:make test (after adding scripts/gitops/publish-chart-to-gitea.sh and the image-list fix) -> passed 512   failed 0   warnings 3",
-        "test:shellcheck scripts/gitops/publish-chart-to-gitea.sh -> exit 0"
+        "test:shellcheck scripts/gitops/publish-chart-to-gitea.sh -> exit 0",
+        "test:scripts/gitops/publish-chart-to-gitea.sh --fetch https://aquasecurity.github.io/helm-charts/ trivy-operator 0.38.1 against the local cluster -> trivy-operator-0.38.1.tgz 201 (run twice, rc 0; no temp file or port-forward left behind)"
       ]
     },
     {

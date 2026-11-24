@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""R378: pin the entire narwhal-portal ClusterRole rule set (narwhal#727).
+"""R378: pin the entire narwhal-portal ClusterRole rule set (narwhal#727 + 2026-11-24 CRD get).
 
-Verifies the owner decision (2026-11-19): grant ClusterRole narwhal-portal read-only
-get/list on apps/replicasets (no watch, no write verbs, no wildcard), pin every
-rule in ClusterRole narwhal-portal via exact set equality, and keep
-docs/common/compliance-hardening.md aligned. --mutation-verify proves broken copies fail.
+Verifies the owner decisions:
+- 2026-11-19 (#727): grant ClusterRole narwhal-portal read-only get/list on apps/replicasets.
+- 2026-11-24: grant ClusterRole narwhal-portal read-only get on the single CRD
+  gateways.gateway.networking.k8s.io (resourceNames-pinned; no list/watch, no other CRD).
+Pins every rule in ClusterRole narwhal-portal via exact set equality (including resourceNames),
+and keeps docs/common/compliance-hardening.md aligned. --mutation-verify proves broken copies fail.
 """
 
 from __future__ import annotations
@@ -22,27 +24,29 @@ CHART_DIR = ROOT / "gitops/charts/narwhal-platform"
 TEMPLATE_PATH = CHART_DIR / "templates/narwhal-portal-k8s.yaml"
 DOC_PATH = ROOT / "docs/common/compliance-hardening.md"
 
-RuleTuple = tuple[frozenset[str], frozenset[str], frozenset[str]]
+RuleTuple = tuple[frozenset[str], frozenset[str], frozenset[str], frozenset[str]]
 
 EXPECTED_CLUSTERROLE_RULES: set[RuleTuple] = {
     (
         frozenset({""}),
         frozenset({"nodes", "pods", "persistentvolumeclaims", "namespaces", "services", "events", "configmaps"}),
         frozenset({"get", "list", "watch"}),
+        frozenset(),
     ),
-    (frozenset({""}), frozenset({"resourcequotas"}), frozenset({"get", "list"})),
-    (frozenset({"storage.k8s.io"}), frozenset({"storageclasses"}), frozenset({"get", "list"})),
-    (frozenset({""}), frozenset({"pods/log"}), frozenset({"get"})),
-    (frozenset({"policy"}), frozenset({"poddisruptionbudgets"}), frozenset({"get", "list", "watch"})),
-    (frozenset({"networking.k8s.io"}), frozenset({"networkpolicies"}), frozenset({"get", "list", "watch"})),
-    (frozenset({"cert-manager.io"}), frozenset({"certificates", "clusterissuers"}), frozenset({"get", "list", "watch"})),
-    (frozenset({"kyverno.io"}), frozenset({"clusterpolicies", "policies"}), frozenset({"get", "list", "watch"})),
-    (frozenset({"apps"}), frozenset({"deployments", "statefulsets", "daemonsets"}), frozenset({"get", "list", "watch"})),
-    (frozenset({"apps"}), frozenset({"replicasets"}), frozenset({"get", "list"})),
+    (frozenset({""}), frozenset({"resourcequotas"}), frozenset({"get", "list"}), frozenset()),
+    (frozenset({"storage.k8s.io"}), frozenset({"storageclasses"}), frozenset({"get", "list"}), frozenset()),
+    (frozenset({""}), frozenset({"pods/log"}), frozenset({"get"}), frozenset()),
+    (frozenset({"policy"}), frozenset({"poddisruptionbudgets"}), frozenset({"get", "list", "watch"}), frozenset()),
+    (frozenset({"networking.k8s.io"}), frozenset({"networkpolicies"}), frozenset({"get", "list", "watch"}), frozenset()),
+    (frozenset({"cert-manager.io"}), frozenset({"certificates", "clusterissuers"}), frozenset({"get", "list", "watch"}), frozenset()),
+    (frozenset({"kyverno.io"}), frozenset({"clusterpolicies", "policies"}), frozenset({"get", "list", "watch"}), frozenset()),
+    (frozenset({"apps"}), frozenset({"deployments", "statefulsets", "daemonsets"}), frozenset({"get", "list", "watch"}), frozenset()),
+    (frozenset({"apps"}), frozenset({"replicasets"}), frozenset({"get", "list"}), frozenset()),
     (
         frozenset({"rbac.authorization.k8s.io"}),
         frozenset({"clusterrolebindings", "rolebindings", "clusterroles", "roles"}),
         frozenset({"get", "list", "watch"}),
+        frozenset(),
     ),
     (
         frozenset({"aquasecurity.github.io"}),
@@ -62,8 +66,15 @@ EXPECTED_CLUSTERROLE_RULES: set[RuleTuple] = {
             }
         ),
         frozenset({"get", "list", "watch"}),
+        frozenset(),
     ),
-    (frozenset({"metrics.k8s.io"}), frozenset({"nodes", "pods"}), frozenset({"get", "list"})),
+    (frozenset({"metrics.k8s.io"}), frozenset({"nodes", "pods"}), frozenset({"get", "list"}), frozenset()),
+    (
+        frozenset({"apiextensions.k8s.io"}),
+        frozenset({"customresourcedefinitions"}),
+        frozenset({"get"}),
+        frozenset({"gateways.gateway.networking.k8s.io"}),
+    ),
 }
 
 
@@ -89,8 +100,9 @@ def load_docs() -> list[dict]:
 
 
 def _fmt_rule(rule: RuleTuple) -> str:
-    groups, resources, verbs = rule
-    return f"(apiGroups={sorted(groups)}, resources={sorted(resources)}, verbs={sorted(verbs)})"
+    groups, resources, verbs, resource_names = rule
+    suffix = f", resourceNames={sorted(resource_names)}" if resource_names else ""
+    return f"(apiGroups={sorted(groups)}, resources={sorted(resources)}, verbs={sorted(verbs)}{suffix})"
 
 
 def check(docs: list[dict], doc_text: str) -> list[str]:
@@ -107,15 +119,18 @@ def check(docs: list[dict], doc_text: str) -> list[str]:
 
     actual_list: list[RuleTuple] = []
     for rule in crs[0].get("rules") or []:
-        extra_keys = set(rule.keys()) - {"apiGroups", "resources", "verbs"}
+        extra_keys = set(rule.keys()) - {"apiGroups", "resources", "verbs", "resourceNames"}
         if extra_keys:
             errors.append(f"ClusterRole narwhal-portal rule has unexpected keys {sorted(extra_keys)}: {rule}")
+        if "resourceNames" in rule and not rule.get("resourceNames"):
+            errors.append(f"ClusterRole narwhal-portal rule has empty resourceNames: {rule}")
         groups = frozenset(rule.get("apiGroups") or [])
         resources = frozenset(rule.get("resources") or [])
         verbs = frozenset(rule.get("verbs") or [])
-        if "*" in groups or "*" in resources or "*" in verbs:
+        resource_names = frozenset(rule.get("resourceNames") or [])
+        if "*" in groups or "*" in resources or "*" in verbs or "*" in resource_names:
             errors.append(f"ClusterRole narwhal-portal must not use wildcards: {rule}")
-        actual_list.append((groups, resources, verbs))
+        actual_list.append((groups, resources, verbs, resource_names))
 
     actual_set = set(actual_list)
     if len(actual_list) != len(actual_set):
@@ -153,6 +168,11 @@ def _core_workloads_rule(docs: list[dict]) -> dict:
     return next(r for r in cr["rules"] if "" in r.get("apiGroups", []) and "nodes" in r.get("resources", []))
 
 
+def _crd_rule(docs: list[dict]) -> dict:
+    cr = next(d for d in docs if d.get("kind") == "ClusterRole" and (d.get("metadata") or {}).get("name") == "narwhal-portal")
+    return next(r for r in cr["rules"] if "apiextensions.k8s.io" in r.get("apiGroups", []))
+
+
 MUTATIONS = [
     "replicasets rule removed",
     "watch verb added to replicasets",
@@ -164,7 +184,11 @@ MUTATIONS = [
     "wildcard resource in apps rule",
     "wildcard verb in apps rule",
     "aggregationRule added to the ClusterRole",
-        "stale compliance-hardening doc text",
+    "stale compliance-hardening doc text",
+    "crd rule removed",
+    "list verb added to crd rule",
+    "resourceNames dropped from crd rule",
+    "extra resourceName added to crd rule",
 ]
 
 
@@ -194,6 +218,14 @@ def mutate(name: str, base_docs: list[dict], base_doc_text: str) -> tuple[list[d
         cr["aggregationRule"] = {"clusterRoleSelectors": [{"matchLabels": {"rbac.example/aggregate": "true"}}]}
     elif name == "stale compliance-hardening doc text":
         doc_text = doc_text.replace("`apps` `replicasets`", "(and not `replicasets`)", 1)
+    elif name == "crd rule removed":
+        cr["rules"].remove(_crd_rule(docs))
+    elif name == "list verb added to crd rule":
+        _crd_rule(docs)["verbs"].append("list")
+    elif name == "resourceNames dropped from crd rule":
+        _crd_rule(docs).pop("resourceNames", None)
+    elif name == "extra resourceName added to crd rule":
+        _crd_rule(docs)["resourceNames"].append("httproutes.gateway.networking.k8s.io")
     return docs, doc_text
 
 

@@ -194,6 +194,20 @@ describe("OssUpdatesTable", () => {
     expect(html).toContain('rel="noopener noreferrer"')
   })
 
+  it("renders unavailable reason rather than error when upstream lookup fails (e.g. offline)", () => {
+    const html = render({
+      upstreamLookup: "enabled",
+      rows: [row({
+        upstreamState: "unavailable",
+        upstreamReason: "upstream-failed",
+        upstream: null,
+      })],
+    })
+    expect(html).not.toContain("ossUpdates.upstreamOff")
+    expect(html).toContain("ossUpdates.unknown")
+    expect(html).toContain("ossUpdates.reasonUpstreamFailed")
+  })
+
   it("renders list-truncated reason clearly", () => {
     const html = render({
       rows: [

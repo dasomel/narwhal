@@ -1,1 +1,2 @@
 baseDomain: local.narwhal.internal
+provider: vagrant

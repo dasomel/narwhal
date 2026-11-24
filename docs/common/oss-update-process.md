@@ -22,8 +22,8 @@
 ## 포털 탭이 보여 주는 것
 
 - **선언 버전**: `VERSIONS.md`의 값. 포털 이미지는 `portal/`만 빌드하므로 `portal/src/data/oss-versions.generated.json`(커밋된 스냅샷)을 읽는다. `VERSIONS.md`를 고치면 `node portal/scripts/gen-oss-versions.mjs`로 갱신해야 하며, `version-check` CI가 `--check`로 동기화를 강제한다. 포털이 배포된 이후의 `VERSIONS.md` 변경은 다음 포털 릴리스에 반영된다(포털 핀은 `portal/` HEAD보다 늦을 수 있다).
-- **실행 버전**: Argo CD Application의 `targetRevision`(차트)과 Trivy 리포트에 잡힌 실행 이미지 태그. 기존 포털 접근만 쓰며 RBAC를 늘리지 않는다. 선언과 다르면 "불일치"로 표시한다.
-- **업스트림 최신/차이/뒤처진 일수**: GitHub Releases(공개, 인증 없음). 기본은 **꺼짐**(에어갭 안전)이며 `OSS_UPDATES_UPSTREAM=true`일 때만 조회한다. 꺼져 있거나 조회가 실패하면 "알 수 없음"이다. 사용자·클러스터·버전 정보를 외부로 보내지 않고, 결과는 서버에서 6시간(실패는 10분) 캐시한다.
+- **실행 버전**: `/version`, `deployments`·`daemonsets`·`statefulsets`·`replicasets`, `/api/v1/pods`의 실제 실행 이미지와 단일 CRD `gateways.gateway.networking.k8s.io` `get`(오너 승인 2026-11-24, `resourceNames` 핀 고정·`list`/`watch` 금지)으로 조회한다. 선언과 다르면 "불일치"로 표시한다.
+- **업스트림 최신/차이/뒤처진 일수**: GitHub Releases(공개, 인증 없음). 코드 기본은 꺼짐(에어갭 안전)이며, GitOps 차트(`D-OSS-UPSTREAM`)는 연결 프로파일(`vagrant`/기본)에 `OSS_UPDATES_UPSTREAM=true`를, 에어갭 `kakao` 프로파일에는 `"false"`를 렌더링한다. 꺼져 있거나 오프라인·한도 초과로 조회가 실패하면 오류 대신 "알 수 없음"(`unavailable`/`upstream-failed`)이다. 사용자·클러스터·버전 정보를 외부로 보내지 않고, 결과는 서버에서 6시간(21600초, 실패는 10분/600초) 캐시한다.
 - **쿨링**: 릴리스 후 7일 미만이면 "쿨링 중"이며 요청이 거절된다(`portal/scripts/check-lockfile-cooling.mjs`와 같은 7일 규칙). 마이너 라인을 의도적으로 고정한 컴포넌트(Kubernetes, Keycloak, APISIX, Tempo)는 같은 라인의 최신을 보여 준다.
 - **CVE**: Trivy가 이미 스캔한 *실행 중* 이미지의 Critical/High 합계. 목표 버전의 CVE는 아니다.
 

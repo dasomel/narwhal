@@ -24,6 +24,7 @@ spec:
     helm:
       valuesObject:
         baseDomain: {{ .Values.baseDomain }}
+        provider: {{ .Values.provider }}
   destination:
     server: https://kubernetes.default.svc
     # Namespace is a no-op for this chart (each template carries its own namespace).

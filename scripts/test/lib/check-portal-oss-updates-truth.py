@@ -16,7 +16,9 @@ Verifies without helm or promtool:
 4. k8s-client.ts reads /api/v1/pods + /apis/apps/v1/replicasets + workloads via
    fetchOssBoundedResource (propagating truncated -> status: "truncated"), extracts runtime image
    and running state from status.containerStatuses[], maps K8sCredentialError -> no-permission,
-   and narwhal-portal-k8s.yaml ClusterRole is NOT widened (no apiextensions.k8s.io rule).
+   and narwhal-portal-k8s.yaml ClusterRole pins apiextensions.k8s.io strictly to get on
+   customresourcedefinitions resourceNames [gateways.gateway.networking.k8s.io] (plus
+   OSS_UPDATES_UPSTREAM env on Deployment narwhal-portal).
 5. oss-updates-table.tsx + i18n.ts render not-applicable CLI state, visible/digest-only siblings,
    rollout-mixed drift, list-truncated unknown, and explicit ko/en reasons for every unknown/no-scan state.
 6. scripts/test/regression-check-kakao.sh wires R394 with --mutation-verify.
@@ -29,6 +31,8 @@ from __future__ import annotations
 import copy
 import sys
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -141,8 +145,38 @@ def check(texts: dict[str, str]) -> list[str]:
         if needle not in k8s:
             errors.append(f"k8s-client.ts missing {needle}")
 
-    if "apiextensions.k8s.io" in rbac:
-        errors.append("narwhal-portal-k8s.yaml must not widen ClusterRole with apiextensions.k8s.io in this lane")
+    try:
+        rbac_docs = [d for d in yaml.safe_load_all(rbac) if isinstance(d, dict)]
+    except yaml.YAMLError as exc:
+        errors.append(f"narwhal-portal-k8s.yaml YAML parse failed: {exc}")
+        rbac_docs = []
+    cr = next((d for d in rbac_docs if d.get("kind") == "ClusterRole" and (d.get("metadata") or {}).get("name") == "narwhal-portal"), None)
+    if cr is None:
+        errors.append("narwhal-portal-k8s.yaml missing ClusterRole narwhal-portal")
+    else:
+        crd_rules = [
+            r for r in (cr.get("rules") or [])
+            if "apiextensions.k8s.io" in (r.get("apiGroups") or [])
+            or "customresourcedefinitions" in (r.get("resources") or [])
+        ]
+        expected_crd_rule = {
+            "apiGroups": ["apiextensions.k8s.io"],
+            "resources": ["customresourcedefinitions"],
+            "resourceNames": ["gateways.gateway.networking.k8s.io"],
+            "verbs": ["get"],
+        }
+        if crd_rules != [expected_crd_rule]:
+            errors.append(f"ClusterRole narwhal-portal CRD rule must be exactly {expected_crd_rule}, got {crd_rules}")
+    dep = next((d for d in rbac_docs if d.get("kind") == "Deployment" and (d.get("metadata") or {}).get("name") == "narwhal-portal"), None)
+    if dep is None:
+        errors.append("narwhal-portal-k8s.yaml missing Deployment narwhal-portal")
+    else:
+        ctr = next((c for c in dep["spec"]["template"]["spec"]["containers"] if c.get("name") == "narwhal-portal"), None)
+        envs = {e["name"]: e.get("value") for e in (ctr or {}).get("env", []) if isinstance(e, dict) and "name" in e}
+        if "OSS_UPDATES_UPSTREAM" not in envs:
+            errors.append("narwhal-portal Deployment missing OSS_UPDATES_UPSTREAM env")
+        elif 'eq .Values.provider "kakao"' not in str(envs["OSS_UPDATES_UPSTREAM"]) and envs["OSS_UPDATES_UPSTREAM"] != "true":
+            errors.append(f"narwhal-portal OSS_UPDATES_UPSTREAM has unexpected value: {envs['OSS_UPDATES_UPSTREAM']!r}")
 
     if 'case "not-applicable":\n      return t("ossUpdates.notApplicableCli")' not in table:
         errors.append("oss-updates-table.tsx missing CLI not-applicable branch")
@@ -201,7 +235,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop truncated propagation in k8s-client.ts", "k8s", 'if (res.truncated) return { status: "truncated", resource }', 'if (false && res.truncated) return { status: "truncated", resource }'),
     ("drop status.image usage in k8s-client.ts", "k8s", 'const statusImage = typeof entry.image === "string" ? entry.image : ""', 'const statusImage = ""'),
     ("drop 403 no-permission mapping in k8s-client.ts", "k8s", 'if (err instanceof K8sCredentialError) return { status: "no-permission", resource }', 'if (false && err instanceof K8sCredentialError) return { status: "no-permission", resource }'),
-    ("widen RBAC in narwhal-portal-k8s.yaml", "rbac", "rules:\n", "rules:\n  - apiGroups: [apiextensions.k8s.io]\n"),
+    ("widen CRD verb to list in narwhal-portal-k8s.yaml", "rbac", "    resourceNames: [gateways.gateway.networking.k8s.io]\n    verbs: [get]", "    resourceNames: [gateways.gateway.networking.k8s.io]\n    verbs: [get, list]"),
+    ("drop resourceNames on CRD rule in narwhal-portal-k8s.yaml", "rbac", "    resourceNames: [gateways.gateway.networking.k8s.io]\n    verbs: [get]", "    verbs: [get]"),
+    ("widen RBAC with extra apiextensions rule in narwhal-portal-k8s.yaml", "rbac", "rules:\n", "rules:\n  - apiGroups: [apiextensions.k8s.io]\n    resources: [customresourcedefinitions]\n    verbs: [list]\n"),
+    ("drop OSS_UPDATES_UPSTREAM env in narwhal-portal-k8s.yaml", "rbac", "            - name: OSS_UPDATES_UPSTREAM\n", "            - name: OSS_UPDATES_DISABLED\n"),
     ("drop CLI N/A label in UI", "table", 'case "not-applicable":\n      return t("ossUpdates.notApplicableCli")', 'case "not-applicable":\n      return t("ossUpdates.unknown")'),
     ("drop R394 wiring", "reg", "check R394 ", "check R9999 "),
 ]

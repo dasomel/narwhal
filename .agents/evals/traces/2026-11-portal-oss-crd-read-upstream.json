@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-oss-crd-read-upstream-20261124",
+  "task": "Owner-approved portal permission widening (get on one CustomResourceDefinition) and enabling the upstream latest-version lookup for Settings > OSS Updates",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/charts/narwhal-platform/values.yaml",
+      "gitops/charts/narwhal-apps/templates/narwhal-platform.yaml",
+      "scripts/test/lib/check-portal-replicasets-rbac.py",
+      "scripts/test/lib/check-portal-oss-updates-truth.py",
+      "scripts/test/regression-check-kakao.sh",
+      "portal/src/components/settings/oss-updates-table.test.tsx",
+      "docs/common/oss-update-process.md",
+      "docs/common/lessons-log.md",
+      "scripts/airgap/README.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-11-portal-oss-crd-read-upstream.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Two changes the owner approved in chat on 2026-11-24 and nothing else: the portal ClusterRole gains get on the single CRD gateways.gateway.networking.k8s.io (no list or watch, no other CRD), and OSS_UPDATES_UPSTREAM is rendered true except for provider kakao (air-gapped, no egress to api.github.com)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "With portal 1.1.24 the OSS Updates page showed 24 rows: 22 in-sync, 1 not-applicable and 1 unknown. The unknown row was Gateway API CRDs with reason no-permission, and the upstream lookup reported disabled.",
+      "evidence": [
+        "test:live measurement as system:serviceaccount:devtools:narwhal-portal through kubectl proxy (2026-11-23) -> drift counts in-sync 22, unknown 1 (Gateway API CRDs: no-permission), not-applicable 1; upstreamLookup disabled"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added the resourceNames-scoped get rule to ClusterRole narwhal-portal and updated the pinned RBAC expectations so any other widening (list, watch, dropped resourceNames, another CRD) is still rejected. Added the OSS_UPDATES_UPSTREAM env with a provider switch (decision D-OSS-UPSTREAM recorded next to it: unauthenticated GitHub API limit 60 requests per hour per source IP, successful lookups cached 6 hours, failures cached 10 minutes and shown as unavailable; escape hatch is unsetting the env)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static checks, chart rendering and portal unit tests on the author's host; nothing applied to a cluster.",
+      "summary": "RBAC pin checks reject other widenings, both provider branches render the expected env value, and the OSS update unit tests pass.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-portal-replicasets-rbac.py --mutation-verify -> PASS: 15 mutations rejected",
+        "test:python3 scripts/test/lib/check-portal-oss-updates-truth.py --mutation-verify -> PASS: R394 (27 mutations rejected)",
+        "test:python3 scripts/test/lib/check-portal-dev-from-chart.py --mutation-verify -> PASS: 10 mutations caught",
+        "test:helm template narwhal-platform with provider vagrant and provider kakao -> OSS_UPDATES_UPSTREAM true and false respectively",
+        "test:cd portal && pnpm exec vitest run src/lib/oss-updates -> 5 files, 53 tests passed",
+        "test:make validate -> exit 0",
+        "test:make lint -> shellcheck passed; yamllint exited non-zero on pre-existing line-length errors in untouched files"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The permission and the env switch are in the chart and pinned by checks. Not verified at authoring time: applying to a live cluster, kubectl auth can-i for the portal ServiceAccount, the Gateway API CRDs row showing a version, and a real call to api.github.com; these are checked after merge during rollout."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (chart, pins and unit tests; live rollout not part of this change)"
+    }
+  ]
+}

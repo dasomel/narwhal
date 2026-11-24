@@ -805,4 +805,76 @@ describe("D-COMPLIANCE-VERDICT-SOURCE (per-resource report verdicts)", () => {
     })
     expect(mixed!.controls[0].testedByReport).toBeUndefined()
   })
+
+  it("(i) D-VERDICT-UNKNOWN-CHECK: unexecutable mapped check not in catalogue stays not_evaluated (not_in_catalogue) despite explicit pass on sibling check, while catalogued sibling with no records is tested-passed", async () => {
+    installRoutes(baseRoutes({
+      [TRIVY + "configauditreports"]: {
+        items: [
+          makeReport({
+            namespace: "dev",
+            kind: "Deployment",
+            name: "app",
+            checks: [{ checkID: "KSV001", success: true }],
+          }),
+        ],
+      },
+      [TRIVY + "clustercompliancereports"]: {
+        items: [{
+          metadata: { name: "unknown-check-fw", creationTimestamp: "2026-11-25T00:00:00Z" },
+          spec: {
+            compliance: {
+              id: "unknown-check-fw",
+              title: "Unknown Check FW",
+              controls: [
+                {
+                  id: "C-UNKNOWN-CHECK",
+                  name: "KSV001 passed, KSV9999 not in catalogue",
+                  severity: "HIGH",
+                  checks: [{ id: "KSV001" }, { id: "KSV9999" }],
+                },
+                {
+                  id: "C-CATALOGUED-ABSENT",
+                  name: "KSV001 passed, KSV020 in catalogue with zero records",
+                  severity: "HIGH",
+                  checks: [{ id: "KSV001" }, { id: "KSV020" }],
+                },
+              ],
+            },
+          },
+          status: {
+            summary: { passCount: 2, failCount: 0 },
+            detailReport: {
+              results: [
+                { id: "C-UNKNOWN-CHECK", name: "KSV001 passed, KSV9999 not in catalogue", severity: "HIGH", checks: [{ checkID: "", success: true }] },
+                { id: "C-CATALOGUED-ABSENT", name: "KSV001 passed, KSV020 in catalogue with zero records", severity: "HIGH", checks: [{ checkID: "", success: true }] },
+              ],
+            },
+          },
+        }],
+      },
+    }))
+
+    const detail = await getComplianceFrameworkDetail("unknown-check-fw")
+    expect(detail).not.toBeNull()
+    expect(detail!.totalControls).toBe(2)
+    expect(detail!.evaluatedPassCount).toBe(1)
+    expect(detail!.testedPassCount).toBe(1)
+    expect(detail!.notEvaluatedCount).toBe(1)
+    expect(detail!.failCount).toBe(0)
+
+    const byId = new Map(detail!.controls.map((c) => [c.id, c]))
+    expect(byId.get("C-UNKNOWN-CHECK")).toMatchObject({
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "not_in_catalogue",
+      notEvaluatedDetail: "KSV9999 not in trivy-checks catalogue",
+    })
+    expect(byId.get("C-UNKNOWN-CHECK")?.testedByReport).toBeUndefined()
+
+    expect(byId.get("C-CATALOGUED-ABSENT")).toMatchObject({
+      evaluationState: "passed",
+      testedByReport: true,
+      passCount: 1,
+      failCount: 0,
+    })
+  })
 })

@@ -2291,6 +2291,9 @@ function classifyNonFailingControl(
   for (const id of normIds) {
     const outcome = evaluateCheckAgainstCatalogue(id, specControl, evalCtx)
     if (outcome.evaluationState === "passed") continue
+    // D-VERDICT-UNKNOWN-CHECK: unexecutable check means partial coverage; cost: such controls stay
+    // not_evaluated even with passes on other checks; escape hatch: remove the unknown id from the
+    // framework mapping or add it to the catalogue.
     if (
       totalExplicitPasses > 0 &&
       (outcome.notEvaluatedReason === "infra_no_per_check_evidence" ||

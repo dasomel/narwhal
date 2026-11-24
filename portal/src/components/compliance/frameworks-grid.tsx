@@ -349,10 +349,6 @@ export function FrameworksGrid() {
             hasActionableFail: hasActionable,
             hasNotEvaluated: hasNotEval,
           })
-          const rawPctText = formatPassRatePct(fw.passRate, {
-            hasActionableFail: fw.failCount > 0 || hasActionable,
-            hasNotEvaluated: hasNotEval,
-          })
           const effectivePctText = formatPassRatePct(effectiveRate, {
             hasActionableFail: hasActionable,
             hasNotEvaluated: hasNotEval,
@@ -393,9 +389,18 @@ export function FrameworksGrid() {
                     </span>
                   </div>
                 </div>
-                <PassRateBar rate={evaluatedRate * 100} />
+                <PassRateBar rate={hasActionable || hasNotEval ? Math.min(99.9, evaluatedRate * 100) : evaluatedRate * 100} />
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 text-[0.7rem] text-muted-foreground">
-                  <span>{t("compliance.framework.rawPassRate")}: {rawPctText} ({fw.passCount}/{fw.totalControls})</span>
+                  <span>
+                    {evaluatedPass}/{fw.totalControls} (
+                    {testedPass > 0
+                      ? t("compliance.counter.frameworksPassSplit", {
+                          tested: String(testedPass),
+                          noFailure: String(noFailurePass),
+                        })
+                      : `${noFailurePass} ${t("compliance.framework.noFailureRecordedShort")}`}
+                    )
+                  </span>
                   <span>{t("compliance.framework.effectivePassRate")}: {effectivePctText} ({effectivePassNum}/{fw.totalControls})</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground">

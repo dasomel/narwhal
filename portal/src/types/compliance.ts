@@ -191,9 +191,14 @@ export interface BenchmarkControlEvidence {
 export interface ComplianceFramework {
   id: string
   title: string
-  /** Raw Trivy control pass count (`status.summary.passCount`, includes placeholder passes). */
+  /**
+   * Internal / legacy Trivy `status.summary.passCount` (scanner raw placeholder count that
+   * includes unevaluated controls). Retained only for API/back-compat; UI and KISA grading
+   * must NOT render or compute percentages from this field — use `evaluatedPassCount`
+   * (`benchmarkTestedPassCount` + `noFailureRecordedPassCount`) and `evaluatedPassRate` instead.
+   */
   passCount: number
-  /** Alias for raw Trivy control pass count (`status.summary.passCount`). */
+  /** Alias for raw Trivy control pass count (`status.summary.passCount`), internal/API compat only. */
   rawPassCount?: number
   /** Controls with verified pass (tested by benchmark OR no failure recorded across catalogued check IDs on in-scope reports; excludes not-evaluated controls). */
   evaluatedPassCount?: number
@@ -215,7 +220,11 @@ export interface ComplianceFramework {
   /** Total failing checks dropped across all controls in this framework due to drained superseded ReplicaSets. */
   droppedCheckCount?: number
   totalControls: number
-  /** Raw Trivy control pass rate: passCount / totalControls. */
+  /**
+   * Internal / legacy raw Trivy ratio (`passCount / totalControls`). Retained only for API
+   * back-compat; UI and KISA grading must NOT render or compute percentages from this field —
+   * use `evaluatedPassRate` / `effectivePassRate` instead.
+   */
   passRate: number
   /** Evaluated pass rate: evaluatedPassCount / totalControls (benchmark-tested passes + no-failure-recorded checks). */
   evaluatedPassRate?: number
@@ -231,6 +240,7 @@ export interface ComplianceControl {
   id: string
   name: string
   severity: Severity
+  /** Per-control passing check/node count (not ClusterComplianceReport summary `passCount`). */
   passCount: number
   failCount: number
   /** Actionable failing checks count for this control. */

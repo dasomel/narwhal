@@ -153,10 +153,24 @@ def check(texts: dict[str, str]) -> list[str]:
     if "resources: [nodes, pods, persistentvolumeclaims, namespaces, services, events, configmaps]" not in texts["rbac_yaml"]:
         errors.append("narwhal-portal-k8s.yaml must retain existing read-only configmaps/nodes permission")
 
-    # 5. UI & KISA CFG-01 separation & i18n
+    # 5. UI & KISA CFG-01 separation & i18n & zero raw CCR passCount/passRate rendering
     for ui_key in ("counters", "grid", "detail"):
         if "benchmarkTestedPassCount" not in texts[ui_key]:
             errors.append(f"{ui_key} must display benchmarkTestedPassCount separately from noFailureRecordedPassCount")
+        for forbidden in (
+            "f.passCount",
+            "fw.passCount",
+            "detail.passCount",
+            "f.passRate",
+            "fw.passRate",
+            "detail.passRate",
+            "rawPassTotal",
+            "rawPassRate",
+            "rawPctText",
+            "frameworksRawRate",
+        ):
+            if forbidden in texts[ui_key]:
+                errors.append(f"{ui_key} must not render or compute percentages from raw CCR passCount/passRate: {forbidden!r}")
     if "(acc, f) => acc + (f.benchmarkTestedPassCount ?? 0)" not in texts["counters"]:
         errors.append("failure-counters.tsx must compute benchmarkTestedPassTotal from f.benchmarkTestedPassCount ?? 0")
     if "compliance.counter.frameworksBreakdownWithBenchmark" not in texts["counters"]:
@@ -205,8 +219,15 @@ def check(texts: dict[str, str]) -> list[str]:
 
     if "keeps benchmarkTestedPassCount separate from noFailureRecordedPassCount in CFG-01 ko and en detail text" not in texts["kisa_test"]:
         errors.append("kisa.test.ts missing CFG-01 split test")
-    if "70 tested (benchmark) · 4 no failure recorded" not in texts["ui_test"]:
-        errors.append("compliance-ui.test.tsx missing benchmark UI separation assertion")
+    for needle in (
+        "70 tested (benchmark) · 4 no failure recorded",
+        "74/116",
+        "86/178",
+        'not.toContain("95/116")',
+        'not.toContain("122/178")',
+    ):
+        if needle not in texts["ui_test"]:
+            errors.append(f"compliance-ui.test.tsx missing CIS/raw-guard assertion: {needle!r}")
 
     if "check R402 " not in texts["reg"] or "check-portal-cis-test-records.py --mutation-verify" not in texts["reg"]:
         errors.append("regression-check-kakao.sh must wire R402 with --mutation-verify")
@@ -233,6 +254,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("conflate tested and no-failure-recorded in FailureCounters", "counters", "f.benchmarkTestedPassCount ?? 0", "0"),
     ("conflate tested and no-failure-recorded in FailureCounters breakdown", "counters", "compliance.counter.frameworksBreakdownWithBenchmark", "compliance.counter.frameworksBreakdown"),
     ("conflate tested and no-failure-recorded in KISA CFG-01", "kisa", "f.benchmarkTestedPassCount ?? 0", "0"),
+    ("re-render raw passCount in FailureCounters", "counters", "const evaluatedPassTotal = summary.frameworks.reduce(\n    (acc, f) => acc + (f.evaluatedPassCount ?? 0),\n    0,\n  )", "const evaluatedPassTotal = summary.frameworks.reduce(\n    (acc, f) => acc + f.passCount,\n    0,\n  )"),
+    ("re-render raw passCount in FrameworksGrid", "grid", "const evaluatedPass = fw.evaluatedPassCount ?? 0", "const evaluatedPass = fw.passCount"),
+    ("re-render raw passCount in FrameworkDetailPage", "detail", "const evaluatedPass = detail.evaluatedPassCount ?? 0", "const evaluatedPass = detail.passCount"),
     ("revert frameworks cache key to v3", "keys", 'complianceFrameworksList: () => "compliance:v4:frameworks:list"', 'complianceFrameworksList: () => "compliance:v3:frameworks:list"'),
     ("drop R402 wiring in regression-check-kakao.sh", "reg", "check R402 ", "check R9999 "),
 ]

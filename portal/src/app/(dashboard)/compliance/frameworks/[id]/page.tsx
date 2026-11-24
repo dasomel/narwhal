@@ -338,11 +338,8 @@ export default async function FrameworkDetailPage({ params }: Props) {
     hasActionableFail: actionableControlsFail > 0,
     hasNotEvaluated: hasNotEval,
   })
-  const rawPctText = formatPassRatePct(detail.passRate, {
-    hasActionableFail: detail.failCount > 0 || actionableControlsFail > 0,
-    hasNotEvaluated: hasNotEval,
-  })
-  const evaluatedWidthPct = Math.min(100, Math.max(0, evaluatedRate * (evaluatedRate <= 1 ? 100 : 1)))
+  const rawWidthPct = Math.max(0, evaluatedRate * (evaluatedRate <= 1 ? 100 : 1))
+  const evaluatedWidthPct = Math.min(actionableControlsFail > 0 || hasNotEval ? 99.9 : 100, rawWidthPct)
   const barColor =
     evaluatedRate >= 0.8 ? "bg-green-500" : evaluatedRate >= 0.5 ? "bg-amber-500" : "bg-red-500"
 
@@ -356,8 +353,15 @@ export default async function FrameworkDetailPage({ params }: Props) {
           <p className="text-xs text-muted-foreground mt-0.5">
             {testedPass > 0
               ? t(locale, "compliance.framework.evaluatedPassRateWithBenchmark")
-              : t(locale, "compliance.framework.evaluatedPassRate")}: {evaluatedPctText} ({evaluatedPass}/{detail.totalControls}) &middot;{" "}
-            {t(locale, "compliance.framework.rawPassRate")}: {rawPctText} ({detail.passCount}/{detail.totalControls}) &middot;{" "}
+              : t(locale, "compliance.framework.evaluatedPassRate")}: {evaluatedPctText} &middot;{" "}
+            {evaluatedPass}/{detail.totalControls} (
+            {testedPass > 0
+              ? t(locale, "compliance.counter.frameworksPassSplit", {
+                  tested: String(testedPass),
+                  noFailure: String(noFailurePass),
+                })
+              : t(locale, "compliance.framework.noFailureRecordedLabel")}
+            ) &middot;{" "}
             {t(locale, "compliance.framework.effectivePassRate")}: {effectivePctText} ({effectivePassNum}/{detail.totalControls}) &middot;{" "}
             {t(locale, "compliance.framework.controls", { count: detail.totalControls })}
           </p>
@@ -390,7 +394,10 @@ export default async function FrameworkDetailPage({ params }: Props) {
                 : "text-red-600"
             }`}
           >
-            {evaluatedPctText}
+            {evaluatedPctText}{" "}
+            <span className="text-xs font-normal text-muted-foreground">
+              ({evaluatedPass}/{detail.totalControls})
+            </span>
           </span>
         </div>
         <div className="w-full bg-muted rounded-full h-2.5">
@@ -438,7 +445,6 @@ export default async function FrameworkDetailPage({ params }: Props) {
               <span className="text-xs text-muted-foreground">
                 {t(locale, "compliance.framework.rawSummary", {
                   fail: String(detail.failCount),
-                  rate: rawPctText.replace(/%$/, ""),
                 })}
               </span>
               <a

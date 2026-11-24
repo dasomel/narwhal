@@ -1668,28 +1668,176 @@ interface NonFailingControlOutcome {
 // FromDetailReport hardcodes Success:false for passed checks and TotalsCheckCount counts
 // them as failures, and large CCRs can exceed the etcd 1.5 MiB object limit.
 // A control is failed if any mapped check has success:false on any scanned resource;
-// tested-passed only if at least one mapped check has an explicit success:true record and
-// none failed (all other mapped checks evaluated); otherwise existing honest states
-// (no failure recorded / not_evaluated) stay unchanged. Never infer a pass from absence.
+// tested-passed iff at least one mapped check has an explicit success:true record from an
+// in-scope resource (matching family, scanner, kinds, namespaces, and nodeType/commands)
+// and zero mapped checks failed; absent records never produce a pass and never a failure.
+// Otherwise existing honest states (no failure recorded / not_evaluated) stay unchanged.
 // Cost: paginated reads of all 6 per-resource report collections on framework queries.
 // Escape hatch: if upstream fixes FromDetailReport and etcd sizing, a future change may
 // read CCR status directly after removing this join.
-function controlEvidencePasses(canonicalId: string, ctx: FrameworkEvalContext): number {
-  if (!canonicalId) return 0
+function resolveEffectiveNodeTypes(
+  entry: TrivyCheckCatalogueEntry,
+  specControl: RawSpecControl | undefined,
+): Array<"master" | "worker"> {
+  const declaredNodeTypes = new Set<"master" | "worker">()
+  const ctrlNodeType = normalizeNodeType(specControl?.nodeType)
+  if (ctrlNodeType) declaredNodeTypes.add(ctrlNodeType)
+  for (const cmd of specControl?.commands ?? []) {
+    const nt = normalizeNodeType(cmd.nodeType)
+    if (nt) declaredNodeTypes.add(nt)
+  }
+  const catalogueNodeTypes = entry.nodeTypes ?? ["master", "worker"]
+  const applicableNodeTypes =
+    declaredNodeTypes.size > 0
+      ? catalogueNodeTypes.filter((nt) => declaredNodeTypes.has(nt))
+      : [...catalogueNodeTypes]
+  return applicableNodeTypes.length > 0 ? applicableNodeTypes : [...declaredNodeTypes]
+}
+
+function inScopeReportsForPasses(
+  canonicalId: string,
+  specControl: RawSpecControl | undefined,
+  ctx: FrameworkEvalContext,
+): readonly RawAuditReport[] {
   const entry = getCatalogueCheck(canonicalId)
-  const reports = entry
-    ? entry.reportFamily === "infra"
-      ? ctx.evidenceReports.infra
-      : entry.reportFamily === "rbac"
-        ? ctx.evidenceReports.rbac
-        : ctx.evidenceReports.config
-    : ctx.evidenceReports.config.concat(ctx.evidenceReports.rbac, ctx.evidenceReports.infra)
-  const applicableNamespaces = entry ? getApplicableNamespaces(entry) : null
+  if (entry) {
+    switch (entry.reportFamily) {
+      case "infra": {
+        if (ctx.infraScannerEnabled === false || ctx.operatorConfigError || ctx.hasInfraReports === "unknown") {
+          return []
+        }
+        if (entry.kinds.includes("Node")) {
+          if (ctx.hasMasterNodes === "unknown" || ctx.hasWorkerNodes === "unknown") return []
+          const effectiveNodeTypes = resolveEffectiveNodeTypes(entry, specControl)
+          const presentNodeTypes = effectiveNodeTypes.filter((nt) =>
+            nt === "master" ? ctx.hasMasterNodes === true : ctx.hasWorkerNodes === true,
+          )
+          if (presentNodeTypes.length === 0) return []
+          return ctx.evidenceReports.infra.filter((r) => {
+            if (!isNodeInfraReport(r)) return false
+            const nodeName = r.metadata.labels?.["trivy-operator.resource.name"] ?? r.metadata.name.replace(/^node-/, "")
+            const role = ctx.nodeRoles.get(nodeName)
+            return role !== undefined && presentNodeTypes.includes(role)
+          })
+        }
+        for (const ns of entry.requiredNamespaces ?? []) {
+          if (isNamespaceExcluded(ns, ctx) !== false) return []
+        }
+        if (ctx.supportedConfigAuditKinds === "unknown") return []
+        const auditedKinds = entry.kinds.filter((k) =>
+          matchesSupportedKind(k, ctx.supportedConfigAuditKinds as ReadonlySet<string>),
+        )
+        if (auditedKinds.length === 0) return []
+        return ctx.evidenceReports.infra.filter((r) => {
+          if (!auditedKinds.some((k) => reportMatchesKind(r, k))) return false
+          const ns = r.metadata.namespace ?? ""
+          if (entry.requiredNamespaces && entry.requiredNamespaces.length > 0) {
+            return entry.requiredNamespaces.includes(ns) && isNamespaceExcluded(ns, ctx) === false
+          }
+          return ns === "" || isNamespaceExcluded(ns, ctx) === false
+        })
+      }
+
+      case "rbac": {
+        if (
+          ctx.rbacScannerEnabled === false ||
+          ctx.operatorConfigError ||
+          ctx.hasRbacReports === "unknown" ||
+          ctx.supportedConfigAuditKinds === "unknown"
+        ) {
+          return []
+        }
+        const auditedKinds = entry.kinds.filter((k) =>
+          matchesSupportedKind(k, ctx.supportedConfigAuditKinds as ReadonlySet<string>),
+        )
+        if (auditedKinds.length === 0) return []
+        const applicableRbacNamespaces = getApplicableNamespaces(entry)
+        return ctx.evidenceReports.rbac.filter((r) => {
+          if (!auditedKinds.some((k) => reportMatchesKind(r, k))) return false
+          const ns = r.metadata.namespace ?? ""
+          if (applicableRbacNamespaces !== null) {
+            return applicableRbacNamespaces.includes(ns) && isNamespaceExcluded(ns, ctx) === false
+          }
+          const kind = reportResourceKind(r)
+          if (kind === "ClusterRole" || !ns) return true
+          return isNamespaceExcluded(ns, ctx) === false
+        })
+      }
+
+      default: {
+        // ConfigAudit family
+        if (
+          ctx.configAuditScannerEnabled === false ||
+          ctx.operatorConfigError ||
+          ctx.hasConfigAuditReports === "unknown" ||
+          ctx.supportedConfigAuditKinds === "unknown"
+        ) {
+          return []
+        }
+        for (const ns of [...(entry.requiredNamespaces ?? []), ...(entry.scopeNamespaces ?? [])]) {
+          if (isNamespaceExcluded(ns, ctx) !== false) return []
+        }
+        const auditedKinds = entry.kinds.filter((k) =>
+          matchesSupportedKind(k, ctx.supportedConfigAuditKinds as ReadonlySet<string>),
+        )
+        if (auditedKinds.length === 0) return []
+        const applicableNamespaces = getApplicableNamespaces(entry)
+        return ctx.evidenceReports.config.filter((r) => {
+          if (!auditedKinds.some((k) => reportMatchesKind(r, k))) return false
+          const ns = r.metadata.namespace ?? ""
+          if (applicableNamespaces !== null) {
+            return applicableNamespaces.includes(ns) && isNamespaceExcluded(ns, ctx) === false
+          }
+          if (!ns) return true
+          return isNamespaceExcluded(ns, ctx) === false
+        })
+      }
+    }
+  }
+
+  // Uncatalogued check ID: still enforce operator/scanner availability, namespace exclusion,
+  // and declared nodeType/commands scope on Node infra reports.
+  if (ctx.operatorConfigError) return []
+  const declaredNodeTypes = new Set<"master" | "worker">()
+  const ctrlNodeType = normalizeNodeType(specControl?.nodeType)
+  if (ctrlNodeType) declaredNodeTypes.add(ctrlNodeType)
+  for (const cmd of specControl?.commands ?? []) {
+    const nt = normalizeNodeType(cmd.nodeType)
+    if (nt) declaredNodeTypes.add(nt)
+  }
+  const candidates: RawAuditReport[] = []
+  if (ctx.configAuditScannerEnabled !== false && ctx.hasConfigAuditReports !== "unknown") {
+    candidates.push(...ctx.evidenceReports.config)
+  }
+  if (ctx.rbacScannerEnabled !== false && ctx.hasRbacReports !== "unknown") {
+    candidates.push(...ctx.evidenceReports.rbac)
+  }
+  if (ctx.infraScannerEnabled !== false && ctx.hasInfraReports !== "unknown") {
+    candidates.push(...ctx.evidenceReports.infra)
+  }
+  return candidates.filter((r) => {
+    const ns = r.metadata.namespace ?? ""
+    if (ns !== "" && isNamespaceExcluded(ns, ctx) !== false) return false
+    if (isNodeInfraReport(r) && declaredNodeTypes.size > 0) {
+      if (ctx.hasMasterNodes === "unknown" || ctx.hasWorkerNodes === "unknown") return false
+      const nodeName = r.metadata.labels?.["trivy-operator.resource.name"] ?? r.metadata.name.replace(/^node-/, "")
+      const role = ctx.nodeRoles.get(nodeName)
+      return role !== undefined && declaredNodeTypes.has(role)
+    }
+    return true
+  })
+}
+
+function controlEvidencePasses(
+  canonicalId: string,
+  specControl: RawSpecControl | undefined,
+  ctx: FrameworkEvalContext,
+): number {
+  if (!canonicalId) return 0
+  const reports = inScopeReportsForPasses(canonicalId, specControl, ctx)
   const seenTargets = new Set<string>()
   for (const r of reports) {
     const ns = r.metadata.namespace ?? ""
-    if (ns !== "" && isNamespaceExcluded(ns, ctx) === true) continue
-    if (applicableNamespaces !== null && !applicableNamespaces.includes(ns)) continue
     for (const c of r.report?.checks ?? []) {
       if (c.success !== true) continue
       const checkCanonical = resolveCanonicalCheckId(c.checkID ?? "")
@@ -1767,19 +1915,7 @@ function evaluateCheckAgainstCatalogue(
           notEvaluatedDetail: "node list unavailable",
         }
       }
-      const declaredNodeTypes = new Set<"master" | "worker">()
-      const ctrlNodeType = normalizeNodeType(specControl.nodeType)
-      if (ctrlNodeType) declaredNodeTypes.add(ctrlNodeType)
-      for (const cmd of specControl.commands ?? []) {
-        const nt = normalizeNodeType(cmd.nodeType)
-        if (nt) declaredNodeTypes.add(nt)
-      }
-      const catalogueNodeTypes = entry.nodeTypes ?? ["master", "worker"]
-      const applicableNodeTypes =
-        declaredNodeTypes.size > 0
-          ? catalogueNodeTypes.filter((nt) => declaredNodeTypes.has(nt))
-          : [...catalogueNodeTypes]
-      const effectiveNodeTypes = applicableNodeTypes.length > 0 ? applicableNodeTypes : [...declaredNodeTypes]
+      const effectiveNodeTypes = resolveEffectiveNodeTypes(entry, specControl)
 
       if (evalCtx.hasMasterNodes === false && evalCtx.hasWorkerNodes === false) {
         return {
@@ -2114,14 +2250,17 @@ function classifyNonFailingControl(
   const passByCheck = new Map<string, number>()
   let totalExplicitPasses = 0
   for (const id of normIds) {
-    const count = controlEvidencePasses(id, evalCtx)
+    const count = controlEvidencePasses(id, specControl, evalCtx)
     passByCheck.set(id, count)
     totalExplicitPasses += count
   }
 
-  // D-COMPLIANCE-VERDICT-SOURCE: explicit success:true records from per-resource reports
-  // establish tested-passed verdicts (trivy-operator >=0.36.1) even when detailReport is
-  // absent or stale, while requiring every mapped check to be evaluated (multi-check parity).
+  // D-COMPLIANCE-VERDICT-SOURCE: a control with zero failing records on any mapped check and
+  // at least one explicit in-scope success:true record from per-resource reports is tested-passed,
+  // even when status.detailReport is absent or other in-scope mapped checks have no records
+  // (absent records never produce a pass and never produce a failure). Still enforce every mapped
+  // check's scope coverage via evaluateCheckAgainstCatalogue so mixed-family or missing_node_type
+  // controls cannot become tested-passed while a sibling check lacks scope coverage.
   if (totalExplicitPasses === 0) {
     if (!hasDetailReport) {
       return {
@@ -2150,18 +2289,16 @@ function classifyNonFailingControl(
   }
 
   for (const id of normIds) {
-    if ((passByCheck.get(id) ?? 0) > 0) continue
-    if (!hasDetailReport) {
-      return {
-        evaluationState: "not_evaluated",
-        notEvaluatedReason: "summary_only",
-        notEvaluatedDetail: `no per-resource check record for ${id} and detailReport absent`,
-      }
-    }
     const outcome = evaluateCheckAgainstCatalogue(id, specControl, evalCtx)
-    if (outcome.evaluationState !== "passed") {
-      return outcome
+    if (outcome.evaluationState === "passed") continue
+    if (
+      totalExplicitPasses > 0 &&
+      (outcome.notEvaluatedReason === "infra_no_per_check_evidence" ||
+        (outcome.notEvaluatedReason === "not_in_catalogue" && (passByCheck.get(id) ?? 0) > 0))
+    ) {
+      continue
     }
+    return outcome
   }
 
   if (totalExplicitPasses > 0) {
@@ -2333,7 +2470,7 @@ function buildComplianceFrameworkData(
       const normIds = Array.from(
         new Set((specControl?.checks ?? []).map((c) => resolveCanonicalCheckId(c.id ?? "")).filter(Boolean)),
       )
-      const ctrlPass = normIds.reduce((sum, cid) => sum + controlEvidencePasses(cid, evalCtx), 0)
+      const ctrlPass = normIds.reduce((sum, cid) => sum + controlEvidencePasses(cid, specControl, evalCtx), 0)
       const accepted = ctrlFail > 0 && actionableFailCount === 0 && acceptedFailCount > 0
       return {
         id,

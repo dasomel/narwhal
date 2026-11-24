@@ -555,4 +555,254 @@ describe("D-COMPLIANCE-VERDICT-SOURCE (per-resource report verdicts)", () => {
     expect(truncated!.controls.every((c) => c.notEvaluatedReason === "coverage_unknown")).toBe(true)
     expect(cache.size).toBe(0)
   })
+
+  it("(g) multi-check control without CCR detailReport is tested-passed when check A has in-scope success:true and check B has no record, failed if B fails, and summary_only if neither has a record", async () => {
+    installRoutes(baseRoutes({
+      [TRIVY + "configauditreports"]: {
+        items: [
+          makeReport({
+            namespace: "dev",
+            kind: "Deployment",
+            name: "app",
+            checks: [
+              { checkID: "KSV001", success: true },
+              { checkID: "KSV014", success: false },
+            ],
+          }),
+        ],
+      },
+      [TRIVY + "clusterinfraassessmentreports"]: {
+        items: [
+          makeReport({
+            kind: "Node",
+            name: "narwhal-master-1",
+            checks: [{ checkID: "KCV0048", success: true }],
+          }),
+        ],
+      },
+      [TRIVY + "clustercompliancereports"]: {
+        items: [{
+          metadata: { name: "multi-check-no-detail", creationTimestamp: "2026-11-25T00:00:00Z" },
+          spec: {
+            compliance: {
+              id: "multi-check-no-detail",
+              title: "Multi-Check Summary Only",
+              controls: [
+                {
+                  id: "M-CAR-PARTIAL-PASS",
+                  name: "KSV001 passed, KSV020 absent",
+                  severity: "HIGH",
+                  checks: [{ id: "AVD-KSV-0001" }, { id: "AVD-KSV-0020" }],
+                },
+                {
+                  id: "M-INFRA-PARTIAL-PASS",
+                  name: "KCV0048 passed on master, KCV0049 absent",
+                  severity: "HIGH",
+                  checks: [{ id: "AVD-KCV-0048" }, { id: "AVD-KCV-0049" }],
+                },
+                {
+                  id: "M-CAR-FAIL",
+                  name: "KSV001 passed, KSV014 failed",
+                  severity: "HIGH",
+                  checks: [{ id: "AVD-KSV-0001" }, { id: "AVD-KSV-0014" }],
+                },
+                {
+                  id: "M-ALL-ABSENT",
+                  name: "KSV020 and KSV021 both absent",
+                  severity: "MEDIUM",
+                  checks: [{ id: "AVD-KSV-0020" }, { id: "AVD-KSV-0021" }],
+                },
+              ],
+            },
+          },
+          // detailReport intentionally omitted (summary-only / etcd-limit CCR)
+          status: { updateTimestamp: "2026-11-25T00:00:00Z", summary: { passCount: 0, failCount: 4 } },
+        }],
+      },
+    }))
+
+    const detail = await getComplianceFrameworkDetail("multi-check-no-detail")
+    expect(detail).not.toBeNull()
+    expect(detail!.reportTestedPassCount).toBe(2)
+    expect(detail!.testedPassCount).toBe(2)
+    expect(detail!.failCount).toBe(1)
+    expect(detail!.notEvaluatedCount).toBe(1)
+
+    const byId = new Map(detail!.controls.map((c) => [c.id, c]))
+    expect(byId.get("M-CAR-PARTIAL-PASS")).toMatchObject({ evaluationState: "passed", testedByReport: true, passCount: 1, failCount: 0 })
+    expect(byId.get("M-INFRA-PARTIAL-PASS")).toMatchObject({ evaluationState: "passed", testedByReport: true, passCount: 1, failCount: 0 })
+    expect(byId.get("M-CAR-FAIL")).toMatchObject({ evaluationState: "failed", failCount: 1, actionableFailCount: 1, passCount: 1 })
+    expect(byId.get("M-ALL-ABSENT")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "summary_only" })
+    expect(byId.get("M-ALL-ABSENT")?.testedByReport).toBeUndefined()
+  })
+
+  it("(h) worker-only control with only master-node KCV passes stays not_evaluated (missing_node_type / infra_no_per_check_evidence), and out-of-scope passes never produce tested-passed", async () => {
+    // 1. Master-only cluster: master has KCV0073 success:true, worker-only controls must stay missing_node_type (same as main).
+    // Also verify out-of-scope ConfigAudit passes (excluded namespace / wrong scopeNamespaces / unsupported kind) do not pass.
+    installRoutes(baseRoutes({
+      "/api/v1/namespaces/security-system/configmaps/trivy-operator-trivy-config": {
+        data: {
+          "trivy.supportedConfigAuditKinds": "Workload",
+        },
+      },
+      [TRIVY + "configauditreports"]: {
+        items: [
+          makeReport({ namespace: "dev", kind: "Deployment", name: "wrong-scope-ns", checks: [{ checkID: "KSV110", success: true }] }),
+        ],
+      },
+      [TRIVY + "rbacassessmentreports"]: {
+        items: [
+          makeReport({ namespace: "trivy-system", kind: "Role", name: "excluded-role", checks: [{ checkID: "KSV048", success: true }] }),
+        ],
+      },
+      [TRIVY + "clusterrbacassessmentreports"]: {
+        items: [
+          makeReport({ kind: "ClusterRole", name: "unsupported-kind-role", checks: [{ checkID: "KSV041", success: true }] }),
+        ],
+      },
+      [TRIVY + "clusterinfraassessmentreports"]: {
+        items: [
+          makeReport({ kind: "Node", name: "narwhal-master-1", checks: [{ checkID: "KCV0073", success: true }] }),
+        ],
+      },
+      [TRIVY + "clustercompliancereports"]: {
+        items: [{
+          metadata: { name: "scope-check-fw", creationTimestamp: "2026-11-25T00:00:00Z" },
+          spec: {
+            compliance: {
+              id: "scope-check-fw",
+              title: "Scope Preservation",
+              controls: [
+                { id: "W-CMD", name: "Worker command nodeType", severity: "HIGH", checks: [{ id: "AVD-KCV-0073" }], commands: [{ id: "CMD-0026", nodeType: "worker" }] },
+                { id: "W-CTRL", name: "Worker control nodeType", severity: "HIGH", nodeType: "worker", checks: [{ id: "AVD-KCV-0073" }] },
+                { id: "M-ANY", name: "Control applicable to master/worker", severity: "HIGH", checks: [{ id: "AVD-KCV-0073" }], commands: [{ id: "CMD-0026" }] },
+                { id: "EXCL-NS", name: "Only excluded namespace Role pass", severity: "HIGH", checks: [{ id: "AVD-KSV-0048" }] },
+                { id: "SCOPE-NS", name: "KSV110 default-only check with dev pass", severity: "MEDIUM", checks: [{ id: "AVD-KSV-0110" }] },
+                { id: "UNSUP-KIND", name: "RBAC ClusterRole omitted from supportedConfigAuditKinds", severity: "CRITICAL", checks: [{ id: "AVD-KSV-0041" }] },
+              ],
+            },
+          },
+          status: {
+            updateTimestamp: "2026-11-25T00:00:00Z",
+            summary: { passCount: 6, failCount: 0 },
+            detailReport: {
+              results: [
+                { id: "W-CMD", name: "Worker command nodeType", severity: "HIGH", checks: [{ checkID: "", success: true }] },
+                { id: "W-CTRL", name: "Worker control nodeType", severity: "HIGH", checks: [{ checkID: "", success: true }] },
+                { id: "M-ANY", name: "Control applicable to master/worker", severity: "HIGH", checks: [{ checkID: "", success: true }] },
+                { id: "EXCL-NS", name: "Only excluded namespace Role pass", severity: "HIGH", checks: [{ checkID: "", success: true }] },
+                { id: "SCOPE-NS", name: "KSV110 default-only check with dev pass", severity: "MEDIUM", checks: [{ checkID: "", success: true }] },
+                { id: "UNSUP-KIND", name: "RBAC ClusterRole omitted from supportedConfigAuditKinds", severity: "CRITICAL", checks: [{ checkID: "", success: true }] },
+              ],
+            },
+          },
+        }],
+      },
+    }))
+
+    const detail = await getComplianceFrameworkDetail("scope-check-fw")
+    expect(detail).not.toBeNull()
+    expect(detail!.reportTestedPassCount).toBe(1)
+    expect(detail!.evaluatedPassCount).toBe(1)
+    expect(detail!.notEvaluatedCount).toBe(5)
+
+    const byId = new Map(detail!.controls.map((c) => [c.id, c]))
+    expect(byId.get("W-CMD")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type" })
+    expect(byId.get("W-CMD")?.testedByReport).toBeUndefined()
+    expect(byId.get("W-CTRL")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "missing_node_type" })
+    expect(byId.get("W-CTRL")?.testedByReport).toBeUndefined()
+    expect(byId.get("M-ANY")).toMatchObject({ evaluationState: "passed", testedByReport: true, passCount: 1 })
+    expect(byId.get("EXCL-NS")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "unsupported_kind" })
+    expect(byId.get("SCOPE-NS")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "no_report_in_scope_namespace" })
+    expect(byId.get("UNSUP-KIND")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "unsupported_kind" })
+
+    // 2. Excluded-namespace-only ConfigAudit pass stays excluded_namespace (not tested-passed).
+    cache.clear()
+    installRoutes(baseRoutes({
+      [TRIVY + "configauditreports"]: {
+        items: [
+          makeReport({ namespace: "trivy-system", kind: "Deployment", name: "excluded-app", checks: [{ checkID: "KSV001", success: true }] }),
+        ],
+      },
+      [TRIVY + "clustercompliancereports"]: {
+        items: [{
+          metadata: { name: "excl-ns-fw", creationTimestamp: "2026-11-25T00:00:00Z" },
+          spec: {
+            compliance: {
+              id: "excl-ns-fw",
+              title: "Excluded NS Only",
+              controls: [
+                { id: "EXCL-CAR", name: "Only excluded namespace pass", severity: "HIGH", checks: [{ id: "AVD-KSV-0001" }] },
+              ],
+            },
+          },
+          status: {
+            updateTimestamp: "2026-11-25T00:00:00Z",
+            summary: { passCount: 1, failCount: 0 },
+            detailReport: {
+              results: [
+                { id: "EXCL-CAR", name: "Only excluded namespace pass", severity: "HIGH", checks: [{ checkID: "", success: true }] },
+              ],
+            },
+          },
+        }],
+      },
+    }))
+    const exclDetail = await getComplianceFrameworkDetail("excl-ns-fw")
+    expect(exclDetail!.controls[0]).toMatchObject({
+      id: "EXCL-CAR",
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "excluded_namespace",
+    })
+    expect(exclDetail!.controls[0].testedByReport).toBeUndefined()
+
+    // 2. Mixed cluster (master + worker): only master has KCV0073 success:true, worker report has no pass record ->
+    // worker-only control must NOT count master's pass (stays infra_no_per_check_evidence, NOT tested-passed).
+    cache.clear()
+    installRoutes(baseRoutes({
+      "/api/v1/nodes": {
+        items: [
+          { metadata: { name: "narwhal-master-1", labels: { "node-role.kubernetes.io/control-plane": "" } } },
+          { metadata: { name: "narwhal-worker-1", labels: {} } },
+        ],
+      },
+      [TRIVY + "clusterinfraassessmentreports"]: {
+        items: [
+          makeReport({ kind: "Node", name: "narwhal-master-1", checks: [{ checkID: "KCV0073", success: true }] }),
+          makeReport({ kind: "Node", name: "narwhal-worker-1", checks: [] }),
+        ],
+      },
+      [TRIVY + "clustercompliancereports"]: {
+        items: [{
+          metadata: { name: "mixed-nodes-fw", creationTimestamp: "2026-11-25T00:00:00Z" },
+          spec: {
+            compliance: {
+              id: "mixed-nodes-fw",
+              title: "Mixed Nodes",
+              controls: [
+                { id: "W-ONLY", name: "Worker-only KCV0073", severity: "HIGH", nodeType: "worker", checks: [{ id: "AVD-KCV-0073" }] },
+              ],
+            },
+          },
+          status: {
+            updateTimestamp: "2026-11-25T00:00:00Z",
+            summary: { passCount: 1, failCount: 0 },
+            detailReport: {
+              results: [
+                { id: "W-ONLY", name: "Worker-only KCV0073", severity: "HIGH", checks: [{ checkID: "", success: true }] },
+              ],
+            },
+          },
+        }],
+      },
+    }))
+
+    const mixed = await getComplianceFrameworkDetail("mixed-nodes-fw")
+    expect(mixed!.controls[0]).toMatchObject({
+      id: "W-ONLY",
+      evaluationState: "not_evaluated",
+      notEvaluatedReason: "infra_no_per_check_evidence",
+    })
+    expect(mixed!.controls[0].testedByReport).toBeUndefined()
+  })
 })

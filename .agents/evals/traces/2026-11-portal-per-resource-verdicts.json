@@ -35,17 +35,18 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Recorded D-COMPLIANCE-VERDICT-SOURCE in portal/src/lib/compliance.ts. Added complianceK8sListPaged/tryComplianceK8sListPaged (limit=200, metadata.continue, single 410 restart, fail-closed on truncation) across per-resource report lists and ReplicaSets. Replaced detailReport.results[].checks verdict parsing with per-resource report joins (controlEvidenceFailures + family-isolated controlEvidencePasses) keyed by spec.compliance.controls[].checks[].id normalized via resolveCanonicalCheckId (including KSV-0001/KCV-0033 without colliding KSV0012/KSV012). Added optional testedByReport, reportTestedPassCount, and testedPassCount (omitted when 0 so 0.25.0 output is byte-compatible) and wired UI tested-pass display."
+      "summary": "Recorded D-COMPLIANCE-VERDICT-SOURCE in portal/src/lib/compliance.ts. Added complianceK8sListPaged/tryComplianceK8sListPaged (limit=200, metadata.continue, single 410 restart, fail-closed on truncation) across per-resource report lists and ReplicaSets. Replaced detailReport.results[].checks verdict parsing with per-resource report joins (controlEvidenceFailures + scope-restricted controlEvidencePasses) keyed by spec.compliance.controls[].checks[].id normalized via resolveCanonicalCheckId (including KSV-0001/KCV-0033 without colliding KSV0012/KSV012). Added optional testedByReport, reportTestedPassCount, and testedPassCount (omitted when 0 so 0.25.0 output is byte-compatible) and wired UI tested-pass display. Fix round (after R1 independent review): (1) extracted resolveEffectiveNodeTypes + inScopeReportsForPasses so controlEvidencePasses counts passes only from in-scope reports matching family, scanner, kinds, namespaces, and nodeType/commands (preserving missing_node_type, excluded_namespace, no_report_in_scope_namespace, unsupported_kind, and mixed-family G2 scope checks); (2) updated classifyNonFailingControl so a control with >=1 in-scope explicit success:true and 0 failures on any mapped check is tested-passed even when CCR detailReport is absent and another in-scope mapped check has no record."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Portal tsc --noEmit, eslint, full Vitest suite (200 files / 2836 tests including compliance-verdict-source.test.ts fixtures a-f + pagination), read-only live kubectl proxy comparison as system:serviceaccount:devtools:narwhal-portal against portal-sa-1.1.27.json across all 5 frameworks, repo make test (full static regression suite), make validate, and markdownlint-changed.py. NOT covered: live cluster running trivy-operator 0.36.1 (Phase 2).",
+      "scope": "Fix-round verification: Portal tsc --noEmit, eslint, full Vitest suite (200 files / 2838 tests including compliance-verdict-source.test.ts fixtures a-h + pagination covering multi-check absent-detail and worker-only/out-of-scope pass filtering), read-only live kubectl proxy comparison on port 8072 as system:serviceaccount:devtools:narwhal-portal against portal-sa-1.1.27.json across all 5 frameworks, repo make test (full static regression suite incl. R387/R392/R393 mutation checks), make validate, and markdownlint-changed.py. NOT covered: live cluster running trivy-operator 0.36.1 (Phase 2).",
       "evidence": [
-        "cmd:cd portal && pnpm exec tsc --noEmit && pnpm lint && pnpm exec vitest run -> exit 0, 200 files passed, 2836 tests passed, 0 failed",
-        "live:K8S_API_SERVER=http://127.0.0.1:8071 (system:serviceaccount:devtools:narwhal-portal) getComplianceFrameworks() vs portal-sa-1.1.27.json -> ALL_COUNT_FIELDS_EQUAL=True across all 5 frameworks (k8s-cis-1.23, k8s-kisa-1.0, k8s-nsa-1.0, k8s-pss-baseline-0.1, k8s-pss-restricted-0.1)",
-        "cmd:make test -> passed 511 failed 0 warnings 3",
+        "cmd:cd portal && pnpm exec vitest run src/lib/compliance-verdict-source.test.ts (before fix) -> exit 1, 2 failed (reproduced both R1 MAJOR findings in fixtures g and h)",
+        "cmd:cd portal && pnpm exec tsc --noEmit && pnpm lint && pnpm exec vitest run -> exit 0, 200 files passed, 2838 tests passed, 0 failed",
+        "live:K8S_API_SERVER=http://127.0.0.1:8072 (system:serviceaccount:devtools:narwhal-portal) getComplianceFrameworks() vs portal-sa-1.1.27.json -> FRAMEWORKS_COMPARED=5 DIFF_COUNT=0 ALL_COUNT_FIELDS_EQUAL=True across all 5 frameworks (k8s-cis-1.23, k8s-kisa-1.0, k8s-nsa-1.0, k8s-pss-baseline-0.1, k8s-pss-restricted-0.1)",
+        "cmd:make test -> passed 511 failed 0 warnings 3 (R387 16 mutations, R392 12 mutations, R393 12 mutations all PASS)",
         "cmd:make validate -> exit 0",
         "cmd:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0"
       ]
@@ -53,7 +54,7 @@
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Portal derives compliance framework verdicts from paginated per-resource Trivy reports via spec.compliance.controls[].checks[].id, verified with Vitest fixtures (a)-(f), full static regression suite, and read-only live cluster parity on trivy-operator 0.25.0. Live trivy-operator 0.36.1 verification remains Phase 2."
+      "summary": "Portal derives compliance framework verdicts from paginated per-resource Trivy reports via spec.compliance.controls[].checks[].id with in-scope pass filtering and multi-check absent-record handling (fix round resolved both R1 MAJOR findings), verified with Vitest fixtures (a)-(h), full static regression suite, and read-only live cluster parity on trivy-operator 0.25.0. Live trivy-operator 0.36.1 verification remains Phase 2."
     },
     {
       "id": "e6",

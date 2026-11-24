@@ -39,7 +39,7 @@ function kisaReasonLabel(key: KisaReasonKey, t: ReturnType<typeof useT>): string
     case "compliance.kisa.reason.apiUnavailable": return t("compliance.kisa.reason.apiUnavailable")
     case "compliance.kisa.reason.listTruncated": return t("compliance.kisa.reason.listTruncated")
     case "compliance.kisa.reason.resourceMissing": return t("compliance.kisa.reason.resourceMissing")
-    case "compliance.kisa.reason.etcdIsolatedTls": return t("compliance.kisa.reason.etcdIsolatedTls")
+    case "compliance.kisa.reason.etcdNoTlsBaseline": return t("compliance.kisa.reason.etcdNoTlsBaseline")
     case "compliance.kisa.reason.etcdIsolatedPlainHttp": return t("compliance.kisa.reason.etcdIsolatedPlainHttp")
     case "compliance.kisa.reason.etcdPolicyMissing": return t("compliance.kisa.reason.etcdPolicyMissing")
     case "compliance.kisa.reason.etcdPolicyBroad": return t("compliance.kisa.reason.etcdPolicyBroad")

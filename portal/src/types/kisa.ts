@@ -8,7 +8,7 @@ export type KisaReasonKey =
   | "compliance.kisa.reason.apiUnavailable"
   | "compliance.kisa.reason.listTruncated"
   | "compliance.kisa.reason.resourceMissing"
-  | "compliance.kisa.reason.etcdIsolatedTls"
+  | "compliance.kisa.reason.etcdNoTlsBaseline"
   | "compliance.kisa.reason.etcdIsolatedPlainHttp"
   | "compliance.kisa.reason.etcdPolicyMissing"
   | "compliance.kisa.reason.etcdPolicyBroad"

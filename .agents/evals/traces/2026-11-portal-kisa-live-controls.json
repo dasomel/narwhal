@@ -58,20 +58,20 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Closed round-7 and round-8 closed-world gaps: (1) Canonicalizer audit (`kisa-policy-canonical.mjs`) hashing all top-level fields outside explicit non-semantic allow-list {apiVersion, kind, metadata, status} (covering both spec and specs[] on CiliumNetworkPolicy/CiliumClusterwideNetworkPolicy and unknown future fields), plus empty default-deny podSelector assertion in gen-kisa-policy-baseline.mjs; (2) ETCD-02 workload identity (`etcd02Workload`) and exact `matchesLabelSelector` verification against running template labels (no `{app:'apisix-etcd'}` fallback; mismatch => warn 'reviewed policy does not select the running etcd pods') and `ciliumPolicySelectsLabels` covering both `spec` and `specs[]`; (3) Read-only `list` on `cilium.io/ciliumclusterwidenetworkpolicies` on ClusterRole narwhal-portal + `clusterwidePolicies` baseline (`allow-ambient-kubelet-probes`) enforced in both ETCD-02 and NET-01 (warn 'unreviewed cluster-wide policy present' / 403 => manual), plus known-limits paragraph in `docs/common/compliance-hardening.md`."
+      "summary": "Closed round-9 closed-world gaps (D-KISA-ETCD02-NO-PASS): (1) Removed the CLI TLS-flag pass path and Cilium selector filtering from ETCD-02 (`checkEtcd02`), requiring every NetworkPolicy and CiliumNetworkPolicy in `platform-system` to equal the baseline digest (`unreviewed policy present in namespace`), reporting CLI flags as facts only (`--config-file` -> `flags may be overridden by the config file; not evaluated`), and documenting that the pass path will be added together with etcd TLS as a baseline digest of the reviewed workload spec; (2) Updated NET-01 (`checkNet01`) so any unreviewed/drifted CCNP sets covered namespaces to `0/5` (`unreviewed cluster-wide policy present: <names>`); (3) Fixed `matchesLabelSelector` so `null`/`undefined` selects nothing (`false`) while `{}` selects everything (`true`), and removed dead `ciliumRuleSelectsLabels`/`ciliumPolicySelectsLabels`."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Portal typecheck/lint/vitest/build/harness-rules, all check-portal-*.py --mutation-verify (incl. R378, R395, R397, R399), make validate, make test, make lint, and read-only live measurement via kubectl proxy (admin rights).",
-      "summary": "Live after-r9 measurement via kubectl proxy (admin rights) yielded pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r9.json): KISA-NET-01 warn (4/5 baseline-matched across database/iam/monitoring/storage; devtools uncovered + 7 unreviewed argocd-*-network-policy objects; allow-ambient-kubelet-probes CCNP matches baseline), KISA-ETCD-02 warn (baseline apisix-etcd-ingress-policy SHA-256 and podSelector matched, CCNP matched, plain HTTP), KISA-OBS-01 warn (null receiver only), and KISA-RBAC-01/02 unchanged.",
+      "scope": "Portal typecheck/lint/vitest/build/harness-rules, all check-portal-*.py --mutation-verify (incl. R378, R395, R397, R399), make validate, make test, and read-only live measurement via kubectl proxy (admin rights).",
+      "summary": "Live after-r10 measurement via kubectl proxy (admin rights) yielded pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r10.json): KISA-NET-01 warn (4/5 baseline-matched across database/iam/monitoring/storage; devtools uncovered + 7 unreviewed argocd-*-network-policy objects; allow-ambient-kubelet-probes CCNP matches baseline), KISA-ETCD-02 warn (all platform-system policies [apisix-admin-ingress-policy, apisix-etcd-ingress-policy] and CCNP matched, podSelector matched, plain HTTP; pass path deferred to reviewed TLS workload spec baseline digest), KISA-OBS-01 warn (null receiver only), and KISA-RBAC-01/02 unchanged.",
       "evidence": [
-        "test:live measurement via kubectl proxy (admin rights) getKisaControls() after r9 -> summary pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r9.json)",
+        "test:live measurement via kubectl proxy (admin rights) getKisaControls() after r10 -> summary pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r10.json)",
         "test:cd portal && pnpm typecheck && pnpm lint && pnpm exec vitest run && pnpm build && bash scripts/harness-rules.sh",
         "test:python3 scripts/test/lib/check-portal-replicasets-rbac.py --mutation-verify -> PASS (31 mutations rejected)",
         "test:python3 scripts/test/lib/check-portal-exact-acceptance.py --mutation-verify -> PASS (37 mutations rejected)",
-        "test:python3 scripts/test/lib/check-portal-kisa-live-controls.py --mutation-verify -> PASS (74 mutations rejected)",
+        "test:python3 scripts/test/lib/check-portal-kisa-live-controls.py --mutation-verify -> PASS (76 mutations rejected)",
         "test:python3 scripts/test/lib/check-portal-kisa-policy-baseline.py --mutation-verify -> PASS (13 mutations + 16 behavioral checks rejected)"
       ]
     },

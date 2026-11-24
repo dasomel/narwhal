@@ -627,7 +627,7 @@ export async function checkNet01(baseline: KisaPolicyBaseline = KISA_ADM_BASELIN
       }
     }
 
-    if (hasBaselineDefaultDeny && nsUnreviewed.length === 0) {
+    if (unreviewedClusterwide.length === 0 && hasBaselineDefaultDeny && nsUnreviewed.length === 0) {
       covered.push(ns)
     } else {
       uncovered.push(ns)
@@ -655,6 +655,14 @@ export async function checkNet01(baseline: KisaPolicyBaseline = KISA_ADM_BASELIN
     )
   }
   if (covered.length > 0 || unreviewedByNs.length > 0 || unreviewedClusterwide.length > 0) {
+    if (unreviewedClusterwide.length > 0) {
+      return makeOutcome(
+        "warn",
+        "compliance.kisa.reason.netDenyPartial",
+        `기준선 default-deny 일치 0/${KISA_NET01_NAMESPACES.length}건 (미검토 클러스터 전역 정책 존재로 전 네임스페이스 미충족: ${uncovered.join(", ")}) · 미검토 클러스터 전역 정책 존재(unreviewed cluster-wide policy present): ${unreviewedClusterwide.join(", ")}${unreviewedNoteKo}`,
+        `0/${KISA_NET01_NAMESPACES.length} namespace(s) covered (uncovered: ${uncovered.join(", ")}); unreviewed cluster-wide policy present: ${unreviewedClusterwide.join(", ")}${unreviewedNoteEn}`,
+      )
+    }
     return makeOutcome(
       "warn",
       "compliance.kisa.reason.netDenyPartial",

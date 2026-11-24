@@ -109,9 +109,12 @@ describe("KISA-ETCD-02 live evaluation", () => {
   const ccnpPolicyPath = path.resolve(__dirname, "../../../gitops/resources/ambient-kubelet-probes-ccnp.yaml")
   const baselineCcnp = yaml.load(fs.readFileSync(ccnpPolicyPath, "utf8")) as KisaRawCiliumClusterwideNetworkPolicy
 
-  it("matchesLabelSelector implements exact Kubernetes label-selector semantics and fails closed on unknown operators", () => {
+  it("matchesLabelSelector implements exact Kubernetes metav1.LabelSelectorAsSelector semantics (null/undefined -> nothing, {} -> everything, unknown op -> false)", () => {
     expect(matchesLabelSelector({}, {})).toBe(true)
-    expect(matchesLabelSelector(undefined, { app: "apisix-etcd" })).toBe(true)
+    expect(matchesLabelSelector({}, { app: "apisix-etcd" })).toBe(true)
+    expect(matchesLabelSelector(null, { app: "apisix-etcd" })).toBe(false)
+    expect(matchesLabelSelector(undefined, { app: "apisix-etcd" })).toBe(false)
+    expect(matchesLabelSelector(undefined, {})).toBe(false)
     expect(matchesLabelSelector({ matchLabels: { app: "apisix-etcd" } }, { app: "apisix-etcd", extra: "1" })).toBe(true)
     expect(matchesLabelSelector({ matchLabels: { app: "apisix-etcd" } }, { app: "etcd-v2" })).toBe(false)
     expect(matchesLabelSelector({ matchLabels: { app: "apisix-etcd" } }, {})).toBe(false)
@@ -127,13 +130,15 @@ describe("KISA-ETCD-02 live evaluation", () => {
     expect(matchesLabelSelector({ matchExpressions: [{ key: "app", operator: "UnknownOp", values: ["apisix-etcd"] }] }, { app: "apisix-etcd" })).toBe(false)
   })
 
-  it("passes only when baseline NetworkPolicy matches SHA-256, selects running etcd pods, baseline CCNP matches, no unreviewed policy selects etcd, and running template has TLS+auth", async () => {
+  it("never returns pass even with TLS flags when baseline NetworkPolicy and CCNP match (D-KISA-ETCD02-NO-PASS)", async () => {
     mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: etcdDepTls })
     mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [strictPolicy] })
     mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValue({ status: "ok", data: [baselineCcnp] })
     const r = await checkEtcd02()
-    expect(r.status).toBe("pass")
-    expect(r.reasonKey).toBe("compliance.kisa.reason.etcdIsolatedTls")
+    expect(r.status).toBe("warn")
+    expect(r.reasonKey).toBe("compliance.kisa.reason.etcdNoTlsBaseline")
+    expect(r.detailLocalized.en).toContain("the pass path will be added together with etcd TLS as a baseline digest of the reviewed workload spec")
+    expect(r.detailLocalized.ko).toContain("pass 경로가 추가될 예정")
   })
 
   it("warns when baseline NetworkPolicy matches SHA-256 but etcd listens on plain HTTP", async () => {
@@ -143,9 +148,10 @@ describe("KISA-ETCD-02 live evaluation", () => {
     expect(r.status).toBe("warn")
     expect(r.reasonKey).toBe("compliance.kisa.reason.etcdIsolatedPlainHttp")
     expect(r.detailLocalized.en).toContain("etcd client TLS/auth not enabled")
+    expect(r.detailLocalized.en).toContain("the pass path will be added together with etcd TLS as a baseline digest of the reviewed workload spec")
   })
 
-  it("fails when baseline NetworkPolicy is missing, and warns on one-field deviation or unreviewed policy selecting etcd pods", async () => {
+  it("fails when baseline NetworkPolicy is missing, and warns on one-field deviation or ANY unreviewed/drifted policy in platform-system", async () => {
     mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: etcdDepTls })
     mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [] })
     const missing = await checkEtcd02()
@@ -159,8 +165,9 @@ describe("KISA-ETCD-02 live evaluation", () => {
     const devRes = await checkEtcd02()
     expect(devRes.status).toBe("warn")
     expect(devRes.reasonKey).toBe("compliance.kisa.reason.etcdPolicyUnreviewed")
+    expect(devRes.detailLocalized.en).toContain("unreviewed policy present in namespace platform-system")
 
-    // Extra unreviewed policy selecting etcd pods alongside valid baseline -> warn naming it
+    // Extra unreviewed policy in platform-system alongside valid baseline -> warn naming it
     mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({
       status: "ok",
       data: [
@@ -176,7 +183,7 @@ describe("KISA-ETCD-02 live evaluation", () => {
     expect(extraRes.reasonKey).toBe("compliance.kisa.reason.etcdPolicyUnreviewed")
     expect(extraRes.detail).toContain("extra-etcd-open")
 
-    // Extra unreviewed CiliumNetworkPolicy with empty endpointSelector selecting etcd pods -> warn
+    // Extra unreviewed CiliumNetworkPolicy with empty endpointSelector -> warn
     mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [strictPolicy] })
     mockGetKisaNamespacedCiliumNetworkPolicies.mockResolvedValue({
       status: "ok",
@@ -187,12 +194,15 @@ describe("KISA-ETCD-02 live evaluation", () => {
     expect(cnpRes.reasonKey).toBe("compliance.kisa.reason.etcdPolicyUnreviewed")
     expect(cnpRes.detail).toContain("cnp-all")
 
-    // Unreviewed policy targeting unrelated pods does NOT block pass
+    // ANY unreviewed policy in platform-system (even targeting another label) -> warn naming it
     mockGetKisaNamespacedCiliumNetworkPolicies.mockResolvedValue({
       status: "ok",
       data: [{ metadata: { name: "cnp-other", namespace: "platform-system" }, spec: { endpointSelector: { matchLabels: { app: "other" } } } }],
     })
-    expect((await checkEtcd02()).status).toBe("pass")
+    const otherCnpRes = await checkEtcd02()
+    expect(otherCnpRes.status).toBe("warn")
+    expect(otherCnpRes.reasonKey).toBe("compliance.kisa.reason.etcdPolicyUnreviewed")
+    expect(otherCnpRes.detail).toContain("cnp-other")
   })
 
   it("returns manual with reason on 403 forbidden (Deployment or CiliumNetworkPolicy) or missing Deployment", async () => {
@@ -268,7 +278,7 @@ describe("KISA-ETCD-02 live evaluation", () => {
     const emptyFlagsDep: KisaRawDeployment = {
       metadata: { name: "apisix-etcd", namespace: "platform-system", generation: 1 },
       spec: {
-        replicas: 0,
+        replicas: 1,
         template: {
           metadata: { labels: { app: "apisix-etcd" } },
           spec: {
@@ -286,12 +296,13 @@ describe("KISA-ETCD-02 live evaluation", () => {
           },
         },
       },
-      status: { observedGeneration: 1, replicas: 0, updatedReplicas: 0, readyReplicas: 0, availableReplicas: 0 },
+      status: { observedGeneration: 1, replicas: 1, updatedReplicas: 1, readyReplicas: 1, availableReplicas: 1 },
     }
     mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: emptyFlagsDep })
     const emptyRes = await checkEtcd02()
     expect(emptyRes.status).toBe("warn")
-    expect(emptyRes.reasonKey).toBe("compliance.kisa.reason.etcdIsolatedPlainHttp")
+    expect(emptyRes.reasonKey).toBe("compliance.kisa.reason.etcdNoTlsBaseline")
+    expect(emptyRes.detailLocalized.en).not.toContain("--cert-file/--key-file")
 
     // Reproduction (R8): paused Deployment edited to TLS template with updatedReplicas=0, old plaintext readyReplicas=1 MUST NOT pass
     const pausedRolloutDep: KisaRawDeployment = {
@@ -435,6 +446,60 @@ describe("KISA-ETCD-02 live evaluation", () => {
     expect(ccnpForbRes.status).toBe("manual")
     expect(ccnpForbRes.partial).toBe(true)
     expect(ccnpForbRes.reasonKey).toBe("compliance.kisa.reason.apiForbidden")
+  })
+
+  it("reproduction (R10): rejects Cilium automatic serviceaccount selector CNP and --config-file alongside TLS flags (never pass)", async () => {
+    mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: etcdDepTls })
+    mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [strictPolicy] })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValue({ status: "ok", data: [baselineCcnp] })
+
+    // Reproduction (R9/R10 MAJOR 1): CNP using Cilium automatic io.cilium.k8s.policy.serviceaccount label + fromEntities:["all"]
+    mockGetKisaNamespacedCiliumNetworkPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [{
+        metadata: { name: "sa-open-cnp", namespace: "platform-system" },
+        spec: {
+          endpointSelector: { matchLabels: { "io.cilium.k8s.policy.serviceaccount": "default" } },
+          ingress: [{ fromEntities: ["all"] }],
+        },
+      }],
+    })
+    const saCnpRes = await checkEtcd02()
+    expect(saCnpRes.status).toBe("warn")
+    expect(saCnpRes.reasonKey).toBe("compliance.kisa.reason.etcdPolicyUnreviewed")
+    expect(saCnpRes.detailLocalized.en).toContain("unreviewed policy present in namespace platform-system")
+    expect(saCnpRes.detail).toContain("CiliumNetworkPolicy/platform-system/sa-open-cnp")
+
+    // Reproduction (R9/R10 MAJOR 3): --config-file alongside TLS flags -> warn + 'flags may be overridden by the config file; not evaluated'
+    mockGetKisaNamespacedCiliumNetworkPolicies.mockResolvedValue({ status: "ok", data: [] })
+    const configFileDep: KisaRawDeployment = {
+      ...etcdDepTls,
+      spec: {
+        ...etcdDepTls.spec,
+        template: {
+          ...etcdDepTls.spec!.template,
+          spec: {
+            containers: [{
+              name: "etcd",
+              command: [
+                "etcd",
+                "--config-file=/etc/etcd/plain.conf.yml",
+                "--listen-client-urls=https://0.0.0.0:2379",
+                "--client-cert-auth",
+                "--cert-file=/tls/tls.crt",
+                "--key-file=/tls/tls.key",
+                "--trusted-ca-file=/tls/ca.crt",
+              ],
+            }],
+          },
+        },
+      },
+    }
+    mockGetKisaDeployment.mockResolvedValueOnce({ status: "ok", data: configFileDep })
+    const cfgRes = await checkEtcd02()
+    expect(cfgRes.status).toBe("warn")
+    expect(cfgRes.reasonKey).toBe("compliance.kisa.reason.etcdNoTlsBaseline")
+    expect(cfgRes.detailLocalized.en).toContain("flags may be overridden by the config file; not evaluated")
   })
 })
 

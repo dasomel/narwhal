@@ -129,15 +129,16 @@ const hasOwn = (obj: Record<string, string>, key: string): boolean =>
 
 /**
  * Evaluates exact Kubernetes `metav1.LabelSelector` semantics against a Pod's label map.
- * Unknown operators fail closed (return false) so an unrecognized selector never counts as matched.
+ * Matches `k8s.io/apimachinery/pkg/apis/meta/v1.LabelSelectorAsSelector`:
+ * `null`/`undefined` selects nothing (`false`), `{}` selects everything (`true`),
+ * and unknown operators fail closed (`false`).
  */
 export function matchesLabelSelector(
   selector: K8sLabelSelector | null | undefined,
   labels: Record<string, string> | null | undefined,
 ): boolean {
   const safeLabels = labels && typeof labels === "object" && !Array.isArray(labels) ? labels : {}
-  if (!selector) return true
-  if (typeof selector !== "object" || Array.isArray(selector)) return false
+  if (!selector || typeof selector !== "object" || Array.isArray(selector)) return false
   for (const [k, v] of Object.entries(selector.matchLabels ?? {})) {
     if (!hasOwn(safeLabels, k) || safeLabels[k] !== v) return false
   }
@@ -162,38 +163,6 @@ export function matchesLabelSelector(
   return true
 }
 
-const KNOWN_SELECTOR_OPS = new Set(["In", "NotIn", "Exists", "DoesNotExist"])
-
-function ciliumRuleSelectsLabels(
-  rule: { endpointSelector?: K8sLabelSelector } | undefined,
-  labels: Record<string, string>,
-): boolean {
-  if (!rule || typeof rule !== "object" || Array.isArray(rule)) return false
-  const sel = rule.endpointSelector
-  // Fail-closed for unreviewed Cilium rules with unrecognized selector operators.
-  if (sel?.matchExpressions?.some((e) => !KNOWN_SELECTOR_OPS.has(e?.operator))) return true
-  // Cilium labels can be prefixed with k8s: or any: in endpointSelector.
-  const ciliumLabels: Record<string, string> = { ...labels }
-  for (const [k, v] of Object.entries(labels)) {
-    ciliumLabels[`k8s:${k}`] = v
-    ciliumLabels[`any:${k}`] = v
-  }
-  return matchesLabelSelector(sel, ciliumLabels)
-}
-
-function ciliumPolicySelectsLabels(
-  cpol: KisaRawCiliumNetworkPolicy,
-  labels: Record<string, string>,
-): boolean {
-  if (cpol.spec && ciliumRuleSelectsLabels(cpol.spec, labels)) return true
-  if (Array.isArray(cpol.specs)) {
-    for (const rule of cpol.specs) {
-      if (ciliumRuleSelectsLabels(rule, labels)) return true
-    }
-  }
-  return false
-}
-
 export function evaluateClusterwideNetworkPolicies(
   ccnps: KisaRawCiliumClusterwideNetworkPolicy[],
   baseline: KisaPolicyBaseline,
@@ -214,6 +183,13 @@ export function evaluateClusterwideNetworkPolicies(
   return unreviewed.sort()
 }
 
+// D-KISA-ETCD02-NO-PASS: ETCD-02 has no pass path yet (same closed-world stance as SEC-01).
+// Reason: CLI TLS flags cannot prove runtime protection (--config-file overrides CLI flags,
+// ETCD_* env vars can override defaults, and Cilium implicit labels can bypass selector inference),
+// and there is no reviewed known-good shape for a TLS-enabled apisix-etcd workload today (plain HTTP).
+// Cost: even if TLS flags are manually added to apisix-etcd, ETCD-02 stays "warn" with observed facts.
+// Escape hatch: add the reviewed TLS apisix-etcd workload spec digest to kisa-policy-baseline.json
+// together with etcd TLS enablement and gate the pass path on canonical workload spec digest equality.
 export async function checkEtcd02(
   baseline: KisaPolicyBaseline = policyBaselineData as KisaPolicyBaseline,
 ): Promise<KisaCheckOutcome> {
@@ -266,6 +242,9 @@ export async function checkEtcd02(
   }
   const tokens = [...(etcdContainer.command ?? []), ...(etcdContainer.args ?? [])]
 
+  const configFiles = extractFlagValues(tokens, "--config-file")
+  const hasConfigFileFlag =
+    configFiles.length > 0 || tokens.some((t) => t === "--config-file" || t.startsWith("--config-file="))
   const clientUrls = extractFlagValues(tokens, "--listen-client-urls")
     .flatMap((v) => v.split(","))
     .map((v) => v.trim())
@@ -273,12 +252,32 @@ export async function checkEtcd02(
   const hasHttpsClient = clientUrls.length > 0 && clientUrls.every((u) => u.startsWith("https://"))
   const hasCertFiles = extractFlagValues(tokens, "--cert-file").length > 0 && extractFlagValues(tokens, "--key-file").length > 0
   const hasClientAuth = hasEnabledFlag(tokens, "--client-cert-auth") && extractFlagValues(tokens, "--trusted-ca-file").length > 0
-  const tlsAuthEnabled = hasHttpsClient && hasCertFiles && hasClientAuth
+  const hasAnyTlsFlag = hasHttpsClient || hasCertFiles || hasClientAuth
 
-  // D-KISA-CLOSED-WORLD: Verify the reviewed baseline apisix-etcd-ingress-policy digest,
-  // ensure it selects the running etcd workload pods, ensure no non-baseline/drifted
-  // NetworkPolicy or CiliumNetworkPolicy (spec or specs[]) selects the etcd pods, and
-  // ensure every CiliumClusterwideNetworkPolicy matches the reviewed baseline.
+  let observedFactsKo: string
+  let observedFactsEn: string
+  if (hasConfigFileFlag) {
+    const cfgLabel = configFiles.join(", ") || "지정됨"
+    const cfgLabelEn = configFiles.join(", ") || "present"
+    observedFactsKo = `--config-file(${cfgLabel}) 관측 — 설정 파일이 CLI 인자를 덮어쓸 수 있어 플래그 미평가 (관측 URL: ${clientUrls.join(", ") || "기본값"})`
+    observedFactsEn = `--config-file (${cfgLabelEn}) present — flags may be overridden by the config file; not evaluated (observed URLs: ${clientUrls.join(", ") || "default"})`
+  } else if (hasAnyTlsFlag) {
+    const observedFlags: string[] = []
+    if (clientUrls.length > 0) observedFlags.push(`--listen-client-urls=${clientUrls.join(",")}`)
+    if (hasCertFiles) observedFlags.push("--cert-file/--key-file")
+    if (hasClientAuth) observedFlags.push("--client-cert-auth/--trusted-ca-file")
+    observedFactsKo = `관측된 CLI 플래그(${observedFlags.join(", ")}) — 검토된 TLS 워크로드 스펙 기준선 다이제스트 없음`
+    observedFactsEn = `observed CLI flags (${observedFlags.join(", ")}) — no reviewed TLS workload spec baseline digest`
+  } else {
+    observedFactsKo = `etcd 클라이언트 TLS·인증 미활성화 (평문 HTTP: ${clientUrls.join(", ") || "기본값"})`
+    observedFactsEn = `etcd client TLS/auth not enabled (plain HTTP: ${clientUrls.join(", ") || "default"})`
+  }
+
+  // D-KISA-CLOSED-WORLD: Verify the reviewed baseline apisix-etcd-ingress-policy exists and
+  // selects the running etcd workload pods, require EVERY NetworkPolicy and CiliumNetworkPolicy
+  // in etcdWorkload.namespace (same rule as NET-01, no selector filtering) to match the
+  // baseline canonical SHA-256 digest, and require every CiliumClusterwideNetworkPolicy to
+  // match the reviewed baseline.
   const policies: KisaRawNetworkPolicy[] = npRes.data
   const ciliumPolicies: KisaRawCiliumNetworkPolicy[] = cnpRes.data
   const clusterwidePolicies: KisaRawCiliumClusterwideNetworkPolicy[] = ccnpRes.data
@@ -287,35 +286,23 @@ export async function checkEtcd02(
     return makeOutcome(
       "fail",
       "compliance.kisa.reason.etcdPolicyMissing",
-      `기준선 보호 정책(${etcdBaselineEntry.name}) 없음 (${tlsAuthEnabled ? "TLS·인증 설정" : "etcd 클라이언트 TLS·인증 미활성화 (평문 HTTP)"})`,
-      `Baseline isolation policy (${etcdBaselineEntry.name}) missing (${tlsAuthEnabled ? "client TLS/auth configured" : "etcd client TLS/auth not enabled (plain HTTP)"})`,
+      `기준선 보호 정책(${etcdBaselineEntry.name}) 없음 (${observedFactsKo})`,
+      `Baseline isolation policy (${etcdBaselineEntry.name}) missing (${observedFactsEn})`,
     )
   }
 
+  const nsPolicies: Array<{ kind: "NetworkPolicy" | "CiliumNetworkPolicy"; name: string; raw: unknown }> = [
+    ...policies.map((p) => ({ kind: "NetworkPolicy" as const, name: p.metadata?.name ?? "unknown", raw: p })),
+    ...ciliumPolicies.map((c) => ({ kind: "CiliumNetworkPolicy" as const, name: c.metadata?.name ?? "unknown", raw: c })),
+  ]
   const unreviewedOrDrifted: string[] = []
-  const baselineDigest = computeNetworkPolicyDigest("NetworkPolicy", baselinePolicyObj)
-  if (baselineDigest !== etcdBaselineEntry.specSha256) {
-    unreviewedOrDrifted.push(`${etcdPolicyKey}(differs)`)
-  }
-  for (const pol of policies) {
-    const name = pol.metadata?.name ?? "unknown"
-    const key = `NetworkPolicy/${etcdWorkload.namespace}/${name}`
-    if (key === etcdPolicyKey) continue
+  for (const pol of nsPolicies) {
+    const key = `${pol.kind}/${etcdWorkload.namespace}/${pol.name}`
     const entry = baseline.networkPolicies?.[key]
-    const matchesBaseline =
-      Boolean(entry) && computeNetworkPolicyDigest("NetworkPolicy", pol) === entry!.specSha256
-    if (!matchesBaseline && matchesLabelSelector(pol.spec?.podSelector, podLabels)) {
-      unreviewedOrDrifted.push(entry ? `${key}(differs)` : key)
-    }
-  }
-  for (const cpol of ciliumPolicies) {
-    const name = cpol.metadata?.name ?? "unknown"
-    const key = `CiliumNetworkPolicy/${etcdWorkload.namespace}/${name}`
-    const entry = baseline.networkPolicies?.[key]
-    const matchesBaseline =
-      Boolean(entry) && computeNetworkPolicyDigest("CiliumNetworkPolicy", cpol) === entry!.specSha256
-    if (!matchesBaseline && ciliumPolicySelectsLabels(cpol, podLabels)) {
-      unreviewedOrDrifted.push(entry ? `${key}(differs)` : key)
+    if (!entry) {
+      unreviewedOrDrifted.push(key)
+    } else if (computeNetworkPolicyDigest(pol.kind, pol.raw) !== entry.specSha256) {
+      unreviewedOrDrifted.push(`${key}(differs)`)
     }
   }
   const unreviewedClusterwide = evaluateClusterwideNetworkPolicies(clusterwidePolicies, baseline)
@@ -324,8 +311,8 @@ export async function checkEtcd02(
     const partsKo: string[] = []
     const partsEn: string[] = []
     if (unreviewedOrDrifted.length > 0) {
-      partsKo.push(`apisix-etcd 정책이 검토된 기준선과 다르거나 미검토 정책이 etcd 파드를 선택함 (${unreviewedOrDrifted.join(", ")})`)
-      partsEn.push(`apisix-etcd policy differs from the reviewed baseline or unreviewed policy selects etcd pods (${unreviewedOrDrifted.join(", ")})`)
+      partsKo.push(`네임스페이스(${etcdWorkload.namespace})에 미검토/불일치 정책 존재: ${unreviewedOrDrifted.join(", ")}`)
+      partsEn.push(`unreviewed policy present in namespace ${etcdWorkload.namespace}: ${unreviewedOrDrifted.join(", ")}`)
     }
     if (unreviewedClusterwide.length > 0) {
       partsKo.push(`미검토 클러스터 전역 정책 존재(unreviewed cluster-wide policy present): ${unreviewedClusterwide.join(", ")}`)
@@ -334,8 +321,8 @@ export async function checkEtcd02(
     return makeOutcome(
       "warn",
       "compliance.kisa.reason.etcdPolicyUnreviewed",
-      `${partsKo.join(" · ")} · ${tlsAuthEnabled ? "TLS·인증 설정" : "평문 HTTP"}`,
-      `${partsEn.join("; ")}; ${tlsAuthEnabled ? "TLS/auth configured" : "plain HTTP"}`,
+      `${partsKo.join(" · ")} · ${observedFactsKo}`,
+      `${partsEn.join("; ")}; ${observedFactsEn}`,
     )
   }
 
@@ -346,82 +333,80 @@ export async function checkEtcd02(
     return makeOutcome(
       "warn",
       "compliance.kisa.reason.etcdPolicySelectorMismatch",
-      `검토된 정책(${etcdBaselineEntry.name})이 실행 중인 etcd 파드를 선택하지 않음 (${dep.metadata?.namespace ?? "?"}/${dep.metadata?.name ?? "?"}) · ${tlsAuthEnabled ? "TLS·인증 설정" : "평문 HTTP"}`,
-      `reviewed policy does not select the running etcd pods (${etcdBaselineEntry.name} vs ${dep.metadata?.namespace ?? "?"}/${dep.metadata?.name ?? "?"}); ${tlsAuthEnabled ? "TLS/auth configured" : "plain HTTP"}`,
+      `검토된 정책(${etcdBaselineEntry.name})이 실행 중인 etcd 파드를 선택하지 않음 (${dep.metadata?.namespace ?? "?"}/${dep.metadata?.name ?? "?"}) · ${observedFactsKo}`,
+      `reviewed policy does not select the running etcd pods (${etcdBaselineEntry.name} vs ${dep.metadata?.namespace ?? "?"}/${dep.metadata?.name ?? "?"}); ${observedFactsEn}`,
     )
   }
 
-  const isolationNoteKo = `기준선 NetworkPolicy(${etcdBaselineEntry.name}) SHA-256·podSelector 일치 및 미검토 정책(클러스터 전역 포함) 없음`
-  const isolationNoteEn = `Baseline NetworkPolicy (${etcdBaselineEntry.name}) matches SHA-256 and selects running etcd pods with zero unreviewed namespaced/cluster-wide policies`
+  const isolationNoteKo = `기준선 격리 정책(${etcdBaselineEntry.name} 및 ${etcdWorkload.namespace} 전체 NetworkPolicy·CiliumNetworkPolicy·클러스터 전역 CCNP) SHA-256·podSelector 일치`
+  const isolationNoteEn = `Baseline isolation matched (all ${etcdWorkload.namespace} NetworkPolicy/CiliumNetworkPolicy and cluster-wide CCNPs match SHA-256; ${etcdBaselineEntry.name} selects running etcd pods)`
 
-  if (tlsAuthEnabled) {
-    const generation = dep.metadata?.generation
-    const observedGeneration = dep.status?.observedGeneration
-    const specReplicas = dep.spec?.replicas
-    const updatedReplicas = dep.status?.updatedReplicas
-    const readyReplicas = dep.status?.readyReplicas
-    const availableReplicas = dep.status?.availableReplicas
-    const statusReplicas = dep.status?.replicas
+  const generation = dep.metadata?.generation
+  const observedGeneration = dep.status?.observedGeneration
+  const specReplicas = dep.spec?.replicas
+  const updatedReplicas = dep.status?.updatedReplicas
+  const readyReplicas = dep.status?.readyReplicas
+  const availableReplicas = dep.status?.availableReplicas
+  const statusReplicas = dep.status?.replicas
 
-    if (
-      typeof generation !== "number" ||
-      typeof observedGeneration !== "number" ||
-      typeof specReplicas !== "number" ||
-      typeof updatedReplicas !== "number" ||
-      typeof readyReplicas !== "number" ||
-      typeof availableReplicas !== "number"
-    ) {
-      return makeOutcome(
-        "manual",
-        "compliance.kisa.reason.etcdWorkloadNotReady",
-        `${isolationNoteKo} · etcd 클라이언트 TLS·인증 설정 · Deployment generation/rollout 상태 필드 미확인 — 평가 불가`,
-        `${isolationNoteEn}; etcd client TLS/auth configured; Deployment generation/rollout status fields missing — not evaluated`,
-        { live: false },
-      )
-    }
-    if (dep.spec?.paused === true) {
-      return makeOutcome(
-        "warn",
-        "compliance.kisa.reason.etcdWorkloadNotReady",
-        `${isolationNoteKo} · etcd 클라이언트 TLS·인증 설정됨 · Deployment 일시중지(spec.paused=true)로 현재 템플릿 적용 미확인`,
-        `${isolationNoteEn}; etcd client TLS/auth configured; Deployment paused (spec.paused=true) — running template unverified`,
-      )
-    }
-    if (generation !== observedGeneration) {
-      return makeOutcome(
-        "warn",
-        "compliance.kisa.reason.etcdWorkloadNotReady",
-        `${isolationNoteKo} · etcd 클라이언트 TLS·인증 설정됨 · 세대 불일치(generation ${generation} != observedGeneration ${observedGeneration})`,
-        `${isolationNoteEn}; etcd client TLS/auth configured; rollout generation mismatch (generation ${generation} != observedGeneration ${observedGeneration})`,
-      )
-    }
-    if (
-      specReplicas < 1 ||
-      updatedReplicas !== specReplicas ||
-      readyReplicas !== specReplicas ||
-      availableReplicas !== specReplicas ||
-      (statusReplicas !== undefined && statusReplicas !== specReplicas)
-    ) {
-      return makeOutcome(
-        "warn",
-        "compliance.kisa.reason.etcdWorkloadNotReady",
-        `${isolationNoteKo} · etcd 클라이언트 TLS·인증 설정됨 · 워크로드 롤아웃/준비 미완료(updated ${updatedReplicas}, ready ${readyReplicas}, available ${availableReplicas}/${specReplicas})`,
-        `${isolationNoteEn}; etcd client TLS/auth configured; workload rollout/readiness incomplete (updated ${updatedReplicas}, ready ${readyReplicas}, available ${availableReplicas}/${specReplicas})`,
-      )
-    }
+  if (
+    typeof generation !== "number" ||
+    typeof observedGeneration !== "number" ||
+    typeof specReplicas !== "number" ||
+    typeof updatedReplicas !== "number" ||
+    typeof readyReplicas !== "number" ||
+    typeof availableReplicas !== "number"
+  ) {
     return makeOutcome(
-      "pass",
-      "compliance.kisa.reason.etcdIsolatedTls",
-      `${isolationNoteKo} · etcd 클라이언트 TLS·인증(--client-cert-auth) 활성화 및 실행 템플릿 일치(gen ${generation}, updated/ready/available ${readyReplicas}/${specReplicas})`,
-      `${isolationNoteEn}; etcd client TLS and --client-cert-auth active on running template (gen ${generation}, updated/ready/available ${readyReplicas}/${specReplicas})`,
+      "manual",
+      "compliance.kisa.reason.etcdWorkloadNotReady",
+      `${isolationNoteKo} · ${observedFactsKo} · Deployment generation/rollout 상태 필드 미확인 — 평가 불가`,
+      `${isolationNoteEn}; ${observedFactsEn}; Deployment generation/rollout status fields missing — not evaluated`,
+      { live: false },
     )
   }
+  if (dep.spec?.paused === true) {
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.etcdWorkloadNotReady",
+      `${isolationNoteKo} · ${observedFactsKo} · Deployment 일시중지(spec.paused=true)로 현재 템플릿 적용 미확인`,
+      `${isolationNoteEn}; ${observedFactsEn}; Deployment paused (spec.paused=true) — running template unverified`,
+    )
+  }
+  if (generation !== observedGeneration) {
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.etcdWorkloadNotReady",
+      `${isolationNoteKo} · ${observedFactsKo} · 세대 불일치(generation ${generation} != observedGeneration ${observedGeneration})`,
+      `${isolationNoteEn}; ${observedFactsEn}; rollout generation mismatch (generation ${generation} != observedGeneration ${observedGeneration})`,
+    )
+  }
+  if (
+    specReplicas < 1 ||
+    updatedReplicas !== specReplicas ||
+    readyReplicas !== specReplicas ||
+    availableReplicas !== specReplicas ||
+    (statusReplicas !== undefined && statusReplicas !== specReplicas)
+  ) {
+    return makeOutcome(
+      "warn",
+      "compliance.kisa.reason.etcdWorkloadNotReady",
+      `${isolationNoteKo} · ${observedFactsKo} · 워크로드 롤아웃/준비 미완료(updated ${updatedReplicas}, ready ${readyReplicas}, available ${availableReplicas}/${specReplicas})`,
+      `${isolationNoteEn}; ${observedFactsEn}; workload rollout/readiness incomplete (updated ${updatedReplicas}, ready ${readyReplicas}, available ${availableReplicas}/${specReplicas})`,
+    )
+  }
+
+  const reasonKey = (hasConfigFileFlag || hasAnyTlsFlag)
+    ? "compliance.kisa.reason.etcdNoTlsBaseline"
+    : "compliance.kisa.reason.etcdIsolatedPlainHttp"
+  const passNoteKo = "etcd TLS 전환 시 검토된 워크로드 스펙의 기준선 다이제스트와 함께 pass 경로가 추가될 예정"
+  const passNoteEn = "the pass path will be added together with etcd TLS as a baseline digest of the reviewed workload spec"
 
   return makeOutcome(
     "warn",
-    "compliance.kisa.reason.etcdIsolatedPlainHttp",
-    `${isolationNoteKo} · 잔여 위험: etcd 클라이언트 TLS·인증 미활성화 (평문 HTTP: ${clientUrls.join(", ") || "기본값"})`,
-    `${isolationNoteEn}; remaining gap: etcd client TLS/auth not enabled (plain HTTP: ${clientUrls.join(", ") || "default"})`,
+    reasonKey,
+    `${isolationNoteKo} (gen ${generation}, updated/ready/available ${readyReplicas}/${specReplicas}) · 관측: ${observedFactsKo} · ${passNoteKo}`,
+    `${isolationNoteEn} (gen ${generation}, updated/ready/available ${readyReplicas}/${specReplicas}); observed: ${observedFactsEn}; ${passNoteEn}`,
   )
 }
 

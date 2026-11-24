@@ -523,7 +523,7 @@ describe("KISA sweep closed-world invariants (D-KISA-CLOSED-WORLD)", () => {
     expect(cnpSpecsRes.detailLocalized.en).toContain("unreviewed policy present")
     expect(cnpSpecsRes.detail).toContain("prometheus-operator-webhook-ingress(differs)")
 
-    // 3c. Reproduction (R9 MAJOR 3): unreviewed or drifted CCNP -> warn 'unreviewed cluster-wide policy present'
+    // 3c. Reproduction (R9 MAJOR 3 + R10 MAJOR 2): unreviewed or drifted CCNP -> warn, 0/5 namespaces covered, 'unreviewed cluster-wide policy present: <names>'
     const driftedCcnp: KisaRawCiliumClusterwideNetworkPolicy = JSON.parse(JSON.stringify(baselineCcnp))
     ;(driftedCcnp.spec as Record<string, unknown> & { ingress: unknown[] }).ingress.push({ fromEntities: ["all"] })
     mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
@@ -531,8 +531,19 @@ describe("KISA sweep closed-world invariants (D-KISA-CLOSED-WORLD)", () => {
     mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: [driftedCcnp] })
     const ccnpDriftRes = await checkNet01(customBaseline)
     expect(ccnpDriftRes.status).toBe("warn")
-    expect(ccnpDriftRes.detailLocalized.en).toContain("unreviewed cluster-wide policy present")
-    expect(ccnpDriftRes.detail).toContain("allow-ambient-kubelet-probes(differs)")
+    expect(ccnpDriftRes.detailLocalized.en).toContain("0/5 namespace(s) covered")
+    expect(ccnpDriftRes.detailLocalized.en).toContain("unreviewed cluster-wide policy present: CiliumClusterwideNetworkPolicy/allow-ambient-kubelet-probes(differs)")
+    expect(ccnpDriftRes.detail).toContain("0/5")
+
+    // Reproduction (R10 MAJOR 2): with repo baseline (4/5 namespaces otherwise clean), adding ingress to existing CCNP MUST drop covered count to 0/5 (never 4/5)
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
+    mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
+    mockGetKisaCiliumClusterwideNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: [driftedCcnp] })
+    const ccnpDriftRepoRes = await checkNet01(repoBaseline)
+    expect(ccnpDriftRepoRes.status).toBe("warn")
+    expect(ccnpDriftRepoRes.detailLocalized.en).toContain("0/5 namespace(s) covered")
+    expect(ccnpDriftRepoRes.detailLocalized.en).not.toContain("4/5")
+    expect(ccnpDriftRepoRes.detailLocalized.en).toContain("unreviewed cluster-wide policy present: CiliumClusterwideNetworkPolicy/allow-ambient-kubelet-probes(differs)")
 
     mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })
     mockGetKisaCiliumNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: ciliumPols })
@@ -542,8 +553,8 @@ describe("KISA sweep closed-world invariants (D-KISA-CLOSED-WORLD)", () => {
     })
     const ccnpExtraRes = await checkNet01(customBaseline)
     expect(ccnpExtraRes.status).toBe("warn")
-    expect(ccnpExtraRes.detailLocalized.en).toContain("unreviewed cluster-wide policy present")
-    expect(ccnpExtraRes.detail).toContain("open-all-ccnp")
+    expect(ccnpExtraRes.detailLocalized.en).toContain("0/5 namespace(s) covered")
+    expect(ccnpExtraRes.detailLocalized.en).toContain("unreviewed cluster-wide policy present: CiliumClusterwideNetworkPolicy/open-all-ccnp")
 
     // 3d. CCNP list forbidden -> manual
     mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "ok", data: liveSimulatedNetPols })

@@ -165,6 +165,7 @@ def check(texts: dict[str, str]) -> list[str]:
         "baseline.networkPolicies",
         "unreviewed policy present",
         "unreviewed cluster-wide policy present",
+        "if (unreviewedClusterwide.length === 0 && hasBaselineDefaultDeny && nsUnreviewed.length === 0)",
         "if (covered.length > 0 || unreviewedByNs.length > 0 || unreviewedClusterwide.length > 0)",
         "PSA_ENFORCED_LEVELS",
         "if (summary.failed) {",
@@ -192,7 +193,8 @@ def check(texts: dict[str, str]) -> list[str]:
     if "export async function checkEtcd02(" not in checks:
         errors.append("kisa-checks.ts missing checkEtcd02")
     else:
-        etcd_body = checks.split("export async function checkEtcd02(", 1)[1].split("export async function checkSec01()", 1)[0]
+        etcd_body = checks.split("export async function checkEtcd02(", 1)[1].split("// --- KISA-SEC-01", 1)[0]
+        etcd_code = re.sub(r"//[^\n]*", "", etcd_body)
         if 'containers.find((c) => c.name === "etcd")' not in etcd_body:
             errors.append("kisa-checks.ts checkEtcd02 must select strictly container name === 'etcd'")
         if "containers.flatMap" in etcd_body:
@@ -201,15 +203,23 @@ def check(texts: dict[str, str]) -> list[str]:
             errors.append("kisa-checks.ts checkEtcd02 must return etcdContainerMissing when etcd container absent")
         if '?? { app: "apisix-etcd" }' in etcd_body:
             errors.append("kisa-checks.ts checkEtcd02 must never default missing pod labels to apisix-etcd")
+        if re.search(r'["\'`]pass["\'`]', etcd_code):
+            errors.append("kisa-checks.ts checkEtcd02() must never return pass (D-KISA-ETCD02-NO-PASS)")
+        if "D-KISA-ETCD02-NO-PASS" not in checks:
+            errors.append("kisa-checks.ts missing D-KISA-ETCD02-NO-PASS decision comment")
         for etcd_req in (
             "baseline.etcd02Workload",
             "getKisaNamespacedCiliumNetworkPolicies(etcdWorkload.namespace)",
             "getKisaCiliumClusterwideNetworkPolicies()",
             'if (cnpRes.status !== "ok") return fetchErrorOutcome',
             'if (ccnpRes.status !== "ok") return fetchErrorOutcome',
-            'computeNetworkPolicyDigest("NetworkPolicy"',
-            'computeNetworkPolicyDigest("CiliumNetworkPolicy"',
-            "ciliumPolicySelectsLabels(cpol, podLabels)",
+            'kind: "NetworkPolicy" as const',
+            'kind: "CiliumNetworkPolicy" as const',
+            "computeNetworkPolicyDigest(pol.kind, pol.raw) !== entry.specSha256",
+            "unreviewed policy present in namespace",
+            "--config-file",
+            "flags may be overridden by the config file; not evaluated",
+            "the pass path will be added together with etcd TLS as a baseline digest of the reviewed workload spec",
             "evaluateClusterwideNetworkPolicies(clusterwidePolicies, baseline)",
             "matchesLabelSelector(baselinePolicyObj.spec?.podSelector, podLabels)",
             "if (!workloadMatchesBaseline || !matchesLabelSelector(baselinePolicyObj.spec?.podSelector, podLabels))",
@@ -228,10 +238,12 @@ def check(texts: dict[str, str]) -> list[str]:
                 errors.append(f"kisa-checks.ts checkEtcd02 missing {etcd_req!r}")
     if "export function matchesLabelSelector(" not in checks:
         errors.append("kisa-checks.ts missing pure exported matchesLabelSelector")
+    elif 'if (!selector || typeof selector !== "object" || Array.isArray(selector)) return false' not in checks:
+        errors.append("kisa-checks.ts matchesLabelSelector must return false for null/undefined selector")
     if 'computeNetworkPolicyDigest("CiliumClusterwideNetworkPolicy", ccnp)' not in checks:
         errors.append("kisa-checks.ts evaluateClusterwideNetworkPolicies must hash full CCNP object")
-    if "if (Array.isArray(cpol.specs))" not in checks:
-        errors.append("kisa-checks.ts ciliumPolicySelectsLabels must evaluate cpol.specs[] as well as cpol.spec")
+    if "ciliumPolicySelectsLabels" in checks or "ciliumRuleSelectsLabels" in checks:
+        errors.append("kisa-checks.ts must not filter namespace policies by Cilium selector")
     if "isApisixGatewayPeer" in checks:
         errors.append("kisa-checks.ts must not reintroduce arbitrary isApisixGatewayPeer NetworkPolicy interpreter")
     if "if (val.length > 0)" not in checks:
@@ -448,10 +460,10 @@ def check(texts: dict[str, str]) -> list[str]:
     ):
         if r5_needle not in test:
             errors.append(f"kisa-live-controls.test.ts missing R5 closed-world test marker {r5_needle!r}")
-    for r9_needle in ("reproduction (R9):", "matchesLabelSelector"):
-        if r9_needle not in test:
-            errors.append(f"kisa-live-controls.test.ts missing R9 test marker {r9_needle!r}")
-    for sweep_needle in ("IMG-03 never passes", "POD-01 does not pass", "NET-01 closed-world baseline:", "Reproduction (R9 MAJOR 1):", "Reproduction (R9 MAJOR 3):", "ADM-01 warns", "TLS-02 warns", "CP-01/ETCD-01 reject"):
+    for r10_needle in ("reproduction (R10):", "matchesLabelSelector"):
+        if r10_needle not in test:
+            errors.append(f"kisa-live-controls.test.ts missing R10 test marker {r10_needle!r}")
+    for sweep_needle in ("IMG-03 never passes", "POD-01 does not pass", "NET-01 closed-world baseline:", "Reproduction (R10 MAJOR 2):", "ADM-01 warns", "TLS-02 warns", "CP-01/ETCD-01 reject"):
         if sweep_needle not in unit_test:
             errors.append(f"kisa.test.ts missing sweep regression marker {sweep_needle!r}")
 
@@ -492,6 +504,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop NET-01 CCNP baseline check", "kisa", "const unreviewedClusterwide = evaluateClusterwideNetworkPolicies(ccnpRes.data, baseline)", "const unreviewedClusterwide: string[] = []"),
     ("drop NET-01 baseline digest check", "kisa", "computeNetworkPolicyDigest(pol.kind, pol.raw) !== entry.specSha256", "false"),
     ("drop NET-01 unreviewed policy check", "kisa", "if (covered.length > 0 || unreviewedByNs.length > 0 || unreviewedClusterwide.length > 0) {", "if (covered.length > 0) {"),
+    ("allow NET-01 to count covered namespaces despite unclean CCNP", "kisa", "if (unreviewedClusterwide.length === 0 && hasBaselineDefaultDeny && nsUnreviewed.length === 0)", "if (hasBaselineDefaultDeny && nsUnreviewed.length === 0)"),
     ("reintroduce arbitrary NetworkPolicy semantic interpreter in kisa.ts", "kisa", "export async function checkNet01(", "function isRestrictedIngressPeer() { return true }\nexport async function checkNet01("),
     ("drop baseline SHA-256 check in ADM-01", "kisa", "const digestMatches = Boolean(p.specSha256) && p.specSha256 === entry.specSha256", "const digestMatches = true"),
     ("treat missing Pod status as ready in mapApiServerPod", "k8s", 'p.status?.phase === "Running" &&', '(p.status?.phase === undefined || p.status.phase === "Running") &&'),
@@ -504,7 +517,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop podSelector match check on baseline etcd policy in checkEtcd02", "checks", "!matchesLabelSelector(baselinePolicyObj.spec?.podSelector, podLabels)", "false"),
     ("drop workload name/namespace check in checkEtcd02", "checks", "!workloadMatchesBaseline", "false"),
     ("default missing pod template labels to apisix-etcd in checkEtcd02", "checks", "const podLabels = dep.spec?.template?.metadata?.labels ?? {}", 'const podLabels = dep.spec?.template?.metadata?.labels ?? { app: "apisix-etcd" }'),
-    ("ignore cpol.specs[] in ciliumPolicySelectsLabels", "checks", "if (Array.isArray(cpol.specs)) {", "if (false && Array.isArray(cpol.specs)) {"),
+    ("re-add pass branch to checkEtcd02", "checks", '  return makeOutcome(\n    "warn",\n    reasonKey,', '  return makeOutcome(\n    "pass",\n    reasonKey,'),
+    ("revert matchesLabelSelector null/undefined to true", "checks", 'if (!selector || typeof selector !== "object" || Array.isArray(selector)) return false', 'if (!selector) return true\n  if (typeof selector !== "object" || Array.isArray(selector)) return false'),
     ("drop CCNP check in checkEtcd02", "checks", "const unreviewedClusterwide = evaluateClusterwideNetworkPolicies(clusterwidePolicies, baseline)", "const unreviewedClusterwide: string[] = []"),
     ("reintroduce arbitrary isApisixGatewayPeer in kisa-checks.ts", "checks", "export async function checkEtcd02(", "function isApisixGatewayPeer() { return true }\nexport async function checkEtcd02("),
     ("accept empty webhookConfigs:[{}] in OBS-01", "checks_ops", "webhookConfigs: (c) => hasNonEmptyStr(c.url) || hasSecretKeyRef(c.urlSecret),", "webhookConfigs: () => true,"),

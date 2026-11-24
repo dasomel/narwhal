@@ -9,10 +9,12 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.27] - 2026-11-25
+
 ### Changed
 
-- Added exact node-scoped CIS exceptions for kubeadm root etcd (1.1.12), off-node secure metrics (1.3.7/1.4.2); no live rollout or new passing-test claim.
-- CIS 1.3.6 / KCV0038 stays actionable: the observed kubelets lack serverTLSBootstrap/CSRs and serve self-signed certificates; kube-bench PASS checks only the controller-manager gate.
+- Added exact node-scoped acceptance rules for CIS benchmark findings 1.1.12 (kubeadm static-pod root etcd), 1.3.7, and 1.4.2 (off-node secure metrics) on node `narwhal-master-1` and matching Trivy infra findings KCV0039 (`kube-controller-manager`) and KCV0041 (`kube-scheduler`), with reasons verified on the live cluster; no live rollout or new passing-test claim (`src/data/compliance-acceptance-rules.json`, `src/lib/compliance-acceptance.ts`, `src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, `src/lib/i18n.ts`). Matching is exact on `(benchmarkId, controlId, node)` for benchmark findings and on `(kind, namespace, name, check)` for infra findings. The portal reports observed test records and baseline comparisons and never claims to prove or guarantee a control.
+- CIS 1.3.6 / KCV0038 stays actionable without an acceptance rule: observed kubelets lack `serverTLSBootstrap` / CSRs and serve self-signed certificates; `kube-bench` `PASS` checks only the controller-manager gate. Controls 1.2.1, 1.2.6, 1.2.10, 1.2.12, 1.3.6, and 4.2.6 remain actionable by owner decisions (the controller-manager flag for CIS 1.3.1 is a cluster change, not a portal change).
 
 ## [1.1.26] - 2026-11-24
 
@@ -1023,7 +1025,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.26...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.27...HEAD
+[1.1.27]: https://github.com/dasomel/narwhal/compare/portal/v1.1.26...portal/v1.1.27
 [1.1.26]: https://github.com/dasomel/narwhal/compare/portal/v1.1.25...portal/v1.1.26
 [1.1.25]: https://github.com/dasomel/narwhal/compare/portal/v1.1.24...portal/v1.1.25
 [1.1.24]: https://github.com/dasomel/narwhal/compare/portal/v1.1.23...portal/v1.1.24

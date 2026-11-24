@@ -21,7 +21,7 @@
 # compliance.reportType=all and configAuditScannerEnabled=true, both of which make
 # the operator fetch policiesBundle at scan/reconcile time — same live-pull problem
 # as the vulnerability DB, just for policies instead of CVEs.
-# COMPLETENESS (inventoried 2026-11-25, Trivy 0.76.1 / trivy-operator 0.36.1 live config): these three
+# COMPLETENESS (inventoried 2026-11-25, Trivy 0.76.1 / trivy-operator 0.36.1 pinned (GitOps) configuration): these three
 # are every data source the scanners pull online at runtime. Not listed on purpose: VEX Hub / VEX repo
 # (opt-in `--vex repo`, trivy-operator 0.36.1 exposes no knob and the scan Job never passes it),
 # SBOM sources oci/rekor (trivy.sbomSources is empty), Kyverno verify-image-signatures (static

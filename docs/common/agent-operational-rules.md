@@ -23,6 +23,7 @@ This document owns durable Narwhal-specific operational knowledge that should be
 ## GitOps / ArgoCD
 
 - ArgoCD self-heal reverts ad-hoc `kubectl apply` changes. Persist intended changes through the Narwhal GitOps source and `scripts/gitops/push-to-gitea.sh` where that workflow applies.
+- Publish local Helm chart packages to the in-cluster Gitea Helm registry with `scripts/gitops/publish-chart-to-gitea.sh`.
 - Do not push the Narwhal repository root directly to the internal Gitea remote; the trees have different roots.
 - Never embed credentials in Git remote URLs.
 - When ArgoCD reports Synced but live state differs, inspect `argocd-cm` `resource.customizations.ignoreDifferences` before treating synchronization itself as broken.

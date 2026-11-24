@@ -494,6 +494,15 @@ fi
 echo "Applying APISIX Admin API ingress NetworkPolicy..."
 kubectl apply -f /home/vagrant/configs/gitops/resources/apisix-admin-ingress-policy.yaml
 
+# KISA-ETCD-02 (Stage 1): isolate apisix-etcd:2379 to APISIX gateway pods from bootstrap,
+# before ArgoCD exists. Fail loudly if the staged manifest is missing or rejected.
+if [ ! -f "/home/vagrant/configs/gitops/resources/apisix-etcd-ingress-policy.yaml" ]; then
+  echo "ERROR: apisix-etcd-ingress-policy.yaml is missing from the staged configs." >&2
+  exit 1
+fi
+echo "Applying APISIX etcd ingress NetworkPolicy..."
+kubectl apply -f /home/vagrant/configs/gitops/resources/apisix-etcd-ingress-policy.yaml
+
 #=========================================
 # cert-manager
 #=========================================

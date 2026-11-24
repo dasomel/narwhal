@@ -270,6 +270,8 @@ spec:
     - openbao.storage.svc.cluster.local
     - openbao.storage.svc
     - openbao
+    - openbao-0.openbao-internal.storage.svc.cluster.local
+    - openbao-0.openbao-internal.storage.svc
     - openbao-0.openbao-internal
     - localhost
   ipAddresses:
@@ -498,16 +500,38 @@ elif [ "${OPENBAO_INITIALIZED}" = "False" ]; then
     kubectl exec openbao-0 -n storage -- \
       bao operator unseal -tls-skip-verify "${UNSEAL_KEY}" || true
     echo "Saving credentials to openbao-init secret (consumed by auto-unseal CronJob)..."
-    kubectl create secret generic openbao-init -n storage \
-      --from-literal=unseal_keys_b64="${UNSEAL_KEY}" \
-      --from-literal=root_token="${ROOT_TOKEN}" \
-      --dry-run=client -o yaml | kubectl apply -f -
+    # KISA-SEC-01: write keys via 077-umask files (never --from-literal in argv) and use
+    # kubectl create/replace (never kubectl apply) so no duplicate copy is stored in
+    # metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"].
+    OPENBAO_INIT_DIR=$(mktemp -d)
+    ( umask 077
+      printf '%s' "${UNSEAL_KEY}" > "${OPENBAO_INIT_DIR}/unseal_keys_b64"
+      printf '%s' "${ROOT_TOKEN}" > "${OPENBAO_INIT_DIR}/root_token" )
+    if kubectl get secret openbao-init -n storage >/dev/null 2>&1; then
+      kubectl create secret generic openbao-init -n storage \
+        --from-file=unseal_keys_b64="${OPENBAO_INIT_DIR}/unseal_keys_b64" \
+        --from-file=root_token="${OPENBAO_INIT_DIR}/root_token" \
+        --dry-run=client -o yaml | kubectl replace -f -
+    else
+      kubectl create secret generic openbao-init -n storage \
+        --from-file=unseal_keys_b64="${OPENBAO_INIT_DIR}/unseal_keys_b64" \
+        --from-file=root_token="${OPENBAO_INIT_DIR}/root_token"
+    fi
+    rm -rf "${OPENBAO_INIT_DIR}"
     echo "OpenBao initialized and unsealed"
   else
     echo "WARN: OpenBao init failed — manual init required"
   fi
 else
   echo "WARN: Could not determine OpenBao state (got: '${OPENBAO_INITIALIZED}') — skipping init"
+fi
+
+# KISA-SEC-01: idempotent, non-destructive metadata hardening on both fresh installs and
+# re-runs (never prints or rewrites key material): exclude openbao-init from Velero backups
+# (Velero honors the label, not an annotation) and strip any legacy last-applied-configuration.
+if kubectl get secret openbao-init -n storage >/dev/null 2>&1; then
+  kubectl label secret openbao-init -n storage velero.io/exclude-from-backup=true --overwrite
+  kubectl annotate secret openbao-init -n storage kubectl.kubernetes.io/last-applied-configuration-
 fi
 
 rm -f /tmp/openbao-values.yaml

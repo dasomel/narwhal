@@ -9,8 +9,26 @@
 #
 # Security trade-off: the unseal key lives in a same-namespace Secret and is injected
 # into this job's env. That is the standard "k8s-native auto-unseal" posture for a
-# self-hosted dev/IDP cluster without an external KMS. Lock down RBAC on the
-# `openbao-init` secret accordingly.
+# self-hosted dev/IDP cluster without an external KMS. Hardened (KISA-SEC-01):
+# dedicated ServiceAccount with automountServiceAccountToken=false, TLS verified
+# against the Narwhal CA mounted from openbao-tls (ca.crt only, never tls.key), and
+# openbao-init excluded from Velero backups without a last-applied-configuration copy.
+#
+# Upgrade order on existing clusters: Certificate storage/openbao-tls must include
+# `openbao-0.openbao-internal.storage.svc.cluster.local` in spec.dnsNames and the
+# OpenBao listener must reload the re-issued cert BEFORE deploying this CronJob,
+# otherwise TLS hostname verification will fail.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openbao-auto-unseal
+  namespace: storage
+  labels:
+    app.kubernetes.io/name: openbao-auto-unseal
+    app.kubernetes.io/part-of: openbao
+# Unseal calls OpenBao over HTTPS using the env-injected key only; no K8s API access is needed.
+automountServiceAccountToken: false
+---
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -37,11 +55,14 @@ spec:
             istio.io/dataplane-mode: none
         spec:
           restartPolicy: Never
+          serviceAccountName: openbao-auto-unseal
+          automountServiceAccountToken: false
           securityContext:
             runAsNonRoot: true
             # D-OPENBAO-UID-10100: avoid KSV020/KSV021 (UID/GID <= 10000); unseal only calls
-            # OpenBao over HTTPS using env UNSEAL_KEY and has no volume mounts. Cost: none
-            # (verified with one-off runAsUser/runAsGroup 10100 Job). Escape hatch: revert to 100.
+            # OpenBao over HTTPS using env UNSEAL_KEY and reads the world-readable (0644)
+            # ca.crt projected from openbao-tls. Cost: none (verified with one-off
+            # runAsUser/runAsGroup 10100 Job). Escape hatch: revert to 100.
             runAsUser: 10100
             runAsGroup: 10100
             seccompProfile:
@@ -60,10 +81,10 @@ spec:
                 # Service has no endpoints and could never be reached to unseal it.
                 - name: BAO_ADDR
                   value: "https://openbao-0.openbao-internal.storage.svc.cluster.local:8200"
-                # Listener uses the internal narwhal CA (openbao-tls); skip verify
-                # rather than ship the CA bundle to this tiny helper.
-                - name: BAO_SKIP_VERIFY
-                  value: "true"
+                # Verify OpenBao's listener certificate against the Narwhal cluster CA
+                # (requires openbao-0.openbao-internal.storage.svc.cluster.local in openbao-tls SANs).
+                - name: BAO_CACERT
+                  value: /openbao/ca/ca.crt
                 - name: UNSEAL_KEY
                   valueFrom:
                     secretKeyRef:
@@ -94,3 +115,15 @@ spec:
                 limits:
                   cpu: 100m
                   memory: 64Mi
+              volumeMounts:
+                - name: openbao-ca
+                  mountPath: /openbao/ca
+                  readOnly: true
+          volumes:
+            # Only the CA certificate; tls.key of openbao-tls is deliberately not projected.
+            - name: openbao-ca
+              secret:
+                secretName: openbao-tls
+                items:
+                  - key: ca.crt
+                    path: ca.crt

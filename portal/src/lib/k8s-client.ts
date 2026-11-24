@@ -5,6 +5,7 @@ import { assertK8sName, assertK8sNamespace, assertK8sNodeName, safeK8sSegment } 
 import { getK8sApiServer } from "./config"
 import { getK8sBearerToken, invalidateK8sBearerToken } from "./k8s-token"
 import { fetchWithPolicy, readJsonWithPolicy, type RetryOptions } from "./http-client"
+import { computeKyvernoSpecDigest, specHasOverrides } from "./kisa-policy-canonical.mjs"
 
 export type { Localized, MaybeLocalized } from "./i18n-utils"
 export { pick } from "./i18n-utils"
@@ -794,6 +795,10 @@ export interface KyvernoPolicy {
   effectiveEnforcement?: "Enforce" | "Audit" | "Mixed" | "Disabled"
   /** True when the policy has at least one validate or verifyImages rule. */
   hasValidateOrVerifyRules?: boolean
+  /** Canonical spec SHA-256 digest (after stripping only documented Kyverno admission defaults). */
+  specSha256?: string
+  /** True when policy-level or rule-level failureAction overrides are present. */
+  hasOverrides?: boolean
   ready: boolean
   rulesCount: number
   rules: KyvernoRule[]
@@ -953,6 +958,8 @@ export function mapPolicy(item: PolicyItem, scope: "cluster" | "namespace"): Kyv
     validationFailureAction: action,
     effectiveEnforcement,
     hasValidateOrVerifyRules,
+    specSha256: computeKyvernoSpecDigest(item.spec ?? {}),
+    hasOverrides: specHasOverrides(item.spec ?? {}),
     ready: item.status?.conditions?.some((c) => c.type === "Ready" && c.status === "True") ?? false,
     rulesCount: rules.length,
     rules,
@@ -1005,15 +1012,18 @@ interface ApiServerPodList {
   }>
 }
 
-function mapApiServerPod(p: ApiServerPodList["items"][number]): ApiServerPodInfo {
+export function mapApiServerPod(p: ApiServerPodList["items"][number]): ApiServerPodInfo {
   // D-KISA-CLOSED-WORLD: isolate the exact "kube-apiserver" container; never merge
   // command/args from sidecars or helper containers.
+  // D-KISA-CLOSED-WORLD (R7): a Pod without status or without an explicit Ready=True
+  // condition is NOT ready (missing data => manual / not evaluated, never pass).
   const apiserverContainer = (p.spec.containers ?? []).find((c) => c.name === "kube-apiserver")
   const conditions = p.status?.conditions ?? []
+  const hasReadyCondition = conditions.some((c) => c.type === "Ready" && c.status === "True")
   const isReady =
     !p.metadata.deletionTimestamp &&
-    (p.status?.phase === undefined || p.status.phase === "Running") &&
-    (conditions.length === 0 || conditions.some((c) => c.type === "Ready" && c.status === "True"))
+    p.status?.phase === "Running" &&
+    hasReadyCondition
   return {
     name: p.metadata.name,
     hasApiserverContainer: Boolean(apiserverContainer),
@@ -2887,10 +2897,16 @@ export interface KisaRawPodSpec {
 export interface KisaRawDeployment {
   metadata?: { name?: string; namespace?: string; labels?: Record<string, string> }
   spec?: {
+    replicas?: number
     template?: {
       metadata?: { labels?: Record<string, string> }
       spec?: KisaRawPodSpec
     }
+  }
+  status?: {
+    replicas?: number
+    readyReplicas?: number
+    availableReplicas?: number
   }
 }
 

@@ -39,6 +39,7 @@ FILES = {
     "controls": ROOT / "portal/src/lib/kisa-controls.ts",
     "types": ROOT / "portal/src/types/kisa.ts",
     "k8s": ROOT / "portal/src/lib/k8s-client.ts",
+    "accepted": ROOT / "portal/src/lib/compliance-accepted.ts",
     "ui": ROOT / "portal/src/components/compliance/kisa-checklist.tsx",
     "i18n": ROOT / "portal/src/lib/i18n.ts",
     "keys": ROOT / "portal/src/lib/cache-keys.ts",
@@ -79,6 +80,7 @@ def check(texts: dict[str, str]) -> list[str]:
     controls = texts["controls"]
     types = texts["types"]
     k8s = texts["k8s"]
+    accepted = texts["accepted"]
     ui = texts["ui"]
     i18n = texts["i18n"]
     keys = texts["keys"]
@@ -141,6 +143,7 @@ def check(texts: dict[str, str]) -> list[str]:
         errors.append("kisa-checks-ops.ts must enforce matchRbacBindingException in both KISA-RBAC-01 and KISA-RBAC-02")
 
     for needle in (
+        "THREAT MODEL",
         "checkEtcd02()",
         "checkSec01()",
         "checkImg01()",
@@ -150,8 +153,11 @@ def check(texts: dict[str, str]) -> list[str]:
         "checkRbacLive(entry.id)",
         "if (r.partial) {",
         "if (!hasPartialCheck)",
+        "function hasAllowAllIngressRule(",
         "function isIngressDefaultDenyPolicy(",
         "if (!hasPodSel && !hasNsSel && !hasRestrictedIpBlock && !sameNsAllPods) {",
+        'cidr !== "::/0"',
+        "const hasAllowAll = nsPolicies.some(hasAllowAllIngressRule)",
         "PSA_ENFORCED_LEVELS",
         "if (summary.failed) {",
         "if (summary.partial) {",
@@ -159,11 +165,17 @@ def check(texts: dict[str, str]) -> list[str]:
         "if (missingExpiry.length > 0) {",
         'p.effectiveEnforcement === "Disabled"',
         "p.hasValidateOrVerifyRules !== false",
+        "KISA_ADM_BASELINE",
+        "e.admissionRelevant === true",
+        "p.specSha256 === entry.specSha256",
         "p.hasApiserverContainer === false",
+        "p.ready !== true",
         "hasCliFlagWithValue(",
     ):
         if needle not in kisa:
             errors.append(f"kisa.ts missing {needle!r}")
+    if "applySimple" in kisa:
+        errors.append("kisa.ts must not use unlocalized applySimple (all controls must emit ko + en detailLocalized)")
 
     # 3. Container isolation + closed-world checks in kisa-checks.ts & k8s-client.ts
     if "function checkEtcd02(" not in checks:
@@ -176,15 +188,23 @@ def check(texts: dict[str, str]) -> list[str]:
             errors.append("kisa-checks.ts checkEtcd02 must never merge args with containers.flatMap across containers")
         if "compliance.kisa.reason.etcdContainerMissing" not in etcd_body:
             errors.append("kisa-checks.ts checkEtcd02 must return etcdContainerMissing when etcd container absent")
+        if "if (readyReplicas < 1 || specReplicas !== readyReplicas" not in etcd_body:
+            errors.append("kisa-checks.ts checkEtcd02 must require readyReplicas >= 1 and specReplicas === readyReplicas")
+    if "if (val.length > 0)" not in checks:
+        errors.append("kisa-checks.ts extractFlagValues must reject empty flag values")
 
     if "function mapApiServerPod(" not in k8s:
         errors.append("k8s-client.ts missing mapApiServerPod")
     else:
-        apiserver_body = k8s.split("function mapApiServerPod(", 1)[1].split("export async function getApiServerPods()", 1)[0]
+        apiserver_body = k8s.split("export function mapApiServerPod(", 1)[1].split("export async function getApiServerPods()", 1)[0]
         if '(p.spec.containers ?? []).find((c) => c.name === "kube-apiserver")' not in apiserver_body:
             errors.append("k8s-client.ts mapApiServerPod must isolate strictly container name === 'kube-apiserver'")
         if "flatMap" in apiserver_body:
             errors.append("k8s-client.ts mapApiServerPod must not merge container args via flatMap")
+        if 'p.status?.phase === "Running"' not in apiserver_body or "hasReadyCondition" not in apiserver_body:
+            errors.append("k8s-client.ts mapApiServerPod must require phase === 'Running' and Ready=True condition")
+        if "p.status?.phase === undefined" in apiserver_body or "conditions.length === 0" in apiserver_body:
+            errors.append("k8s-client.ts mapApiServerPod must never treat missing status or empty conditions as ready")
 
     if checks_ops.count("matchRbacBindingException({") < 2:
         errors.append("kisa-checks-ops.ts must enforce matchRbacBindingException in both KISA-RBAC-01 and KISA-RBAC-02")
@@ -218,6 +238,19 @@ def check(texts: dict[str, str]) -> list[str]:
         errors.append("kisa-checks-ops.ts must not use the broken FAILED_IMAGE_RE port-truncating regex")
     if 'startsWith("falco-")' in checks_ops or 'includes("falcosidekick")' in checks_ops:
         errors.append("kisa-checks-ops.ts checkObs01 must match strictly by labels, not pod name prefixes/substrings")
+    if "if (!readyCondition) return false" not in checks_ops:
+        errors.append("kisa-checks-ops.ts isPodRunningAndReady must require authoritative Pod Ready=True condition")
+    if 'roleRef.name !== "cluster-admin"' in checks_ops:
+        errors.append("kisa-checks-ops.ts must not exclude RBAC roles/bindings by object name (e.g. Role/dev/cluster-admin)")
+    if "불필요" in checks_ops:
+        errors.append("kisa-checks-ops.ts RBAC-01 wording must say 미수용 (not accepted by an exact rule), not 불필요")
+    for needle in (
+        'bootstrapping !== "rbac-defaults" || autoupdate !== "true"',
+        "if (!subjectsMatchExact(rule.subjects, binding.subjects))",
+        "if (!normalizedChecks.every((cid) => rule.checks.has(cid)))",
+    ):
+        if needle not in accepted:
+            errors.append(f"compliance-accepted.ts missing {needle!r}")
 
     for forbidden in FORBIDDEN_KYVERNO_SEMANTIC_HELPERS:
         if forbidden in checks_ops:
@@ -272,6 +305,9 @@ def check(texts: dict[str, str]) -> list[str]:
         "compliance.kisa.reason.imgPolicyNotReady",
         "partial: true, partialSources: failedInvSources",
         "matchRbacBindingException({",
+        "subjects: b.subjects,",
+        "!hasRbacBindingRule(bindingTarget)",
+        "isBootstrapRbacRole(kind, roleNs, name)",
         "matchRbacException(name, cid, roleNs, kind) !== null",
         "export function ruleGrants(",
         "if (!groups.includes(\"*\") && !groups.includes(targetGroup)) return false",
@@ -377,7 +413,18 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("bypass canonical spec SHA-256 comparison in evaluatePolicyAgainstBaseline", "checks_ops", "if (liveDigest !== baselineEntry.specSha256 || extraOverrides) {", "if (false) {"),
     ("bypass enforceEligible guard in evaluatePolicyAgainstBaseline", "checks_ops", "if (!baselineEntry.enforceEligible) {", "if (false && !baselineEntry.enforceEligible) {"),
     ("drop superseded ReplicaSet filter in KISA-IMG-02", "checks_ops", "buildSupersededReplicaSetKeys(inv.replicasets.data)", "new Set<string>()"),
-    ("reintroduce system: prefix RBAC exclusion in kisa-checks-ops.ts", "checks_ops", "const remaining = bindings.filter(", 'const remaining = bindings.filter((b) => !b.name.startsWith("system:")).filter('),
+    ("reintroduce system: prefix RBAC exclusion in kisa-checks-ops.ts", "checks_ops", "for (const b of bindings) {", 'for (const b of bindings.filter((item) => !item.name.startsWith("system:"))) {'),
+    ("reintroduce cluster-admin name exclusion in RBAC-02", "checks_ops", "for (const b of bindings) {", 'for (const b of bindings.filter((item) => item.roleRef.name !== "cluster-admin")) {'),
+    ("drop bootstrap label+annotation check in matchRbacBindingException", "accepted", 'if (bootstrapping !== "rbac-defaults" || autoupdate !== "true") {', "if (false) {"),
+    ("drop checks restriction in matchRbacBindingException", "accepted", "if (!normalizedChecks.every((cid) => rule.checks.has(cid))) {", "if (false) {"),
+    ("drop subjects pin in matchRbacBindingException", "accepted", "if (!subjectsMatchExact(rule.subjects, binding.subjects)) {", "if (false) {"),
+    ("drop additive allow-all check in NET-01", "kisa", "const hasAllowAll = nsPolicies.some(hasAllowAllIngressRule)", "const hasAllowAll = false"),
+    ("drop baseline SHA-256 check in ADM-01", "kisa", "const digestMatches = Boolean(p.specSha256) && p.specSha256 === entry.specSha256", "const digestMatches = true"),
+    ("treat missing Pod status as ready in mapApiServerPod", "k8s", 'p.status?.phase === "Running" &&', '(p.status?.phase === undefined || p.status.phase === "Running") &&'),
+    ("accept empty flag value in extractFlagValues", "checks", "if (val.length > 0) {", "if (true) {"),
+    ("ignore replicas/readyReplicas=0 in checkEtcd02", "checks", "if (readyReplicas < 1 || specReplicas !== readyReplicas", "if (false && (readyReplicas < 1 || specReplicas !== readyReplicas"),
+    ("ignore Ready=False condition in OBS-01 isPodRunningAndReady", "checks_ops", "if (!readyCondition) return false", "if (false && !readyCondition) return false"),
+    ("reintroduce 불필요 wording in RBAC-01", "checks_ops", "정확 규칙 미수용 cluster-admin 바인딩", "불필요·미수용 cluster-admin 바인딩"),
     ("drop exact matchRbacBindingException in KISA-RBAC-01/02", "checks_ops", "matchRbacBindingException({", "({ ...{} }) ? null : (() => { const x = {"),
     ("drop exact matchRbacException in KISA-RBAC-02", "checks_ops", "matchRbacException(name, cid, roleNs, kind) !== null", "true"),
     ("drop PartialObjectMetadata header on Secret read", "k8s", 'Accept: "application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1"', 'Accept: "application/json"'),

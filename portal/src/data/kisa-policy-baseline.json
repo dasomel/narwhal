@@ -13,18 +13,108 @@
     "spec.rules[].verifyImages[].attestations[].attestors[].entries[].keys.signatureAlgorithm (when sha256)"
   ],
   "policies": {
+    "add-default-securitycontext": {
+      "name": "add-default-securitycontext",
+      "role": "mutate",
+      "admissionRelevant": false,
+      "specSha256": "968ebc647e50445ba8da254da532f13d8c6c32867c26b0b58380d155283297b0",
+      "validationFailureAction": "Audit",
+      "hasOverrides": false,
+      "enforceEligible": false,
+      "knownLimitations": [
+        "validationFailureAction=Audit"
+      ]
+    },
+    "disallow-host-namespaces": {
+      "name": "disallow-host-namespaces",
+      "role": "admission",
+      "admissionRelevant": true,
+      "specSha256": "f3fe1ab9132f772e53fcf4bd9dd45448952415bcf925eee0954e813ad529a7ff",
+      "validationFailureAction": "Enforce",
+      "hasOverrides": false,
+      "enforceEligible": true,
+      "knownLimitations": []
+    },
+    "disallow-host-ports": {
+      "name": "disallow-host-ports",
+      "role": "admission",
+      "admissionRelevant": true,
+      "specSha256": "f42f3e39b072419c60e204eda32d08a038845ccbbd4509cb5d57b99e0bd398c5",
+      "validationFailureAction": "Enforce",
+      "hasOverrides": false,
+      "enforceEligible": true,
+      "knownLimitations": []
+    },
     "disallow-latest-tag": {
       "name": "disallow-latest-tag",
       "role": "latest-tag",
+      "admissionRelevant": true,
       "specSha256": "973bb1dc3010217cf25cbbe21208c32c64ca1f3c36ff7b04ee215fedff20e96d",
       "validationFailureAction": "Enforce",
       "hasOverrides": false,
       "enforceEligible": true,
       "knownLimitations": []
     },
+    "disallow-privileged-containers": {
+      "name": "disallow-privileged-containers",
+      "role": "admission",
+      "admissionRelevant": true,
+      "specSha256": "f17e51a9119ab8056fbd2a121c18a989ed03d4d0f7b877a866fa952473b3a916",
+      "validationFailureAction": "Enforce",
+      "hasOverrides": false,
+      "enforceEligible": true,
+      "knownLimitations": []
+    },
+    "require-labels": {
+      "name": "require-labels",
+      "role": "admission",
+      "admissionRelevant": true,
+      "specSha256": "5747036c5dc02be0cab38e7602b844835c71e24f2e86c938ad8918917fa59e0e",
+      "validationFailureAction": "Audit",
+      "hasOverrides": false,
+      "enforceEligible": false,
+      "knownLimitations": [
+        "validationFailureAction=Audit"
+      ]
+    },
+    "restrict-image-registries": {
+      "name": "restrict-image-registries",
+      "role": "admission",
+      "admissionRelevant": true,
+      "specSha256": "fe9a468f3664ef5df5b8dbd8e5896c6fe057b7e48629ed1e3f79a6731d3117e0",
+      "validationFailureAction": "Audit",
+      "hasOverrides": false,
+      "enforceEligible": false,
+      "knownLimitations": [
+        "validationFailureAction=Audit"
+      ]
+    },
+    "restrict-tuning-job-admission": {
+      "name": "restrict-tuning-job-admission",
+      "role": "admission",
+      "admissionRelevant": true,
+      "specSha256": "e0b439fee3b6e2c38b5103750ee00c3f4ad6e7d8ee09632260b708648b16fb2d",
+      "validationFailureAction": "Enforce",
+      "hasOverrides": false,
+      "enforceEligible": true,
+      "knownLimitations": []
+    },
+    "tuning-job-control-plane-node-guard": {
+      "name": "tuning-job-control-plane-node-guard",
+      "role": "admission",
+      "admissionRelevant": true,
+      "specSha256": "6b74dafd89cddca1112c2178d61a172212d88cebf3c2661aae9a9ebea73c5ad9",
+      "validationFailureAction": "Audit",
+      "hasOverrides": false,
+      "enforceEligible": false,
+      "knownLimitations": [
+        "validationFailureAction=Audit"
+      ]
+    },
     "verify-image-signatures": {
       "name": "verify-image-signatures",
       "role": "verify-images",
+      "admissionRelevant": true,
       "specSha256": "54d67e5b2bb8818bd23e5bcada11993c9624b6a3c0e5bc098ac89235e347eb53",
       "validationFailureAction": "Audit",
       "hasOverrides": false,

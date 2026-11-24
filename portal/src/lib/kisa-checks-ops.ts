@@ -1,6 +1,6 @@
 import "server-only"
 import policyBaselineData from "@/data/kisa-policy-baseline.json"
-import { matchRbacBindingException, matchRbacException } from "./compliance-accepted"
+import { hasRbacBindingRule, isBootstrapRbacRole, matchRbacBindingException, matchRbacException } from "./compliance-accepted"
 import { fetchErrorOutcome, makeOutcome, type KisaCheckOutcome } from "./kisa-checks"
 import { computeKyvernoSpecDigest, specHasOverrides } from "./kisa-policy-canonical.mjs"
 import { parseImageRefStrict } from "./oss-updates/version"
@@ -43,9 +43,11 @@ function collectRoutedReceiverNames(route: KisaRawAlertmanagerRoute | undefined,
 function isPodRunningAndReady(pod: KisaRawPodStatus): boolean {
   if (pod.metadata?.deletionTimestamp) return false
   if (pod.status?.phase !== "Running") return false
-  const cs = pod.status?.containerStatuses ?? []
-  if (cs.length > 0) return cs.every((c) => c.ready === true)
-  return (pod.status?.conditions ?? []).some((c) => c.type === "Ready" && c.status === "True")
+  const readyCondition = (pod.status?.conditions ?? []).some((c) => c.type === "Ready" && c.status === "True")
+  if (!readyCondition) return false
+  const cs = pod.status?.containerStatuses
+  if (cs && cs.length > 0 && !cs.every((c) => c.ready === true)) return false
+  return true
 }
 
 export async function checkObs01(): Promise<KisaCheckOutcome> {
@@ -157,7 +159,8 @@ export async function checkObs01(): Promise<KisaCheckOutcome> {
 
 export interface KisaPolicyBaselineEntry {
   name: string
-  role: "latest-tag" | "verify-images" | string
+  role: "latest-tag" | "verify-images" | "admission" | "mutate" | string
+  admissionRelevant?: boolean
   specSha256: string
   validationFailureAction: string
   hasOverrides: boolean
@@ -654,9 +657,7 @@ export function evaluateRbacRules(rules: ReadonlyArray<RbacPolicyRule>): RbacRul
 
     if (hasWildcardVerb || hasWildcardResource) {
       anyWildcard = true
-      if (hasWildcardVerb || hasCoreOrWildcardGroup) {
-        checkIds.add("KSV046")
-      }
+      checkIds.add("KSV046")
     }
     // Single-rule wildcard check: must combine *, *, and core/wildcard apiGroup inside the SAME rule.
     if (hasWildcardVerb && hasWildcardResource && hasCoreOrWildcardGroup) {
@@ -670,6 +671,10 @@ export function evaluateRbacRules(rules: ReadonlyArray<RbacPolicyRule>): RbacRul
       checkIds.add("KSV041")
     }
 
+    if (grantsAnyVerb(r, "", ["nodes/proxy"], ["get", ...WRITE_VERBS])) {
+      checkIds.add("KSV047")
+    }
+
     if (hasWildcardVerb || verbsLower.some((v) => WRITE_VERB_SET.has(v))) {
       writeAccess = true
       if (
@@ -679,7 +684,10 @@ export function evaluateRbacRules(rules: ReadonlyArray<RbacPolicyRule>): RbacRul
       ) {
         checkIds.add("KSV048")
       }
-      if (grantsAnyVerb(r, "rbac.authorization.k8s.io", RBAC_WRITE_RESOURCES, WRITE_VERBS)) {
+      if (
+        grantsAnyVerb(r, "rbac.authorization.k8s.io", RBAC_WRITE_RESOURCES, WRITE_VERBS) ||
+        grantsAnyVerb(r, "", ["configmaps"], WRITE_VERBS)
+      ) {
         checkIds.add("KSV049")
       }
       if (
@@ -707,6 +715,10 @@ export function evaluateRbacRules(rules: ReadonlyArray<RbacPolicyRule>): RbacRul
     }
   }
 
+  if ((criticalWildcard || escalation || writeAccess || secretsAccess || anyWildcard) && checkIds.size === 0) {
+    checkIds.add("KSV111")
+  }
+
   return {
     criticalWildcard,
     escalation,
@@ -725,6 +737,7 @@ function isRoleAcceptedByExactRules(
 ): boolean {
   if (triggeredCheckIds.length === 0) return false
   const roleNs = kind === "ClusterRole" ? "" : namespace
+  if (isBootstrapRbacRole(kind, roleNs, name)) return false
   return triggeredCheckIds.every((cid) => matchRbacException(name, cid, roleNs, kind) !== null)
 }
 
@@ -758,12 +771,26 @@ export async function checkRbacLive(id: "KISA-RBAC-01" | "KISA-RBAC-02"): Promis
     })),
   ]
 
+  const clusterRolesMap = new Map(snap.clusterRoles.data.map((r) => [r.metadata.name, r.rules ?? []]))
+  const rolesMap = new Map<string, Map<string, typeof snap.roles.data[number]["rules"]>>()
+  for (const r of snap.roles.data) {
+    let nsMap = rolesMap.get(r.metadata.namespace)
+    if (!nsMap) {
+      nsMap = new Map()
+      rolesMap.set(r.metadata.namespace, nsMap)
+    }
+    nsMap.set(r.metadata.name, r.rules ?? [])
+  }
+
   if (id === "KISA-RBAC-01") {
     const clusterAdminBindings = bindings.filter((b) => b.roleRef.kind === "ClusterRole" && b.roleRef.name === "cluster-admin")
     const actionable: string[] = []
     let acceptedCount = 0
     for (const b of clusterAdminBindings) {
       const bindingKind = b.scope === "cluster" ? "ClusterRoleBinding" : "RoleBinding"
+      const rules = clusterRolesMap.get(b.roleRef.name) ?? []
+      const ev = evaluateRbacRules(rules)
+      const checkIds = [...new Set(["KSV111", ...ev.triggeredCheckIds])]
       const accepted =
         matchRbacBindingException({
           kind: bindingKind,
@@ -771,6 +798,8 @@ export async function checkRbacLive(id: "KISA-RBAC-01" | "KISA-RBAC-02"): Promis
           name: b.name,
           roleRefKind: b.roleRef.kind,
           roleRefName: b.roleRef.name,
+          subjects: b.subjects,
+          checkIds,
           labels: b.labels,
           annotations: b.annotations,
         }) !== null
@@ -783,8 +812,8 @@ export async function checkRbacLive(id: "KISA-RBAC-01" | "KISA-RBAC-02"): Promis
       return makeOutcome(
         "fail",
         "compliance.kisa.reason.rbacCriticalBindings",
-        `불필요·미수용 cluster-admin 바인딩 ${actionable.length}건 (${actionable.join(", ")})${accKo}`,
-        `${actionable.length} unaccepted cluster-admin binding(s) (${actionable.join(", ")})${accEn}`,
+        `정확 규칙 미수용 cluster-admin 바인딩 ${actionable.length}건 (${actionable.join(", ")})${accKo}`,
+        `${actionable.length} cluster-admin binding(s) not accepted by an exact rule (${actionable.join(", ")})${accEn}`,
       )
     }
     return makeOutcome(
@@ -795,47 +824,39 @@ export async function checkRbacLive(id: "KISA-RBAC-01" | "KISA-RBAC-02"): Promis
     )
   }
 
-  const clusterRolesMap = new Map(snap.clusterRoles.data.map((r) => [r.metadata.name, r.rules ?? []]))
-  const rolesMap = new Map<string, Map<string, typeof snap.roles.data[number]["rules"]>>()
-  for (const r of snap.roles.data) {
-    let nsMap = rolesMap.get(r.metadata.namespace)
-    if (!nsMap) {
-      nsMap = new Map()
-      rolesMap.set(r.metadata.namespace, nsMap)
-    }
-    nsMap.set(r.metadata.name, r.rules ?? [])
-  }
-
-  const remaining = bindings.filter((b) => b.roleRef.name !== "cluster-admin")
+  // D-KISA-CLOSED-WORLD: No exclusion by object name (e.g. Role/dev/cluster-admin); every
+  // binding is evaluated and accepted only via an exact rule in compliance-acceptance-rules.json.
   const criticalActionable: string[] = []
   let criticalAccepted = 0
   let highActionable = 0
   let highAccepted = 0
 
-  for (const b of remaining) {
+  for (const b of bindings) {
     const rules = b.roleRef.kind === "ClusterRole"
       ? clusterRolesMap.get(b.roleRef.name) ?? []
       : (b.namespace ? rolesMap.get(b.namespace)?.get(b.roleRef.name) ?? [] : [])
 
     const ev = evaluateRbacRules(rules)
     const isCritical = ev.criticalWildcard || ev.escalation
-    const isHigh = !isCritical && b.scope === "cluster" && (ev.writeAccess || ev.secretsAccess || ev.anyWildcard)
+    const isHigh = !isCritical && b.scope === "cluster" && (ev.writeAccess || ev.secretsAccess || ev.anyWildcard || ev.triggeredCheckIds.includes("KSV047"))
     if (!isCritical && !isHigh) continue
 
     const bindingKind = b.scope === "cluster" ? "ClusterRoleBinding" : "RoleBinding"
+    const bindingTarget = { kind: bindingKind, namespace: b.namespace ?? "", name: b.name }
     const acceptedByBinding =
       matchRbacBindingException({
-        kind: bindingKind,
-        namespace: b.namespace ?? "",
-        name: b.name,
+        ...bindingTarget,
         roleRefKind: b.roleRef.kind,
         roleRefName: b.roleRef.name,
+        subjects: b.subjects,
+        checkIds: ev.triggeredCheckIds,
         labels: b.labels,
         annotations: b.annotations,
       }) !== null
     const accepted =
       acceptedByBinding ||
-      isRoleAcceptedByExactRules(b.roleRef.kind, b.namespace ?? "", b.roleRef.name, ev.triggeredCheckIds)
+      (!hasRbacBindingRule(bindingTarget) &&
+        isRoleAcceptedByExactRules(b.roleRef.kind, b.namespace ?? "", b.roleRef.name, ev.triggeredCheckIds))
     if (isCritical) {
       if (accepted) criticalAccepted++
       else criticalActionable.push(b.namespace ? `${b.namespace}/${b.name}` : b.name)

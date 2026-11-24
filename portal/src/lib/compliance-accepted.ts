@@ -26,6 +26,7 @@ import {
   type AcceptedReasonKey,
   type RbacBindingKind,
   type RbacRuleKind,
+  type RbacSubject,
   type WorkloadKind,
 } from "./compliance-acceptance"
 
@@ -47,6 +48,7 @@ export {
   type AcceptedReasonKey,
   type RbacBindingKind,
   type RbacRuleKind,
+  type RbacSubject,
   type WorkloadKind,
 }
 
@@ -177,18 +179,64 @@ export function matchRbacException(
   return null
 }
 
+export function isBootstrapRbacRole(kind: string, namespace: string, roleName: string): boolean {
+  if (kind !== "Role" && kind !== "ClusterRole") return false
+  const scope: AcceptanceScope = kind === "ClusterRole" ? "cluster" : "namespace"
+  const rules = rbacRuleIndex.get(`${scope}\0${namespace}\0${kind}\0${roleName}`)
+  if (rules?.some((r) => r.reasonKey === "compliance.acceptedReason.verifiedBootstrap")) return true
+  return ACCEPTED_RBAC_BINDING_RULES.some(
+    (r) => r.roleRefKind === kind && r.roleRefName === roleName && (kind === "ClusterRole" || r.namespace === namespace),
+  )
+}
+
+function canonicalizeRbacSubjects(
+  subjects: ReadonlyArray<{ kind: string; name: string; namespace?: string }>,
+): string[] {
+  return subjects
+    .map((s) => `${s.kind}\0${s.namespace ?? ""}\0${s.name}`)
+    .sort()
+}
+
+function subjectsMatchExact(
+  expected: ReadonlyArray<RbacSubject>,
+  actual: ReadonlyArray<{ kind: string; name: string; namespace?: string }>,
+): boolean {
+  if (expected.length !== actual.length) return false
+  const exp = canonicalizeRbacSubjects(expected)
+  const act = canonicalizeRbacSubjects(actual)
+  return exp.every((v, idx) => v === act[idx])
+}
+
+export function hasRbacBindingRule(binding: {
+  kind: string
+  namespace: string
+  name: string
+}): boolean {
+  if (binding.kind !== "ClusterRoleBinding" && binding.kind !== "RoleBinding") return false
+  const scope: AcceptanceScope = binding.kind === "ClusterRoleBinding" ? "cluster" : "namespace"
+  return ACCEPTED_RBAC_BINDING_RULES.some(
+    (r) => r.scope === scope && r.namespace === binding.namespace && r.kind === binding.kind && r.name === binding.name,
+  )
+}
+
 export function matchRbacBindingException(binding: {
   kind: string
   namespace: string
   name: string
   roleRefKind: string
   roleRefName: string
+  subjects: ReadonlyArray<{ kind: string; name: string; namespace?: string }>
+  checkIds: ReadonlyArray<string>
   labels?: Record<string, string>
   annotations?: Record<string, string>
 }): AcceptedMatch | null {
   if (binding.kind !== "ClusterRoleBinding" && binding.kind !== "RoleBinding") return null
   if (binding.kind === "ClusterRoleBinding" && binding.namespace !== "") return null
   if (binding.kind === "RoleBinding" && binding.namespace === "") return null
+  if (!Array.isArray(binding.subjects) || !Array.isArray(binding.checkIds) || binding.checkIds.length === 0) {
+    return null
+  }
+  const normalizedChecks = binding.checkIds.map(normalizeCheckId)
   const scope: AcceptanceScope = binding.kind === "ClusterRoleBinding" ? "cluster" : "namespace"
   const rules = rbacBindingRuleIndex.get(
     `${scope}\0${binding.namespace}\0${binding.kind}\0${binding.name}\0${binding.roleRefKind}\0${binding.roleRefName}`,
@@ -201,6 +249,12 @@ export function matchRbacBindingException(binding: {
       if (bootstrapping !== "rbac-defaults" || autoupdate !== "true") {
         continue
       }
+    }
+    if (!subjectsMatchExact(rule.subjects, binding.subjects)) {
+      continue
+    }
+    if (!normalizedChecks.every((cid) => rule.checks.has(cid))) {
+      continue
     }
     return {
       ruleId: rule.id,

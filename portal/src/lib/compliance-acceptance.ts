@@ -89,6 +89,14 @@ export interface AcceptedInfraRule {
   docAnchor: string
 }
 
+export type RbacSubjectKind = "User" | "Group" | "ServiceAccount"
+
+export interface RbacSubject {
+  kind: RbacSubjectKind
+  name: string
+  namespace?: string
+}
+
 export interface AcceptedRbacBindingRule {
   id: string
   scope: AcceptanceScope
@@ -99,6 +107,8 @@ export interface AcceptedRbacBindingRule {
   roleRefKind: RbacRuleKind
   roleRefName: string
   requireBootstrapMetadata: boolean
+  checks: ReadonlySet<string>
+  subjects: readonly RbacSubject[]
   class: AcceptedClass
   reasonKey: AcceptedReasonKey
   reason: string
@@ -130,6 +140,12 @@ interface RawRuleEntry {
   reviewedAt: string
 }
 
+interface RawRbacSubject {
+  kind: string
+  name: string
+  namespace?: string
+}
+
 interface RawRbacBindingEntry {
   id: string
   scope: string
@@ -139,6 +155,8 @@ interface RawRbacBindingEntry {
   roleRefKind: string
   roleRefName: string
   requireBootstrapMetadata: boolean
+  checks: string[]
+  subjects: RawRbacSubject[]
   class: string
   reasonKey: string
   owner: string
@@ -314,11 +332,15 @@ function loadAcceptanceRules(rawFile: RawAcceptanceRulesFile): {
     "roleRefKind",
     "roleRefName",
     "requireBootstrapMetadata",
+    "checks",
+    "subjects",
     "class",
     "reasonKey",
     "owner",
     "reviewedAt",
   ])
+  const subjectAllowedFields = new Set(["kind", "name", "namespace"])
+  const validSubjectKinds = new Set<string>(["User", "Group", "ServiceAccount"])
   for (const raw of rawFile.rbacBindings ?? []) {
     if (Object.keys(raw).some((field) => !bindingAllowedFields.has(field))) {
       throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: unknown rule field`)
@@ -353,6 +375,40 @@ function loadAcceptanceRules(rawFile: RawAcceptanceRulesFile): {
     if (typeof raw.requireBootstrapMetadata !== "boolean") {
       throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: requireBootstrapMetadata must be boolean`)
     }
+    if (!Array.isArray(raw.checks) || raw.checks.length === 0) {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: checks must be a non-empty explicit list`)
+    }
+    const normalizedChecks = new Set<string>()
+    for (const c of raw.checks) {
+      if (typeof c !== "string" || c.trim().length === 0 || PATTERN_METACHAR_RE.test(c)) {
+        throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: invalid check ID "${String(c)}"`)
+      }
+      normalizedChecks.add(normalizeCheckId(c))
+    }
+    if (!Array.isArray(raw.subjects)) {
+      throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: subjects must be an explicit array`)
+    }
+    const subjects: RbacSubject[] = []
+    for (const s of raw.subjects) {
+      if (!s || typeof s !== "object" || Object.keys(s).some((f) => !subjectAllowedFields.has(f))) {
+        throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: invalid subject entry`)
+      }
+      if (!validSubjectKinds.has(s.kind)) {
+        throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: invalid subject kind "${String(s.kind)}"`)
+      }
+      assertExactName(s.name, raw.id)
+      if (s.kind === "ServiceAccount") {
+        if (typeof s.namespace !== "string" || s.namespace.trim().length === 0 || s.namespace !== s.namespace.trim() || PATTERN_METACHAR_RE.test(s.namespace)) {
+          throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: ServiceAccount subject requires exact namespace`)
+        }
+        subjects.push({ kind: "ServiceAccount", name: s.name, namespace: s.namespace })
+      } else {
+        if (s.namespace !== undefined && s.namespace !== "") {
+          throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: ${s.kind} subject must not specify namespace`)
+        }
+        subjects.push({ kind: s.kind as "User" | "Group", name: s.name })
+      }
+    }
     if (raw.class !== "accept" && raw.class !== "upstream") {
       throw new Error(`Invalid RBAC binding acceptance rule ${raw.id}: class must be "accept" or "upstream"`)
     }
@@ -379,6 +435,8 @@ function loadAcceptanceRules(rawFile: RawAcceptanceRulesFile): {
       roleRefKind: raw.roleRefKind as RbacRuleKind,
       roleRefName: raw.roleRefName,
       requireBootstrapMetadata: raw.requireBootstrapMetadata,
+      checks: normalizedChecks,
+      subjects,
       class: raw.class,
       reasonKey,
       reason,

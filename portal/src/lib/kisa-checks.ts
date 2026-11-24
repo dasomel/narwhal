@@ -84,9 +84,15 @@ function extractFlagValues(tokens: string[], flag: string): string[] {
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]
     if (t === flag && i + 1 < tokens.length) {
-      vals.push(tokens[i + 1])
+      const next = tokens[i + 1].trim()
+      if (next.length > 0 && !next.startsWith("-")) {
+        vals.push(next)
+      }
     } else if (t.startsWith(`${flag}=`)) {
-      vals.push(t.slice(flag.length + 1))
+      const val = t.slice(flag.length + 1).trim()
+      if (val.length > 0) {
+        vals.push(val)
+      }
     }
   }
   return vals
@@ -236,11 +242,31 @@ export async function checkEtcd02(): Promise<KisaCheckOutcome> {
     : `NetworkPolicy (${policyNames.join(", ")}) denies ingress to apisix-etcd`
 
   if (tlsAuthEnabled) {
+    const specReplicas = dep.spec?.replicas
+    const readyReplicas = dep.status?.readyReplicas
+    const statusReplicas = dep.status?.replicas
+    if (typeof specReplicas !== "number" || typeof readyReplicas !== "number") {
+      return makeOutcome(
+        "manual",
+        "compliance.kisa.reason.etcdWorkloadNotReady",
+        `${isolationNoteKo} · etcd 클라이언트 TLS·인증 활성화 · Deployment replicas/readyReplicas 상태 미확인 — 평가 불가`,
+        `${isolationNoteEn}; etcd client TLS/auth enabled; Deployment replicas/readyReplicas status missing — not evaluated`,
+        { live: false },
+      )
+    }
+    if (readyReplicas < 1 || specReplicas !== readyReplicas || (statusReplicas !== undefined && statusReplicas !== readyReplicas)) {
+      return makeOutcome(
+        "warn",
+        "compliance.kisa.reason.etcdWorkloadNotReady",
+        `${isolationNoteKo} · etcd 클라이언트 TLS·인증 설정됨 · 워크로드 미준비(readyReplicas ${readyReplicas}/${specReplicas})`,
+        `${isolationNoteEn}; etcd client TLS/auth configured; workload not ready (readyReplicas ${readyReplicas}/${specReplicas})`,
+      )
+    }
     return makeOutcome(
       "pass",
       "compliance.kisa.reason.etcdIsolatedTls",
-      `${isolationNoteKo} · etcd 클라이언트 TLS·인증(--client-cert-auth) 활성화`,
-      `${isolationNoteEn}; etcd client TLS and --client-cert-auth enabled`,
+      `${isolationNoteKo} · etcd 클라이언트 TLS·인증(--client-cert-auth) 활성화 (ready ${readyReplicas}/${specReplicas})`,
+      `${isolationNoteEn}; etcd client TLS and --client-cert-auth enabled (ready ${readyReplicas}/${specReplicas})`,
     )
   }
 

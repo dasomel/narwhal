@@ -84,7 +84,9 @@ vi.mock("./k8s-client", () => ({
   })),
 }))
 
-import { getKisaControls } from "./kisa"
+import policyBaselineData from "@/data/kisa-policy-baseline.json"
+import { checkAdm01, getKisaControls } from "./kisa"
+import type { KisaPolicyBaseline } from "./kisa-checks-ops"
 
 describe("KISA CFG-01 evaluated verdict", () => {
   beforeEach(() => {
@@ -421,7 +423,7 @@ describe("KISA sweep closed-world invariants (D-KISA-CLOSED-WORLD)", () => {
     expect(podPass?.status).toBe("pass")
   })
 
-  it("NET-01 rejects podSelector:{} Ingress NetworkPolicy with allow-all ingress:[{}] and 403/truncated returns manual", async () => {
+  it("NET-01 rejects podSelector:{} Ingress NetworkPolicy with allow-all ingress:[{}] and additive allow-all policies; 403/truncated returns manual", async () => {
     mockGetKisaNetworkPolicies.mockResolvedValueOnce({
       status: "ok",
       data: [
@@ -432,6 +434,43 @@ describe("KISA sweep closed-world invariants (D-KISA-CLOSED-WORLD)", () => {
     const netFail = (await getKisaControls()).controls.find((c) => c.id === "KISA-NET-01")
     expect(netFail?.status).toBe("fail")
 
+    // Reproduction (R7): 5 namespaces each with default-deny AND a separate additive allow-all policy MUST NOT pass
+    mockCache.clear()
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        { metadata: { name: "iam-deny", namespace: "iam" }, spec: { podSelector: {}, policyTypes: ["Ingress"] } },
+        { metadata: { name: "iam-allow-all", namespace: "iam" }, spec: { podSelector: { matchLabels: { app: "kc" } }, policyTypes: ["Ingress"], ingress: [{}] } },
+        { metadata: { name: "dev-deny", namespace: "devtools" }, spec: { podSelector: {}, policyTypes: ["Ingress"] } },
+        { metadata: { name: "dev-no-from", namespace: "devtools" }, spec: { podSelector: { matchLabels: { app: "x" } }, policyTypes: ["Ingress"], ingress: [{ ports: [{ port: 80 }] }] } },
+        { metadata: { name: "mon-deny", namespace: "monitoring" }, spec: { podSelector: {}, policyTypes: ["Ingress"] } },
+        { metadata: { name: "mon-empty-peer", namespace: "monitoring" }, spec: { podSelector: { matchLabels: { app: "y" } }, policyTypes: ["Ingress"], ingress: [{ from: [{}] }] } },
+        { metadata: { name: "sto-deny", namespace: "storage" }, spec: { podSelector: {}, policyTypes: ["Ingress"] } },
+        { metadata: { name: "sto-ns-pod-empty", namespace: "storage" }, spec: { podSelector: { matchLabels: { app: "z" } }, policyTypes: ["Ingress"], ingress: [{ from: [{ podSelector: {}, namespaceSelector: {} }] }] } },
+        { metadata: { name: "db-deny", namespace: "database" }, spec: { podSelector: {}, policyTypes: ["Ingress"] } },
+        { metadata: { name: "db-ip6-all", namespace: "database" }, spec: { podSelector: { matchLabels: { app: "db" } }, policyTypes: ["Ingress"], ingress: [{ from: [{ ipBlock: { cidr: "::/0" } }] }] } },
+      ],
+    })
+    const additiveFail = (await getKisaControls()).controls.find((c) => c.id === "KISA-NET-01")
+    expect(additiveFail?.status).toBe("fail")
+    expect(additiveFail?.detail).toContain("devtools")
+
+    // Positive: 4/5 clean namespaces + devtools uncovered -> warn naming devtools
+    mockCache.clear()
+    mockGetKisaNetworkPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        { metadata: { name: "iam-deny", namespace: "iam" }, spec: { podSelector: {}, policyTypes: ["Ingress"] } },
+        { metadata: { name: "mon-deny", namespace: "monitoring" }, spec: { podSelector: {}, policyTypes: ["Ingress"] } },
+        { metadata: { name: "sto-deny", namespace: "storage" }, spec: { podSelector: {}, policyTypes: ["Ingress"] } },
+        { metadata: { name: "db-deny", namespace: "database" }, spec: { podSelector: {}, policyTypes: ["Ingress"], ingress: [{ from: [{ podSelector: {} }] }] } },
+      ],
+    })
+    const fourOfFive = (await getKisaControls()).controls.find((c) => c.id === "KISA-NET-01")
+    expect(fourOfFive?.status).toBe("warn")
+    expect(fourOfFive?.detail).toContain("4/5")
+    expect(fourOfFive?.detail).toContain("devtools")
+
     mockCache.clear()
     mockGetKisaNetworkPolicies.mockResolvedValueOnce({ status: "forbidden", resource: "networkpolicies.networking.k8s.io" })
     const netForb = (await getKisaControls()).controls.find((c) => c.id === "KISA-NET-01")
@@ -439,15 +478,18 @@ describe("KISA sweep closed-world invariants (D-KISA-CLOSED-WORLD)", () => {
     expect(netForb?.partial).toBe(true)
   })
 
-  it("ADM-01 warns when any validate/verifyImages policy is Audit, Mixed, disabled (admission=false), or notReady", async () => {
+  it("ADM-01 warns when any validate/verifyImages policy is Audit, Mixed, disabled (admission=false), notReady, or unreviewed against baseline", async () => {
+    // Reproduction (R7): single unreviewed Enforce+Ready policy with false precondition/deny MUST NOT pass
     mockGetKisaKyvernoPolicies.mockResolvedValueOnce({
       status: "ok",
       data: [
-        { name: "p1", namespace: null, scope: "cluster", background: true, validationFailureAction: "Enforce", effectiveEnforcement: "Enforce", hasValidateOrVerifyRules: true, ready: true, rulesCount: 1, rules: [], title: null, description: null, category: null, severity: null },
-        { name: "p2", namespace: null, scope: "cluster", background: true, validationFailureAction: "Audit", effectiveEnforcement: "Audit", hasValidateOrVerifyRules: true, ready: true, rulesCount: 1, rules: [], title: null, description: null, category: null, severity: null },
+        { name: "arbitrary-always-false", namespace: null, scope: "cluster", background: true, validationFailureAction: "Enforce", effectiveEnforcement: "Enforce", hasValidateOrVerifyRules: true, specSha256: "deadbeef", hasOverrides: false, ready: true, rulesCount: 1, rules: [], title: null, description: null, category: null, severity: null },
       ],
     })
-    expect((await getKisaControls()).controls.find((c) => c.id === "KISA-ADM-01")?.status).toBe("warn")
+    const admUnreviewed = (await getKisaControls()).controls.find((c) => c.id === "KISA-ADM-01")
+    expect(admUnreviewed?.status).toBe("warn")
+    expect(admUnreviewed?.detail).toContain("unreviewed")
+    expect(admUnreviewed?.detailLocalized?.en).toContain("unreviewed")
 
     mockCache.clear()
     mockGetKisaKyvernoPolicies.mockResolvedValueOnce({
@@ -457,9 +499,26 @@ describe("KISA sweep closed-world invariants (D-KISA-CLOSED-WORLD)", () => {
       ],
     })
     expect((await getKisaControls()).controls.find((c) => c.id === "KISA-ADM-01")?.status).toBe("warn")
+
+    // Positive: custom baseline where all admissionRelevant entries match digest, Ready=True, and Enforce -> pass
+    const repoBaseline = policyBaselineData as KisaPolicyBaseline
+    const sample = repoBaseline.policies["disallow-latest-tag"]
+    const allEnforcedBaseline: KisaPolicyBaseline = {
+      ...repoBaseline,
+      policies: {
+        "disallow-latest-tag": sample,
+      },
+    }
+    mockGetKisaKyvernoPolicies.mockResolvedValueOnce({
+      status: "ok",
+      data: [
+        { name: "disallow-latest-tag", namespace: null, scope: "cluster", background: true, validationFailureAction: "Enforce", effectiveEnforcement: "Enforce", hasValidateOrVerifyRules: true, specSha256: sample.specSha256, hasOverrides: false, ready: true, rulesCount: 1, rules: [], title: null, description: null, category: null, severity: null },
+      ],
+    })
+    expect((await checkAdm01(allEnforcedBaseline)).status).toBe("pass")
   })
 
-  it("TLS-02 warns when a Ready certificate lacks valid notAfter; CP-01/ETCD-01 reject empty flags or missing kube-apiserver container", async () => {
+  it("TLS-02 warns when a Ready certificate lacks valid notAfter; CP-01/ETCD-01 reject empty flags, missing container, or unready/statusless Pod", async () => {
     mockGetKisaCertificates.mockResolvedValueOnce({
       status: "ok",
       data: [{ name: "c1", namespace: "ns", ready: true, issuing: false, revision: 1, notAfter: null, notBefore: null, dnsNames: [], issuer: "ca", renewalTime: null }],
@@ -474,5 +533,31 @@ describe("KISA sweep closed-world invariants (D-KISA-CLOSED-WORLD)", () => {
     const res = await getKisaControls()
     expect(res.controls.find((c) => c.id === "KISA-CP-01")?.status).toBe("manual")
     expect(res.controls.find((c) => c.id === "KISA-ETCD-01")?.status).toBe("manual")
+
+    // Reproduction (R7): Pod without status / Ready=True (ready=false) -> manual, never pass
+    mockCache.clear()
+    mockGetKisaApiServerPods.mockResolvedValue({
+      status: "ok",
+      data: [{ name: "apiserver-1", hasApiserverContainer: true, ready: false, containerArgs: ["--audit-log-path=/var/log/a.log", "--audit-policy-file=/etc/a.yaml", "--encryption-provider-config=/etc/enc.yaml"] }],
+    })
+    const unreadyRes = await getKisaControls()
+    expect(unreadyRes.controls.find((c) => c.id === "KISA-CP-01")?.status).toBe("manual")
+    expect(unreadyRes.controls.find((c) => c.id === "KISA-ETCD-01")?.status).toBe("manual")
+
+    // Positive: Ready=True with valid flags -> pass, and every control has ko + en detailLocalized
+    mockCache.clear()
+    mockGetKisaApiServerPods.mockResolvedValue({
+      status: "ok",
+      data: [{ name: "apiserver-1", hasApiserverContainer: true, ready: true, containerArgs: ["--audit-log-path=/var/log/a.log", "--audit-policy-file=/etc/a.yaml", "--encryption-provider-config=/etc/enc.yaml"] }],
+    })
+    const readyRes = await getKisaControls()
+    mockGetKisaApiServerPods.mockResolvedValue({ status: "ok", data: [] })
+    expect(readyRes.controls.find((c) => c.id === "KISA-CP-01")?.status).toBe("pass")
+    expect(readyRes.controls.find((c) => c.id === "KISA-ETCD-01")?.status).toBe("pass")
+    for (const c of readyRes.controls) {
+      expect(c.detailLocalized?.ko?.trim().length, `${c.id} missing ko detail`).toBeGreaterThan(0)
+      expect(c.detailLocalized?.en?.trim().length, `${c.id} missing en detail`).toBeGreaterThan(0)
+      expect(c.reasonKey, `${c.id} missing reasonKey`).toBeTruthy()
+    }
   })
 })

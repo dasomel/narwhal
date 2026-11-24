@@ -60,6 +60,7 @@ describe("KISA-ETCD-02 live evaluation", () => {
   const etcdDepPlain: KisaRawDeployment = {
     metadata: { name: "apisix-etcd", namespace: "platform-system" },
     spec: {
+      replicas: 1,
       template: {
         metadata: { labels: { app: "apisix-etcd" } },
         spec: {
@@ -67,10 +68,12 @@ describe("KISA-ETCD-02 live evaluation", () => {
         },
       },
     },
+    status: { replicas: 1, readyReplicas: 1 },
   }
   const etcdDepTls: KisaRawDeployment = {
     metadata: { name: "apisix-etcd", namespace: "platform-system" },
     spec: {
+      replicas: 1,
       template: {
         metadata: { labels: { app: "apisix-etcd" } },
         spec: {
@@ -88,6 +91,7 @@ describe("KISA-ETCD-02 live evaluation", () => {
         },
       },
     },
+    status: { replicas: 1, readyReplicas: 1 },
   }
   const strictPolicy: KisaRawNetworkPolicy = {
     metadata: { name: "apisix-etcd-ingress-policy", namespace: "platform-system" },
@@ -188,6 +192,56 @@ describe("KISA-ETCD-02 live evaluation", () => {
     expect(noEtcdRes.status).toBe("manual")
     expect(noEtcdRes.live).toBe(false)
     expect(noEtcdRes.reasonKey).toBe("compliance.kisa.reason.etcdContainerMissing")
+  })
+
+  it("reproduction (R7): rejects empty TLS flag values (--cert-file=) and replicas/readyReplicas=0", async () => {
+    mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [strictPolicy] })
+    const emptyFlagsDep: KisaRawDeployment = {
+      metadata: { name: "apisix-etcd", namespace: "platform-system" },
+      spec: {
+        replicas: 0,
+        template: {
+          metadata: { labels: { app: "apisix-etcd" } },
+          spec: {
+            containers: [{
+              name: "etcd",
+              command: [
+                "etcd",
+                "--listen-client-urls=https://0.0.0.0:2379",
+                "--client-cert-auth",
+                "--cert-file=",
+                "--key-file=",
+                "--trusted-ca-file=",
+              ],
+            }],
+          },
+        },
+      },
+      status: { replicas: 0, readyReplicas: 0 },
+    }
+    mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: emptyFlagsDep })
+    const emptyRes = await checkEtcd02()
+    expect(emptyRes.status).toBe("warn")
+    expect(emptyRes.reasonKey).toBe("compliance.kisa.reason.etcdIsolatedPlainHttp")
+
+    const zeroReplicasTls: KisaRawDeployment = {
+      ...etcdDepTls,
+      spec: { ...etcdDepTls.spec, replicas: 0 },
+      status: { replicas: 0, readyReplicas: 0 },
+    }
+    mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: zeroReplicasTls })
+    const zeroRes = await checkEtcd02()
+    expect(zeroRes.status).toBe("warn")
+    expect(zeroRes.reasonKey).toBe("compliance.kisa.reason.etcdWorkloadNotReady")
+
+    const missingStatusTls: KisaRawDeployment = {
+      metadata: etcdDepTls.metadata,
+      spec: etcdDepTls.spec,
+    }
+    mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: missingStatusTls })
+    const missingRes = await checkEtcd02()
+    expect(missingRes.status).toBe("manual")
+    expect(missingRes.reasonKey).toBe("compliance.kisa.reason.etcdWorkloadNotReady")
   })
 })
 
@@ -374,8 +428,14 @@ describe("KISA-TLS-01 live evaluation", () => {
 
 describe("KISA-OBS-01 live evaluation", () => {
   const readyFalcoPods: KisaRawPodStatus[] = [
-    { metadata: { name: "falco-abc", labels: { "app.kubernetes.io/name": "falco" } }, status: { phase: "Running", containerStatuses: [{ ready: true }] } },
-    { metadata: { name: "falco-falcosidekick-xyz", labels: { "app.kubernetes.io/name": "falcosidekick" } }, status: { phase: "Running", containerStatuses: [{ ready: true }] } },
+    {
+      metadata: { name: "falco-abc", labels: { "app.kubernetes.io/name": "falco" } },
+      status: { phase: "Running", conditions: [{ type: "Ready", status: "True" }], containerStatuses: [{ ready: true }] },
+    },
+    {
+      metadata: { name: "falco-falcosidekick-xyz", labels: { "app.kubernetes.io/name": "falcosidekick" } },
+      status: { phase: "Running", conditions: [{ type: "Ready", status: "True" }], containerStatuses: [{ ready: true }] },
+    },
   ]
 
   it("passes when an external receiver is routed and Falco + falcosidekick are ready", async () => {
@@ -436,6 +496,42 @@ describe("KISA-OBS-01 live evaluation", () => {
     const spoofRes = await checkObs01()
     expect(spoofRes.status).toBe("warn")
     expect(spoofRes.reasonKey).toBe("compliance.kisa.reason.obsFalcoDown")
+  })
+
+  it("reproduction (R7): requires authoritative Pod condition Ready=True (ignores containerStatuses.ready=true when Ready=False)", async () => {
+    mockGetKisaNotificationConfig.mockResolvedValue({
+      status: "ok",
+      data: {
+        spec: {
+          route: { receiver: "slack-sec" },
+          receivers: [{ name: "slack-sec", slackConfigs: [{ channel: "#sec" }] }],
+        },
+      },
+    })
+    mockGetKisaNamespacedPods.mockResolvedValue({
+      status: "ok",
+      data: [
+        {
+          metadata: { name: "falco-abc", labels: { "app.kubernetes.io/name": "falco" } },
+          status: {
+            phase: "Running",
+            conditions: [{ type: "Ready", status: "False" }],
+            containerStatuses: [{ ready: true }],
+          },
+        },
+        {
+          metadata: { name: "falco-falcosidekick-xyz", labels: { "app.kubernetes.io/name": "falcosidekick" } },
+          status: {
+            phase: "Running",
+            conditions: [{ type: "Ready", status: "True" }],
+            containerStatuses: [{ ready: true }],
+          },
+        },
+      ],
+    })
+    const res = await checkObs01()
+    expect(res.status).toBe("warn")
+    expect(res.reasonKey).toBe("compliance.kisa.reason.obsFalcoDown")
   })
 })
 
@@ -1478,5 +1574,155 @@ describe("KISA-RBAC-02 RBAC rule semantics, truth-table, and exact acceptance co
     expect(rbac01.status).toBe("fail")
     expect(rbac01.detail).toContain("kubeadm:cluster-admins")
     expect(rbac01.detail).toContain("정확 수용 1건")
+    expect(rbac01.detail).toContain("정확 규칙 미수용")
+    expect(rbac01.detail).not.toContain("불필요")
+    expect(rbac01.detailLocalized.en).toContain("not accepted by an exact rule")
+    expect(rbac01.detailLocalized.en).not.toContain("unnecessary")
+  })
+
+  it("reproduction (R7): never excludes namespaced Role/dev/cluster-admin with roles/escalate", async () => {
+    mockGetKisaRbacSnapshot.mockResolvedValue({
+      clusterRoleBindings: { status: "ok", data: [] },
+      roleBindings: {
+        status: "ok",
+        data: [{
+          metadata: { name: "dev-cluster-admin-binding", namespace: "dev" },
+          roleRef: { kind: "Role", name: "cluster-admin" },
+          subjects: [{ kind: "ServiceAccount", name: "app", namespace: "dev" }],
+        }],
+      },
+      clusterRoles: { status: "ok", data: [] },
+      roles: {
+        status: "ok",
+        data: [{
+          metadata: { name: "cluster-admin", namespace: "dev" },
+          rules: [{ apiGroups: ["rbac.authorization.k8s.io"], resources: ["roles"], verbs: ["escalate"] }],
+        }],
+      },
+    })
+    const rbac02 = await checkRbacLive("KISA-RBAC-02")
+    expect(rbac02.status).toBe("fail")
+    expect(rbac02.detail).toContain("dev/dev-cluster-admin-binding")
+  })
+
+  it("reproduction (R7): flags bootstrap system:basic-user when users/impersonate or extra SA subject is added", async () => {
+    // 1. Both users/impersonate AND extra SA added while preserving bootstrap metadata -> fail
+    mockGetKisaRbacSnapshot.mockResolvedValue({
+      clusterRoleBindings: {
+        status: "ok",
+        data: [{
+          metadata: {
+            name: "system:basic-user",
+            labels: { "kubernetes.io/bootstrapping": "rbac-defaults" },
+            annotations: { "rbac.authorization.kubernetes.io/autoupdate": "true" },
+          },
+          roleRef: { kind: "ClusterRole", name: "system:basic-user" },
+          subjects: [
+            { kind: "Group", name: "system:authenticated" },
+            { kind: "ServiceAccount", name: "rogue", namespace: "dev" },
+          ],
+        }],
+      },
+      roleBindings: { status: "ok", data: [] },
+      clusterRoles: {
+        status: "ok",
+        data: [{
+          metadata: { name: "system:basic-user" },
+          rules: [
+            { apiGroups: ["authorization.k8s.io"], resources: ["selfsubjectaccessreviews"], verbs: ["create"] },
+            { apiGroups: [""], resources: ["users"], verbs: ["impersonate"] },
+          ],
+        }],
+      },
+      roles: { status: "ok", data: [] },
+    })
+    const impersonateAndSa = await checkRbacLive("KISA-RBAC-02")
+    expect(impersonateAndSa.status).toBe("fail")
+    expect(impersonateAndSa.detail).toContain("system:basic-user")
+
+    // 2. Exact subjects + bootstrap metadata, but ClusterRole grants users/impersonate (outside rule checks) -> fail
+    mockGetKisaRbacSnapshot.mockResolvedValue({
+      clusterRoleBindings: {
+        status: "ok",
+        data: [{
+          metadata: {
+            name: "system:basic-user",
+            labels: { "kubernetes.io/bootstrapping": "rbac-defaults" },
+            annotations: { "rbac.authorization.kubernetes.io/autoupdate": "true" },
+          },
+          roleRef: { kind: "ClusterRole", name: "system:basic-user" },
+          subjects: [{ kind: "Group", name: "system:authenticated" }],
+        }],
+      },
+      roleBindings: { status: "ok", data: [] },
+      clusterRoles: {
+        status: "ok",
+        data: [{
+          metadata: { name: "system:basic-user" },
+          rules: [{ apiGroups: [""], resources: ["users"], verbs: ["impersonate"] }],
+        }],
+      },
+      roles: { status: "ok", data: [] },
+    })
+    expect((await checkRbacLive("KISA-RBAC-02")).status).toBe("fail")
+
+    // 3. Unmodified ClusterRole + bootstrap metadata, but extra SA in subjects -> warn (never accepted)
+    mockGetKisaRbacSnapshot.mockResolvedValue({
+      clusterRoleBindings: {
+        status: "ok",
+        data: [{
+          metadata: {
+            name: "system:controller:deployment-controller",
+            labels: { "kubernetes.io/bootstrapping": "rbac-defaults" },
+            annotations: { "rbac.authorization.kubernetes.io/autoupdate": "true" },
+          },
+          roleRef: { kind: "ClusterRole", name: "system:controller:deployment-controller" },
+          subjects: [
+            { kind: "ServiceAccount", name: "deployment-controller", namespace: "kube-system" },
+            { kind: "ServiceAccount", name: "rogue", namespace: "dev" },
+          ],
+        }],
+      },
+      roleBindings: { status: "ok", data: [] },
+      clusterRoles: {
+        status: "ok",
+        data: [{
+          metadata: { name: "system:controller:deployment-controller" },
+          rules: [{ apiGroups: ["apps"], resources: ["deployments"], verbs: ["create", "update"] }],
+        }],
+      },
+      roles: { status: "ok", data: [] },
+    })
+    const extraSa = await checkRbacLive("KISA-RBAC-02")
+    expect(extraSa.status).toBe("warn")
+    expect(extraSa.detail).toContain("High 1건")
+
+    // 4. Positive case: exact bootstrap metadata, subjects, and checks -> pass
+    mockGetKisaRbacSnapshot.mockResolvedValue({
+      clusterRoleBindings: {
+        status: "ok",
+        data: [{
+          metadata: {
+            name: "system:basic-user",
+            labels: { "kubernetes.io/bootstrapping": "rbac-defaults" },
+            annotations: { "rbac.authorization.kubernetes.io/autoupdate": "true" },
+          },
+          roleRef: { kind: "ClusterRole", name: "system:basic-user" },
+          subjects: [{ kind: "Group", name: "system:authenticated" }],
+        }],
+      },
+      roleBindings: { status: "ok", data: [] },
+      clusterRoles: {
+        status: "ok",
+        data: [{
+          metadata: { name: "system:basic-user" },
+          rules: [{ apiGroups: ["authorization.k8s.io"], resources: ["selfsubjectaccessreviews"], verbs: ["create"] }],
+        }],
+      },
+      roles: { status: "ok", data: [] },
+    })
+    const cleanBoot = await checkRbacLive("KISA-RBAC-02")
+    expect(cleanBoot.status).toBe("pass")
+    expect(cleanBoot.detail).toContain("정확 수용 1건")
   })
 })

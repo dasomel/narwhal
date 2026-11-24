@@ -56,18 +56,20 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Applied D-KISA-CLOSED-WORLD across KISA live controls: replaced Kyverno rule semantic helpers in IMG-02 with canonical spec SHA-256 comparison against kisa-policy-baseline.json (generated from gitops/resources/kyverno-policies.yaml stripping 9 documented Kyverno 1.18 admission defaults) + Ready=True + specHasOverrides + enforceEligible; isolated ETCD-02 strictly to 'etcd' and CP-01/ETCD-01 strictly to 'kube-apiserver' containers; restricted OBS-01 Falco match to Kubernetes labels; deleted isUnavoidableRbacBuiltin and system:/kubeadm: prefix exclusions in RBAC-01/02 in favor of 44 exact rbacBindings bootstrap rules requiring kubernetes.io/bootstrapping=rbac-defaults + autoupdate=true; hardened remaining controls in the 11-control sweep (TLS-01 rootPa portLevelMtls, NET-01 allow-all ingress:[{}], POD-01 audit/warn-only & privileged, ADM-01 partial-Enforce/disabled/notReady, TLS-02 missing notAfter, IMG-03 failed/0/truncated summary, CFG-01 totalControls=0)."
+      "summary": "Closed round-6 closed-world gaps across 7 MAJOR findings + 1 MINOR + THREAT MODEL: (a) deleted b.roleRef.name !== 'cluster-admin' exclusion; (b) pinned checks, roleRef, canonical subjects (44/44 identical to upstream Kubernetes release-1.35 bootstrappolicy defaults), and bootstrap metadata in rbacBindings with KSV046/047/049/111 coverage and blocked bootstrap-role fallback bypass; (c) NET-01 additive allow-all check across all policies in each namespace (incl. ::/0) naming devtools; (d) ADM-01 canonical baseline validation across all 9 admissionRelevant ClusterPolicies in kisa-policy-baseline.json exposing unreviewed headlamp-probe-tuning; (e) CP-01/ETCD-01 Ready=True condition requirement; (f) ETCD-02 non-empty flag values and readyReplicas === spec.replicas >= 1; (g) OBS-01 Ready=True condition authoritative; (h) removed applySimple so all 16 controls emit bilingual ko/en detailLocalized + reasonKey and fixed RBAC-01 text to 정확 규칙 미수용 / not accepted by an exact rule."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
       "scope": "Portal typecheck/lint/vitest/build/harness-rules, all check-portal-*.py --mutation-verify (incl. R395, R397, R399), make validate, make test, make lint, and read-only live measurement via kubectl proxy (admin rights).",
-      "summary": "Live after-r6 measurement via kubectl proxy (admin rights) yielded pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r6.json): KISA-RBAC-01 now fail (kubeadm:cluster-admins lacks bootstrapping metadata; only cluster-admin accepted), KISA-POD-01 now warn (0/14 enforced PSA), KISA-ADM-01 now warn (5/9 enforced), KISA-RBAC-02 fail (Critical 2, High 39 with 4 unbootstrapped kubeadm:* bindings surfaced, 56 exact-accepted), KISA-IMG-02 warn matching canonical baseline SHA-256 + Ready=True with verify-image-signatures Audit limited.",
+      "summary": "Live after-r7 measurement via kubectl proxy (admin rights) yielded pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r7.json): KISA-RBAC-01 fail ('정확 규칙 미수용 cluster-admin 바인딩 1건 (kubeadm:cluster-admins) (정확 수용 1건)'), KISA-RBAC-02 fail (Critical 3 incl. kubeadm:cluster-admins, High 39, exact-accepted 57 incl. cluster-admin), KISA-NET-01 warn (4/5 naming devtools), KISA-ADM-01 warn (5/9 + unreviewed headlamp-probe-tuning), all 16 controls with bilingual detailLocalized + reasonKey.",
       "evidence": [
-        "test:live measurement via kubectl proxy (admin rights) getKisaControls() after r6 -> summary pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r6.json)",
+        "test:live measurement via kubectl proxy (admin rights) getKisaControls() after r7 -> summary pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r7.json)",
+        "test:44/44 rbacBindings subjects verified 100% identical to upstream Kubernetes release-1.35 bootstrappolicy defaults (0 differences)",
         "test:cd portal && pnpm typecheck && pnpm lint && pnpm exec vitest run && pnpm build && bash scripts/harness-rules.sh",
-        "test:python3 scripts/test/lib/check-portal-kisa-live-controls.py --mutation-verify -> PASS (40 mutations rejected)",
+        "test:python3 scripts/test/lib/check-portal-exact-acceptance.py --mutation-verify -> PASS (33 mutations rejected)",
+        "test:python3 scripts/test/lib/check-portal-kisa-live-controls.py --mutation-verify -> PASS (51 mutations rejected)",
         "test:python3 scripts/test/lib/check-portal-kisa-policy-baseline.py --mutation-verify -> PASS (6 mutations + 9 behavioral checks rejected)"
       ]
     },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { mapPolicy } from "./k8s-client"
+import { mapApiServerPod, mapPolicy } from "./k8s-client"
 
 type Item = Parameters<typeof mapPolicy>[0]
 
@@ -46,5 +46,42 @@ describe("mapPolicy (Kyverno policies)", () => {
     const p = mapPolicy({ metadata: { name: "p" }, spec: { validationFailureAction: "Audit", rules: [rule("a", "Enforce")] } } as Item, "cluster")
     expect(p.validationFailureAction).toBe("Audit")
     expect(p.rules[0].failureAction).toBe("Enforce")
+  })
+})
+
+describe("mapApiServerPod readiness (R7 closed-world)", () => {
+  const baseSpec = {
+    containers: [{ name: "kube-apiserver", command: ["kube-apiserver", "--audit-log-path=/var/log/a.log"] }],
+  }
+
+  it("reproduction (R7): marks Pod without status or without Ready=True condition as ready=false", () => {
+    expect(mapApiServerPod({ metadata: { name: "apiserver-no-status" }, spec: baseSpec }).ready).toBe(false)
+    expect(
+      mapApiServerPod({ metadata: { name: "apiserver-no-conds" }, spec: baseSpec, status: { phase: "Running" } }).ready,
+    ).toBe(false)
+    expect(
+      mapApiServerPod({
+        metadata: { name: "apiserver-ready-false" },
+        spec: baseSpec,
+        status: { phase: "Running", conditions: [{ type: "Ready", status: "False" }] },
+      }).ready,
+    ).toBe(false)
+    expect(
+      mapApiServerPod({
+        metadata: { name: "apiserver-pending" },
+        spec: baseSpec,
+        status: { phase: "Pending", conditions: [{ type: "Ready", status: "True" }] },
+      }).ready,
+    ).toBe(false)
+  })
+
+  it("marks Pod Running with explicit Ready=True condition as ready=true", () => {
+    const info = mapApiServerPod({
+      metadata: { name: "apiserver-ready" },
+      spec: baseSpec,
+      status: { phase: "Running", conditions: [{ type: "Ready", status: "True" }] },
+    })
+    expect(info.ready).toBe(true)
+    expect(info.hasApiserverContainer).toBe(true)
   })
 })

@@ -259,8 +259,8 @@ def check(texts: dict[str, str]) -> list[str]:
 
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
-    ("mark verify-image-signatures enforceEligible=true while Audit", "baseline", '"enforceEligible": false,', '"enforceEligible": true,'),
-    ("tamper disallow-latest-tag specSha256 format", "baseline", '"specSha256": "', '"specSha256": "invalid'),
+    ("mark verify-image-signatures enforceEligible=true while Audit", "baseline", '"required": false,\n      "enforceEligible": false,', '"required": false,\n      "enforceEligible": true,'),
+    ("tamper disallow-latest-tag specSha256 format", "baseline", '"role": "latest-tag",\n      "admissionRelevant": true,\n      "specSha256": "', '"role": "latest-tag",\n      "admissionRelevant": true,\n      "specSha256": "invalid'),
     ("drop admission=true guard in canonicalizer (would strip admission=false)", "canon", "if (out.admission === true) delete out.admission", "delete out.admission"),
     ("drop sha256 value guard in signatureAlgorithm stripper", "canon", 'if (out.signatureAlgorithm === "sha256") delete out.signatureAlgorithm', "delete out.signatureAlgorithm"),
     ("drop KISA_POLICY_BASELINE default in checkImg02", "checks_ops", "checkImg02(baseline: KisaPolicyBaseline = KISA_POLICY_BASELINE)", "checkImg02(baseline: KisaPolicyBaseline = { schemaVersion: 1, sourceManifest: '', normalizedOutServerDefaults: [], policies: {} })"),

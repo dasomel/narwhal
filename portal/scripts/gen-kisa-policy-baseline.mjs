@@ -41,7 +41,7 @@ export function buildPolicyBaselineFromManifest(manifestText) {
   const byName = new Map()
   for (const doc of docs) {
     const name = doc?.metadata?.name
-    if (typeof name === "string" && name in IMG02_POLICY_ROLES) {
+    if (typeof name === "string" && name.length > 0) {
       if (byName.has(name)) {
         throw new Error(`Duplicate ClusterPolicy ${name} in ${MANIFEST_PATH}`)
       }
@@ -49,16 +49,24 @@ export function buildPolicyBaselineFromManifest(manifestText) {
     }
   }
 
-  const policies = {}
-  for (const [name, role] of Object.entries(IMG02_POLICY_ROLES)) {
-    const doc = byName.get(name)
-    if (!doc) {
-      throw new Error(`Missing required ClusterPolicy ${name} in ${MANIFEST_PATH}`)
+  for (const requiredName of Object.keys(IMG02_POLICY_ROLES)) {
+    if (!byName.has(requiredName)) {
+      throw new Error(`Missing required ClusterPolicy ${requiredName} in ${MANIFEST_PATH}`)
     }
+  }
+
+  const policies = {}
+  for (const [name, doc] of [...byName.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const role = IMG02_POLICY_ROLES[name] ?? null
     const spec = doc.spec ?? {}
     const action = spec.validationFailureAction ?? "Audit"
     const hasOverrides = specHasOverrides(spec)
     const specSha256 = computeKyvernoSpecDigest(spec)
+    const hasValidateOrVerifyRules = (spec.rules ?? []).some(
+      (r) => Boolean(r?.validate) || (Array.isArray(r?.verifyImages) && r.verifyImages.length > 0),
+    )
+    const admissionRelevant = hasValidateOrVerifyRules
+    const resolvedRole = role ?? (admissionRelevant ? "admission" : "mutate")
     const knownLimitations = []
     if (action !== "Enforce") {
       knownLimitations.push(`validationFailureAction=${action}`)
@@ -67,7 +75,7 @@ export function buildPolicyBaselineFromManifest(manifestText) {
       knownLimitations.push("policy_or_rule_overrides_present")
     }
 
-    if (role === "verify-images") {
+    if (resolvedRole === "verify-images") {
       const verifyEntries = (spec.rules ?? []).flatMap((r) => (Array.isArray(r?.verifyImages) ? r.verifyImages : []))
       const imageReferences = [...new Set(verifyEntries.flatMap((vi) => (Array.isArray(vi?.imageReferences) ? vi.imageReferences : [])))]
       const required = verifyEntries.some((vi) => vi?.required === false) ? false : verifyEntries.every((vi) => vi?.required === true)
@@ -79,7 +87,8 @@ export function buildPolicyBaselineFromManifest(manifestText) {
       }
       policies[name] = {
         name,
-        role,
+        role: resolvedRole,
+        admissionRelevant,
         specSha256,
         validationFailureAction: action,
         hasOverrides,
@@ -95,11 +104,12 @@ export function buildPolicyBaselineFromManifest(manifestText) {
     } else {
       policies[name] = {
         name,
-        role,
+        role: resolvedRole,
+        admissionRelevant,
         specSha256,
         validationFailureAction: action,
         hasOverrides,
-        enforceEligible: action === "Enforce" && !hasOverrides,
+        enforceEligible: admissionRelevant && action === "Enforce" && !hasOverrides,
         knownLimitations,
       }
     }

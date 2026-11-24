@@ -1441,7 +1441,50 @@
       "reviewedAt": "2026-11-23"
     }
   ],
-  "infra": [],
+  "infra": [
+    {
+      "id": "infra:cluster:Pod:kube-controller-manager-narwhal-master-1:rotation",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Pod",
+      "name": "kube-controller-manager-narwhal-master-1",
+      "checks": [
+        "KCV0038"
+      ],
+      "class": "upstream",
+      "reasonKey": "compliance.acceptedReason.rotationToolDisagreement",
+      "owner": "scripts/cluster/02-init-cluster.sh; docs/common/compliance-hardening.md#risk-accepted-exceptions",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "infra:cluster:Pod:kube-controller-manager-narwhal-master-1:metrics",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Pod",
+      "name": "kube-controller-manager-narwhal-master-1",
+      "checks": [
+        "KCV0039"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.controlPlaneMetrics",
+      "owner": "scripts/cluster/02-init-cluster.sh; docs/common/compliance-hardening.md#risk-accepted-exceptions",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "infra:cluster:Pod:kube-scheduler-narwhal-master-1:metrics",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Pod",
+      "name": "kube-scheduler-narwhal-master-1",
+      "checks": [
+        "KCV0041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.controlPlaneMetrics",
+      "owner": "scripts/cluster/02-init-cluster.sh; docs/common/compliance-hardening.md#risk-accepted-exceptions",
+      "reviewedAt": "2026-11-24"
+    }
+  ],
   "rbacBindings": [
     {
       "id": "rbac-binding:cluster:ClusterRoleBinding:cluster-admin:verified",
@@ -2514,6 +2557,36 @@
       "reviewedAt": "2026-11-24"
     }
   ],
-  "infra": [],
-  "benchmark": []
+  "benchmark": [
+    {
+      "id": "benchmark:cis-1.23:1.1.12:narwhal-master-1",
+      "benchmarkId": "cis-1.23",
+      "controlId": "1.1.12",
+      "node": "narwhal-master-1",
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.etcdRoot",
+      "owner": "scripts/cluster/02-init-cluster.sh; docs/common/compliance-hardening.md#risk-accepted-exceptions",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "benchmark:cis-1.23:1.3.7:narwhal-master-1",
+      "benchmarkId": "cis-1.23",
+      "controlId": "1.3.7",
+      "node": "narwhal-master-1",
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.controlPlaneMetrics",
+      "owner": "scripts/cluster/02-init-cluster.sh; docs/common/compliance-hardening.md#risk-accepted-exceptions",
+      "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "benchmark:cis-1.23:1.4.2:narwhal-master-1",
+      "benchmarkId": "cis-1.23",
+      "controlId": "1.4.2",
+      "node": "narwhal-master-1",
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.controlPlaneMetrics",
+      "owner": "scripts/cluster/02-init-cluster.sh; docs/common/compliance-hardening.md#risk-accepted-exceptions",
+      "reviewedAt": "2026-11-24"
+    }
+  ]
 }

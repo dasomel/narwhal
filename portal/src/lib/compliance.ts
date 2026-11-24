@@ -576,9 +576,9 @@ function resolveRbacRoleName(item: RawAuditReport): string {
   return ownerRefs[0]?.name ?? labels["trivy-operator.resource.name"] ?? item.metadata.name
 }
 
-function infraAuditMatcher(node: string): AcceptanceMatcher {
+function infraAuditMatcher(node: string, kind = "Node", namespace = ""): AcceptanceMatcher {
   return (checkId: string) => {
-    const match = matchInfraException(node, checkId)
+    const match = matchInfraException(node, checkId, kind, namespace)
     if (!match) return { accepted: false }
     return {
       accepted: true,
@@ -600,7 +600,7 @@ function classifyInfraAuditItem(item: RawAuditReport): {
 } {
   const labels = item.metadata.labels ?? {}
   const node = labels["trivy-operator.resource.name"] ?? item.metadata.name
-  const matcher = infraAuditMatcher(node)
+  const matcher = infraAuditMatcher(node, resolveConfigAuditResourceKind(item), item.metadata.namespace ?? "")
 
   const { summary, actionableSummary, acceptedSummary, matchedClasses, matchedRuleIds, totalsMatchSummary } =
     splitSummariesByChecks(item.report.checks ?? [], item.report.summary, matcher)
@@ -1257,6 +1257,13 @@ function classifyFrameworkCheck(
 
   const checkId = typeof check.checkID === "string" ? check.checkID.trim() : ""
   if (!checkId) return { status: "actionable" }
+
+  // D5: KCV Pod reports must use the same exact infra rule on list and framework
+  // paths. Cost: one lookup; escape: unlisted kind/namespace/name/check stays actionable.
+  if (resolved.kind === "Pod") {
+    const ann = infraAuditMatcher(resolved.name, resolved.kind, resolved.namespace)(checkId)
+    if (ann.accepted) return { status: "accepted", scope: scopeForAcceptedClass(ann.acceptedClass) }
+  }
 
   if (WORKLOAD_TARGET_KINDS.has(resolved.kind)) {
     let deploymentOwners: readonly string[] | undefined

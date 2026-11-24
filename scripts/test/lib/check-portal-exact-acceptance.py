@@ -42,6 +42,9 @@ def check(texts):
             if domain == 'rbac' and (rule.get('kind'), rule.get('scope')) not in (
                     ('Role', 'namespace'), ('ClusterRole', 'cluster')):
                 errors.append('RBAC kind/scope mismatch')
+            if domain == 'infra' and (rule.get('kind'), rule.get('scope')) not in (
+                    ('Node', 'cluster'), ('Pod', 'namespace')):
+                errors.append('infra kind/scope mismatch')
             if domain == 'configAudit' and rule.get('kind') not in (
                     'Pod', 'ReplicaSet', 'DaemonSet', 'StatefulSet', 'CronJob'):
                 errors.append('invalid workload kind')
@@ -207,6 +210,10 @@ def main():
     data_noboot = json.loads(texts['data'])
     data_noboot['rbacBindings'][0]['requireBootstrapMetadata'] = False
     mutations.append(('rbacBindings drop requireBootstrapMetadata', 'data', json.dumps(data_noboot)))
+    for field, value in (('name', 'kube-controller-manager-*'), ('kind', 'Deployment'), ('namePrefix', 'kube-')):
+        data = json.loads(texts['data'])
+        data['infra'][0][field] = value
+        mutations.append((f'infra invalid {field}', 'data', json.dumps(data)))
     replacements = [
         ('prefix acceptance', 'matcher', 'rule.checks.has(normalizedCheck)', 'roleName.startsWith("system:")'),
         ('regex acceptance', 'matcher', 'rule.checks.has(normalizedCheck)', '/system:/.test(roleName)'),

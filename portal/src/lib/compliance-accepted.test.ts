@@ -224,8 +224,16 @@ describe("findUnusedAcceptanceRules (D-P2-4)", () => {
 })
 
 describe("matchInfraException", () => {
-  it("keeps ACCEPTED_INFRA_RULES empty and fails closed (KCV0056/KCV0057/KCV0059 stay actionable)", () => {
-    expect(ACCEPTED_INFRA_RULES).toEqual([])
+  it("accepts only measured exact nodes/checks and fails closed (KCV0056/KCV0057/KCV0059 stay actionable)", () => {
+    expect(ACCEPTED_INFRA_RULES).toHaveLength(3)
+    for (const [target, check] of [["kube-controller-manager-narwhal-master-1", "KCV0038"], ["kube-controller-manager-narwhal-master-1", "KCV0039"], ["kube-scheduler-narwhal-master-1", "KCV0041"]]) {
+      expect(matchInfraException(target, check, "Pod", "kube-system")?.reviewedAt).toBe("2026-11-24")
+      expect(matchInfraException(target + "0", check, "Pod", "kube-system")).toBeNull()
+      expect(matchInfraException(target, check, "Pod", "dev")).toBeNull()
+      expect(matchInfraException(target, check, "Node", "")).toBeNull()
+      expect(matchInfraException("narwhal-master-1", check)).toBeNull()
+      expect(matchInfraException("narwhal-master-2", check)).toBeNull()
+    }
     expect(matchInfraException("narwhal-master-1", "KCV0056")).toBeNull()
     expect(matchInfraException("narwhal-master-2", "AVD-KCV-0056")).toBeNull()
     expect(matchInfraException("narwhal-master-1", "KCV0059")).toBeNull()
@@ -236,9 +244,15 @@ describe("matchInfraException", () => {
 })
 
 describe("matchBenchmarkException", () => {
-  it("keeps ACCEPTED_BENCHMARK_RULES empty in this lane and fails closed on every input", () => {
-    expect(ACCEPTED_BENCHMARK_RULES).toEqual([])
-    expect(matchBenchmarkException("cis-1.23", "1.1.12", "narwhal-master-1")).toBeNull()
+  it("accepts only reviewed benchmark/control/node triples", () => {
+    expect(ACCEPTED_BENCHMARK_RULES).toHaveLength(3)
+    for (const control of ["1.1.12", "1.3.7", "1.4.2"]) {
+      expect(matchBenchmarkException("cis-1.23", control, "narwhal-master-1")?.reviewedAt).toBe("2026-11-24")
+      expect(matchBenchmarkException("cis-1.23", control + "0", "narwhal-master-1")).toBeNull()
+      expect(matchBenchmarkException("cis-2.0", control, "narwhal-master-1")).toBeNull()
+      expect(matchBenchmarkException("cis-1.23", control, "narwhal-master-2")).toBeNull()
+    }
+
     expect(matchBenchmarkException("cis-1.23", "1.3.7")).toBeNull()
     expect(matchBenchmarkException("", "1.3.7")).toBeNull()
     expect(matchBenchmarkException("cis-1.23", "")).toBeNull()
@@ -322,8 +336,8 @@ describe("allowlist integrity and docs parity", () => {
 
     const docInfraRows = parseMarkdownSectionTable(markdown, "### Infra allowlist")
     const codeInfraRows: ParsedDocRow[] = ACCEPTED_INFRA_RULES.map((r) => ({
-      namespace: "cluster",
-      workload: `Node/${r.node}`,
+      namespace: r.namespace || "cluster",
+      workload: `${r.kind}/${r.node}`,
       checks: Array.from(r.checks).map(normalizeCheckId).sort(),
       cls: r.class,
       reason: r.reason,

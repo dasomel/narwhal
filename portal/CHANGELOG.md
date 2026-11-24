@@ -9,6 +9,10 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Changed
+
+- Added exact node-scoped CIS exceptions for kubeadm root etcd (1.1.12), off-node secure metrics (1.3.7/1.4.2), and the Trivy-only rotation gate disagreement (1.3.6); no live rollout or new passing-test claim.
+
 ## [1.1.26] - 2026-11-24
 
 ### Changed

@@ -310,8 +310,11 @@ functionality or reverses an intentional trade-off.
 
 1. **`--bind-address` = 0.0.0.0 on controller-manager / scheduler** (CIS 1.3.7, 1.4.2 —
    1.4.2 is CRITICAL). Deliberately set so Prometheus (off the control-plane node) can
-   scrape `/metrics`. On the private `192.168.56.0/24` lab network this is not an
-   exposure. Reverting to 127.0.0.1 blinds monitoring. See `02-init-cluster.sh`.
+   scrape `/metrics`. Secure ports 10257/10259 use kubeadm authentication/authorization
+   kubeconfigs (recorded scheduler command in `cis-record-live-r2.json`).
+   Binding all interfaces still exposes the listener; this acceptance does not claim
+   node firewall isolation. Reverting to 127.0.0.1 blinds monitoring.
+   Owner: `scripts/cluster/02-init-cluster.sh` controllerManager/scheduler extraArgs.
 2. **Privileged / hostPath / hostNetwork / NET_RAW / root workloads** (CIS 5.2.2/5.2.3/
    5.2.5/5.2.6/5.2.7/5.2.8/5.2.10/5.2.12/5.2.13, 5.7.2/5.7.3; NSA 1.0/1.1/1.2/1.4/1.5/
    1.7/1.9/1.10; PSS baseline/restricted 3/4/5). The large counts are dominated by
@@ -496,8 +499,17 @@ Bindings without all four guarantees (including `kubeadm:cluster-admins`, `kubea
 
 | namespace | workload | checks | class | reason |
 | --- | --- | --- | --- | --- |
+| kube-system | Pod/kube-controller-manager-narwhal-master-1 | KCV0038 | upstream | Tool disagreement on Kubernetes 1.35.7: kube-bench CIS 1.3.6 PASS, Trivy KCV0038 requires an explicit default-enabled gate. No gate is added without offline lifecycle evidence; this does not verify serving certificate issuance. |
+| kube-system | Pod/kube-controller-manager-narwhal-master-1 | KCV0039 | accept | bind-address=0.0.0.0 permits off-node Prometheus scraping; secure ports 10257/10259 use kubeadm authentication/authorization kubeconfigs. No node firewall isolation is claimed. |
+| kube-system | Pod/kube-scheduler-narwhal-master-1 | KCV0041 | accept | bind-address=0.0.0.0 permits off-node Prometheus scraping; secure ports 10257/10259 use kubeadm authentication/authorization kubeconfigs. No node firewall isolation is claimed. |
 
 ## Node collector & CIS 1.1.9 / 1.1.12 resolution
+
+Historical collector investigation below is not the current ownership conclusion.
+On 2026-11-24 the owner reported kubeadm root etcd and no host etcd user;
+the new kube-bench result is UNKNOWN:UNKNOWN (not an observed UID). The exact
+benchmark acceptance and 0700 evidence are recorded in Control-plane CIS follow-up.
+KCV0059 remains unaccepted: no current Trivy failure was supplied for that check.
 
 - **CIS 1.1.12 (`KCV0059`, etcd data directory ownership `etcd:etcd`):** `node-collector:0.3.1` executes `CMD-0012` (`stat -c %U:%G $etcd.datadirs`, resolving to `/var/lib/etcd` via `defaultdatadir`). Live collector output on `narwhal-master-1` returned `"etcdDataDirectoryOwnership":{"values":["UNKNOWN:UNKNOWN"]}` because `/var/lib/etcd` is `700 etcd:etcd` (`995:984`) on the host while the container lacked the host `etcd` entry in `/etc/passwd`/`/etc/group`. `gitops/charts/narwhal-apps/templates/trivy-operator.yaml` mounts host `/etc/passwd` and `/etc/group` read-only into `nodeCollector` (`D-NODE-COLLECTOR-PASSWD`, preserving all chart `0.27.0` defaults) and sets `podAnnotations."checksum/node-collector-mounts"` (`D-NODE-COLLECTOR-PASSWD-ROLLOUT`) so the scanner resolves real `etcd:etcd` ownership; `KCV0059` is **not** allowlisted and stays actionable until rollout + rescan. Note: `trivy-operator` v0.25.0 (chart `0.27.0`) loads `nodeCollector` ConfigMap mounts only at operator startup and its upstream Deployment omits a ConfigMap checksum annotation, so on an existing cluster without the `podAnnotations` checksum change an ArgoCD sync alone does not apply new mounts — run `kubectl -n security-system rollout restart deploy/trivy-operator` before triggering/waiting for rescan.
 - **CIS 1.1.9 / 1.1.10 (`KCV0056` / `KCV0057`, CNI file permissions `<= 600` and ownership `root:root`):** `node-collector:0.3.1` executes `CMD-0009` (`stat -c %a /*/cni/*`, `nodeType: master`) and `CMD-0010` (`stat -c %U:%G /*/cni/*`, `nodeType: master`). With the chart default `mountPath: /etc/cni/net.d/`, `/*/cni/*` matched the directory `/etc/cni/net.d` itself (`700 root:root`) instead of the files inside it (`05-cilium.conflist` `600 root:root`), falsely failing `KCV0056`. Mounting host `/etc/cni/net.d/` at container path `/etc/cni` in `gitops/charts/narwhal-apps/templates/trivy-operator.yaml` (`D-NODE-COLLECTOR-CNI-MOUNT`) makes `/*/cni/*` glob the actual CNI config files (`/etc/cni/05-cilium.conflist`), so live `node-collector:0.3.1` on `narwhal-master-1` returns `"containerNetworkInterfaceFilePermissions":{"values":[600]}` and `"containerNetworkInterfaceFileOwnership":{"values":["root:root"]}` while keeping every other collector key unchanged.
@@ -733,3 +745,65 @@ The upstream repository `aquasecurity/kube-bench` reports the Apache-2.0 license
 (GitHub license API, measured 2026-11-24). The bundle SBOM has no license source
 for this image artifact, so it stays in the SBOM review inventory with that note.
 The image index digest was re-measured with `crane digest` on 2026-11-24T11:51:59Z.
+
+## Control-plane CIS follow-up (2026-11-24, offline author lane)
+
+D1: bootstrap explicitly renders `- --terminated-pod-gc-threshold=12500` in
+kube-controller-manager. This retains the upstream default, avoiding an unmeasured
+retention reduction to 1000. Join scripts consume the published ClusterConfiguration;
+they do not render a second controllerManager argument list. Existing clusters need
+`scripts/ops/apply-control-plane-flags.sh`; no live rollout was done in this lane.
+
+### Reviewed exact exceptions
+
+Rules in `portal/src/data/compliance-acceptance-rules.json` are restricted to
+`narwhal-master-1`, reviewedAt `2026-11-24`; new nodes remain actionable. Trivy control-plane reports identify the exact Pod
+resource name (`kube-controller-manager-narwhal-master-1` or
+`kube-scheduler-narwhal-master-1`); the legacy infra matcher argument `node`
+contains this resource identity for Pod reports, not the host node name.
+
+| Control / source | True reason and evidence | Owner |
+| --- | --- | --- |
+| 1.1.12 / kube-bench | kubeadm static-pod etcd runs as root; no host etcd user exists (owner-provided live facts). `cis-record-live-r2.json` reports 1.1.12 `UNKNOWN:UNKNOWN`, not proof of root ownership; 1.1.11 PASS actualValue is `permissions=700`. Changing ownership alone can deny etcd access. | `02-init-cluster.sh` etcd.local; kubeadm owns the generated static pod |
+| 1.3.7 / kube-bench + Trivy KCV0039 | `controllerManager.extraArgs` intentionally binds 0.0.0.0 for off-node Prometheus. Secure-port authentication/authorization is retained; no firewall isolation is asserted. See Risk-accepted exceptions item 1. | `scripts/cluster/02-init-cluster.sh` |
+| 1.4.2 / kube-bench + Trivy KCV0041 | `scheduler.extraArgs` intentionally binds 0.0.0.0 for off-node Prometheus. The measured scheduler command includes authentication/authorization kubeconfigs. See Risk-accepted exceptions item 1. | `scripts/cluster/02-init-cluster.sh` |
+| 1.3.6 / Trivy KCV0038 only | Tool disagreement: kube-bench PASS on v1.35.7; the older Trivy check demands an explicit default-enabled gate. Gate lifecycle/GA removal could not be verified without network, so no feature-gates flag is added. This exception does not certify serving certificate issuance or accept a future kube-bench FAIL. IDs KCV0038/39/41 are mapped in investigation Q4; the portal aggregate snapshot itself omits the underlying check IDs. | `scripts/cluster/02-init-cluster.sh`; exact Trivy exception only |
+
+### Needs owner decision / staged rollout
+
+These remain actionable, with no configuration change or acceptance rule.
+
+| Control | Concrete risk | Prerequisite / owner decision |
+| --- | --- | --- |
+| 1.2.1 anonymous-auth=false | kubeadm apiserver HTTP health probes need unauthenticated health endpoints; disabling anonymous auth can restart a healthy apiserver. Bootstrap VIP readiness uses unauthenticated `curl -sk https://${VIP_ADDRESS}:6443/healthz` (without `--fail`, so HTTP 401 can be mistaken for success). kube-vip uses a copied admin.conf against the local API for leader election, not an anonymous health probe. Cloud LB probe behavior is not established here. | Inventory generated kubeadm probes and LB checks; choose restricted anonymous health-path authentication or authenticated probes, test failover and rollback on one node. |
+| 1.2.6 kubelet-certificate-authority | Enforcing CA validation rejects current self-signed kubelet serving certificates (owner-provided Q4 facts). Repo KubeletConfiguration omits serverTLSBootstrap and has no serving CSR approver; omission alone does not prove a live cert chain. | Deploy a serving CSR approver with identity/SAN validation, enable serverTLSBootstrap, verify issued chains and all API-to-kubelet consumers before adding the CA flag. |
+| 1.2.10 EventRateLimit | Enabling the plugin without admission configuration/budgets can fail API startup or discard operational events. | Define admission configuration volume/file and per-user/namespace/server budgets; measure event rates and stage saturation/recovery testing. |
+| 1.2.12 AlwaysPullImages | Admission changes cached/pre-loaded image behavior, adding registry availability/authentication dependency in this air-gapped platform. | Mirror and authenticate every workload image, rehearse registry outage and node restart, then decide rollout policy. |
+| 4.2.6 protect-kernel-defaults | Kubelet can refuse startup when required kernel values differ; the earlier hardening was removed for this reason. | Persist and verify on every node, including old base-marker nodes: vm.overcommit_memory=1, vm.panic_on_oom=0, kernel.panic=10, kernel.panic_on_oops=1, kernel.keys.root_maxkeys=1000000, kernel.keys.root_maxbytes=25000000; reboot-test first, then staged kubelet restart with rollback. |
+
+### Existing-cluster trial and recovery (orchestrator only)
+
+Use explicit mappings for each real control-plane node, sequentially; no default
+kubectl context is consulted. SSH uses BatchMode and normal known-host checks;
+pass `--identity` for the existing Vagrant private key or cloud SSH key.
+The remote node needs sudo and yq v4. Inspect the dry-run diff first:
+
+```bash
+bash scripts/ops/apply-control-plane-flags.sh --kubeconfig /absolute/admin.conf --node narwhal-master-1=vagrant@192.168.56.10 --identity /absolute/node-key --dry-run
+bash scripts/ops/apply-control-plane-flags.sh --kubeconfig /absolute/admin.conf --node narwhal-master-1=vagrant@192.168.56.10 --identity /absolute/node-key --timeout 180
+# Use the exact backup path printed by the successful apply:
+bash scripts/ops/apply-control-plane-flags.sh --kubeconfig /absolute/admin.conf --node narwhal-master-1=vagrant@192.168.56.10 --identity /absolute/node-key --rollback /var/lib/narwhal/control-plane-flags/manifest.REPLACE
+```
+
+The apply waits for a new mirror-pod UID, Ready=True and the exact flag in command;
+an unchanged rerun verifies Ready and command without requiring another restart.
+On failure or interruption after backup, it restores automatically via SSH.
+Backups are root-only 0600 outside manifests; manual recovery only restores the
+manifest and requires separate observation of recovered Ready state. A dead SSH
+connection can prevent rollback; use console recovery with the same backup.
+The helper changes static-pod manifests only; it does not rewrite the existing
+cluster-published kubeadm ConfigMap. Before a future kubeadm upgrade/regeneration
+or joining another control-plane node, persist the reviewed extraArg in that
+cluster configuration as a separate controlled operation, or reapply this helper.
+After a live trial, verify kube-bench, Prometheus scraping and controller-manager
+logs before moving to the next node. Offline stubs do not prove those properties.

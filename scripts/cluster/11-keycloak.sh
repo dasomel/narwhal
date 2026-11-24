@@ -188,11 +188,12 @@ kubectl rollout status deployment/keycloak-operator -n iam --timeout=180s
 #=========================================
 # Create Keycloak CR
 # - hostname v2: hostname.hostname + hostname.strict + proxy.headers
-# - Istio ambient: no opt-out label (runs in ambient mesh)
+# - Istio ambient: iam is intentionally excluded in 09-istio-ambient.sh (plain TCP 8080
+#   from APISIX/Portal); GitOps keycloak-cr.yaml also sets istio.io/dataplane-mode: none.
 # - KC_DB_URL: full JDBC URL with sslmode=disable via podTemplate env
-#   (Istio ambient ztunnel intercepts TCP at L4; operator-set KC_DB_URL_HOST/PORT/DATABASE
-#    default to SSL → ztunnel HBONE causes SSL handshake reset. KC_DB_URL overrides all.)
 # - Ingress disabled: APISIX handles routing
+# - networkPolicy.enabled: false (D-KC-NETPOL-GITOPS) — operator's default policy opens
+#   8080/9000 to all sources; GitOps gitops/resources/iam-ingress-policy.yaml owns iam isolation.
 #=========================================
 echo "=== Creating Keycloak CR ==="
 
@@ -228,6 +229,11 @@ spec:
   proxy:
     headers: xforwarded
   ingress:
+    enabled: false
+  # D-KC-NETPOL-GITOPS: parity with GitOps keycloak-cr.yaml. Disables operator-generated
+  # keycloak-network-policy (which otherwise opens 8080/9000 to all sources and defeats
+  # iam-default-deny-ingress). ArgoCD wave 2 applies gitops/resources/iam-ingress-policy.yaml.
+  networkPolicy:
     enabled: false
   # Operator HONORS spec.resources but IGNORES unsupported.podTemplate resources.
   # Without an effective CPU request Keycloak gets starved under node contention ->
@@ -276,30 +282,14 @@ spec:
 EOF
 
 #=========================================
-# Keycloak Operator auto-creates NetworkPolicy that blocks HBONE 15008.
-# Cannot modify operator-managed policy → create separate allow policy.
+# Remove legacy script-created keycloak-allow-hbone if present.
+# History: 2026-02-24/04-06 added keycloak-allow-hbone (TCP 15008 + 8080 from ALL sources)
+# when iam ran in ambient mesh and operator's keycloak-network-policy blocked HBONE 15008.
+# Now iam is non-ambient (09-istio-ambient.sh), operator NetworkPolicy generation is disabled
+# (spec.networkPolicy.enabled: false), and gitops/resources/iam-ingress-policy.yaml owns all
+# iam ingress allow rules. Keeping an allow-all NetworkPolicy here would defeat iam isolation.
 #=========================================
-echo "=== Creating keycloak-allow-hbone NetworkPolicy ==="
-
-kubectl apply -f - <<'EOF'
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: keycloak-allow-hbone
-  namespace: iam
-spec:
-  podSelector:
-    matchLabels:
-      app: keycloak
-  ingress:
-    - ports:
-        - protocol: TCP
-          port: 15008
-        - protocol: TCP
-          port: 8080
-  policyTypes:
-    - Ingress
-EOF
+kubectl delete networkpolicy keycloak-allow-hbone -n iam --ignore-not-found
 
 #=========================================
 # Wait for Keycloak pod to be ready

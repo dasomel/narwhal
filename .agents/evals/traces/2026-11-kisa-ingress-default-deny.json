@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-kisa-ingress-default-deny-20261124",
+  "task": "Add namespace-level ingress default-deny NetworkPolicies with evidence-backed per-workload allowlists and host-network CiliumNetworkPolicy webhook rules for iam, storage, and monitoring (KISA-NET-01 and KISA-TLS-01 monitoring-permissive compensation), eliminate pre-existing iam allow-all policies (keycloak-allow-hbone and operator keycloak-network-policy), and harden R398/trial-plan per independent review",
+  "changeContext": {
+    "paths": [
+      "gitops/resources/iam-ingress-policy.yaml",
+      "gitops/resources/storage-ingress-policy.yaml",
+      "gitops/resources/monitoring-ingress-policy.yaml",
+      "gitops/charts/narwhal-apps/templates/iam-ingress-policy.yaml",
+      "gitops/charts/narwhal-apps/templates/storage-ingress-policy.yaml",
+      "gitops/charts/narwhal-apps/templates/monitoring-ingress-policy.yaml",
+      "gitops/charts/narwhal-platform/templates/keycloak-cr.yaml",
+      "gitops/resources/network-policies.yaml",
+      "scripts/cluster/11-keycloak.sh",
+      "docs/common/upgrade-waves.json",
+      "docs/common/lessons-log.md",
+      "docs/common/notification-channels.md",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "scripts/test/lib/check-permissive-ingress-isolation.py",
+      "scripts/test/lib/ingress-isolation-probe.py",
+      "scripts/test/lib/check-ambient-netpol.py",
+      "scripts/test/lib/check-kisa-ingress-default-deny.py",
+      "scripts/verify/ambient-netpol-check.sh",
+      "scripts/test/regression-check-kakao.sh",
+      ".agents/evals/traces/2026-11-kisa-ingress-default-deny.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "In scope: namespace-level ingress default-deny + per-workload allows + ArgoCD Applications (wave 2) for iam, storage, and monitoring; eliminating pre-existing iam allow-all policies (keycloak-allow-hbone in 11-keycloak.sh and operator-generated keycloak-network-policy via spec.networkPolicy.enabled: false in keycloak-cr.yaml and 11-keycloak.sh); removing monitoring-permissive from R244 KNOWN_ISSUES; hardening R398 (per-rule CNP ports, required caller matrix, repo/script allow-all sweep); updating docs/lessons-log/trace and untracked .review/{caller-matrix,trial-plan}.md. Out of scope: devtools namespace, egress policies, portal/ code, and live cluster mutations."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Read-only live cluster sweep (narwhal-master-1, K8s v1.35.7, Cilium v1.19.4, VXLAN) across iam, storage, and monitoring confirmed: (1) Two pre-existing ingress allow-all policies existed in iam — keycloak-allow-hbone (managedFields: kubectl-client-side-apply, from scripts/cluster/11-keycloak.sh:284, allowing TCP 15008+8080 from ALL sources) and keycloak-network-policy (managedFields: keycloakcontroller, ownerReference: Keycloak/iam/keycloak, allowing TCP 8080 and 9000 from ALL sources because CRD keycloaks.k8s.keycloak.org/v2alpha1 defaults spec.networkPolicy.enabled=true and treats unset http/management lists as all-sources). Zero pre-existing ingress allow-alls existed in storage (storage-egress, narrow velero-metrics) or monitoring (monitoring-egress, narrow alloy-logs-ingress-policy, narrow tempo-ingress-policy). (2) Independent review also flagged R398 union-port CNP check, missing required-caller assertions, and incomplete trial-plan probes (empty default Velero backup, missing openbao-snapshot Job, openbao-agent-injector dry-run webhook, dev OTLP ingest, real Falco event delivery, and post-GitOps selfHeal rollback).",
+      "evidence": [
+        "runtime:read-only kubectl get netpol,cnp -n iam/storage/monitoring --show-managed-fields -> iam has allow-all keycloak-allow-hbone (script) and keycloak-network-policy (keycloakcontroller); storage/monitoring have zero ingress allow-alls",
+        "runtime:read-only kubectl get crd keycloaks.k8s.keycloak.org -> spec.networkPolicy.enabled (boolean, default true) disables operator-managed keycloak-network-policy",
+        "runtime:read-only Prometheus /api/v1/targets?state=active -> 26/26 UP; live webhooks, ApisixUpstreams, CronJobs, PVCs, and dev narwhal.io/otlp-ingest=true verified"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Eliminated both iam ingress allow-alls (D-KC-NETPOL-GITOPS): set spec.networkPolicy.enabled: false in both gitops/charts/narwhal-platform/templates/keycloak-cr.yaml and scripts/cluster/11-keycloak.sh (disabling operator-managed keycloak-network-policy on 8080/9000), and removed keycloak-allow-hbone creation from 11-keycloak.sh (replacing with idempotent kubectl delete networkpolicy keycloak-allow-hbone -n iam --ignore-not-found). Updated iam-ingress-policy.yaml as the single source of truth and documented the zero-downtime existing-cluster migration order in .review/trial-plan.md. Hardened R398 (scripts/test/lib/check-kisa-ingress-default-deny.py) to check CNP toPorts per rule (rejecting extra unrestricted rules), enforce the full REQUIRED_CALLERS matrix mirroring .review/caller-matrix.md, reject any ingress allow-all in iam/storage/monitoring across gitops/resources/*.yaml and scripts/cluster/*.sh, and assert spec.networkPolicy.enabled=false in both Keycloak CR sources (29 mutations). Expanded .review/trial-plan.md with PVC-bearing Velero PodVolumeBackup + verify-backup.sh, openbao-snapshot Job, openbao-agent-injector server-side dry-run injection check, dev OTLP ingest + default deny probe, real Falco->falcosidekick->Loki event delivery probe, and post-GitOps ArgoCD selfHeal rollback instructions."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline validation (make validate), R398 (29 mutations) and R200 --mutation-verify, R244, shellcheck on touched scripts, helm template renders, and full static regression suite (make test). Live cluster rollout (iam migration + staged iam -> storage -> monitoring trial) has NOT been executed (deferred to orchestrator per .review/trial-plan.md).",
+      "summary": "All offline checks, mutation verifiers (R398 29 mutations, R200), R244, shellcheck, make validate, and make test passed with 0 failures.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-kisa-ingress-default-deny.py --mutation-verify -> PASS (29 mutations rejected)",
+        "test:python3 scripts/test/lib/check-ambient-netpol.py --mutation-verify -> PASS",
+        "test:python3 scripts/test/lib/check-permissive-ingress-isolation.py -> PASS (1 known-issue: platform-system/platform-system-permissive)",
+        "test:shellcheck scripts/cluster/11-keycloak.sh scripts/verify/ambient-netpol-check.sh scripts/test/regression-check-kakao.sh -> exit 0",
+        "test:make validate -> exit 0",
+        "test:make test -> passed 506 failed 0 warnings 3 (research/evidence restored via git checkout -- research/evidence)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "All 1 MAJOR and 3 MINOR review findings are fixed and offline-verified. Not yet verified: live cluster rollout and existing-cluster iam migration (exact commands and full caller probes documented in .review/trial-plan.md)."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Review findings resolved and offline verification green; staged live rollout pending orchestrator execution."
+    }
+  ]
+}

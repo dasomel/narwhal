@@ -37,6 +37,7 @@ need no vendored file).
 | `metallb.io/ipaddresspool_v1beta1.json` | `af960060185517d3478fd46103709e8864885f06ab97e6bb34ce103b25fd5c41` |
 | `metallb.io/l2advertisement_v1beta1.json` | `b46a5b24012be1d5486efc25d75fefed39b40b325a11c178708538fca0dac27f` |
 | `cilium.io/ciliumclusterwidenetworkpolicy_v2.json` | `26d412da176005e249897913a21c498f0125f94b9ec87804e556799a30764e11` |
+| `cilium.io/ciliumnetworkpolicy_v2.json` | `9261eccbea2468f399aa2f22495b5a1c2c54bd180d015925392afb4f17326c85` |
 
 ## CRD kinds found vs. vendored
 

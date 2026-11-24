@@ -138,9 +138,9 @@ spec:
           port: 15008
 ---
 # D610-6: explicit portal -> Alertmanager API path, including HBONE for mesh callers.
-# monitoring has no ingress deny/AuthorizationPolicy; monitoring-permissive already
-# admits the portal's ambient opt-out plaintext. Do not add a new ALLOW policy there:
-# it would implicitly deny existing Prometheus/APISIX/Falco callers.
+# monitoring-permissive admits the portal's ambient opt-out plaintext, and
+# gitops/resources/monitoring-ingress-policy.yaml enforces monitoring ingress default-deny
+# with explicit per-workload allow rules (incl. portal -> alertmanager:9093 + 15008).
 # Cost: currently redundant with devtools-egress allow-all. Escape: remove this policy;
 # retain it when narrowing that baseline so notification GET/POST stays reachable.
 apiVersion: networking.k8s.io/v1

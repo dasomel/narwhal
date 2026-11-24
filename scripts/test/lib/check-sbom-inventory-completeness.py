@@ -28,7 +28,7 @@ UNKNOWN_REVIEW = {
     ("chart", "openbao@0.28.3"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
     ("chart", "seaweedfs@4.34.0"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
     ("chart", "tempo@2.2.3"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
-    ("chart", "trivy-operator@0.27.0"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
+    ("chart", "trivy-operator@0.38.1"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
     ("chart", "velero@12.0.3"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
     ("chart", "ztunnel@1.30.1"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),
     ("chart", "apisix@2.13.0"): ("Helm chart license is not mapped by the bundle SBOM", "supply-chain"),

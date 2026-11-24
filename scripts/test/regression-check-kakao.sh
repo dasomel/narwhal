@@ -3581,6 +3581,9 @@ PYEOF'
   # 2026-11-24: KISA-NET-01 namespace-level ingress default-deny for iam, storage, and monitoring (and KISA-TLS-01 monitoring-permissive compensation)
   check R398 "KISA-NET-01: namespace ingress default-deny + required caller matrix for iam, storage, and monitoring (wave 2), per-rule CNP webhook ports, zero repo/script allow-alls + Keycloak CR spec.networkPolicy.enabled=false, HBONE 15008, R244 monitoring-permissive removed, devtools untouched; 29 mutations caught" \
     python3 scripts/test/lib/check-kisa-ingress-default-deny.py --mutation-verify
+  # 2026-11-25: Phase 2 trivy-operator 0.36.1 (chart 0.38.1) pass-record generation + CCR reportType summary
+  check R404 "trivy-operator 0.36.1 (chart 0.38.1) sets string reportRecordFailedChecksOnly 'false', switches all ClusterComplianceReports (CIS/NSA/PSS/KISA) to reportType summary (D-CCR-SUMMARY), and syncs trivy/airgap/SBOM/version pins; 12 mutations caught" \
+    python3 scripts/test/lib/check-trivy-pass-records.py --mutation-verify
 }
 
 #=========================================

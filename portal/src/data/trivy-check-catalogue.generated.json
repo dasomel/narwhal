@@ -1,9 +1,9 @@
 {
   "source": {
-    "trivyOperatorVersion": "0.25.0",
-    "trivyOperatorChartVersion": "0.27.0",
+    "trivyOperatorVersion": "0.36.1",
+    "trivyOperatorChartVersion": "0.38.1",
     "trivyChecksModule": "github.com/aquasecurity/trivy-checks",
-    "trivyChecksVersion": "v1.7.1",
+    "trivyChecksVersion": "v1.12.2-0.20261012053351-ac85645895ed",
     "policyMode": "embedded",
     "excludedPaths": [
       "checks/kubernetes/advanced/optional"
@@ -21,7 +21,11 @@
         "kube-system"
       ],
       "severity": "Medium",
-      "title": "Ensure that the --anonymous-auth argument is set to false"
+      "title": "Ensure that the --anonymous-auth argument is set to false",
+      "legacyId": "KCV-0001",
+      "aliases": [
+        "KCV-0001"
+      ]
     },
     "KCV0002": {
       "id": "KCV0002",
@@ -34,7 +38,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --token-auth-file parameter is not set"
+      "title": "Ensure that the --token-auth-file parameter is not set",
+      "legacyId": "KCV-0002",
+      "aliases": [
+        "KCV-0002"
+      ]
     },
     "KCV0003": {
       "id": "KCV0003",
@@ -47,7 +55,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --DenyServiceExternalIPs is not set"
+      "title": "Ensure that the --DenyServiceExternalIPs is not set",
+      "legacyId": "KCV-0003",
+      "aliases": [
+        "KCV-0003"
+      ]
     },
     "KCV0004": {
       "id": "KCV0004",
@@ -60,7 +72,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --kubelet-https argument is set to true"
+      "title": "Ensure that the --kubelet-https argument is set to true",
+      "legacyId": "KCV-0004",
+      "aliases": [
+        "KCV-0004"
+      ]
     },
     "KCV0005": {
       "id": "KCV0005",
@@ -73,7 +89,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --kubelet-client-certificate and --kubelet-client-key arguments are set as appropriate"
+      "title": "Ensure that the --kubelet-client-certificate and --kubelet-client-key arguments are set as appropriate",
+      "legacyId": "KCV-0005",
+      "aliases": [
+        "KCV-0005"
+      ]
     },
     "KCV0006": {
       "id": "KCV0006",
@@ -86,7 +106,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --kubelet-certificate-authority argument is set as appropriate"
+      "title": "Ensure that the --kubelet-certificate-authority argument is set as appropriate",
+      "legacyId": "KCV-0006",
+      "aliases": [
+        "KCV-0006"
+      ]
     },
     "KCV0007": {
       "id": "KCV0007",
@@ -99,7 +123,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --authorization-mode argument is not set to AlwaysAllow"
+      "title": "Ensure that the --authorization-mode argument is not set to AlwaysAllow",
+      "legacyId": "KCV-0007",
+      "aliases": [
+        "KCV-0007"
+      ]
     },
     "KCV0008": {
       "id": "KCV0008",
@@ -112,7 +140,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --authorization-mode argument includes Node"
+      "title": "Ensure that the --authorization-mode argument includes Node",
+      "legacyId": "KCV-0008",
+      "aliases": [
+        "KCV-0008"
+      ]
     },
     "KCV0009": {
       "id": "KCV0009",
@@ -125,7 +157,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --authorization-mode argument includes RBAC"
+      "title": "Ensure that the --authorization-mode argument includes RBAC",
+      "legacyId": "KCV-0009",
+      "aliases": [
+        "KCV-0009"
+      ]
     },
     "KCV0010": {
       "id": "KCV0010",
@@ -138,7 +174,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the admission control plugin EventRateLimit is set"
+      "title": "Ensure that the admission control plugin EventRateLimit is set",
+      "legacyId": "KCV-0010",
+      "aliases": [
+        "KCV-0010"
+      ]
     },
     "KCV0011": {
       "id": "KCV0011",
@@ -151,7 +191,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the admission control plugin AlwaysAdmit is not set"
+      "title": "Ensure that the admission control plugin AlwaysAdmit is not set",
+      "legacyId": "KCV-0011",
+      "aliases": [
+        "KCV-0011"
+      ]
     },
     "KCV0012": {
       "id": "KCV0012",
@@ -165,8 +209,9 @@
       ],
       "severity": "Low",
       "title": "Ensure that the admission control plugin AlwaysPullImages is set",
-      "legacyId": "KSV0012",
+      "legacyId": "KCV-0012",
       "aliases": [
+        "KCV-0012",
         "KSV0012"
       ]
     },
@@ -181,7 +226,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the admission control plugin SecurityContextDeny is set if PodSecurityPolicy is not used"
+      "title": "Ensure that the admission control plugin SecurityContextDeny is set if PodSecurityPolicy is not used",
+      "legacyId": "KCV-0013",
+      "aliases": [
+        "KCV-0013"
+      ]
     },
     "KCV0014": {
       "id": "KCV0014",
@@ -194,7 +243,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the admission control plugin ServiceAccount is set"
+      "title": "Ensure that the admission control plugin ServiceAccount is set",
+      "legacyId": "KCV-0014",
+      "aliases": [
+        "KCV-0014"
+      ]
     },
     "KCV0015": {
       "id": "KCV0015",
@@ -207,7 +260,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the admission control plugin NamespaceLifecycle is set"
+      "title": "Ensure that the admission control plugin NamespaceLifecycle is set",
+      "legacyId": "KCV-0015",
+      "aliases": [
+        "KCV-0015"
+      ]
     },
     "KCV0016": {
       "id": "KCV0016",
@@ -220,7 +277,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the admission control plugin NodeRestriction is set"
+      "title": "Ensure that the admission control plugin NodeRestriction is set",
+      "legacyId": "KCV-0016",
+      "aliases": [
+        "KCV-0016"
+      ]
     },
     "KCV0017": {
       "id": "KCV0017",
@@ -233,7 +294,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --secure-port argument is not set to 0"
+      "title": "Ensure that the --secure-port argument is not set to 0",
+      "legacyId": "KCV-0017",
+      "aliases": [
+        "KCV-0017"
+      ]
     },
     "KCV0018": {
       "id": "KCV0018",
@@ -246,7 +311,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --profiling argument is set to false"
+      "title": "Ensure that the --profiling argument is set to false",
+      "legacyId": "KCV-0018",
+      "aliases": [
+        "KCV-0018"
+      ]
     },
     "KCV0019": {
       "id": "KCV0019",
@@ -259,7 +328,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --audit-log-path argument is set"
+      "title": "Ensure that the --audit-log-path argument is set",
+      "legacyId": "KCV-0019",
+      "aliases": [
+        "KCV-0019"
+      ]
     },
     "KCV0020": {
       "id": "KCV0020",
@@ -272,7 +345,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --audit-log-maxage argument is set to 30 or as appropriate"
+      "title": "Ensure that the --audit-log-maxage argument is set to 30 or as appropriate",
+      "legacyId": "KCV-0020",
+      "aliases": [
+        "KCV-0020"
+      ]
     },
     "KCV0021": {
       "id": "KCV0021",
@@ -285,7 +362,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --audit-log-maxbackup argument is set to 10 or as appropriate"
+      "title": "Ensure that the --audit-log-maxbackup argument is set to 10 or as appropriate",
+      "legacyId": "KCV-0021",
+      "aliases": [
+        "KCV-0021"
+      ]
     },
     "KCV0022": {
       "id": "KCV0022",
@@ -298,7 +379,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --audit-log-maxsize argument is set to 100 or as appropriate"
+      "title": "Ensure that the --audit-log-maxsize argument is set to 100 or as appropriate",
+      "legacyId": "KCV-0022",
+      "aliases": [
+        "KCV-0022"
+      ]
     },
     "KCV0024": {
       "id": "KCV0024",
@@ -311,7 +396,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --service-account-lookup argument is set to true"
+      "title": "Ensure that the --service-account-lookup argument is set to true",
+      "legacyId": "KCV-0024",
+      "aliases": [
+        "KCV-0024"
+      ]
     },
     "KCV0025": {
       "id": "KCV0025",
@@ -324,7 +413,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --service-account-key-file argument is set as appropriate"
+      "title": "Ensure that the --service-account-key-file argument is set as appropriate",
+      "legacyId": "KCV-0025",
+      "aliases": [
+        "KCV-0025"
+      ]
     },
     "KCV0026": {
       "id": "KCV0026",
@@ -337,7 +430,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --etcd-certfile and --etcd-keyfile arguments are set as appropriate"
+      "title": "Ensure that the --etcd-certfile and --etcd-keyfile arguments are set as appropriate",
+      "legacyId": "KCV-0026",
+      "aliases": [
+        "KCV-0026"
+      ]
     },
     "KCV0027": {
       "id": "KCV0027",
@@ -350,7 +447,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --tls-cert-file and --tls-private-key-file arguments are set as appropriate"
+      "title": "Ensure that the --tls-cert-file and --tls-private-key-file arguments are set as appropriate",
+      "legacyId": "KCV-0027",
+      "aliases": [
+        "KCV-0027"
+      ]
     },
     "KCV0028": {
       "id": "KCV0028",
@@ -363,7 +464,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --client-ca-file argument is set as appropriate"
+      "title": "Ensure that the --client-ca-file argument is set as appropriate",
+      "legacyId": "KCV-0028",
+      "aliases": [
+        "KCV-0028"
+      ]
     },
     "KCV0029": {
       "id": "KCV0029",
@@ -376,7 +481,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --etcd-cafile argument is set as appropriate"
+      "title": "Ensure that the --etcd-cafile argument is set as appropriate",
+      "legacyId": "KCV-0029",
+      "aliases": [
+        "KCV-0029"
+      ]
     },
     "KCV0030": {
       "id": "KCV0030",
@@ -389,7 +498,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --encryption-provider-config argument is set as appropriate"
+      "title": "Ensure that the --encryption-provider-config argument is set as appropriate",
+      "legacyId": "KCV-0030",
+      "aliases": [
+        "KCV-0030"
+      ]
     },
     "KCV0033": {
       "id": "KCV0033",
@@ -402,7 +515,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --terminated-pod-gc-threshold argument is set as appropriate"
+      "title": "Ensure that the --terminated-pod-gc-threshold argument is set as appropriate",
+      "legacyId": "KCV-0033",
+      "aliases": [
+        "KCV-0033"
+      ]
     },
     "KCV0034": {
       "id": "KCV0034",
@@ -415,7 +532,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --profiling argument is set to false"
+      "title": "Ensure that the --profiling argument is set to false",
+      "legacyId": "KCV-0034",
+      "aliases": [
+        "KCV-0034"
+      ]
     },
     "KCV0035": {
       "id": "KCV0035",
@@ -429,8 +550,9 @@
       ],
       "severity": "Low",
       "title": "Ensure that the --use-service-account-credentials argument is set to true",
-      "legacyId": "KCV0135",
+      "legacyId": "KCV-0035",
       "aliases": [
+        "KCV-0035",
         "KCV0135"
       ]
     },
@@ -445,7 +567,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --service-account-private-key-file argument is set as appropriate"
+      "title": "Ensure that the --service-account-private-key-file argument is set as appropriate",
+      "legacyId": "KCV-0036",
+      "aliases": [
+        "KCV-0036"
+      ]
     },
     "KCV0037": {
       "id": "KCV0037",
@@ -458,7 +584,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --root-ca-file argument is set as appropriate"
+      "title": "Ensure that the --root-ca-file argument is set as appropriate",
+      "legacyId": "KCV-0037",
+      "aliases": [
+        "KCV-0037"
+      ]
     },
     "KCV0038": {
       "id": "KCV0038",
@@ -471,7 +601,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the RotateKubeletServerCertificate argument is set to true"
+      "title": "Ensure that the RotateKubeletServerCertificate argument is set to true",
+      "legacyId": "KCV-0038",
+      "aliases": [
+        "KCV-0038"
+      ]
     },
     "KCV0039": {
       "id": "KCV0039",
@@ -484,7 +618,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --bind-address argument is set to 127.0.0.1"
+      "title": "Ensure that the --bind-address argument is set to 127.0.0.1",
+      "legacyId": "KCV-0039",
+      "aliases": [
+        "KCV-0039"
+      ]
     },
     "KCV0040": {
       "id": "KCV0040",
@@ -497,7 +635,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --profiling argument is set to false"
+      "title": "Ensure that the --profiling argument is set to false",
+      "legacyId": "KCV-0040",
+      "aliases": [
+        "KCV-0040"
+      ]
     },
     "KCV0041": {
       "id": "KCV0041",
@@ -510,7 +652,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --bind-address argument is set to 127.0.0.1"
+      "title": "Ensure that the --bind-address argument is set to 127.0.0.1",
+      "legacyId": "KCV-0041",
+      "aliases": [
+        "KCV-0041"
+      ]
     },
     "KCV0042": {
       "id": "KCV0042",
@@ -523,7 +669,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --cert-file and --key-file arguments are set as appropriate"
+      "title": "Ensure that the --cert-file and --key-file arguments are set as appropriate",
+      "legacyId": "KCV-0042",
+      "aliases": [
+        "KCV-0042"
+      ]
     },
     "KCV0043": {
       "id": "KCV0043",
@@ -536,7 +686,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --client-cert-auth argument is set to true"
+      "title": "Ensure that the --client-cert-auth argument is set to true",
+      "legacyId": "KCV-0043",
+      "aliases": [
+        "KCV-0043"
+      ]
     },
     "KCV0044": {
       "id": "KCV0044",
@@ -549,7 +703,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --auto-tls argument is not set to true"
+      "title": "Ensure that the --auto-tls argument is not set to true",
+      "legacyId": "KCV-0044",
+      "aliases": [
+        "KCV-0044"
+      ]
     },
     "KCV0045": {
       "id": "KCV0045",
@@ -562,7 +720,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --peer-cert-file and --peer-key-file arguments are set as appropriate"
+      "title": "Ensure that the --peer-cert-file and --peer-key-file arguments are set as appropriate",
+      "legacyId": "KCV-0045",
+      "aliases": [
+        "KCV-0045"
+      ]
     },
     "KCV0046": {
       "id": "KCV0046",
@@ -575,7 +737,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --peer-client-cert-auth argument is set to true"
+      "title": "Ensure that the --peer-client-cert-auth argument is set to true",
+      "legacyId": "KCV-0046",
+      "aliases": [
+        "KCV-0046"
+      ]
     },
     "KCV0047": {
       "id": "KCV0047",
@@ -588,7 +754,11 @@
         "kube-system"
       ],
       "severity": "Low",
-      "title": "Ensure that the --peer-auto-tls argument is not set to true"
+      "title": "Ensure that the --peer-auto-tls argument is not set to true",
+      "legacyId": "KCV-0047",
+      "aliases": [
+        "KCV-0047"
+      ]
     },
     "KCV0048": {
       "id": "KCV0048",
@@ -601,7 +771,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the API server pod specification file permissions are set to 600 or more restrictive"
+      "title": "Ensure that the API server pod specification file permissions are set to 600 or more restrictive",
+      "legacyId": "KCV-0048",
+      "aliases": [
+        "KCV-0048"
+      ]
     },
     "KCV0049": {
       "id": "KCV0049",
@@ -614,7 +788,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the API server pod specification file ownership is set to root:root"
+      "title": "Ensure that the API server pod specification file ownership is set to root:root",
+      "legacyId": "KCV-0049",
+      "aliases": [
+        "KCV-0049"
+      ]
     },
     "KCV0050": {
       "id": "KCV0050",
@@ -627,7 +805,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the controller manager pod specification file permissions are set to 600 or more restrictive"
+      "title": "Ensure that the controller manager pod specification file permissions are set to 600 or more restrictive",
+      "legacyId": "KCV-0050",
+      "aliases": [
+        "KCV-0050"
+      ]
     },
     "KCV0051": {
       "id": "KCV0051",
@@ -640,7 +822,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the controller manager pod specification file ownership is set to root:root"
+      "title": "Ensure that the controller manager pod specification file ownership is set to root:root",
+      "legacyId": "KCV-0051",
+      "aliases": [
+        "KCV-0051"
+      ]
     },
     "KCV0052": {
       "id": "KCV0052",
@@ -653,7 +839,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the scheduler pod specification file permissions are set to 600 or more restrictive"
+      "title": "Ensure that the scheduler pod specification file permissions are set to 600 or more restrictive",
+      "legacyId": "KCV-0052",
+      "aliases": [
+        "KCV-0052"
+      ]
     },
     "KCV0053": {
       "id": "KCV0053",
@@ -666,7 +856,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the scheduler pod specification file ownership is set to root:root"
+      "title": "Ensure that the scheduler pod specification file ownership is set to root:root",
+      "legacyId": "KCV-0053",
+      "aliases": [
+        "KCV-0053"
+      ]
     },
     "KCV0054": {
       "id": "KCV0054",
@@ -679,7 +873,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the etcd pod specification file permissions are set to 600 or more restrictive"
+      "title": "Ensure that the etcd pod specification file permissions are set to 600 or more restrictive",
+      "legacyId": "KCV-0054",
+      "aliases": [
+        "KCV-0054"
+      ]
     },
     "KCV0055": {
       "id": "KCV0055",
@@ -692,7 +890,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the etcd pod specification file ownership is set to root:root"
+      "title": "Ensure that the etcd pod specification file ownership is set to root:root",
+      "legacyId": "KCV-0055",
+      "aliases": [
+        "KCV-0055"
+      ]
     },
     "KCV0056": {
       "id": "KCV0056",
@@ -705,7 +907,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the container network interface file permissions are set to 600 or more restrictive"
+      "title": "Ensure that the container network interface file permissions are set to 600 or more restrictive",
+      "legacyId": "KCV-0056",
+      "aliases": [
+        "KCV-0056"
+      ]
     },
     "KCV0057": {
       "id": "KCV0057",
@@ -718,7 +924,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the container network interface file ownership is set to root:root"
+      "title": "Ensure that the container network interface file ownership is set to root:root",
+      "legacyId": "KCV-0057",
+      "aliases": [
+        "KCV-0057"
+      ]
     },
     "KCV0058": {
       "id": "KCV0058",
@@ -731,7 +941,11 @@
         "master"
       ],
       "severity": "Low",
-      "title": "Ensure that the etcd data directory permissions are set to 700 or more restrictive"
+      "title": "Ensure that the etcd data directory permissions are set to 700 or more restrictive",
+      "legacyId": "KCV-0058",
+      "aliases": [
+        "KCV-0058"
+      ]
     },
     "KCV0059": {
       "id": "KCV0059",
@@ -744,7 +958,11 @@
         "master"
       ],
       "severity": "Low",
-      "title": "Ensure that the etcd data directory ownership is set to etcd:etcd"
+      "title": "Ensure that the etcd data directory ownership is set to etcd:etcd",
+      "legacyId": "KCV-0059",
+      "aliases": [
+        "KCV-0059"
+      ]
     },
     "KCV0060": {
       "id": "KCV0060",
@@ -757,7 +975,11 @@
         "master"
       ],
       "severity": "Critical",
-      "title": "Ensure that the admin config file permissions are set to 600 or more restrictive"
+      "title": "Ensure that the admin config file permissions are set to 600 or more restrictive",
+      "legacyId": "KCV-0060",
+      "aliases": [
+        "KCV-0060"
+      ]
     },
     "KCV0061": {
       "id": "KCV0061",
@@ -770,7 +992,11 @@
         "master"
       ],
       "severity": "Critical",
-      "title": "Ensure that the admin config  file ownership is set to root:root"
+      "title": "Ensure that the admin config  file ownership is set to root:root",
+      "legacyId": "KCV-0061",
+      "aliases": [
+        "KCV-0061"
+      ]
     },
     "KCV0062": {
       "id": "KCV0062",
@@ -783,7 +1009,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the scheduler config file permissions are set to 600 or more restrictive"
+      "title": "Ensure that the scheduler config file permissions are set to 600 or more restrictive",
+      "legacyId": "KCV-0062",
+      "aliases": [
+        "KCV-0062"
+      ]
     },
     "KCV0063": {
       "id": "KCV0063",
@@ -796,7 +1026,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the scheduler config  file ownership is set to root:root"
+      "title": "Ensure that the scheduler config  file ownership is set to root:root",
+      "legacyId": "KCV-0063",
+      "aliases": [
+        "KCV-0063"
+      ]
     },
     "KCV0064": {
       "id": "KCV0064",
@@ -809,7 +1043,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the controller-manager config file permissions are set to 600 or more restrictive"
+      "title": "Ensure that the controller-manager config file permissions are set to 600 or more restrictive",
+      "legacyId": "KCV-0064",
+      "aliases": [
+        "KCV-0064"
+      ]
     },
     "KCV0065": {
       "id": "KCV0065",
@@ -822,7 +1060,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the controller-manager config  file ownership is set to root:root"
+      "title": "Ensure that the controller-manager config  file ownership is set to root:root",
+      "legacyId": "KCV-0065",
+      "aliases": [
+        "KCV-0065"
+      ]
     },
     "KCV0066": {
       "id": "KCV0066",
@@ -835,7 +1077,11 @@
         "master"
       ],
       "severity": "Critical",
-      "title": "Ensure that the Kubernetes PKI directory and file file ownership is set to root:root"
+      "title": "Ensure that the Kubernetes PKI directory and file file ownership is set to root:root",
+      "legacyId": "KCV-0066",
+      "aliases": [
+        "KCV-0066"
+      ]
     },
     "KCV0067": {
       "id": "KCV0067",
@@ -848,7 +1094,11 @@
         "master"
       ],
       "severity": "Critical",
-      "title": "Ensure that the Kubernetes PKI key file permission is set to 600"
+      "title": "Ensure that the Kubernetes PKI key file permission is set to 600",
+      "legacyId": "KCV-0067",
+      "aliases": [
+        "KCV-0067"
+      ]
     },
     "KCV0068": {
       "id": "KCV0068",
@@ -861,7 +1111,11 @@
         "master"
       ],
       "severity": "High",
-      "title": "Ensure that the Kubernetes PKI certificate file permission is set to 600"
+      "title": "Ensure that the Kubernetes PKI certificate file permission is set to 600",
+      "legacyId": "KCV-0068",
+      "aliases": [
+        "KCV-0068"
+      ]
     },
     "KCV0069": {
       "id": "KCV0069",
@@ -875,7 +1129,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "Ensure that the kubelet service file permissions are set to 600 or more restrictive"
+      "title": "Ensure that the kubelet service file permissions are set to 600 or more restrictive",
+      "legacyId": "KCV-0069",
+      "aliases": [
+        "KCV-0069"
+      ]
     },
     "KCV0070": {
       "id": "KCV0070",
@@ -889,7 +1147,11 @@
         "worker"
       ],
       "severity": "Critical",
-      "title": "Ensure that the kubelet service file ownership is set to root:root"
+      "title": "Ensure that the kubelet service file ownership is set to root:root",
+      "legacyId": "KCV-0070",
+      "aliases": [
+        "KCV-0070"
+      ]
     },
     "KCV0071": {
       "id": "KCV0071",
@@ -903,7 +1165,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "If proxy kubeconfig file exists ensure permissions are set to 600 or more restrictive"
+      "title": "If proxy kubeconfig file exists ensure permissions are set to 600 or more restrictive",
+      "legacyId": "KCV-0071",
+      "aliases": [
+        "KCV-0071"
+      ]
     },
     "KCV0072": {
       "id": "KCV0072",
@@ -917,7 +1183,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "if proxy kubeconfig file exists ensure ownership is set to root:root"
+      "title": "if proxy kubeconfig file exists ensure ownership is set to root:root",
+      "legacyId": "KCV-0072",
+      "aliases": [
+        "KCV-0072"
+      ]
     },
     "KCV0073": {
       "id": "KCV0073",
@@ -931,7 +1201,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "Ensure that the --kubeconfig kubelet.conf file permissions are set to 600 or more restrictive"
+      "title": "Ensure that the --kubeconfig kubelet.conf file permissions are set to 600 or more restrictive",
+      "legacyId": "KCV-0073",
+      "aliases": [
+        "KCV-0073"
+      ]
     },
     "KCV0074": {
       "id": "KCV0074",
@@ -945,7 +1219,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "Ensure that the --kubeconfig kubelet.conf file ownership is set to root:root"
+      "title": "Ensure that the --kubeconfig kubelet.conf file ownership is set to root:root",
+      "legacyId": "KCV-0074",
+      "aliases": [
+        "KCV-0074"
+      ]
     },
     "KCV0075": {
       "id": "KCV0075",
@@ -959,7 +1237,11 @@
         "worker"
       ],
       "severity": "Critical",
-      "title": "Ensure that the certificate authorities file permissions are set to 600 or more restrictive"
+      "title": "Ensure that the certificate authorities file permissions are set to 600 or more restrictive",
+      "legacyId": "KCV-0075",
+      "aliases": [
+        "KCV-0075"
+      ]
     },
     "KCV0076": {
       "id": "KCV0076",
@@ -973,7 +1255,11 @@
         "worker"
       ],
       "severity": "Critical",
-      "title": "Ensure that the client certificate authorities file ownership is set to root:root"
+      "title": "Ensure that the client certificate authorities file ownership is set to root:root",
+      "legacyId": "KCV-0076",
+      "aliases": [
+        "KCV-0076"
+      ]
     },
     "KCV0077": {
       "id": "KCV0077",
@@ -987,7 +1273,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "If the kubelet config.yaml configuration file is being used validate permissions set to 600 or more restrictive"
+      "title": "If the kubelet config.yaml configuration file is being used validate permissions set to 600 or more restrictive",
+      "legacyId": "KCV-0077",
+      "aliases": [
+        "KCV-0077"
+      ]
     },
     "KCV0078": {
       "id": "KCV0078",
@@ -1001,7 +1291,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "If the kubelet config.yaml configuration file is being used validate file ownership is set to root:root "
+      "title": "If the kubelet config.yaml configuration file is being used validate file ownership is set to root:root ",
+      "legacyId": "KCV-0078",
+      "aliases": [
+        "KCV-0078"
+      ]
     },
     "KCV0079": {
       "id": "KCV0079",
@@ -1015,7 +1309,11 @@
         "worker"
       ],
       "severity": "Critical",
-      "title": "Ensure that the --anonymous-auth argument is set to false"
+      "title": "Ensure that the --anonymous-auth argument is set to false",
+      "legacyId": "KCV-0079",
+      "aliases": [
+        "KCV-0079"
+      ]
     },
     "KCV0080": {
       "id": "KCV0080",
@@ -1029,7 +1327,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "Ensure that the --authorization-mode argument is not set to AlwaysAllow"
+      "title": "Ensure that the --authorization-mode argument is not set to AlwaysAllow",
+      "legacyId": "KCV-0080",
+      "aliases": [
+        "KCV-0080"
+      ]
     },
     "KCV0081": {
       "id": "KCV0081",
@@ -1043,7 +1345,11 @@
         "worker"
       ],
       "severity": "Critical",
-      "title": "Ensure that the --client-ca-file argument is set as appropriate"
+      "title": "Ensure that the --client-ca-file argument is set as appropriate",
+      "legacyId": "KCV-0081",
+      "aliases": [
+        "KCV-0081"
+      ]
     },
     "KCV0082": {
       "id": "KCV0082",
@@ -1057,7 +1363,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "Verify that the --read-only-port argument is set to 0"
+      "title": "Verify that the --read-only-port argument is set to 0",
+      "legacyId": "KCV-0082",
+      "aliases": [
+        "KCV-0082"
+      ]
     },
     "KCV0083": {
       "id": "KCV0083",
@@ -1071,7 +1381,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "Ensure that the --protect-kernel-defaults is set to true"
+      "title": "Ensure that the --protect-kernel-defaults is set to true",
+      "legacyId": "KCV-0083",
+      "aliases": [
+        "KCV-0083"
+      ]
     },
     "KCV0084": {
       "id": "KCV0084",
@@ -1085,7 +1399,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "Ensure that the --make-iptables-util-chains argument is set to true"
+      "title": "Ensure that the --make-iptables-util-chains argument is set to true",
+      "legacyId": "KCV-0084",
+      "aliases": [
+        "KCV-0084"
+      ]
     },
     "KCV0085": {
       "id": "KCV0085",
@@ -1099,7 +1417,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "Ensure that the --streaming-connection-idle-timeout argument is not set to 0"
+      "title": "Ensure that the --streaming-connection-idle-timeout argument is not set to 0",
+      "legacyId": "KCV-0085",
+      "aliases": [
+        "KCV-0085"
+      ]
     },
     "KCV0086": {
       "id": "KCV0086",
@@ -1113,7 +1435,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "Ensure that the --hostname-override argument is not set"
+      "title": "Ensure that the --hostname-override argument is not set",
+      "legacyId": "KCV-0086",
+      "aliases": [
+        "KCV-0086"
+      ]
     },
     "KCV0087": {
       "id": "KCV0087",
@@ -1127,7 +1453,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "Ensure that the --event-qps argument is set to 0 or a level which ensures appropriate event capture"
+      "title": "Ensure that the --event-qps argument is set to 0 or a level which ensures appropriate event capture",
+      "legacyId": "KCV-0087",
+      "aliases": [
+        "KCV-0087"
+      ]
     },
     "KCV0088": {
       "id": "KCV0088",
@@ -1141,7 +1471,11 @@
         "worker"
       ],
       "severity": "Critical",
-      "title": "Ensure that the --tls-cert-file argument are set as appropriate"
+      "title": "Ensure that the --tls-cert-file argument are set as appropriate",
+      "legacyId": "KCV-0088",
+      "aliases": [
+        "KCV-0088"
+      ]
     },
     "KCV0089": {
       "id": "KCV0089",
@@ -1155,7 +1489,11 @@
         "worker"
       ],
       "severity": "Critical",
-      "title": "Ensure that the --tls-key-file argument are set as appropriate"
+      "title": "Ensure that the --tls-key-file argument are set as appropriate",
+      "legacyId": "KCV-0089",
+      "aliases": [
+        "KCV-0089"
+      ]
     },
     "KCV0090": {
       "id": "KCV0090",
@@ -1169,7 +1507,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "Ensure that the --rotate-certificates argument is not set to false"
+      "title": "Ensure that the --rotate-certificates argument is not set to false",
+      "legacyId": "KCV-0090",
+      "aliases": [
+        "KCV-0090"
+      ]
     },
     "KCV0091": {
       "id": "KCV0091",
@@ -1183,7 +1525,11 @@
         "worker"
       ],
       "severity": "High",
-      "title": "Verify that the RotateKubeletServerCertificate argument is set to true"
+      "title": "Verify that the RotateKubeletServerCertificate argument is set to true",
+      "legacyId": "KCV-0091",
+      "aliases": [
+        "KCV-0091"
+      ]
     },
     "KCV0092": {
       "id": "KCV0092",
@@ -1197,7 +1543,28 @@
         "worker"
       ],
       "severity": "Critical",
-      "title": "Ensure that the Kubelet only makes use of Strong Cryptographic Ciphers"
+      "title": "Ensure that the Kubelet only makes use of Strong Cryptographic Ciphers",
+      "legacyId": "KCV-0092",
+      "aliases": [
+        "KCV-0092"
+      ]
+    },
+    "KCV0093": {
+      "id": "KCV0093",
+      "avdId": "AVD-KCV-0093",
+      "reportFamily": "infra",
+      "kinds": [
+        "Pod"
+      ],
+      "requiredNamespaces": [
+        "kube-system"
+      ],
+      "severity": "Critical",
+      "title": "Ensure ingress-nginx annotations are secure",
+      "legacyId": "KCV-0093",
+      "aliases": [
+        "KCV-0093"
+      ]
     },
     "KSV001": {
       "id": "KSV001",
@@ -1207,7 +1574,11 @@
         "Workload"
       ],
       "severity": "Medium",
-      "title": "Can elevate its own privileges"
+      "title": "Can elevate its own privileges",
+      "legacyId": "KSV-0001",
+      "aliases": [
+        "KSV-0001"
+      ]
     },
     "KSV002": {
       "id": "KSV002",
@@ -1217,7 +1588,11 @@
         "Workload"
       ],
       "severity": "Low",
-      "title": "Runtime/Default AppArmor profile not set"
+      "title": "Runtime/Default AppArmor profile not set",
+      "legacyId": "KSV-0002",
+      "aliases": [
+        "KSV-0002"
+      ]
     },
     "KSV003": {
       "id": "KSV003",
@@ -1227,7 +1602,25 @@
         "Workload"
       ],
       "severity": "Low",
-      "title": "Default capabilities: some containers do not drop all"
+      "title": "Default capabilities: some containers do not drop all",
+      "legacyId": "KSV-0003",
+      "aliases": [
+        "KSV-0003"
+      ]
+    },
+    "KSV004": {
+      "id": "KSV004",
+      "avdId": "AVD-KSV-0004",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "Default capabilities: some containers do not drop any",
+      "legacyId": "KSV-0004",
+      "aliases": [
+        "KSV-0004"
+      ]
     },
     "KSV005": {
       "id": "KSV005",
@@ -1237,7 +1630,11 @@
         "Workload"
       ],
       "severity": "High",
-      "title": "SYS_ADMIN capability added"
+      "title": "SYS_ADMIN capability added",
+      "legacyId": "KSV-0005",
+      "aliases": [
+        "KSV-0005"
+      ]
     },
     "KSV006": {
       "id": "KSV006",
@@ -1247,7 +1644,25 @@
         "Workload"
       ],
       "severity": "High",
-      "title": "hostPath volume mounted with docker.sock"
+      "title": "hostPath volume mounted with docker.sock",
+      "legacyId": "KSV-0006",
+      "aliases": [
+        "KSV-0006"
+      ]
+    },
+    "KSV007": {
+      "id": "KSV007",
+      "avdId": "AVD-KSV-0007",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Low",
+      "title": "Manages /etc/hosts",
+      "legacyId": "KSV-0007",
+      "aliases": [
+        "KSV-0007"
+      ]
     },
     "KSV008": {
       "id": "KSV008",
@@ -1257,7 +1672,11 @@
         "Workload"
       ],
       "severity": "High",
-      "title": "Access to host IPC namespace"
+      "title": "Access to host IPC namespace",
+      "legacyId": "KSV-0008",
+      "aliases": [
+        "KSV-0008"
+      ]
     },
     "KSV009": {
       "id": "KSV009",
@@ -1267,7 +1686,11 @@
         "Workload"
       ],
       "severity": "High",
-      "title": "Access to host network"
+      "title": "Access to host network",
+      "legacyId": "KSV-0009",
+      "aliases": [
+        "KSV-0009"
+      ]
     },
     "KSV010": {
       "id": "KSV010",
@@ -1277,7 +1700,11 @@
         "Workload"
       ],
       "severity": "High",
-      "title": "Access to host PID"
+      "title": "Access to host PID",
+      "legacyId": "KSV-0010",
+      "aliases": [
+        "KSV-0010"
+      ]
     },
     "KSV011": {
       "id": "KSV011",
@@ -1287,7 +1714,11 @@
         "Workload"
       ],
       "severity": "Low",
-      "title": "CPU not limited"
+      "title": "CPU not limited",
+      "legacyId": "KSV-0011",
+      "aliases": [
+        "KSV-0011"
+      ]
     },
     "KSV012": {
       "id": "KSV012",
@@ -1297,7 +1728,11 @@
         "Workload"
       ],
       "severity": "Medium",
-      "title": "Runs as root user"
+      "title": "Runs as root user",
+      "legacyId": "KSV-0012",
+      "aliases": [
+        "KSV-0012"
+      ]
     },
     "KSV013": {
       "id": "KSV013",
@@ -1307,7 +1742,11 @@
         "Workload"
       ],
       "severity": "Medium",
-      "title": "Image tag \":latest\" used"
+      "title": "Image tag \":latest\" used",
+      "legacyId": "KSV-0013",
+      "aliases": [
+        "KSV-0013"
+      ]
     },
     "KSV014": {
       "id": "KSV014",
@@ -1317,7 +1756,11 @@
         "Workload"
       ],
       "severity": "High",
-      "title": "Root file system is not read-only"
+      "title": "Root file system is not read-only",
+      "legacyId": "KSV-0014",
+      "aliases": [
+        "KSV-0014"
+      ]
     },
     "KSV015": {
       "id": "KSV015",
@@ -1327,7 +1770,11 @@
         "Workload"
       ],
       "severity": "Low",
-      "title": "CPU requests not specified"
+      "title": "CPU requests not specified",
+      "legacyId": "KSV-0015",
+      "aliases": [
+        "KSV-0015"
+      ]
     },
     "KSV016": {
       "id": "KSV016",
@@ -1337,7 +1784,11 @@
         "Workload"
       ],
       "severity": "Low",
-      "title": "Memory requests not specified"
+      "title": "Memory requests not specified",
+      "legacyId": "KSV-0016",
+      "aliases": [
+        "KSV-0016"
+      ]
     },
     "KSV017": {
       "id": "KSV017",
@@ -1347,7 +1798,11 @@
         "Workload"
       ],
       "severity": "High",
-      "title": "Privileged"
+      "title": "Privileged",
+      "legacyId": "KSV-0017",
+      "aliases": [
+        "KSV-0017"
+      ]
     },
     "KSV018": {
       "id": "KSV018",
@@ -1357,7 +1812,11 @@
         "Workload"
       ],
       "severity": "Low",
-      "title": "Memory not limited"
+      "title": "Memory not limited",
+      "legacyId": "KSV-0018",
+      "aliases": [
+        "KSV-0018"
+      ]
     },
     "KSV020": {
       "id": "KSV020",
@@ -1367,7 +1826,11 @@
         "Workload"
       ],
       "severity": "Low",
-      "title": "Runs with UID <= 10000"
+      "title": "Runs with UID <= 10000",
+      "legacyId": "KSV-0020",
+      "aliases": [
+        "KSV-0020"
+      ]
     },
     "KSV021": {
       "id": "KSV021",
@@ -1377,7 +1840,11 @@
         "Workload"
       ],
       "severity": "Low",
-      "title": "Runs with GID <= 10000"
+      "title": "Runs with GID <= 10000",
+      "legacyId": "KSV-0021",
+      "aliases": [
+        "KSV-0021"
+      ]
     },
     "KSV022": {
       "id": "KSV022",
@@ -1387,7 +1854,11 @@
         "Workload"
       ],
       "severity": "Medium",
-      "title": "Specific capabilities added"
+      "title": "Specific capabilities added",
+      "legacyId": "KSV-0022",
+      "aliases": [
+        "KSV-0022"
+      ]
     },
     "KSV023": {
       "id": "KSV023",
@@ -1397,7 +1868,11 @@
         "Workload"
       ],
       "severity": "Medium",
-      "title": "hostPath volumes mounted"
+      "title": "hostPath volumes mounted",
+      "legacyId": "KSV-0023",
+      "aliases": [
+        "KSV-0023"
+      ]
     },
     "KSV024": {
       "id": "KSV024",
@@ -1407,7 +1882,11 @@
         "Workload"
       ],
       "severity": "High",
-      "title": "Access to host ports"
+      "title": "Access to host ports",
+      "legacyId": "KSV-0024",
+      "aliases": [
+        "KSV-0024"
+      ]
     },
     "KSV025": {
       "id": "KSV025",
@@ -1417,7 +1896,11 @@
         "Workload"
       ],
       "severity": "Medium",
-      "title": "SELinux custom options set"
+      "title": "SELinux custom options set",
+      "legacyId": "KSV-0025",
+      "aliases": [
+        "KSV-0025"
+      ]
     },
     "KSV026": {
       "id": "KSV026",
@@ -1427,7 +1910,11 @@
         "Workload"
       ],
       "severity": "Medium",
-      "title": "Unsafe sysctl options set"
+      "title": "Unsafe sysctl options set",
+      "legacyId": "KSV-0026",
+      "aliases": [
+        "KSV-0026"
+      ]
     },
     "KSV027": {
       "id": "KSV027",
@@ -1437,7 +1924,11 @@
         "Workload"
       ],
       "severity": "Medium",
-      "title": "Non-default /proc masks set"
+      "title": "Non-default /proc masks set",
+      "legacyId": "KSV-0027",
+      "aliases": [
+        "KSV-0027"
+      ]
     },
     "KSV028": {
       "id": "KSV028",
@@ -1447,7 +1938,11 @@
         "Workload"
       ],
       "severity": "Low",
-      "title": "Non-core volume types used."
+      "title": "Non-core volume types used.",
+      "legacyId": "KSV-0028",
+      "aliases": [
+        "KSV-0028"
+      ]
     },
     "KSV030": {
       "id": "KSV030",
@@ -1457,7 +1952,11 @@
         "Workload"
       ],
       "severity": "Low",
-      "title": "Runtime/Default Seccomp profile not set"
+      "title": "Runtime/Default Seccomp profile not set",
+      "legacyId": "KSV-0030",
+      "aliases": [
+        "KSV-0030"
+      ]
     },
     "KSV036": {
       "id": "KSV036",
@@ -1467,7 +1966,11 @@
         "Workload"
       ],
       "severity": "Medium",
-      "title": "Protecting Pod service account tokens"
+      "title": "Protecting Pod service account tokens",
+      "legacyId": "KSV-0036",
+      "aliases": [
+        "KSV-0036"
+      ]
     },
     "KSV037": {
       "id": "KSV037",
@@ -1480,7 +1983,11 @@
         "kube-system"
       ],
       "severity": "Medium",
-      "title": "User Pods should not be placed in kube-system namespace"
+      "title": "User resources should not be placed in kube-system namespace",
+      "legacyId": "KSV-0037",
+      "aliases": [
+        "KSV-0037"
+      ]
     },
     "KSV038": {
       "id": "KSV038",
@@ -1490,7 +1997,39 @@
         "NetworkPolicy"
       ],
       "severity": "Medium",
-      "title": "Selector usage in network policies"
+      "title": "Selector usage in network policies",
+      "legacyId": "KSV-0038",
+      "aliases": [
+        "KSV-0038"
+      ]
+    },
+    "KSV039": {
+      "id": "KSV039",
+      "avdId": "AVD-KSV-0039",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "LimitRange"
+      ],
+      "severity": "Low",
+      "title": "limit range usage",
+      "legacyId": "KSV-0039",
+      "aliases": [
+        "KSV-0039"
+      ]
+    },
+    "KSV040": {
+      "id": "KSV040",
+      "avdId": "AVD-KSV-0040",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "ResourceQuota"
+      ],
+      "severity": "Low",
+      "title": "resource quota usage",
+      "legacyId": "KSV-0040",
+      "aliases": [
+        "KSV-0040"
+      ]
     },
     "KSV041": {
       "id": "KSV041",
@@ -1500,7 +2039,11 @@
         "ClusterRole"
       ],
       "severity": "Critical",
-      "title": "Manage secrets"
+      "title": "Manage secrets",
+      "legacyId": "KSV-0041",
+      "aliases": [
+        "KSV-0041"
+      ]
     },
     "KSV042": {
       "id": "KSV042",
@@ -1511,7 +2054,11 @@
         "ClusterRole"
       ],
       "severity": "Medium",
-      "title": "Delete pod logs"
+      "title": "Delete pod logs",
+      "legacyId": "KSV-0042",
+      "aliases": [
+        "KSV-0042"
+      ]
     },
     "KSV043": {
       "id": "KSV043",
@@ -1522,7 +2069,11 @@
         "ClusterRole"
       ],
       "severity": "Critical",
-      "title": "Do not allow impersonation of privileged groups"
+      "title": "Do not allow impersonation of privileged groups",
+      "legacyId": "KSV-0043",
+      "aliases": [
+        "KSV-0043"
+      ]
     },
     "KSV044": {
       "id": "KSV044",
@@ -1533,7 +2084,11 @@
         "ClusterRole"
       ],
       "severity": "Critical",
-      "title": "No wildcard verb and resource roles"
+      "title": "No wildcard verb and resource roles",
+      "legacyId": "KSV-0044",
+      "aliases": [
+        "KSV-0044"
+      ]
     },
     "KSV045": {
       "id": "KSV045",
@@ -1544,7 +2099,11 @@
         "ClusterRole"
       ],
       "severity": "Critical",
-      "title": "No wildcard verb roles"
+      "title": "No wildcard verb roles",
+      "legacyId": "KSV-0045",
+      "aliases": [
+        "KSV-0045"
+      ]
     },
     "KSV046": {
       "id": "KSV046",
@@ -1554,7 +2113,11 @@
         "ClusterRole"
       ],
       "severity": "Critical",
-      "title": "Manage all resources"
+      "title": "Manage all resources",
+      "legacyId": "KSV-0046",
+      "aliases": [
+        "KSV-0046"
+      ]
     },
     "KSV047": {
       "id": "KSV047",
@@ -1565,7 +2128,11 @@
         "ClusterRole"
       ],
       "severity": "High",
-      "title": "Do not allow privilege escalation from node proxy"
+      "title": "Do not allow privilege escalation from node proxy",
+      "legacyId": "KSV-0047",
+      "aliases": [
+        "KSV-0047"
+      ]
     },
     "KSV048": {
       "id": "KSV048",
@@ -1576,7 +2143,11 @@
         "ClusterRole"
       ],
       "severity": "Medium",
-      "title": "Manage Kubernetes workloads and pods"
+      "title": "Manage Kubernetes workloads and pods",
+      "legacyId": "KSV-0048",
+      "aliases": [
+        "KSV-0048"
+      ]
     },
     "KSV049": {
       "id": "KSV049",
@@ -1587,7 +2158,11 @@
         "ClusterRole"
       ],
       "severity": "Medium",
-      "title": "Manage configmaps"
+      "title": "Manage configmaps",
+      "legacyId": "KSV-0049",
+      "aliases": [
+        "KSV-0049"
+      ]
     },
     "KSV050": {
       "id": "KSV050",
@@ -1598,7 +2173,11 @@
         "ClusterRole"
       ],
       "severity": "Critical",
-      "title": "Manage Kubernetes RBAC resources"
+      "title": "Do not allow privilege escalation via RBAC resources",
+      "legacyId": "KSV-0050",
+      "aliases": [
+        "KSV-0050"
+      ]
     },
     "KSV051": {
       "id": "KSV051",
@@ -1609,7 +2188,11 @@
         "ClusterRole"
       ],
       "severity": "High",
-      "title": "Do not allow role binding creation and association with privileged role/clusterrole"
+      "title": "Do not allow role binding creation and association with privileged role/clusterrole",
+      "legacyId": "KSV-0051",
+      "aliases": [
+        "KSV-0051"
+      ]
     },
     "KSV052": {
       "id": "KSV052",
@@ -1620,7 +2203,11 @@
         "ClusterRole"
       ],
       "severity": "High",
-      "title": "Do not allow role to create ClusterRoleBindings and association with privileged role"
+      "title": "Do not allow role to create ClusterRoleBindings and association with privileged role",
+      "legacyId": "KSV-0052",
+      "aliases": [
+        "KSV-0052"
+      ]
     },
     "KSV053": {
       "id": "KSV053",
@@ -1631,7 +2218,11 @@
         "ClusterRole"
       ],
       "severity": "High",
-      "title": "Exec into Pods"
+      "title": "Exec into Pods",
+      "legacyId": "KSV-0053",
+      "aliases": [
+        "KSV-0053"
+      ]
     },
     "KSV054": {
       "id": "KSV054",
@@ -1642,7 +2233,11 @@
         "ClusterRole"
       ],
       "severity": "High",
-      "title": "Do not allow attaching to shell on pods"
+      "title": "Do not allow attaching to shell on pods",
+      "legacyId": "KSV-0054",
+      "aliases": [
+        "KSV-0054"
+      ]
     },
     "KSV055": {
       "id": "KSV055",
@@ -1653,7 +2248,11 @@
         "ClusterRole"
       ],
       "severity": "Low",
-      "title": "Do not allow users in a rolebinding to add other users to their rolebindings"
+      "title": "Do not allow users in a rolebinding to add other users to their rolebindings",
+      "legacyId": "KSV-0055",
+      "aliases": [
+        "KSV-0055"
+      ]
     },
     "KSV056": {
       "id": "KSV056",
@@ -1664,7 +2263,11 @@
         "ClusterRole"
       ],
       "severity": "High",
-      "title": "Manage Kubernetes networking"
+      "title": "Manage Kubernetes networking",
+      "legacyId": "KSV-0056",
+      "aliases": [
+        "KSV-0056"
+      ]
     },
     "KSV1010": {
       "id": "KSV1010",
@@ -1674,7 +2277,11 @@
         "ConfigMap"
       ],
       "severity": "Medium",
-      "title": "ConfigMap with sensitive content"
+      "title": "ConfigMap with sensitive content",
+      "legacyId": "KSV-01010",
+      "aliases": [
+        "KSV-01010"
+      ]
     },
     "KSV1011": {
       "id": "KSV1011",
@@ -1686,7 +2293,9 @@
       ],
       "severity": "Critical",
       "title": "system:authenticate group access binding",
+      "legacyId": "KSV-01011",
       "aliases": [
+        "KSV-01011",
         "KSV01011"
       ]
     },
@@ -1698,7 +2307,11 @@
         "Workload"
       ],
       "severity": "Critical",
-      "title": "Tiller Is Deployed"
+      "title": "Tiller Is Deployed",
+      "legacyId": "KSV-0102",
+      "aliases": [
+        "KSV-0102"
+      ]
     },
     "KSV103": {
       "id": "KSV103",
@@ -1708,7 +2321,11 @@
         "Workload"
       ],
       "severity": "Medium",
-      "title": "Access to host process"
+      "title": "Access to host process",
+      "legacyId": "KSV-0103",
+      "aliases": [
+        "KSV-0103"
+      ]
     },
     "KSV104": {
       "id": "KSV104",
@@ -1718,7 +2335,11 @@
         "Workload"
       ],
       "severity": "Medium",
-      "title": "Seccomp policies disabled"
+      "title": "Seccomp policies disabled",
+      "legacyId": "KSV-0104",
+      "aliases": [
+        "KSV-0104"
+      ]
     },
     "KSV105": {
       "id": "KSV105",
@@ -1728,7 +2349,11 @@
         "Workload"
       ],
       "severity": "Low",
-      "title": "Containers must not set runAsUser to 0"
+      "title": "Containers must not set runAsUser to 0",
+      "legacyId": "KSV-0105",
+      "aliases": [
+        "KSV-0105"
+      ]
     },
     "KSV106": {
       "id": "KSV106",
@@ -1738,7 +2363,26 @@
         "Workload"
       ],
       "severity": "Low",
-      "title": "Container capabilities must only include NET_BIND_SERVICE"
+      "title": "Container capabilities must only include NET_BIND_SERVICE",
+      "legacyId": "KSV-0106",
+      "aliases": [
+        "KSV-0106"
+      ]
+    },
+    "KSV107": {
+      "id": "KSV107",
+      "avdId": "AVD-KSV-0107",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "RoleBinding",
+        "ClusterRoleBinding"
+      ],
+      "severity": "Low",
+      "title": "The deprecated 'apiVersion' and 'kind' should not be used",
+      "legacyId": "KSV-0107",
+      "aliases": [
+        "KSV-0107"
+      ]
     },
     "KSV108": {
       "id": "KSV108",
@@ -1748,7 +2392,11 @@
         "Service"
       ],
       "severity": "High",
-      "title": "Service with External IP"
+      "title": "Service with External IP",
+      "legacyId": "KSV-0108",
+      "aliases": [
+        "KSV-0108"
+      ]
     },
     "KSV109": {
       "id": "KSV109",
@@ -1758,7 +2406,11 @@
         "ConfigMap"
       ],
       "severity": "High",
-      "title": "ConfigMap with secrets"
+      "title": "ConfigMap with secrets",
+      "legacyId": "KSV-0109",
+      "aliases": [
+        "KSV-0109"
+      ]
     },
     "KSV110": {
       "id": "KSV110",
@@ -1771,7 +2423,11 @@
         "default"
       ],
       "severity": "Low",
-      "title": "Workloads in the default namespace"
+      "title": "Workloads in the default namespace",
+      "legacyId": "KSV-0110",
+      "aliases": [
+        "KSV-0110"
+      ]
     },
     "KSV111": {
       "id": "KSV111",
@@ -1782,7 +2438,11 @@
         "ClusterRoleBinding"
       ],
       "severity": "Medium",
-      "title": "User with admin access"
+      "title": "User with admin access",
+      "legacyId": "KSV-0111",
+      "aliases": [
+        "KSV-0111"
+      ]
     },
     "KSV112": {
       "id": "KSV112",
@@ -1792,7 +2452,11 @@
         "Role"
       ],
       "severity": "Critical",
-      "title": "Manage all resources at the namespace"
+      "title": "Manage all resources at the namespace",
+      "legacyId": "KSV-0112",
+      "aliases": [
+        "KSV-0112"
+      ]
     },
     "KSV113": {
       "id": "KSV113",
@@ -1802,7 +2466,11 @@
         "Role"
       ],
       "severity": "Medium",
-      "title": "Manage namespace secrets"
+      "title": "Manage namespace secrets",
+      "legacyId": "KSV-0113",
+      "aliases": [
+        "KSV-0113"
+      ]
     },
     "KSV114": {
       "id": "KSV114",
@@ -1813,7 +2481,11 @@
         "ClusterRole"
       ],
       "severity": "Critical",
-      "title": "Manage webhookconfigurations"
+      "title": "Manage webhookconfigurations",
+      "legacyId": "KSV-0114",
+      "aliases": [
+        "KSV-0114"
+      ]
     },
     "KSV115": {
       "id": "KSV115",
@@ -1824,7 +2496,11 @@
         "ClusterRole"
       ],
       "severity": "Critical",
-      "title": "Manage EKS IAM Auth ConfigMap"
+      "title": "Manage EKS IAM Auth ConfigMap",
+      "legacyId": "KSV-0115",
+      "aliases": [
+        "KSV-0115"
+      ]
     },
     "KSV116": {
       "id": "KSV116",
@@ -1834,7 +2510,11 @@
         "Workload"
       ],
       "severity": "Low",
-      "title": "Runs with a root primary or supplementary GID"
+      "title": "Runs with a root primary or supplementary GID",
+      "legacyId": "KSV-0116",
+      "aliases": [
+        "KSV-0116"
+      ]
     },
     "KSV117": {
       "id": "KSV117",
@@ -1844,7 +2524,11 @@
         "Workload"
       ],
       "severity": "Medium",
-      "title": "Prevent binding to privileged ports"
+      "title": "Prevent binding to privileged ports",
+      "legacyId": "KSV-0117",
+      "aliases": [
+        "KSV-0117"
+      ]
     },
     "KSV118": {
       "id": "KSV118",
@@ -1854,7 +2538,11 @@
         "Workload"
       ],
       "severity": "High",
-      "title": "Default security context configured"
+      "title": "Default security context configured",
+      "legacyId": "KSV-0118",
+      "aliases": [
+        "KSV-0118"
+      ]
     },
     "KSV119": {
       "id": "KSV119",
@@ -1864,7 +2552,11 @@
         "Workload"
       ],
       "severity": "High",
-      "title": "NET_RAW capability added"
+      "title": "NET_RAW capability added",
+      "legacyId": "KSV-0119",
+      "aliases": [
+        "KSV-0119"
+      ]
     },
     "KSV120": {
       "id": "KSV120",
@@ -1874,7 +2566,11 @@
         "Workload"
       ],
       "severity": "High",
-      "title": "SYS_MODULE capability added"
+      "title": "SYS_MODULE capability added",
+      "legacyId": "KSV-0120",
+      "aliases": [
+        "KSV-0120"
+      ]
     },
     "KSV121": {
       "id": "KSV121",
@@ -1884,7 +2580,11 @@
         "Workload"
       ],
       "severity": "High",
-      "title": "Kubernetes resource with disallowed volumes mounted"
+      "title": "Kubernetes resource with disallowed volumes mounted",
+      "legacyId": "KSV-0121",
+      "aliases": [
+        "KSV-0121"
+      ]
     },
     "KSV122": {
       "id": "KSV122",
@@ -1895,7 +2595,11 @@
         "ClusterRoleBinding"
       ],
       "severity": "Critical",
-      "title": "Anonymous user access binding"
+      "title": "Anonymous user access binding",
+      "legacyId": "KSV-0122",
+      "aliases": [
+        "KSV-0122"
+      ]
     },
     "KSV123": {
       "id": "KSV123",
@@ -1907,7 +2611,9 @@
       ],
       "severity": "Critical",
       "title": "system:masters group access binding",
+      "legacyId": "KSV-0123",
       "aliases": [
+        "KSV-0123",
         "KSV0123"
       ]
     },
@@ -1923,6 +2629,21 @@
       "legacyId": "KSV-0124",
       "aliases": [
         "KSV-0124"
+      ]
+    },
+    "KSV125": {
+      "id": "KSV125",
+      "avdId": "AVD-KSV-0125",
+      "reportFamily": "configAudit",
+      "kinds": [
+        "Workload"
+      ],
+      "severity": "Medium",
+      "title": "Restrict container images to trusted registries",
+      "legacyId": "KSV-0125",
+      "aliases": [
+        "KSV-0125",
+        "KSV0125"
       ]
     }
   }

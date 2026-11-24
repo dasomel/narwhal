@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-trivy-operator-pass-records-20261125",
+  "task": "Phase 2: upgrade trivy-operator 0.25.0 -> 0.36.1 (chart 0.38.1) and enable reportRecordFailedChecksOnly='false' with CCR reportType='summary'.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-trivy-operator-pass-records.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "VERSIONS.md",
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      "gitops/README-ko.md",
+      "gitops/README.md",
+      "gitops/charts/narwhal-apps/templates/trivy-operator.yaml",
+      "gitops/resources/kisa-compliance.yaml",
+      "gitops/resources/pss-compliance.yaml",
+      "portal/scripts/gen-trivy-check-catalogue.mjs",
+      "portal/src/data/oss-versions.generated.json",
+      "portal/src/data/trivy-check-catalogue.generated.json",
+      "portal/src/data/trivy-check-catalogue.generated.sha256.json",
+      "portal/src/lib/compliance-evidence.test.ts",
+      "portal/src/lib/compliance.test.ts",
+      "scripts/airgap/README.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "scripts/airgap/security-db.txt",
+      "scripts/test/lib/check-compliance-scan-coverage.py",
+      "scripts/test/lib/check-portal-check-catalogue.py",
+      "scripts/test/lib/check-sbom-inventory-completeness.py",
+      "scripts/test/lib/check-trivy-pass-records.py",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/verify/security-db-bundle-check.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Upgrade trivy-operator 0.25.0 -> 0.36.1 (chart 0.38.1) and trivy 0.60.0 -> 0.76.1, set string reportRecordFailedChecksOnly='false', switch all ClusterComplianceReports (CIS/NSA/PSS/KISA) to reportType='summary' (D-CCR-SUMMARY), sync air-gap/SBOM/VERSIONS/check-catalogue pins, and add R404. Deliberately left alone: live cluster apply/sync, bastion mirror push, portal runtime code (1.1.28 already live), csp/kakao-cloud, research/evidence."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Inspected live cluster reports (300 ConfigAuditReports 596,705 B max 56,821 B, 121 ClusterConfigAuditReports 119,068 B, 53 RbacAssessmentReports 78,787 B, 152 ClusterRbacAssessmentReports 228,393 B, 9 InfraAssessmentReports 11,993 B, 1 ClusterInfraAssessmentReport 880 B), trivy-operator v0.36.1 source (resource.go getCheck, helper.go filter, compliance/io.go buildComplianceReport), and chart 0.38.1 templates (operator.yaml `{{- with .Values.trivyOperator.reportRecordFailedChecksOnly }}` drops bool false; specs unchanged except app version; trivy-checks v1.12.2 moves avd_id to aliases and promotes KSV004/KSV039/KSV040).",
+      "evidence": [
+        "test:kubectl read-only get on live security reports + helm diff 0.27.0 vs 0.38.1 + upstream v0.36.1 source inspection"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Pinned chart 0.38.1 / trivy-operator 0.36.1 / trivy 0.76.1 / node-collector 0.3.1 with crane multi-arch digests, set string reportRecordFailedChecksOnly: \"false\", set CCR reportType: summary across trivy-operator.yaml, pss-compliance.yaml, and kisa-compliance.yaml, updated gen-trivy-check-catalogue.mjs + regenerated 165-check catalogue for v1.12.2, updated R388/R391/SBOM/docs/tests, and added R404 (check-trivy-pass-records.py).",
+      "evidence": [
+        "test:helm template narwhal-apps + trivy-operator 0.38.1 rendered report.recordFailedChecksOnly='false' and CCR reportType='summary'"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static offline verification on narwhal-wt-trivy: full make test, make validate, make lint, check-version-consistency.sh, gen-oss-versions.mjs --check, gen-trivy-check-catalogue.mjs --check, check-mirror-pins.py --list-paths, helm template (narwhal-apps + trivy-operator 0.38.1), markdownlint-changed.py, and portal vitest on compliance*.test.ts + versions-sync.test.ts. Live cluster rollout and bastion mirror sync are NOT covered (deferred to orchestrator).",
+      "evidence": [
+        "test:make test -> passed 512 failed 0 warnings 3",
+        "test:python3 scripts/test/lib/check-trivy-pass-records.py --mutation-verify -> PASS (12 mutations rejected)",
+        "test:make validate && bash scripts/ci/check-version-consistency.sh && python3 scripts/ci/markdownlint-changed.py --base origin/main -> passed",
+        "test:vitest compliance + versions-sync -> 4 files, 66 tests passed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "All offline manifests, pins, check catalogue, regression checks (incl. R404), docs, and trace pass verification for trivy-operator 0.36.1 (chart 0.38.1) pass-record generation and CCR summary mode; live bastion mirror copy, ArgoCD sync, and runtime report/load measurement remain for the orchestrator."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Offline phase-2 upgrade and regression verification complete; live mirror push and ArgoCD rollout are the next operational step."
+    }
+  ]
+}

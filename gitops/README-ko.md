@@ -204,9 +204,9 @@ kubectl 없이 Velero 백업/복원을 트리거하고 조회할 수 있는 웹 
 #### Trivy Operator
 | 차트 | 버전 | 네임스페이스 |
 |---|---|---|
-| `trivy-operator` (aquasecurity) | `0.27.0` | `security-system` |
+| `trivy-operator` (aquasecurity) | `0.38.1` | `security-system` |
 
-클러스터의 모든 워크로드와 이미지에 대해 취약점, 설정 오류, 노출된 시크릿, 컴플라이언스를 지속적으로 스캔합니다. 자원이 제한된 워커 노드에 맞게 경량 `Standalone` 모드(스캔 Job마다 Trivy CLI 실행, 공유 서버 없음)로 동작하며, `VulnerabilityReport`/`ConfigAuditReport` 등의 CRD를 통해 포털의 Cluster Security 페이지에 데이터를 제공합니다.
+클러스터의 모든 워크로드와 이미지에 대해 취약점, 설정 오류, 노출된 시크릿, 컴플라이언스를 지속적으로 스캔합니다. `ClientServer` 모드(내장 `trivy-server` 파드 + `nfs-csi` 캐시 PVC)와 `reportRecordFailedChecksOnly: "false"` 설정으로 리소스별 리포트에 통과·실패 체크를 모두 기록하며(`ClusterComplianceReport`는 `D-CCR-SUMMARY`에 따라 `reportType: summary` 유지), `VulnerabilityReport`/`ConfigAuditReport` 등의 CRD를 통해 포털의 Cluster Security 페이지에 데이터를 제공합니다.
 
 #### Falco
 

@@ -64,10 +64,11 @@ export function buildDigestManifest(catalogue) {
   }
 }
 
-// Embedded module version pinned in github.com/aquasecurity/trivy-operator@v0.25.0 go.mod
-// (verified against live /usr/local/bin/trivy-operator buildinfo).
+// Embedded module version pinned in github.com/aquasecurity/trivy-operator go.mod
+// (v0.25.0 verified against live /usr/local/bin/trivy-operator buildinfo; v0.36.1 from upstream go.mod).
 export const PINNED_OPERATOR_TO_CHECKS = {
   "0.25.0": "v1.7.1",
+  "0.36.1": "v1.12.2-0.20261012053351-ac85645895ed",
 }
 
 const CHECK_ID_PAD_WIDTH = { KSV: 3, KCV: 4 }
@@ -138,7 +139,15 @@ export function parseKubernetesRegoCheck(relPath, text) {
   const depMatch = /^\s*deprecated:\s*true\b/m.test(metaLines.join("\n"))
 
   if (depMatch) return null
-  const avdId = avdMatch ? avdMatch[1].trim() : ""
+  const aliasesBlockMatch = /^\s*aliases:\s*\r?\n((?:\s+-\s+.+\r?\n?)+)/m.exec(metaLines.join("\n"))
+  const rawAliases = []
+  if (aliasesBlockMatch) {
+    for (const line of aliasesBlockMatch[1].split(/\r?\n/)) {
+      const itemMatch = /^\s+-\s+["']?([^"'\s]+)["']?/.exec(line)
+      if (itemMatch) rawAliases.push(itemMatch[1].trim())
+    }
+  }
+  const avdId = (avdMatch ? avdMatch[1].trim() : "") || rawAliases.find((a) => /^AVD-(?:KSV|KCV)-\d+$/i.test(a)) || ""
   if (!avdId) return null
 
   const rawTitle = titleMatch ? titleMatch[1].trim() : ""
@@ -147,25 +156,20 @@ export function parseKubernetesRegoCheck(relPath, text) {
   const severity = mapSeverity(sevMatch ? sevMatch[1] : "Unknown")
   const legacyId = idMatch ? idMatch[1].trim() : undefined
 
-  // D-CHECK-ALIASES: capture every distinct non-canonical ID emitted by the Rego metadata
-  // (`id:` and any `aliases:` list items) so failure joins match legacy/mismatched check IDs
+  // D-CHECK-ALIASES: capture every distinct non-canonical check ID emitted by the Rego metadata
+  // (`id:` and any check-ID `aliases:` list items) so failure joins match legacy/mismatched check IDs
   // (e.g. KSV0012 -> KCV0012, KCV0135 -> KCV0035, KSV-0124 -> KSV124) without normalizing
-  // distinct checks into each other.
+  // distinct checks into each other or pulling in long slug names.
   const aliasSet = new Set()
   const addAlias = (candidate) => {
     const trimmed = String(candidate ?? "").trim().toUpperCase()
     if (!trimmed) return
+    if (!/^(?:AVD-)?(?:KSV|KCV)-?\d+$/i.test(trimmed)) return
     if (trimmed === id || trimmed === avdId.toUpperCase()) return
     aliasSet.add(trimmed)
   }
   if (legacyId) addAlias(legacyId)
-  const aliasesBlockMatch = /^\s*aliases:\s*\r?\n((?:\s+-\s+.+\r?\n?)+)/m.exec(metaLines.join("\n"))
-  if (aliasesBlockMatch) {
-    for (const line of aliasesBlockMatch[1].split(/\r?\n/)) {
-      const itemMatch = /^\s+-\s+["']?([^"'\s]+)["']?/.exec(line)
-      if (itemMatch) addAlias(itemMatch[1])
-    }
-  }
+  for (const a of rawAliases) addAlias(a)
   const aliases = [...aliasSet].sort()
 
   const pkgIdx = text.indexOf("\npackage ")
@@ -219,6 +223,12 @@ export function parseKubernetesRegoCheck(relPath, text) {
   } else if (/(?:kubernetes|input)\.kind\s*==\s*"Service"/.test(bodyNoComments)) {
     reportFamily = "configAudit"
     kinds = ["Service"]
+  } else if (/^\s*-\s*kind:\s*limitrange\b/im.test(metaLines.join("\n"))) {
+    reportFamily = "configAudit"
+    kinds = ["LimitRange"]
+  } else if (/^\s*-\s*kind:\s*resourcequota\b/im.test(metaLines.join("\n"))) {
+    reportFamily = "configAudit"
+    kinds = ["ResourceQuota"]
   } else if (relPath.includes("network_policies") || /"networkpolicy"/i.test(bodyNoComments)) {
     reportFamily = "configAudit"
     kinds = ["NetworkPolicy"]

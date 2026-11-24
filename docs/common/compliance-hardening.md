@@ -396,7 +396,7 @@ Matching is exact: `database/Pod/narwhal-db-1` and the pooler currently have no 
 | platform-system | ReplicaSet/apisix | KSV020, KSV021 | accept | Uses upstream APISIX image fixed UID/GID 636 |
 | security-system | DaemonSet/falco | KSV001, KSV003, KSV012, KSV017, KSV020, KSV021, KSV023, KSV106, KSV121 | accept | falco.yaml D-falco-rofs retains privileged modern_ebpf instrumentation after observed initialization permission errors; leastPrivileged mode remains untested |
 | security-system | ReplicaSet/falco-falcosidekick | KSV020, KSV021 | accept | Keeps upstream falco 9.2.1 / falcosidekick 0.14.1 default UID/GID 1234 |
-| security-system | ReplicaSet/trivy-operator | KSV020, KSV021 | accept | Keeps upstream trivy-operator:0.25.0 default UID/GID 10000 |
+| security-system | ReplicaSet/trivy-operator | KSV020, KSV021 | accept | Keeps upstream trivy-operator:0.36.1 default UID/GID 10000 |
 | storage | DaemonSet/node-agent | KSV001, KSV003, KSV012, KSV020, KSV021, KSV023, KSV105, KSV106 | accept | Requires privileged/UID 0 and /var/lib/kubelet hostPath mounts for kopia fs-backup |
 | storage | CronJob/openbao-snapshot | KSV020, KSV021 | accept | openbao-backup.yaml keeps UID 100 for the snapshot writer and holder sharing the same PVC files |
 | storage | ReplicaSet/openbao-snapshot-holder | KSV020, KSV021 | accept | openbao-backup.yaml keeps UID 100 for the snapshot writer and holder sharing the same PVC files |
@@ -569,13 +569,19 @@ restarts on all 3 masters:
 
 trivy-operator scanners must be enabled (`gitops/charts/narwhal-apps/templates/trivy-operator.yaml`):
 `configAuditScannerEnabled`, `rbacAssessmentScannerEnabled`, `infraAssessmentScannerEnabled`,
-`clusterComplianceEnabled` = true, and `compliance.reportType: all` (summary yields no
-per-control detail). Reports regenerate on the `0 */6 * * *` cron; to force one, briefly
-patch a report's `spec.cron` to `* * * * *`. To evaluate coverage accurately without reading
-cluster secrets, `/compliance` also reads `nodes`, `deployments/trivy-operator`, and
-`configmaps/trivy-operator-trivy-config` under the existing `narwhal-portal` `ClusterRole`,
-surfaces `503 { unavailable: true }` on lookup failure, and shows per-source timestamps with the
-6-hour rebuild cadence note.
+`clusterComplianceEnabled` = true, `trivyOperator.reportRecordFailedChecksOnly: "false"` (string
+`"false"`, because the chart wraps the key in Helm `with` and omits boolean `false`), and
+`compliance.reportType: summary` (`D-CCR-SUMMARY`, also set on `pss-compliance.yaml` and
+`kisa-compliance.yaml`). Portal 1.1.28+ reads `spec.compliance.controls` from the CCRs for
+control-to-check mapping and derives per-control pass/fail verdicts from the 6 per-resource report
+collections (`ConfigAuditReport`, `ClusterConfigAuditReport`, `(Cluster)RbacAssessmentReport`,
+`(Cluster)InfraAssessmentReport`), avoiding the upstream `FromDetailReport` `Success: false` bug
+and keeping `ClusterComplianceReport` objects safely below the 1.5 MiB etcd limit. Reports
+regenerate on the `0 */6 * * *` cron; to force one, briefly patch a report's `spec.cron` to
+`* * * * *`. To evaluate coverage accurately without reading cluster secrets, `/compliance` also
+reads `nodes`, `deployments/trivy-operator`, and `configmaps/trivy-operator-trivy-config` under the
+existing `narwhal-portal` `ClusterRole`, surfaces `503 { unavailable: true }` on lookup failure, and
+shows per-source timestamps with the 6-hour rebuild cadence note.
 
 ## Issue #109 live verifier findings
 

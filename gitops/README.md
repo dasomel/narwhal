@@ -204,9 +204,9 @@ A web UI/API for triggering and inspecting Velero backups/restores without kubec
 #### Trivy Operator
 | Chart | Version | Namespace |
 |---|---|---|
-| `trivy-operator` (aquasecurity) | `0.27.0` | `security-system` |
+| `trivy-operator` (aquasecurity) | `0.38.1` | `security-system` |
 
-Continuous vulnerability, misconfiguration, exposed-secret, and compliance scanning for every workload and image on the cluster, running in lightweight `Standalone` mode (Trivy CLI runs per-scan-Job, no shared server) to fit the resource-constrained worker nodes. Feeds the portal's Cluster Security page via `VulnerabilityReport`/`ConfigAuditReport`/etc. CRDs.
+Continuous vulnerability, misconfiguration, exposed-secret, and compliance scanning for every workload and image on the cluster, running in `ClientServer` mode (built-in `trivy-server` pod backed by an `nfs-csi` cache PVC) with `reportRecordFailedChecksOnly: "false"` so per-resource reports record both passing and failing checks (`ClusterComplianceReport` stays `reportType: summary` per `D-CCR-SUMMARY`). Feeds the portal's Cluster Security page via `VulnerabilityReport`/`ConfigAuditReport`/etc. CRDs.
 
 #### Falco
 

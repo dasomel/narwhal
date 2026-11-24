@@ -6,7 +6,7 @@ set -euo pipefail
 # scanner {name, version}, schema_version, artifacts [{path, sha256}], and
 # osv_reviewed. fetch-security-db.sh currently emits only a subset of this
 # contract; its output therefore needs a later producer update before passing.
-# ASSUMPTION: the repo's Trivy 0.60.0 pin supports security DB schema 2.
+# ASSUMPTION: the repo's Trivy 0.76.1 pin supports security DB schema 2.
 
 ROOT=""; MAX_AGE_DAYS=7; NOW=""; SELF_TEST=0
 while [ "$#" -gt 0 ]; do
@@ -39,9 +39,9 @@ try:
     scanner = doc.get("scanner")
     if not isinstance(scanner, dict) or not scanner.get("name") or not scanner.get("version"):
         errors.append("scanner name and version are required")
-    elif scanner["name"].lower() != "trivy" or scanner["version"] != "0.60.0":
-        errors.append("unsupported scanner/version; repo pin is Trivy 0.60.0")
-    if doc.get("schema_version") != 2: errors.append("unsupported schema_version for pinned Trivy 0.60.0 (expected 2)")
+    elif scanner["name"].lower() != "trivy" or scanner["version"] != "0.76.1":
+        errors.append("unsupported scanner/version; repo pin is Trivy 0.76.1")
+    if doc.get("schema_version") != 2: errors.append("unsupported schema_version for pinned Trivy 0.76.1 (expected 2)")
     try:
         fetched = datetime.datetime.fromisoformat(doc["fetched_at"].replace("Z", "+00:00"))
         now = datetime.datetime.fromisoformat(now_arg.replace("Z", "+00:00")) if now_arg else datetime.datetime.now(datetime.timezone.utc)
@@ -88,7 +88,7 @@ if [ "$SELF_TEST" -eq 1 ]; then
     python3 - "$dir" "$2" <<'PY'
 import datetime,hashlib,json,pathlib,sys
 d=pathlib.Path(sys.argv[1]); mode=sys.argv[2]
-m={"source":"trivy-db","fetched_at":"2026-09-30T00:00:00Z","scanner":{"name":"Trivy","version":"0.60.0"},"schema_version":2,"artifacts":[{"path":"db.bin","sha256":hashlib.sha256((d/"db.bin").read_bytes()).hexdigest()}]}
+m={"source":"trivy-db","fetched_at":"2026-09-30T00:00:00Z","scanner":{"name":"Trivy","version":"0.76.1"},"schema_version":2,"artifacts":[{"path":"db.bin","sha256":hashlib.sha256((d/"db.bin").read_bytes()).hexdigest()}]}
 if mode != "no-osv": m["osv_reviewed"]=True
 if mode == "missing-field": del m["source"]
 if mode == "bad-schema": m["schema_version"]=99

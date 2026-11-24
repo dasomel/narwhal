@@ -412,6 +412,7 @@ it("matches all 10 reviewer expected control states on a hand-built live-like fi
                 { id: "5.2.9", name: "Added capabilities", severity: "LOW", checks: [{ id: "AVD-KSV-0004" }] },
                 { id: "5.1.2", name: "Minimize access to secrets", severity: "CRITICAL", checks: [{ id: "AVD-KSV-0041" }] },
                 { id: "5.2.2", name: "Minimize privileged containers", severity: "HIGH", checks: [{ id: "AVD-KSV-0017" }] },
+                { id: "1.6", name: "Removed ID (KSV029)", severity: "MEDIUM", checks: [{ id: "AVD-KSV-0029" }] },
               ],
             },
           },
@@ -426,6 +427,7 @@ it("matches all 10 reviewer expected control states on a hand-built live-like fi
                 { id: "5.2.9", name: "Added capabilities", severity: "LOW", checks: [{ checkID: "", success: true }] },
                 { id: "5.1.2", name: "Minimize access to secrets", severity: "CRITICAL", checks: [{ checkID: "AVD-KSV-0041", target: "/clusterrole-platform-admin", success: false }] },
                 { id: "5.2.2", name: "Minimize privileged containers", severity: "HIGH", checks: [{ checkID: "AVD-KSV-0017", target: "security-system/daemonset-falco", success: false }] },
+                { id: "1.6", name: "Removed ID (KSV029)", severity: "MEDIUM", checks: [{ checkID: "", success: true }] },
               ],
             },
           },
@@ -486,15 +488,16 @@ it("matches all 10 reviewer expected control states on a hand-built live-like fi
   expect(cisById.get("4.2.9")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "infra_no_per_check_evidence" })
   expect(cisById.get("1.2.12")).toMatchObject({ evaluationState: "failed" })
   expect(cisById.get("3.1.1")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "manual" })
-  expect(cisById.get("5.2.9")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "not_in_catalogue" })
+  expect(cisById.get("5.2.9")).toMatchObject({ evaluationState: "passed" })
   expect(cisById.get("5.1.2")).toMatchObject({ evaluationState: "failed" })
   expect(cisById.get("5.2.2")).toMatchObject({ evaluationState: "failed" })
+  expect(cisById.get("1.6")).toMatchObject({ evaluationState: "not_evaluated", notEvaluatedReason: "not_in_catalogue" })
 
   const kisa = await getComplianceFrameworkDetail("k8s-kisa-1.0")
   expect(kisa!.controls[0]).toMatchObject({ id: "KISA-NET-01", evaluationState: "passed" })
 
   const nsa = await getComplianceFrameworkDetail("k8s-nsa-1.0")
-  expect(nsa!.controls[0]).toMatchObject({ id: "4.1", evaluationState: "not_evaluated", notEvaluatedReason: "not_in_catalogue" })
+  expect(nsa!.controls[0]).toMatchObject({ id: "4.1", evaluationState: "not_evaluated", notEvaluatedReason: "no_report_for_family" })
 
   const pss = await getComplianceFrameworkDetail("k8s-pss-restricted-0.1")
   expect(pss!.controls[0]).toMatchObject({ id: "17", evaluationState: "failed", actionableFailCount: 1 })

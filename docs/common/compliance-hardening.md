@@ -599,7 +599,9 @@ ConfigMap per node. The repository carries the renderer and shared script
 ConfigMap template, with no per-cluster inventory. The live list handles
 `NARWHAL_TOPOLOGY=single`, default `ha` (3+3), and Kakao provisioning without
 assuming hostnames. R401 tests 1-node, 3+3 and renamed-node inputs, including
-idempotent CLI rendering. Generation or seed failure warns and continues Phase 2;
+idempotent CLI rendering without PyYAML (standard-library YAML emitter). Generation
+writes a temporary tree and replaces the destination only on success; failed
+generation retains any existing rendered file. Generation or seed failure warns and continues Phase 2;
 ArgoCD owns the published result. This avoids always-on host-reading DaemonSet
 pods and a fan-out CronJob's node-list/create-Jobs permissions. Cost: new or
 renamed nodes need explicit regeneration; no automatic controller is introduced.
@@ -618,15 +620,40 @@ from the old named-ignore Application. On a guest, render with
 to the push helper. The existing `narwhal-master-1` hash/name
 `cis-bench-974178c0082e` and its `-latest` ConfigMap are preserved. Avoid pushing
 the repository's unrendered script-only template over a deployed per-node file.
+The push helper explicitly treats this resource as generated: both whole-tree and
+explicit-file publication re-render from live nodes in a temporary tree, refusing
+the entire push on discovery/render failure. Review that live node list before publishing.
 
 Run this coverage/freshness check after a daily run and after topology changes;
-exit 1 reports each live node lacking a complete record within 26 hours:
+exit 1 reports each live node lacking a complete record within 26 hours and labeled
+records for removed nodes (including empty/error records):
 
 ```bash
 kubectl get nodes -o json > /tmp/cis-nodes.json
 kubectl -n security-system get configmaps -o json > /tmp/cis-records.json
 python3 scripts/ops/render-cis-benchmark.py --check-nodes /tmp/cis-nodes.json --records /tmp/cis-records.json
 ```
+
+D7 (retention): the CIS Application has `automated.prune: false`. Every generated
+object carries `argocd.argoproj.io/sync-options: Prune=false,Delete=false`, matching
+the existing OpenBao backup PVC syntax for the pinned ArgoCD v3.4.4
+(`scripts/cluster/13-argocd.sh`). Thus inventory shrinkage and Application deletion
+retain node objects and records. This does not prevent an explicit Kubernetes delete.
+Cost: removed-node objects remain until manual cleanup. After removing the node,
+regenerate/push the live inventory, confirm no active Job for its CronJob, and
+archive its latest record before the following exact cleanup (set the removed name):
+
+```bash
+NODE=removed-node-name
+CJ="cis-bench-$(printf '%s' "$NODE" | sha256sum | cut -c1-12)"
+kubectl -n security-system delete cronjob,serviceaccount,role,rolebinding "$CJ"
+kubectl -n security-system delete configmap "${CJ}-latest"
+```
+
+For existing-cluster adoption, render from live nodes, push both the resource and
+Application through `push-to-gitea.sh`, then verify the delivered Application has
+prune disabled and keeps the record bytes across sync. Offline checks cannot prove
+this ArgoCD behavior; follow `.review/trial-plan-L2.md` for the live trial.
 
 Control-plane nodes target `master,etcd,controlplane,node,policies`; workers target
 `node`. `nodeRoles` records the normalized scheduling role (control-plane or worker);

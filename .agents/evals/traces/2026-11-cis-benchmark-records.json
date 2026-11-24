@@ -28,7 +28,9 @@
       "scripts/test/lib/check-cis-benchmark.py",
       "scripts/test/lib/test-cis-benchmark-record.py",
       "scripts/test/lib/test-cis-benchmark-recorder.py",
-      ".agents/evals/traces/2026-11-cis-benchmark-records.json"
+      ".agents/evals/traces/2026-11-cis-benchmark-records.json",
+      "scripts/gitops/push-to-gitea.sh",
+      "scripts/test/lib/check-push-to-gitea-dirs.sh"
     ]
   },
   "events": [
@@ -63,7 +65,8 @@
         "test:make validate -> exit 0; shellcheck touched shell and yamllint cis-benchmark resource -> exit 0",
         "test:helm template narwhal-apps for provider vagrant and kakao -> exit 0",
         "test:109 image refs joined to digest inventory; inline pins match. check-mirror-pins.py --list-paths verified paths only, no registry requests"
-      ]
+      ],
+      "summary": "Offline transform, fake-API recorder behavior, generated resources/security/delivery contract and four-node topology only; does not verify runtime tools, admission, mirror, scheduled execution, API version compatibility, Argo preservation or portal."
     },
     {
       "id": "e5",
@@ -81,6 +84,88 @@
       "state": "B",
       "summary": "Authored offline, then trialled live by the orchestrator on the single-node cluster on 2026-11-24: the resource was applied, one Job was created from the CronJob and completed in under 30 seconds, and the per-node ConfigMap held a complete record (40674 bytes, 125 results, PASS 74 / FAIL 5 / WARN 46 / INFO 0, FAIL ids 1.1.12, 1.2.6, 1.3.7, 1.4.2, 4.2.6, toolVersion 0.16.0, benchmarkId cis-1.23, kubernetesVersion v1.35.7). Not verified: the scanner-failure path on a live cluster, worker-role and multi-node runs, ArgoCD selfHeal against the ignored data field (the Application is delivered after merge), air-gap mirror delivery. The image digest was re-measured with crane on 2026-11-24T11:51:59Z; the upstream repository reports Apache-2.0.",
       "next": "Orchestrator: copy this trace to .agents/evals/traces/2026-11-cis-benchmark-records.json, fill marked digest timestamp, resolve license, run .review/trial-plan-L2.md, independently review and commit only after validation."
+    },
+    {
+      "id": "e7",
+      "type": "bug_fix",
+      "summary": "Author r2: option (a), bootstrap measures live NodeList and renders node-bound resources before Gitea push; generation/seed failures warn and continue. Removed committed node inventory; stable node hashes preserve existing single-node names. No new workload RBAC or resident scanner. --check-nodes/--records reports missing, error or stale (>26h) records. Run metadata and publication move from scanner-writable work to recorder-only tmp; own downward-API node overrides metadata node. Reported scanner version and benchmark mismatches publish explicit error. Section is string-validated/redacted/truncated; R401 validates both recorder security contexts and rejects metadata-volume sharing. Deprecated master affinity removed. Checked-in YAML now shared script template only; generated workload contracts checked by R401 instead of stale R227/R234 exceptions."
+    },
+    {
+      "id": "e8",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "r2 offline targeted only; no cluster/network/full make test. Prior reviewer live evidence belongs to the previous revision.",
+      "evidence": [
+        "test:.review/verification-r2.log: R401 --mutation-verify PASS, 30 mutations, single/HA 3+3/renamed topology, CLI idempotence, missing/stale/error coverage and nonfatal bootstrap failure blocks",
+        "test:transform fixture PASS 74/5/46/0, 125 results, 36418 bytes; recorder PASS seven cases plus forged /work metadata ignored",
+        "test:check-static-pod-hostpaths.py and check-workload-runtime-posture.py --mutation-verify exit 0",
+        "test:shellcheck --severity=warning and bash -n touched scripts exit 0; yamllint touched YAML exit 0 with Application document-start warning",
+        "test:helm template narwhal-apps provider=vagrant/kakao exit 0; check-version-consistency.sh exit 0; check-mirror-pins.py --list-paths exit 0 (no registry verification)",
+        "artifact:.review/trial-plan-L2.md: live delta trial/migration/coverage/rollback"
+      ],
+      "summary": "r2 offline targeted only; no cluster/network/full make test. Prior reviewer live evidence belongs to the previous revision."
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "B",
+      "summary": "Five review findings addressed locally; changes uncommitted. Runtime validation pending with orchestrator: pinned kube-bench version stdout, forged work metadata, version/benchmark failure publication, both roles/all nodes, regenerated Argo data-ignore preservation, single/HA/Kakao bootstrap nonfatal/idempotent behavior. No portal, image pins, admission policy or RBAC widening. Trace staged under .review because .agents is read-only to author.",
+      "next": "Copy staged trace to .agents/evals/traces/2026-11-cis-benchmark-records.json, execute r2 trial plan, independent review, then orchestrator commit."
+    },
+    {
+      "id": "e10",
+      "type": "regression_verification",
+      "actor": "orchestrator",
+      "attributedTo": "orchestrator",
+      "date": "2026-11-24",
+      "status": "passed",
+      "summary": "Orchestrator measured on 2026-11-24: the round-1 manifest produced a complete record on the live single-node cluster (PASS 74 / FAIL 5 / WARN 46, 40674 bytes). After round 2 the first live run recorded status error \"scanner version mismatch\" because kube-bench prints \"v0.16.0\" while the check compared with \"0.16.0\"; this proved the error path live and exposed the bug. After correcting the comparison the run completed with the same totals and FAIL ids 1.1.12, 1.2.6, 1.3.7, 1.4.2, 4.2.6. The recorder ServiceAccount could patch only its own ConfigMap (other ConfigMap no, create configmaps no, get secrets no, list pods no). Image digest re-measured with crane 2026-11-24T11:51:59Z; upstream license Apache-2.0. Not verified: worker/multi-node runs, ArgoCD behaviour after the Application is delivered, fresh-install bootstrap, air-gap mirror."
+    },
+    {
+      "id": "e11",
+      "type": "bug_fix",
+      "actor": "author",
+      "summary": "Author r3 D6-D9: stdlib-only deterministic YAML renderer, no yaml imports; Application automated prune=false and generated objects Prune=false,Delete=false (existing OpenBao PVC syntax, ArgoCD v3.4.4 pin). Bootstrap excludes repository nodes=0 resource during copy and moves temporary render only on success. Whole-tree/explicit-file/tag publication explicitly regenerates CIS from live nodes and refuses entire push on discovery/render failure. Offline coverage reports labeled stale removed-node records; documented exact manual cleanup. R401 now rejects recorder auth readOnly=false and version-path mutation."
+    },
+    {
+      "id": "e12",
+      "type": "regression_verification",
+      "actor": "author",
+      "status": "partial",
+      "summary": "r3 offline targeted verification passed: R401 34 destructive mutations plus yaml-import rejection, no-PyYAML python3 -S/stub CLI for one/3+3/renamed nodes, actual embedded-script round trips, bootstrap partial-render/discovery failure preserves existing bytes; transform/recorder behavior; R308 local bare Git mirror/explicit aliases/tag live-node generation and failure refusal with unchanged remote SHA, existing three mutations. shellcheck, bash -n, yamllint, make validate and Helm both providers exit 0. kubeconform with only local schema location could not find the standard ConfigMap schema (Valid 0 / Invalid 0 / Errors 1); network forbidden, so full CI schema validation remains unverified. Full make test was not run.",
+      "evidence": [
+        "artifact:.review/cis-r3.log",
+        "artifact:.review/push-r3.log",
+        "artifact:.review/shell-r3.log",
+        "artifact:.review/yaml-r3.log",
+        "artifact:.review/validate-r3.log",
+        "artifact:.review/helm-vagrant-r3.yaml",
+        "artifact:.review/helm-kakao-r3.yaml",
+        "artifact:.review/kubeconform-r3.log",
+        "artifact:.review/verification-r3.log",
+        "artifact:.review/transform-full-r3.log: 125 results, PASS 74 / FAIL 5 / WARN 46 / INFO 0, exact five FAIL ids, 40667 bytes with fixed test metadata"
+      ]
+    },
+    {
+      "id": "e-live-r3",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Live single-node cluster, round-3 code delivered through push-to-gitea before merge (orchestrator, 2026-11-24).",
+      "summary": "push-to-gitea re-rendered the per-node resources from the live node list and ArgoCD created Application cis-benchmark (automated prune false, selfHeal true, RespectIgnoreDifferences) and took ownership of the existing per-node objects; the record ConfigMap content was byte-identical before and after adoption; a Job run under ArgoCD ownership completed and its record was still intact after a hard refresh and 200 seconds.",
+      "evidence": [
+        "test:record sha256 prefix before adoption 1ba7d0a135beb404 == after adoption 1ba7d0a135beb404",
+        "test:kubectl get application cis-benchmark -> Synced/Healthy; prune=false; objects annotated Prune=false,Delete=false",
+        "test:job after adoption -> complete 2026-11-24T12:56:20Z {'pass': 74, 'fail': 5, 'warn': 46, 'info': 0}; after hard refresh + 200s -> complete 2026-11-24T12:56:20Z {'pass': 74, 'fail': 5, 'warn': 46, 'info': 0}",
+        "test:kubeconform -strict gitops/resources/*.yaml -> 104 valid, 0 errors"
+      ]
+    },
+    {
+      "id": "e13",
+      "type": "task_outcome",
+      "actor": "author",
+      "state": "B",
+      "summary": "Requested r3 edits staged uncommitted in this worktree. No cluster/network access or repository commit/push. Live r3 ArgoCD retention/adoption, worker/multi-node, fresh-install bootstrap and air-gap mirror remain unverified. Trace has a summary on every event, prepared at .review/2026-11-cis-benchmark-records.json because required .agents destination is read-only.",
+      "next": "Orchestrator: copy trace to .agents/evals/traces/2026-11-cis-benchmark-records.json; follow updated .review/trial-plan-L2.md to render live nodes, publish through push-to-gitea and verify Application record retention; independent review then commit using .review/commit-message-r3.txt."
     }
   ]
 }

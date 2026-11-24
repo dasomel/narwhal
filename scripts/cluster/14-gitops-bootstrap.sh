@@ -131,18 +131,24 @@ if [ ! -d /home/vagrant/configs/gitops ]; then
   echo "       The Vagrantfile syncs gitops/ there; check the synced_folder." >&2
   exit 1
 fi
-cp -r /home/vagrant/configs/gitops/* .
+# D8: never copy the nodes=0 template over an existing rendered inventory.
+# Cost: separate CIS staging; escape hatch: regenerate once node discovery recovers.
+tar -C /home/vagrant/configs/gitops --exclude='./resources/cis-benchmark.yaml' -cf - . | tar -xf -
 bash "/home/vagrant/scripts/gitops/apply-topology.sh" "$PWD"
 
-# D5: measure nodes before publishing; role/hostname coverage needs no static inventory.
-# Cost: rerun generation after node changes; escape hatch: warn and keep Phase 2 alive.
-if ! CIS_NODES_FILE="$(mktemp)" ||
+# D5/D8: publish CIS only after discovery and rendering both succeed.
+# Cost: stale inventory on failure; escape hatch: rerender and push after recovery.
+if ! CIS_NODES_FILE="$(mktemp)" || ! CIS_STAGE="$(mktemp -d)" ||
+  ! mkdir -p "${CIS_STAGE}/resources" "${CIS_STAGE}/charts/narwhal-apps/templates" ||
   ! kubectl get nodes -o json > "${CIS_NODES_FILE}" ||
   ! python3 /home/vagrant/scripts/ops/render-cis-benchmark.py \
-    --nodes "${CIS_NODES_FILE}" --output-root "$PWD"; then
-  echo "WARN: CIS generation failed; Phase 2 continues. Re-render and push CIS resources later." >&2
+    --nodes "${CIS_NODES_FILE}" --output-root "${CIS_STAGE}"; then
+  echo "WARN: CIS generation failed; existing rendered file retained; Phase 2 continues. Re-render and push CIS resources later." >&2
+else
+  mv "${CIS_STAGE}/resources/cis-benchmark.yaml" resources/cis-benchmark.yaml
 fi
-rm -f "${CIS_NODES_FILE}"
+rm -f "${CIS_NODES_FILE:-}"
+if [[ -n "${CIS_STAGE:-}" ]]; then rm -rf "${CIS_STAGE}"; fi
 CIS_MANIFEST="$PWD/resources/cis-benchmark.yaml"
 
 # D-FALCO-045 (2026-10-28): falco is staged on every OS. Until then this block removed

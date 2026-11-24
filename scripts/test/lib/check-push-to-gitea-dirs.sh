@@ -24,7 +24,13 @@ run_suite() {
 
   # The publisher refreshes ArgoCD after a local push: never use the host kubeconfig.
   mkdir -p "${tmp}/bin"
-  printf '#!/bin/sh\nexit 0\n' > "${tmp}/bin/kubectl"
+  cat > "${tmp}/bin/kubectl" <<'MOCK'
+#!/bin/sh
+if [ "$1 $2" = 'get nodes' ]; then
+  [ "${CIS_TEST_FAIL:-0}" = 0 ] || exit 1
+  cat "${CIS_TEST_NODES}"
+fi
+MOCK
   chmod +x "${tmp}/bin/kubectl"
   local PATH="${tmp}/bin:${PATH}"
 
@@ -142,6 +148,46 @@ run_suite() {
   fi
   [[ "$(git --git-dir="${bare}" rev-parse 'main^{tree}')" == "$(git --git-dir="${bare}" rev-parse 'v0.0.0-test^{tree}')" ]] || return 1
 
+  # 7. Generated CIS inventory: mirror-all, explicit aliases and --tag must
+  # replace nodes=0 from source with measured nodes, or leave remote unchanged.
+  cp "${ROOT}/gitops/resources/cis-benchmark.yaml" "${gitops}/resources/cis-benchmark.yaml"
+  local nodes="${tmp}/nodes.json"
+  printf '%s\n' '{"items":[{"metadata":{"name":"live-node","labels":{}}}]}' > "${nodes}"
+  local selection content_cis before_sha
+  for selection in all resources/cis-benchmark.yaml ./resources//cis-benchmark.yaml/ tag; do
+    local args=()
+    case "${selection}" in
+      all) args=("CIS mirror all") ;;
+      tag) args=(--tag v0.0.1-cis) ;;
+      *) args=("CIS explicit" "${selection}") ;;
+    esac
+    if ! env "${env_common[@]}" CIS_TEST_NODES="${nodes}" "${BASH_BIN}" "${target_script}" "${args[@]}" >"${tmp}/out" 2>&1; then
+      cat "${tmp}/out" >&2
+      return 1
+    fi
+    content_cis="$(git --git-dir="${bare}" show main:resources/cis-benchmark.yaml)"
+    echo "${content_cis}" | grep -q 'kind: "CronJob"' || return 1
+    echo "${content_cis}" | grep -q 'live-node' || return 1
+  done
+  before_sha="$(git --git-dir="${bare}" rev-parse main)"
+  # Both discovery failure and a valid JSON but empty NodeList must refuse publish.
+  local failure
+  for failure in discovery renderer; do
+    local fail_nodes=0
+    if [[ "${failure}" == discovery ]]; then fail_nodes=1; else printf '%s\n' '{"items":[]}' > "${nodes}"; fi
+    for selection in all resources/cis-benchmark.yaml; do
+      local args=("must refuse CIS")
+      if [[ "${selection}" != all ]]; then args+=("${selection}"); fi
+      if env "${env_common[@]}" CIS_TEST_NODES="${nodes}" CIS_TEST_FAIL="${fail_nodes}" \
+        "${BASH_BIN}" "${target_script}" "${args[@]}" >"${tmp}/out" 2>&1; then
+        echo "generated CIS failure was published" >&2
+        return 1
+      fi
+      grep -q 'refusing to publish generated resources/cis-benchmark.yaml' "${tmp}/out" || return 1
+      [[ "$(git --git-dir="${bare}" rev-parse main)" == "${before_sha}" ]] || return 1
+    done
+  done
+
   rm -rf "${tmp}"
   trap - EXIT
   return 0
@@ -236,4 +282,4 @@ fi
 rm -rf "${mut1}" "${mut2}"
 trap - EXIT
 
-echo "R308 ok: push-to-gitea directory mirroring, deletions, single-file, path validation, no-path modes (${mut3_note})"
+echo "R308 ok: push-to-gitea directory mirroring, deletions, single-file, path validation, no-path modes, CIS live render/failure preservation (${mut3_note})"

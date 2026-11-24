@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """R401: CIS evidence delivery/security contract, with destructive in-memory mutations."""
+import ast
 import copy
+import os
 from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
@@ -17,12 +19,13 @@ ROOT = Path(__file__).resolve().parents[3]
 def check(docs, app, bootstrap, recorder):
   assert app['spec']['source']['directory']['include'] == 'cis-benchmark.yaml'
   assert app['spec']['source']['path'] == 'resources'
-  assert app['spec']['syncPolicy']['automated'] == {'prune': True, 'selfHeal': True}
+  assert app['spec']['syncPolicy']['automated'] == {'prune': False, 'selfHeal': True}
   assert 'RespectIgnoreDifferences=true' in app['spec']['syncPolicy']['syncOptions']
   assert 'kubectl apply -f "${CIS_MANIFEST}"' in bootstrap and 'cis-benchmark.yaml' in bootstrap
-  assert '--nodes "${CIS_NODES_FILE}" --output-root "$PWD"' in bootstrap
+  assert '--nodes "${CIS_NODES_FILE}" --output-root "${CIS_STAGE}"' in bootstrap
   assert bootstrap.index('--nodes') < bootstrap.index('git push')
   assert 'WARN: CIS generation failed' in bootstrap and 'WARN: CIS resource seed failed' in bootstrap
+  assert all(d['metadata']['annotations']['argocd.argoproj.io/sync-options'] == 'Prune=false,Delete=false' for d in docs)
   jobs = [d for d in docs if d['kind'] == 'CronJob']
   roles = {d['metadata']['name']: d for d in docs if d['kind'] == 'Role'}
   sas = {d['metadata']['name']: d for d in docs if d['kind'] == 'ServiceAccount'}
@@ -83,13 +86,14 @@ def check(docs, app, bootstrap, recorder):
       assert sc['runAsNonRoot'] is True and type(sc['runAsUser']) is int and sc['runAsUser'] > 0
       assert sc['readOnlyRootFilesystem'] is True and sc['allowPrivilegeEscalation'] is False
       assert sc['capabilities'] == {'drop': ['ALL']}
-      assert any(m['name'] == 'auth' for m in container['volumeMounts'])
+      assert {'name': 'auth', 'mountPath': '/auth', 'readOnly': True} in container['volumeMounts']
       assert any(m['name'] == 'tmp' and m['mountPath'] == '/tmp' for m in container['volumeMounts'])
       assert not any(m['name'] in mounts and m['name'] != 'work' for m in container['volumeMounts'])
       assert any(e == {'name': 'NODE_NAME', 'valueFrom': {'fieldRef': {'fieldPath': 'spec.nodeName'}}}
                  for e in container['env'])
     assert all(e['key'] != 'node-role.kubernetes.io/master' for t in terms for e in t['matchExpressions'])
   assert '/work/meta.json' not in recorder and '/work/record.json' not in recorder
+  assert '"$(cat /work/version 2>/dev/null || echo missing)" != v0.16.0' in recorder
   assert '/tmp/run-meta.json' in recorder and 'scanner version mismatch' in recorder
   assert 'status:"error",reason:"scan not completed"' in recorder
   assert 'status:"error",reason:"scanner failed, invalid output or record too large"' in recorder
@@ -97,7 +101,17 @@ def check(docs, app, bootstrap, recorder):
   assert '"$(cat /work/exit-code 2>/dev/null || echo missing)" == 0' in recorder
 
 
+def check_renderer(source):
+  for node in ast.walk(ast.parse(source)):
+    if isinstance(node, ast.Import):
+      assert all(alias.name.split('.')[0] != 'yaml' for alias in node.names)
+    if isinstance(node, ast.ImportFrom):
+      assert (node.module or '').split('.')[0] != 'yaml'
+
+
 def main():
+  renderer_source = (ROOT / 'scripts/ops/render-cis-benchmark.py').read_text()
+  check_renderer(renderer_source)
   spec = importlib.util.spec_from_file_location('renderer', ROOT / 'scripts/ops/render-cis-benchmark.py')
   renderer = importlib.util.module_from_spec(spec)
   spec.loader.exec_module(renderer)
@@ -126,11 +140,18 @@ def main():
       (base / 'charts/narwhal-apps/templates').mkdir(parents=True)
       command = ['python3', str(ROOT / 'scripts/ops/render-cis-benchmark.py'),
                  '--nodes', str(measured), '--output-root', str(base)]
-      subprocess.run(command, check=True, capture_output=True)
+      # A VM with no site packages and an explicitly unimportable yaml module.
+      (base / 'yaml.py').write_text('raise ImportError("PyYAML unavailable")\n')
+      command.insert(1, '-S')
+      subprocess.run(command, check=True, capture_output=True,
+                     env={**os.environ, 'PYTHONPATH': str(base)})
       before = (base / 'resources/cis-benchmark.yaml').read_text()
       subprocess.run(command, check=True, capture_output=True)
       assert (base / 'resources/cis-benchmark.yaml').read_text() == before
-      check(list(yaml.safe_load_all(before)), app, bootstrap, recorder)
+      rendered = list(yaml.safe_load_all(before))
+      assert rendered[0]['data']['recorder.sh'] == recorder
+      assert rendered[0]['data']['record.jq'] == (ROOT / 'scripts/ops/cis-benchmark-record.jq').read_text()
+      check(rendered, app, bootstrap, recorder)
       missing = subprocess.run(['python3', str(ROOT / 'scripts/ops/render-cis-benchmark.py'),
         '--check-nodes', str(measured)], capture_output=True, text=True)
       assert missing.returncode == 1 and all(n['name'] in missing.stdout for n in nodes)
@@ -142,14 +163,31 @@ def main():
           'node': n['name'], 'status': status, 'finishedAt':
           (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()})}} for n in nodes]}))
         assert subprocess.run(coverage, capture_output=True).returncode == expected
+      records.write_text(json.dumps({'items': [{'metadata': {'labels': {
+        'narwhal.io/compliance-tool': 'kube-bench', 'narwhal.io/benchmark-node': 'removed-node'}}}]}))
+      stale = subprocess.run(coverage, capture_output=True, text=True)
+      assert stale.returncode == 1 and 'removed-node' in stale.stdout and 'manual cleanup' in stale.stdout
   # Execute only the isolated CIS bootstrap blocks with failing clients; Phase 2 must continue.
   generation = bootstrap[bootstrap.index('if ! CIS_NODES_FILE='):bootstrap.index('# D-FALCO-045')]
   seed = bootstrap[bootstrap.index('if ! kubectl apply -f "${CIS_MANIFEST}"'):bootstrap.index('# D-PSA-LABELS-14')]
   for fail in ('kubectl', 'python3'):
-    clients = 'kubectl() { return ' + ('1' if fail == 'kubectl' else '0') + '; }; python3() { return 1; }; '
-    result = subprocess.run(['bash', '-c', 'set -euo pipefail; ' + clients + generation + seed +
-      '\nprintf "CONTINUED\\n"'], text=True, capture_output=True)
-    assert result.returncode == 0 and 'CONTINUED' in result.stdout and 'WARN: CIS generation failed' in result.stderr
+    with tempfile.TemporaryDirectory() as directory:
+      base = Path(directory)
+      destination = base / 'resources/cis-benchmark.yaml'
+      destination.parent.mkdir()
+      destination.write_text('existing per-node content')
+      source = base / 'source'
+      (source / 'resources').mkdir(parents=True)
+      (source / 'resources/cis-benchmark.yaml').write_text(renderer.render([]))
+      copy_line = next(line for line in bootstrap.splitlines() if line.startswith('tar -C '))
+      copy_line = copy_line.replace('/home/vagrant/configs/gitops', str(source))
+      clients = ('kubectl() { return ' + ('1' if fail == 'kubectl' else '0') + '; }; '
+        'python3() { while [[ "$1" != --output-root ]]; do shift; done; '
+        'printf partial > "$2/resources/cis-benchmark.yaml"; return 1; }; ')
+      result = subprocess.run(['bash', '-c', 'set -euo pipefail; ' + clients + copy_line + '\n' +
+        generation + seed + '\nprintf "CONTINUED\\n"'], cwd=base, text=True, capture_output=True)
+      assert destination.read_text() == 'existing per-node content'
+      assert result.returncode == 0 and 'CONTINUED' in result.stdout and 'WARN: CIS generation failed' in result.stderr
   docs = list(yaml.safe_load_all(renderer.render(single)))
   assert any(d['metadata']['name'] == 'cis-bench-974178c0082e' for d in docs)
   mutations = []
@@ -178,6 +216,18 @@ def main():
                            ('runAsNonRoot', False), ('allowPrivilegeEscalation', True),
                            ('capabilities', {'drop': []})):
         mutate_pod(lambda p, g=group, i=index, f=field, v=value: p[g][i]['securityContext'].update({f: v}))
+    mutate_pod(lambda p: next(m for m in p['containers'][0]['volumeMounts'] if m['name'] == 'auth').update(readOnly=False))
+    mutations.append((docs, app, bootstrap, recorder.replace('/work/version', '/work/other-version')))
+    mutate_doc('CronJob', lambda j: j['metadata']['annotations'].clear())
+    a = copy.deepcopy(app)
+    a['spec']['syncPolicy']['automated']['prune'] = True
+    mutations.append((docs, a, bootstrap, recorder))
+    try:
+      check_renderer(renderer_source + '\nimport yaml\n')
+    except AssertionError:
+      pass
+    else:
+      raise AssertionError('PyYAML import mutation escaped')
     mutate_pod(lambda p: p.update(hostPID=False))
     mutate_pod(lambda p: p['initContainers'].reverse())
     mutations += [(docs, app, '', recorder), (docs, app, bootstrap, recorder.replace('status:"error"', 'status:"complete"'))]

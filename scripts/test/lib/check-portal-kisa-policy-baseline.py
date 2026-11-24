@@ -52,9 +52,51 @@ def check_live_generator_cli() -> list[str]:
     if res.returncode != 0:
         return [f"gen-kisa-policy-baseline.mjs --check failed (rc={res.returncode}): {res.stderr.strip()} {res.stdout.strip()}"]
 
+    manifest_text = FILES["manifest"].read_text(encoding="utf-8")
+    kyverno_docs = [
+        d for d in yaml.safe_load_all(manifest_text)
+        if isinstance(d, dict) and d.get("kind") == "ClusterPolicy"
+    ]
+    net_sources = []
+    for p in sorted((ROOT / "gitops/resources").glob("*.yaml")):
+        rel = p.relative_to(ROOT).as_posix()
+        docs = [
+            d for d in yaml.safe_load_all(p.read_text(encoding="utf-8"))
+            if isinstance(d, dict) and d.get("kind") in ("NetworkPolicy", "CiliumNetworkPolicy", "CiliumClusterwideNetworkPolicy")
+        ]
+        net_sources.append({"path": rel, "docs": docs})
+    portal_k8s_path = ROOT / "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml"
+    portal_docs = []
+    for chunk in re.split(r"^---\s*$", portal_k8s_path.read_text(encoding="utf-8"), flags=re.M):
+        if not chunk.strip() or "{{" in chunk:
+            continue
+        for d in yaml.safe_load_all(chunk):
+            if isinstance(d, dict) and d.get("kind") in ("NetworkPolicy", "CiliumNetworkPolicy", "CiliumClusterwideNetworkPolicy"):
+                portal_docs.append(d)
+    net_sources.append({
+        "path": "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+        "docs": portal_docs,
+    })
+    from_json_payload = json.dumps({"kyvernoDocs": kyverno_docs, "networkSources": net_sources}, default=str)
+    res_json = subprocess.run(
+        ["node", str(FILES["gen"]), "--check", "--from-json", "-"],
+        cwd=str(ROOT),
+        input=from_json_payload,
+        capture_output=True,
+        text=True,
+    )
+    if res_json.returncode != 0:
+        return [f"gen-kisa-policy-baseline.mjs --check --from-json failed (rc={res_json.returncode}): {res_json.stderr.strip()} {res_json.stdout.strip()}"]
+
+    ccnp_from_yaml = yaml.safe_load((ROOT / "gitops/resources/ambient-kubelet-probes-ccnp.yaml").read_text(encoding="utf-8"))
+    probe_input = json.dumps({
+        "kyvernoDocs": kyverno_docs,
+        "ccnpFromYaml": ccnp_from_yaml,
+        "networkSources": net_sources,
+    }, default=str)
+
     probe = r"""
 import { readFileSync } from "node:fs";
-import yaml from "./portal/node_modules/js-yaml/dist/js-yaml.mjs";
 import {
   buildPolicyBaselineFromManifest,
   buildNetworkPolicyBaselineFromSources,
@@ -70,6 +112,7 @@ import {
   specHasOverrides,
 } from "./portal/src/lib/kisa-policy-canonical.mjs";
 
+const { kyvernoDocs: docs, ccnpFromYaml, networkSources: preParsedNetSources } = JSON.parse(readFileSync(0, "utf8"));
 const manifestText = readFileSync(MANIFEST_PATH, "utf8");
 const expected = buildPolicyBaselineFromManifest(manifestText);
 const actual = JSON.parse(readFileSync(OUT_JSON, "utf8"));
@@ -78,7 +121,32 @@ if (validateBaseline(actual, expected).length !== 0) {
   process.exit(1);
 }
 
-const docs = yaml.loadAll(manifestText).filter((d) => d && d.kind === "ClusterPolicy");
+// Explicit cross-check: Python-parsed YAML fed directly to runtime canonicaliser matches every baseline entry
+for (const doc of docs) {
+  const entry = actual.policies[doc.metadata?.name];
+  if (!entry || computeKyvernoPolicyDigest(doc) !== entry.specSha256) {
+    console.error("cross-check Kyverno digest mismatch for " + doc.metadata?.name);
+    process.exit(1);
+  }
+}
+for (const src of preParsedNetSources) {
+  for (const doc of src.docs) {
+    const dig = computeNetworkPolicyDigest(doc.kind, doc);
+    if (doc.kind === "CiliumClusterwideNetworkPolicy") {
+      const key = `${doc.kind}/${doc.metadata?.name}`;
+      if (dig !== actual.clusterwidePolicies?.[key]?.specSha256) {
+        console.error("cross-check CCNP digest mismatch for " + key);
+        process.exit(1);
+      }
+    } else {
+      const key = `${doc.kind}/${doc.metadata?.namespace}/${doc.metadata?.name}`;
+      if (dig !== actual.networkPolicies?.[key]?.specSha256) {
+        console.error("cross-check NetworkPolicy digest mismatch for " + key);
+        process.exit(1);
+      }
+    }
+  }
+}
 const latest = docs.find((d) => d.metadata?.name === "disallow-latest-tag");
 const verify = docs.find((d) => d.metadata?.name === "verify-image-signatures");
 if (!latest || !verify) {
@@ -207,7 +275,6 @@ if (computeNetworkPolicyDigest("CiliumNetworkPolicy", cnpSpecOnly) === computeNe
   process.exit(1);
 }
 
-const ccnpFromYaml = yaml.load(readFileSync("./gitops/resources/ambient-kubelet-probes-ccnp.yaml", "utf8"));
 const ccnpBaselineEntry = actual.clusterwidePolicies?.["CiliumClusterwideNetworkPolicy/allow-ambient-kubelet-probes"];
 if (!ccnpBaselineEntry || computeNetworkPolicyDigest("CiliumClusterwideNetworkPolicy", ccnpFromYaml) !== ccnpBaselineEntry.specSha256) {
   console.error("CCNP allow-ambient-kubelet-probes digest mismatch");
@@ -273,6 +340,7 @@ if (!threwOnNonEmptyDefaultDeny) {
     res2 = subprocess.run(
         ["node", "--input-type=module", "-e", probe],
         cwd=str(ROOT),
+        input=probe_input,
         capture_output=True,
         text=True,
     )

@@ -10,10 +10,10 @@
 //   node portal/scripts/gen-kisa-policy-baseline.mjs
 //   node portal/scripts/gen-kisa-policy-baseline.mjs --check
 
+import { execFileSync } from "node:child_process"
 import { readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import yaml from "js-yaml"
 import {
   KYVERNO_ADMISSION_DEFAULTS,
   NETWORK_POLICY_DEFAULTS,
@@ -91,26 +91,54 @@ export function loadRepoNetworkPolicySources(repoRoot = REPO_ROOT) {
   return sources
 }
 
-function parseNetworkPoliciesFromSource({ text, templated }) {
-  const docs = []
-  if (!templated) {
-    for (const d of yaml.loadAll(text)) {
-      if (d && typeof d === "object" && ALL_NETWORK_POLICY_KINDS.has(d.kind)) {
-        docs.push(d)
-      }
+const PY_PARSE_YAML_BATCH = `
+import json, re, sys, yaml
+payload = json.load(sys.stdin)
+out = []
+for item in payload:
+    if item.get("templated"):
+        docs = []
+        for chunk in re.split(r"^---\\s*$", item["text"], flags=re.M):
+            if not chunk.strip() or "{{" in chunk:
+                continue
+            docs.extend(d for d in yaml.safe_load_all(chunk) if isinstance(d, dict))
+        out.append(docs)
+    else:
+        out.append([d for d in yaml.safe_load_all(item["text"]) if isinstance(d, dict)])
+print(json.dumps(out, default=str))
+`.trim()
+
+function parseYamlSourcesBatch(items) {
+  if (items.length === 0) return []
+  const out = execFileSync("python3", ["-c", PY_PARSE_YAML_BATCH], {
+    input: JSON.stringify(items),
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+  })
+  return JSON.parse(out)
+}
+
+function resolveNetworkPolicyDocs(sources) {
+  const pendingIdx = []
+  const pendingPayload = []
+  for (let i = 0; i < sources.length; i++) {
+    if (!Array.isArray(sources[i].docs)) {
+      pendingIdx.push(i)
+      pendingPayload.push({ text: sources[i].text ?? "", templated: Boolean(sources[i].templated) })
     }
-    return docs
   }
-  // Helm templates may mix Go-templated documents with static YAML documents
-  // (e.g. NetworkPolicy/devtools/narwhal-portal-valkey-ingress). Parse static documents only.
-  for (const chunk of text.split(/^---\s*$/m)) {
-    if (!chunk.trim() || chunk.includes("{{")) continue
-    const d = yaml.load(chunk)
-    if (d && typeof d === "object" && ALL_NETWORK_POLICY_KINDS.has(d.kind)) {
-      docs.push(d)
+  const parsedBatch = parseYamlSourcesBatch(pendingPayload)
+  const parsedByIdx = new Map()
+  for (let j = 0; j < pendingIdx.length; j++) {
+    parsedByIdx.set(pendingIdx[j], parsedBatch[j])
+  }
+  return sources.map((src, i) => {
+    const rawDocs = Array.isArray(src.docs) ? src.docs : (parsedByIdx.get(i) ?? [])
+    return {
+      path: src.path,
+      docs: rawDocs.filter((d) => d && typeof d === "object" && ALL_NETWORK_POLICY_KINDS.has(d.kind)),
     }
-  }
-  return docs
+  })
 }
 
 export function buildNetworkPolicyBaselineFromSources(sources) {
@@ -119,8 +147,8 @@ export function buildNetworkPolicyBaselineFromSources(sources) {
   const clusterwideEntries = new Map()
   const contributingFiles = new Set()
 
-  for (const src of sources) {
-    const docs = parseNetworkPoliciesFromSource(src)
+  for (const src of resolveNetworkPolicyDocs(sources)) {
+    const docs = src.docs
     for (const doc of docs) {
       const kind = doc.kind
       const name = doc?.metadata?.name
@@ -204,10 +232,8 @@ export function buildNetworkPolicyBaselineFromSources(sources) {
   }
 }
 
-export function buildPolicyBaselineFromManifest(manifestText, networkSources = loadRepoNetworkPolicySources()) {
-  const docs = yaml
-    .loadAll(manifestText)
-    .filter((d) => d && typeof d === "object" && d.kind === "ClusterPolicy")
+export function buildPolicyBaselineFromParsed(kyvernoDocs, networkSources) {
+  const docs = kyvernoDocs.filter((d) => d && typeof d === "object" && d.kind === "ClusterPolicy")
 
   const byName = new Map()
   for (const doc of docs) {
@@ -298,6 +324,27 @@ export function buildPolicyBaselineFromManifest(manifestText, networkSources = l
   }
 }
 
+export function buildPolicyBaselineFromManifest(manifestText, networkSources = loadRepoNetworkPolicySources()) {
+  const batchInputs = [{ text: manifestText, templated: false }]
+  const pendingNetIdx = []
+  for (let i = 0; i < networkSources.length; i++) {
+    if (!Array.isArray(networkSources[i].docs)) {
+      pendingNetIdx.push(i)
+      batchInputs.push({ text: networkSources[i].text ?? "", templated: Boolean(networkSources[i].templated) })
+    }
+  }
+  const parsedBatch = parseYamlSourcesBatch(batchInputs)
+  const kyvernoDocs = parsedBatch[0] ?? []
+  const netByIdx = new Map()
+  for (let j = 0; j < pendingNetIdx.length; j++) {
+    netByIdx.set(pendingNetIdx[j], parsedBatch[j + 1] ?? [])
+  }
+  const resolvedNetSources = networkSources.map((src, i) =>
+    Array.isArray(src.docs) ? src : { ...src, docs: netByIdx.get(i) ?? [] },
+  )
+  return buildPolicyBaselineFromParsed(kyvernoDocs, resolvedNetSources)
+}
+
 export function validateBaseline(actual, expected) {
   const errors = []
   if (!actual || typeof actual !== "object") {
@@ -369,8 +416,21 @@ export function validateBaseline(actual, expected) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const manifestText = readFileSync(MANIFEST_PATH, "utf8")
-  const expected = buildPolicyBaselineFromManifest(manifestText)
+  const fromJsonIdx = process.argv.indexOf("--from-json")
+  let expected
+  if (fromJsonIdx >= 0) {
+    const jsonArg = process.argv[fromJsonIdx + 1]
+    if (!jsonArg) {
+      console.error("--from-json requires a file path or '-' for stdin")
+      process.exit(1)
+    }
+    const raw = jsonArg === "-" ? readFileSync(0, "utf8") : readFileSync(jsonArg, "utf8")
+    const parsedInput = JSON.parse(raw)
+    expected = buildPolicyBaselineFromParsed(parsedInput.kyvernoDocs ?? [], parsedInput.networkSources ?? [])
+  } else {
+    const manifestText = readFileSync(MANIFEST_PATH, "utf8")
+    expected = buildPolicyBaselineFromManifest(manifestText)
+  }
 
   if (process.argv.includes("--check")) {
     let actual

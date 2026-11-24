@@ -57,7 +57,7 @@ vi.mock("./k8s-client", () => ({
 
 import { checkEtcd02, checkImg01, checkSec01, checkTls01, matchesLabelSelector } from "./kisa-checks"
 import { checkImg02, checkObs01, checkRbacLive, evaluateRbacRules, KISA_POLICY_BASELINE, ruleGrants, type KisaPolicyBaseline, type RbacPolicyRule } from "./kisa-checks-ops"
-import { computeKyvernoSpecDigest } from "./kisa-policy-canonical.mjs"
+import { computeKyvernoPolicyDigest, computeKyvernoSpecDigest, computeNetworkPolicyDigest } from "./kisa-policy-canonical.mjs"
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -2112,5 +2112,66 @@ describe("KISA-RBAC-02 RBAC rule semantics, truth-table, and exact acceptance co
     const cleanBoot = await checkRbacLive("KISA-RBAC-02")
     expect(cleanBoot.status).toBe("pass")
     expect(cleanBoot.detail).toContain("정확 수용 1건")
+  })
+})
+
+describe("kisa-policy-canonical cross-check against KISA_POLICY_BASELINE", () => {
+  it("computes identical digests from js-yaml parsed GitOps manifests for every Kyverno, NetworkPolicy, CiliumNetworkPolicy, and CCNP entry", () => {
+    const repoRoot = path.resolve(__dirname, "../../..")
+    const kyvernoPath = path.resolve(repoRoot, KISA_POLICY_BASELINE.sourceManifest)
+    const kyvernoDocs = yaml
+      .loadAll(fs.readFileSync(kyvernoPath, "utf8"))
+      .filter((d): d is KisaRawClusterPolicy & { kind: string; metadata: { name: string } } =>
+        Boolean(d && typeof d === "object" && (d as { kind?: string }).kind === "ClusterPolicy"),
+      )
+
+    expect(kyvernoDocs.length).toBe(Object.keys(KISA_POLICY_BASELINE.policies).length)
+    for (const doc of kyvernoDocs) {
+      const expected = KISA_POLICY_BASELINE.policies[doc.metadata.name]
+      expect(expected, `missing Kyverno baseline entry ${doc.metadata.name}`).toBeDefined()
+      expect(computeKyvernoPolicyDigest(doc)).toBe(expected.specSha256)
+    }
+
+    const netDocsSeen = new Set<string>()
+    const ccnpDocsSeen = new Set<string>()
+    const netKinds = new Set(["NetworkPolicy", "CiliumNetworkPolicy", "CiliumClusterwideNetworkPolicy"])
+    for (const relManifest of KISA_POLICY_BASELINE.networkPolicySourceManifests ?? []) {
+      const raw = fs.readFileSync(path.resolve(repoRoot, relManifest), "utf8")
+      const isTemplated = relManifest.includes("/templates/")
+      const docs: Array<Record<string, unknown>> = []
+      if (!isTemplated) {
+        for (const d of yaml.loadAll(raw)) {
+          if (d && typeof d === "object" && netKinds.has((d as { kind?: string }).kind ?? "")) {
+            docs.push(d as Record<string, unknown>)
+          }
+        }
+      } else {
+        for (const chunk of raw.split(/^---\s*$/m)) {
+          if (!chunk.trim() || chunk.includes("{{")) continue
+          const d = yaml.load(chunk)
+          if (d && typeof d === "object" && netKinds.has((d as { kind?: string }).kind ?? "")) {
+            docs.push(d as Record<string, unknown>)
+          }
+        }
+      }
+
+      for (const doc of docs) {
+        const kind = doc.kind as string
+        const meta = doc.metadata as { name: string; namespace?: string }
+        const digest = computeNetworkPolicyDigest(kind, doc)
+        if (kind === "CiliumClusterwideNetworkPolicy") {
+          const key = `${kind}/${meta.name}`
+          ccnpDocsSeen.add(key)
+          expect(digest).toBe(KISA_POLICY_BASELINE.clusterwidePolicies?.[key]?.specSha256)
+        } else {
+          const key = `${kind}/${meta.namespace}/${meta.name}`
+          netDocsSeen.add(key)
+          expect(digest).toBe(KISA_POLICY_BASELINE.networkPolicies?.[key]?.specSha256)
+        }
+      }
+    }
+
+    expect(netDocsSeen.size).toBe(Object.keys(KISA_POLICY_BASELINE.networkPolicies ?? {}).length)
+    expect(ccnpDocsSeen.size).toBe(Object.keys(KISA_POLICY_BASELINE.clusterwidePolicies ?? {}).length)
   })
 })

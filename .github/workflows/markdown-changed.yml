@@ -35,7 +35,7 @@ jobs:
           persist-credentials: false
 
       - name: Install markdownlint-cli
-        run: npm install -g --ignore-scripts markdownlint-cli@0.49.1
+        run: npm ci --ignore-scripts --prefix .github/tools/markdownlint
 
       - name: Gate changed active-documentation lines
         shell: bash
@@ -50,4 +50,5 @@ jobs:
             base="${PUSH_BASE_SHA}"
           fi
           test -n "${base}"
+          export PATH="${GITHUB_WORKSPACE}/.github/tools/markdownlint/node_modules/.bin:${PATH}"
           python3 scripts/ci/markdownlint-changed.py --base "${base}"

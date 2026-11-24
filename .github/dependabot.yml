@@ -69,3 +69,43 @@ updates:
           - "@opentelemetry/*"
       dev-tooling:
         dependency-type: development
+
+  # Workflow tools and validation dependencies are pinned in dedicated lock/requirements
+  # files. Keep Dependabot watching those non-root manifests so security fixes stay current.
+  - package-ecosystem: npm
+    directory: /.github/tools/markdownlint
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - dependencies
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
+    groups:
+      markdownlint-cli:
+        patterns:
+          - markdownlint-cli
+
+  - package-ecosystem: pip
+    directory: /.github/requirements
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    commit-message:
+      prefix: chore
+      include: scope
+    labels:
+      - dependencies
+    ignore:
+      - dependency-name: "*"
+        update-types: [version-update:semver-major]
+    groups:
+      research-evidence:
+        patterns:
+          - "*"

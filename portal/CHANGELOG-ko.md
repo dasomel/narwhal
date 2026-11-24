@@ -9,10 +9,12 @@
 
 ## [Unreleased]
 
+## [1.1.27] - 2026-11-25
+
 ### 변경
 
-- kubeadm root etcd(1.1.12), 노드 외부 보안 metrics(1.3.7/1.4.2)에 실측 노드별 정확 수용 규칙을 추가했습니다. 라이브 적용이나 새로운 테스트 통과를 주장하지 않습니다.
-- CIS 1.3.6 / KCV0038은 조치 필요로 유지합니다. 관측된 kubelet은 serverTLSBootstrap·CSR이 없고 자체 서명 서빙 인증서를 사용합니다. kube-bench PASS는 controller-manager gate만 검사합니다.
+- 라이브 클러스터에서 사유가 검증된 `narwhal-master-1` 노드의 CIS 벤치마크 1.1.12(kubeadm static-pod root etcd), 1.3.7, 1.4.2(노드 외부 보안 metrics) 점검 결과와 매칭되는 Trivy 인프라 KCV0039(`kube-controller-manager`), KCV0041(`kube-scheduler`) 점검 결과에 실측 노드별 정확 수용 규칙을 추가했습니다(라이브 적용이나 새로운 테스트 통과를 주장하지 않음, `src/data/compliance-acceptance-rules.json`, `src/lib/compliance-acceptance.ts`, `src/lib/compliance-accepted.ts`, `src/lib/compliance.ts`, `src/lib/i18n.ts`). 매칭은 벤치마크 항목의 경우 `(benchmarkId, controlId, node)`, 인프라 항목의 경우 `(kind, namespace, name, check)`에 대해 정확히 일치합니다. 포털은 관측된 테스트 기록과 기준선 대조 결과만 보고하며 통제를 증명하거나 보장한다고 표현하지 않습니다.
+- CIS 1.3.6 / KCV0038은 수용 규칙 없이 조치 필요로 유지합니다. 관측된 kubelet은 `serverTLSBootstrap`·CSR이 없고 자체 서명 서빙 인증서를 사용하며, `kube-bench` `PASS`는 controller-manager 게이트만 검사합니다. 1.2.1, 1.2.6, 1.2.10, 1.2.12, 1.3.6, 4.2.6 통제는 담당자 결정에 따라 조치 필요로 유지됩니다(CIS 1.3.1을 위한 controller-manager 플래그는 클러스터 변경 사항이며 포털 변경이 아닙니다).
 
 ## [1.1.26] - 2026-11-24
 
@@ -977,7 +979,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.26...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.27...HEAD
+[1.1.27]: https://github.com/dasomel/narwhal/compare/portal/v1.1.26...portal/v1.1.27
 [1.1.26]: https://github.com/dasomel/narwhal/compare/portal/v1.1.25...portal/v1.1.26
 [1.1.25]: https://github.com/dasomel/narwhal/compare/portal/v1.1.24...portal/v1.1.25
 [1.1.24]: https://github.com/dasomel/narwhal/compare/portal/v1.1.23...portal/v1.1.24

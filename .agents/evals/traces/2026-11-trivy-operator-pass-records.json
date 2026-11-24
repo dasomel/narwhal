@@ -31,7 +31,10 @@
       "scripts/test/lib/check-sbom-inventory-completeness.py",
       "scripts/test/lib/check-trivy-pass-records.py",
       "scripts/test/regression-check-kakao.sh",
-      "scripts/verify/security-db-bundle-check.sh"
+      "scripts/verify/security-db-bundle-check.sh",
+      "scripts/gitops/publish-chart-to-gitea.sh",
+      "scripts/airgap/01-generate-image-list.sh",
+      "docs/common/agent-operational-rules.md"
     ]
   },
   "events": [
@@ -62,10 +65,11 @@
       "status": "passed",
       "scope": "Static offline verification on narwhal-wt-trivy: full make test, make validate, make lint, check-version-consistency.sh, gen-oss-versions.mjs --check, gen-trivy-check-catalogue.mjs --check, check-mirror-pins.py --list-paths, helm template (narwhal-apps + trivy-operator 0.38.1), markdownlint-changed.py, and portal vitest on compliance*.test.ts + versions-sync.test.ts. Live cluster rollout and bastion mirror sync are NOT covered (deferred to orchestrator).",
       "evidence": [
-        "test:make test -> passed 512 failed 0 warnings 3",
         "test:python3 scripts/test/lib/check-trivy-pass-records.py --mutation-verify -> PASS (12 mutations rejected)",
         "test:make validate && bash scripts/ci/check-version-consistency.sh && python3 scripts/ci/markdownlint-changed.py --base origin/main -> passed",
-        "test:vitest compliance + versions-sync -> 4 files, 66 tests passed"
+        "test:vitest compliance + versions-sync -> 4 files, 66 tests passed",
+        "test:make test (after adding scripts/gitops/publish-chart-to-gitea.sh and the image-list fix) -> passed 512   failed 0   warnings 3",
+        "test:shellcheck scripts/gitops/publish-chart-to-gitea.sh -> exit 0"
       ]
     },
     {

@@ -142,7 +142,7 @@ def main(root=ROOT, unknown=None, argv=None):
     failures = evaluate(images, image_inventory, charts, binaries, unknown)
     if "--mutation-verify" in argv:
         cases = [
-            evaluate(images, image_inventory - {next(iter(images))}, charts, binaries, unknown),
+            evaluate(images, image_inventory - {next(iter(images & image_inventory))}, charts, binaries, unknown),
             evaluate(images, image_inventory, charts | {"mutation-unlisted@1.0.0"}, binaries, unknown),
             evaluate(images, image_inventory, charts, binaries,
                      {**unknown, ("binary", next(iter(binaries))): ("", "supply-chain")}),

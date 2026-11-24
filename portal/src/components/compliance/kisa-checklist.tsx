@@ -43,6 +43,7 @@ function kisaReasonLabel(key: KisaReasonKey, t: ReturnType<typeof useT>): string
     case "compliance.kisa.reason.etcdIsolatedPlainHttp": return t("compliance.kisa.reason.etcdIsolatedPlainHttp")
     case "compliance.kisa.reason.etcdPolicyMissing": return t("compliance.kisa.reason.etcdPolicyMissing")
     case "compliance.kisa.reason.etcdPolicyBroad": return t("compliance.kisa.reason.etcdPolicyBroad")
+    case "compliance.kisa.reason.etcdPolicyUnreviewed": return t("compliance.kisa.reason.etcdPolicyUnreviewed")
     case "compliance.kisa.reason.etcdContainerMissing": return t("compliance.kisa.reason.etcdContainerMissing")
     case "compliance.kisa.reason.secCronJobNotEvaluated": return t("compliance.kisa.reason.secCronJobNotEvaluated")
     case "compliance.kisa.reason.secNoExternalKms": return t("compliance.kisa.reason.secNoExternalKms")
@@ -55,6 +56,7 @@ function kisaReasonLabel(key: KisaReasonKey, t: ReturnType<typeof useT>): string
     case "compliance.kisa.reason.tlsNotStrict": return t("compliance.kisa.reason.tlsNotStrict")
     case "compliance.kisa.reason.obsConfigured": return t("compliance.kisa.reason.obsConfigured")
     case "compliance.kisa.reason.obsNoChannel": return t("compliance.kisa.reason.obsNoChannel")
+    case "compliance.kisa.reason.obsInvalidDestination": return t("compliance.kisa.reason.obsInvalidDestination")
     case "compliance.kisa.reason.obsFalcoDown": return t("compliance.kisa.reason.obsFalcoDown")
     case "compliance.kisa.reason.obsConfigMissing": return t("compliance.kisa.reason.obsConfigMissing")
     case "compliance.kisa.reason.imgPolicyEnforced": return t("compliance.kisa.reason.imgPolicyEnforced")
@@ -104,11 +106,12 @@ function ExpandedPanel({ control }: { control: KisaControl }) {
   const t = useT()
   const locale = useLocale()
   const detailText = pick(control.detailLocalized ?? control.detail, locale)
+  const evidenceText = pick(control.evidenceLocalized ?? control.evidence, locale)
   return (
     <div className="px-6 py-4 bg-muted/10 border-t border-dashed space-y-3 text-xs">
       <div>
         <p className="font-medium text-muted-foreground mb-1">{t("compliance.kisa.evidence")}</p>
-        <p className="text-foreground">{control.evidence}</p>
+        <p className="text-foreground">{evidenceText}</p>
       </div>
       {(control.reasonKey || detailText) && (
         <div>

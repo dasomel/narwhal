@@ -6,8 +6,8 @@ Verifies the owner decisions:
 - 2026-11-24: grant ClusterRole narwhal-portal read-only get on the single CRD
   gateways.gateway.networking.k8s.io (resourceNames-pinned; no list/watch, no other CRD).
 - 2026-11-24 (KISA live controls): grant ClusterRole narwhal-portal read-only list on
-  security.istio.io/peerauthentications and wgpolicyk8s.io/policyreports, plus get/list on
-  batch/cronjobs (no watch, no write verbs, no secrets).
+  security.istio.io/peerauthentications, wgpolicyk8s.io/policyreports, and
+  cilium.io/ciliumnetworkpolicies, plus get/list on batch/cronjobs (no watch, no write verbs, no secrets).
 Pins every rule in ClusterRole narwhal-portal via exact set equality (including resourceNames),
 and keeps docs/common/compliance-hardening.md aligned. --mutation-verify proves broken copies fail.
 """
@@ -81,6 +81,7 @@ EXPECTED_CLUSTERROLE_RULES: set[RuleTuple] = {
     (frozenset({"security.istio.io"}), frozenset({"peerauthentications"}), frozenset({"list"}), frozenset()),
     (frozenset({"batch"}), frozenset({"cronjobs"}), frozenset({"get", "list"}), frozenset()),
     (frozenset({"wgpolicyk8s.io"}), frozenset({"policyreports"}), frozenset({"list"}), frozenset()),
+    (frozenset({"cilium.io"}), frozenset({"ciliumnetworkpolicies"}), frozenset({"list"}), frozenset()),
 }
 
 
@@ -211,6 +212,10 @@ MUTATIONS = [
     "get verb added to policyreports",
     "watch verb added to policyreports",
     "extra resource clusterpolicyreports in policyreports rule",
+    "ciliumnetworkpolicies rule removed",
+    "get verb added to ciliumnetworkpolicies",
+    "watch verb added to ciliumnetworkpolicies",
+    "extra resource ciliumclusterwidenetworkpolicies in ciliumnetworkpolicies rule",
 ]
 
 
@@ -270,6 +275,14 @@ def mutate(name: str, base_docs: list[dict], base_doc_text: str) -> tuple[list[d
         _group_rule(docs, "wgpolicyk8s.io")["verbs"].append("watch")
     elif name == "extra resource clusterpolicyreports in policyreports rule":
         _group_rule(docs, "wgpolicyk8s.io")["resources"].append("clusterpolicyreports")
+    elif name == "ciliumnetworkpolicies rule removed":
+        cr["rules"].remove(_group_rule(docs, "cilium.io"))
+    elif name == "get verb added to ciliumnetworkpolicies":
+        _group_rule(docs, "cilium.io")["verbs"].append("get")
+    elif name == "watch verb added to ciliumnetworkpolicies":
+        _group_rule(docs, "cilium.io")["verbs"].append("watch")
+    elif name == "extra resource ciliumclusterwidenetworkpolicies in ciliumnetworkpolicies rule":
+        _group_rule(docs, "cilium.io")["resources"].append("ciliumclusterwidenetworkpolicies")
     return docs, doc_text
 
 

@@ -90,7 +90,8 @@ rules:
     verbs: [get]
   # Owner-approved (2026-11-24, KISA live controls): read-only least-privilege verbs for live
   # evaluation of KISA-TLS-01 (Istio PeerAuthentications: list), KISA-SEC-01/IMG-02 (CronJobs:
-  # get+list), and KISA-IMG-02 (Kyverno PolicyReports: list). No Secret read added.
+  # get+list), KISA-IMG-02 (Kyverno PolicyReports: list), and KISA-NET-01/ETCD-02
+  # (CiliumNetworkPolicies: list). No Secret read added.
   - apiGroups: [security.istio.io]
     resources: [peerauthentications]
     verbs: [list]
@@ -99,6 +100,9 @@ rules:
     verbs: [get, list]
   - apiGroups: [wgpolicyk8s.io]
     resources: [policyreports]
+    verbs: [list]
+  - apiGroups: [cilium.io]
+    resources: [ciliumnetworkpolicies]
     verbs: [list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

@@ -2895,16 +2895,19 @@ export interface KisaRawPodSpec {
 }
 
 export interface KisaRawDeployment {
-  metadata?: { name?: string; namespace?: string; labels?: Record<string, string> }
+  metadata?: { name?: string; namespace?: string; labels?: Record<string, string>; generation?: number }
   spec?: {
     replicas?: number
+    paused?: boolean
     template?: {
       metadata?: { labels?: Record<string, string> }
       spec?: KisaRawPodSpec
     }
   }
   status?: {
+    observedGeneration?: number
     replicas?: number
+    updatedReplicas?: number
     readyReplicas?: number
     availableReplicas?: number
   }
@@ -2955,6 +2958,16 @@ export interface KisaRawNetworkPolicy {
       from?: KisaNetworkPolicyPeer[]
       ports?: Array<{ port?: number | string; protocol?: string }>
     }>
+    egress?: unknown[]
+    [key: string]: unknown
+  }
+}
+
+export interface KisaRawCiliumNetworkPolicy {
+  metadata?: { name?: string; namespace?: string }
+  spec?: {
+    endpointSelector?: { matchLabels?: Record<string, string>; matchExpressions?: Array<{ key: string; operator: string; values?: string[] }> }
+    [key: string]: unknown
   }
 }
 
@@ -2975,6 +2988,7 @@ export interface KisaRawAlertmanagerReceiver {
   pagerdutyConfigs?: unknown[]
   opsgenieConfigs?: unknown[]
   msteamsConfigs?: unknown[]
+  msteamsv2Configs?: unknown[]
   wechatConfigs?: unknown[]
   victoropsConfigs?: unknown[]
   pushoverConfigs?: unknown[]
@@ -2982,7 +2996,8 @@ export interface KisaRawAlertmanagerReceiver {
   telegramConfigs?: unknown[]
   webexConfigs?: unknown[]
   discordConfigs?: unknown[]
-  jiraConfigs?: unknown[]
+  rocketchatConfigs?: unknown[]
+  [key: string]: unknown
 }
 
 export interface KisaRawAlertmanagerRoute {
@@ -3198,6 +3213,20 @@ export async function getKisaNamespacedNetworkPolicies(namespace: string): Promi
   return fetchKisaList(
     `networkpolicies.networking.k8s.io/${namespace}`,
     `/apis/networking.k8s.io/v1/namespaces/${safeK8sSegment(namespace)}/networkpolicies`,
+  )
+}
+
+export async function getKisaCiliumNetworkPolicies(): Promise<KisaFetchResult<KisaRawCiliumNetworkPolicy[]>> {
+  return fetchKisaList<KisaRawCiliumNetworkPolicy>(
+    "ciliumnetworkpolicies.cilium.io",
+    "/apis/cilium.io/v2/ciliumnetworkpolicies",
+  )
+}
+
+export async function getKisaNamespacedCiliumNetworkPolicies(namespace: string): Promise<KisaFetchResult<KisaRawCiliumNetworkPolicy[]>> {
+  return fetchKisaList<KisaRawCiliumNetworkPolicy>(
+    `ciliumnetworkpolicies.cilium.io/${namespace}`,
+    `/apis/cilium.io/v2/namespaces/${safeK8sSegment(namespace)}/ciliumnetworkpolicies`,
   )
 }
 

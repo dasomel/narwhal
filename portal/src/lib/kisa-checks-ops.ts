@@ -14,23 +14,53 @@ import type {
 } from "./k8s-client"
 
 // --- KISA-OBS-01: AlertmanagerConfig notification channels + Falco/falcosidekick ---
+// D-KISA-CLOSED-WORLD: Known integration types and required destination fields derived from
+// AlertmanagerConfig monitoring.coreos.com/v1alpha1 CRD schema. An unknown integration key
+// or an entry missing its required destination never counts as active.
 
-const RECEIVER_CONFIG_KEYS: Array<keyof KisaRawAlertmanagerReceiver> = [
-  "slackConfigs",
-  "emailConfigs",
-  "webhookConfigs",
-  "pagerdutyConfigs",
-  "opsgenieConfigs",
-  "msteamsConfigs",
-  "wechatConfigs",
-  "victoropsConfigs",
-  "pushoverConfigs",
-  "snsConfigs",
-  "telegramConfigs",
-  "webexConfigs",
-  "discordConfigs",
-  "jiraConfigs",
-]
+const isRecordObj = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v)
+const hasNonEmptyStr = (v: unknown): boolean =>
+  typeof v === "string" && v.trim().length > 0
+const hasSecretKeyRef = (v: unknown): boolean =>
+  isRecordObj(v) && hasNonEmptyStr(v.name) && hasNonEmptyStr(v.key)
+const hasNonZeroInt = (v: unknown): boolean =>
+  typeof v === "number" && Number.isInteger(v) && v !== 0
+
+export const ALERTMANAGER_INTEGRATION_VALIDATORS: Record<string, (entry: Record<string, unknown>) => boolean> = {
+  webhookConfigs: (c) => hasNonEmptyStr(c.url) || hasSecretKeyRef(c.urlSecret),
+  slackConfigs: (c) => hasSecretKeyRef(c.apiURL),
+  emailConfigs: (c) => hasNonEmptyStr(c.to),
+  pagerdutyConfigs: (c) => hasSecretKeyRef(c.routingKey) || hasSecretKeyRef(c.serviceKey),
+  discordConfigs: (c) => hasSecretKeyRef(c.apiURL),
+  msteamsConfigs: (c) => hasSecretKeyRef(c.webhookUrl),
+  msteamsv2Configs: (c) => hasSecretKeyRef(c.webhookURL),
+  opsgenieConfigs: (c) => hasSecretKeyRef(c.apiKey),
+  pushoverConfigs: (c) =>
+    (hasSecretKeyRef(c.token) || hasNonEmptyStr(c.tokenFile)) &&
+    (hasSecretKeyRef(c.userKey) || hasNonEmptyStr(c.userKeyFile)),
+  rocketchatConfigs: (c) => hasSecretKeyRef(c.token) && hasSecretKeyRef(c.tokenID),
+  snsConfigs: (c) => hasNonEmptyStr(c.phoneNumber) || hasNonEmptyStr(c.targetARN) || hasNonEmptyStr(c.topicARN),
+  telegramConfigs: (c) =>
+    hasNonZeroInt(c.chatID) && (hasSecretKeyRef(c.botToken) || hasNonEmptyStr(c.botTokenFile)),
+  victoropsConfigs: (c) => hasNonEmptyStr(c.routingKey) && hasSecretKeyRef(c.apiKey),
+  webexConfigs: (c) => hasNonEmptyStr(c.roomID),
+  wechatConfigs: (c) =>
+    hasSecretKeyRef(c.apiSecret) &&
+    hasNonEmptyStr(c.corpID) &&
+    (hasNonEmptyStr(c.toUser) || hasNonEmptyStr(c.toParty) || hasNonEmptyStr(c.toTag)),
+}
+
+function receiverHasValidDestination(receiver: KisaRawAlertmanagerReceiver): boolean {
+  for (const [key, validator] of Object.entries(ALERTMANAGER_INTEGRATION_VALIDATORS)) {
+    const entries = receiver[key]
+    if (!Array.isArray(entries)) continue
+    if (entries.some((entry) => isRecordObj(entry) && validator(entry))) {
+      return true
+    }
+  }
+  return false
+}
 
 function collectRoutedReceiverNames(route: KisaRawAlertmanagerRoute | undefined, out: Set<string>): void {
   if (!route) return
@@ -98,17 +128,28 @@ export async function checkObs01(): Promise<KisaCheckOutcome> {
   const routed = new Set<string>()
   collectRoutedReceiverNames(cfgRes.data.spec?.route, routed)
 
-  const configuredActive = receivers
-    .filter((r) => {
-      const name = r.name ?? ""
-      if (!name || name === "null") return false
-      const hasExternalConfig = RECEIVER_CONFIG_KEYS.some((k) => Array.isArray(r[k]) && (r[k] as unknown[]).length > 0)
-      return hasExternalConfig && routed.has(name)
-    })
+  const routedExternalReceivers = receivers.filter((r) => {
+    const name = r.name ?? ""
+    return Boolean(name) && name !== "null" && routed.has(name)
+  })
+  const configuredActive = routedExternalReceivers
+    .filter(receiverHasValidDestination)
+    .map((r) => r.name!)
+  const routedWithoutValidDest = routedExternalReceivers
+    .filter((r) => !receiverHasValidDestination(r))
     .map((r) => r.name!)
 
   if (configuredActive.length === 0) {
     const bothDown = falcoOk && (falcoReady === 0 || sidekickReady === 0)
+    if (routedWithoutValidDest.length > 0) {
+      return makeOutcome(
+        bothDown ? "fail" : "warn",
+        "compliance.kisa.reason.obsInvalidDestination",
+        `알림 수신자 존재하나 유효한 목적지 미설정(${routedWithoutValidDest.join(", ")}) · ${falcoSummaryKo}`,
+        `receiver present but no valid destination (${routedWithoutValidDest.join(", ")}); ${falcoSummaryEn}`,
+        { partial: !falcoOk },
+      )
+    }
     return makeOutcome(
       bothDown ? "fail" : "warn",
       "compliance.kisa.reason.obsNoChannel",
@@ -170,11 +211,24 @@ export interface KisaPolicyBaselineEntry {
   knownLimitations: string[]
 }
 
+export interface KisaNetworkPolicyBaselineEntry {
+  kind: "NetworkPolicy" | "CiliumNetworkPolicy" | string
+  namespace: string
+  name: string
+  sourceManifest: string
+  specSha256: string
+}
+
 export interface KisaPolicyBaseline {
   schemaVersion: number
   sourceManifest: string
   normalizedOutServerDefaults: string[]
   policies: Record<string, KisaPolicyBaselineEntry>
+  normalizedOutNetworkPolicyDefaults?: string[]
+  networkPolicySourceManifests?: string[]
+  net01DefaultDenyByNamespace?: Record<string, string | null>
+  etcd02PolicyKey?: string
+  networkPolicies?: Record<string, KisaNetworkPolicyBaselineEntry>
 }
 
 export const KISA_POLICY_BASELINE: KisaPolicyBaseline = policyBaselineData as KisaPolicyBaseline

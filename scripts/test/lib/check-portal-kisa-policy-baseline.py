@@ -34,6 +34,8 @@ FILES = {
     "canon": ROOT / "portal/src/lib/kisa-policy-canonical.mjs",
     "baseline": ROOT / "portal/src/data/kisa-policy-baseline.json",
     "manifest": ROOT / "gitops/resources/kyverno-policies.yaml",
+    "kisa": ROOT / "portal/src/lib/kisa.ts",
+    "checks": ROOT / "portal/src/lib/kisa-checks.ts",
     "checks_ops": ROOT / "portal/src/lib/kisa-checks-ops.ts",
     "test": ROOT / "portal/src/lib/kisa-live-controls.test.ts",
     "reg": ROOT / "scripts/test/regression-check-kakao.sh",
@@ -59,7 +61,7 @@ import {
   MANIFEST_PATH,
   OUT_JSON,
 } from "./portal/scripts/gen-kisa-policy-baseline.mjs";
-import { computeKyvernoSpecDigest, specHasOverrides } from "./portal/src/lib/kisa-policy-canonical.mjs";
+import { computeKyvernoSpecDigest, computeNetworkPolicySpecDigest, specHasOverrides } from "./portal/src/lib/kisa-policy-canonical.mjs";
 
 const manifestText = readFileSync(MANIFEST_PATH, "utf8");
 const expected = buildPolicyBaselineFromManifest(manifestText);
@@ -158,6 +160,30 @@ for (const [label, candidate, exp] of [
     process.exit(1);
   }
 }
+
+// 4. NetworkPolicy / CiliumNetworkPolicy canonicalization & drift checks
+const iamDenySpecLive = { podSelector: {}, policyTypes: ["Ingress"] }; // API server omits empty ingress: []
+const iamDenyDigest = computeNetworkPolicySpecDigest("NetworkPolicy", iamDenySpecLive);
+if (iamDenyDigest !== actual.networkPolicies["NetworkPolicy/iam/iam-default-deny-ingress"].specSha256) {
+  console.error("Empty NetworkPolicy ingress: [] stripping mismatched live API server readback");
+  process.exit(1);
+}
+const tuningLive = { podSelector: { matchLabels: { "app.kubernetes.io/name": "narwhal-tuning" } }, policyTypes: ["Ingress", "Egress"] };
+if (computeNetworkPolicySpecDigest("NetworkPolicy", tuningLive) !== actual.networkPolicies["NetworkPolicy/devtools/tuning-job-network-policy"].specSha256) {
+  console.error("Empty NetworkPolicy ingress/egress: [] stripping mismatched tuning-job-network-policy");
+  process.exit(1);
+}
+const iamAllowAllMutated = { podSelector: {}, policyTypes: ["Ingress"], ingress: [{}] };
+if (computeNetworkPolicySpecDigest("NetworkPolicy", iamAllowAllMutated) === iamDenyDigest) {
+  console.error("Non-empty NetworkPolicy ingress:[{}] produced same digest as deny-all");
+  process.exit(1);
+}
+const badNetDigest = clone(actual);
+badNetDigest.networkPolicies["NetworkPolicy/platform-system/apisix-etcd-ingress-policy"].specSha256 = "f".repeat(64);
+if (validateBaseline(badNetDigest, expected).length === 0) {
+  console.error("validateBaseline failed to reject tampered networkPolicy digest");
+  process.exit(1);
+}
 """
     res2 = subprocess.run(
         ["node", "--input-type=module", "-e", probe],
@@ -178,8 +204,8 @@ def check(texts: dict[str, str]) -> list[str]:
     except Exception as exc:
         return [f"kisa-policy-baseline.json invalid JSON: {exc}"]
 
-    if base.get("schemaVersion") != 1:
-        errors.append(f"baseline schemaVersion must be 1, got {base.get('schemaVersion')!r}")
+    if base.get("schemaVersion") != 2:
+        errors.append(f"baseline schemaVersion must be 2, got {base.get('schemaVersion')!r}")
     if base.get("sourceManifest") != "gitops/resources/kyverno-policies.yaml":
         errors.append(f"baseline sourceManifest must be gitops/resources/kyverno-policies.yaml, got {base.get('sourceManifest')!r}")
 
@@ -194,6 +220,27 @@ def check(texts: dict[str, str]) -> list[str]:
     ):
         if req_default not in defaults:
             errors.append(f"baseline normalizedOutServerDefaults missing {req_default!r}")
+
+    net_defaults = base.get("normalizedOutNetworkPolicyDefaults") or []
+    for req_np_default in (
+        "NetworkPolicy spec.ingress (when empty array [])",
+        "NetworkPolicy spec.egress (when empty array [])",
+    ):
+        if req_np_default not in net_defaults:
+            errors.append(f"baseline normalizedOutNetworkPolicyDefaults missing {req_np_default!r}")
+
+    net_pols = base.get("networkPolicies") or {}
+    if len(net_pols) < 33:
+        errors.append(f"expected >=33 baselined NetworkPolicy/CiliumNetworkPolicy entries, got {len(net_pols)}")
+    for ns, dd_key in (base.get("net01DefaultDenyByNamespace") or {}).items():
+        if ns != "devtools" and (not dd_key or dd_key not in net_pols):
+            errors.append(f"missing net01DefaultDenyByNamespace entry for {ns}: {dd_key!r}")
+    etcd_key = base.get("etcd02PolicyKey")
+    if etcd_key != "NetworkPolicy/platform-system/apisix-etcd-ingress-policy" or etcd_key not in net_pols:
+        errors.append(f"missing or invalid etcd02PolicyKey: {etcd_key!r}")
+    for key, entry in net_pols.items():
+        if not re.fullmatch(r"[0-9a-f]{64}", str(entry.get("specSha256") or "")):
+            errors.append(f"{key}: invalid networkPolicy specSha256 {entry.get('specSha256')!r}")
 
     try:
         manifest_docs = [d for d in yaml.safe_load_all(texts["manifest"]) if isinstance(d, dict) and d.get("kind") == "ClusterPolicy"]
@@ -231,9 +278,13 @@ def check(texts: dict[str, str]) -> list[str]:
 
     for needle in (
         "KYVERNO_ADMISSION_DEFAULTS",
+        "NETWORK_POLICY_DEFAULTS",
         "if (out.admission === true) delete out.admission",
         "if (out.signatureAlgorithm === \"sha256\") delete out.signatureAlgorithm",
+        "if (Array.isArray(out.ingress) && out.ingress.length === 0) delete out.ingress",
+        "if (Array.isArray(out.egress) && out.egress.length === 0) delete out.egress",
         "export function computeKyvernoSpecDigest(",
+        "export function computeNetworkPolicySpecDigest(",
         "export function specHasOverrides(",
     ):
         if needle not in texts["canon"]:
@@ -249,6 +300,11 @@ def check(texts: dict[str, str]) -> list[str]:
         if needle not in texts["checks_ops"]:
             errors.append(f"kisa-checks-ops.ts missing {needle!r}")
 
+    if "computeNetworkPolicySpecDigest" not in texts["kisa"] or "baseline.net01DefaultDenyByNamespace" not in texts["kisa"]:
+        errors.append("kisa.ts must verify NET-01 against kisa-policy-baseline.json networkPolicies")
+    if "computeNetworkPolicySpecDigest" not in texts["checks"] or "baseline.etcd02PolicyKey" not in texts["checks"]:
+        errors.append("kisa-checks.ts must verify ETCD-02 against kisa-policy-baseline.json networkPolicies")
+
     if "reproduction (R5):" not in texts["test"]:
         errors.append("kisa-live-controls.test.ts missing R5 IMG-02 closed-world tests")
 
@@ -263,7 +319,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("tamper disallow-latest-tag specSha256 format", "baseline", '"role": "latest-tag",\n      "admissionRelevant": true,\n      "specSha256": "', '"role": "latest-tag",\n      "admissionRelevant": true,\n      "specSha256": "invalid'),
     ("drop admission=true guard in canonicalizer (would strip admission=false)", "canon", "if (out.admission === true) delete out.admission", "delete out.admission"),
     ("drop sha256 value guard in signatureAlgorithm stripper", "canon", 'if (out.signatureAlgorithm === "sha256") delete out.signatureAlgorithm', "delete out.signatureAlgorithm"),
-    ("drop KISA_POLICY_BASELINE default in checkImg02", "checks_ops", "checkImg02(baseline: KisaPolicyBaseline = KISA_POLICY_BASELINE)", "checkImg02(baseline: KisaPolicyBaseline = { schemaVersion: 1, sourceManifest: '', normalizedOutServerDefaults: [], policies: {} })"),
+    ("drop empty-array guard on NetworkPolicy ingress stripper", "canon", "if (Array.isArray(out.ingress) && out.ingress.length === 0) delete out.ingress", "delete out.ingress"),
+    ("tamper NetworkPolicy baseline digest", "baseline", '"name": "apisix-etcd-ingress-policy",\n      "sourceManifest": "gitops/resources/apisix-etcd-ingress-policy.yaml",\n      "specSha256": "', '"name": "apisix-etcd-ingress-policy",\n      "sourceManifest": "gitops/resources/apisix-etcd-ingress-policy.yaml",\n      "specSha256": "invalid'),
+    ("drop KISA_POLICY_BASELINE default in checkImg02", "checks_ops", "checkImg02(baseline: KisaPolicyBaseline = KISA_POLICY_BASELINE)", "checkImg02(baseline: KisaPolicyBaseline = { schemaVersion: 2, sourceManifest: '', normalizedOutServerDefaults: [], policies: {} })"),
     ("drop R399 wiring in regression-check-kakao.sh", "reg", "check R399 ", "check R9999 "),
 ]
 

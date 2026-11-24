@@ -2,26 +2,31 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Generates portal/src/data/kisa-policy-baseline.json from the repo's own
-// GitOps Kyverno ClusterPolicy manifest (gitops/resources/kyverno-policies.yaml).
+// GitOps Kyverno ClusterPolicy manifest (gitops/resources/kyverno-policies.yaml)
+// and reviewed NetworkPolicy / CiliumNetworkPolicy manifests under gitops/.
 //
 // Usage:
 //   node portal/scripts/gen-kisa-policy-baseline.mjs
 //   node portal/scripts/gen-kisa-policy-baseline.mjs --check
 
-import { readFileSync, writeFileSync } from "node:fs"
-import { dirname, resolve } from "node:path"
+import { readdirSync, readFileSync, writeFileSync } from "node:fs"
+import { dirname, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import yaml from "js-yaml"
 import {
   KYVERNO_ADMISSION_DEFAULTS,
+  NETWORK_POLICY_DEFAULTS,
   canonicalJson,
   computeKyvernoSpecDigest,
+  computeNetworkPolicySpecDigest,
   specHasOverrides,
 } from "../src/lib/kisa-policy-canonical.mjs"
 
 const here = dirname(fileURLToPath(import.meta.url))
 export const REPO_ROOT = resolve(here, "../..")
 export const MANIFEST_PATH = resolve(REPO_ROOT, "gitops/resources/kyverno-policies.yaml")
+export const RESOURCES_DIR = resolve(REPO_ROOT, "gitops/resources")
+export const PLATFORM_TEMPLATES_DIR = resolve(REPO_ROOT, "gitops/charts/narwhal-platform/templates")
 export const OUT_JSON = resolve(here, "../src/data/kisa-policy-baseline.json")
 
 export const IMG02_POLICY_ROLES = {
@@ -29,11 +34,112 @@ export const IMG02_POLICY_ROLES = {
   "verify-image-signatures": "verify-images",
 }
 
+export const NET01_DEFAULT_DENY_POLICIES = {
+  database: "NetworkPolicy/database/database-default-deny-ingress",
+  devtools: null,
+  iam: "NetworkPolicy/iam/iam-default-deny-ingress",
+  monitoring: "NetworkPolicy/monitoring/monitoring-default-deny-ingress",
+  storage: "NetworkPolicy/storage/storage-default-deny-ingress",
+}
+
+export const ETCD02_POLICY_KEY = "NetworkPolicy/platform-system/apisix-etcd-ingress-policy"
+
+const NETWORK_POLICY_KINDS = new Set(["NetworkPolicy", "CiliumNetworkPolicy"])
+
 function isGlobalImageScopePattern(pattern) {
   return pattern === "*" || pattern === "*:*" || pattern === "*/*" || pattern === "*/*:*"
 }
 
-export function buildPolicyBaselineFromManifest(manifestText) {
+export function loadRepoNetworkPolicySources(repoRoot = REPO_ROOT) {
+  const sources = []
+  const resourcesDir = resolve(repoRoot, "gitops/resources")
+  for (const name of readdirSync(resourcesDir).filter((f) => f.endsWith(".yaml")).sort()) {
+    const absPath = resolve(resourcesDir, name)
+    const relPath = relative(repoRoot, absPath).replace(/\\/g, "/")
+    sources.push({ path: relPath, text: readFileSync(absPath, "utf8"), templated: false })
+  }
+  const portalK8s = resolve(repoRoot, "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml")
+  sources.push({
+    path: "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+    text: readFileSync(portalK8s, "utf8"),
+    templated: true,
+  })
+  return sources
+}
+
+function parseNetworkPoliciesFromSource({ path, text, templated }) {
+  const docs = []
+  if (!templated) {
+    for (const d of yaml.loadAll(text)) {
+      if (d && typeof d === "object" && NETWORK_POLICY_KINDS.has(d.kind)) {
+        docs.push(d)
+      }
+    }
+    return docs
+  }
+  // Helm templates may mix Go-templated documents with static YAML documents
+  // (e.g. NetworkPolicy/devtools/narwhal-portal-valkey-ingress). Parse static documents only.
+  for (const chunk of text.split(/^---\s*$/m)) {
+    if (!chunk.trim() || chunk.includes("{{")) continue
+    const d = yaml.load(chunk)
+    if (d && typeof d === "object" && NETWORK_POLICY_KINDS.has(d.kind)) {
+      docs.push(d)
+    }
+  }
+  return docs
+}
+
+export function buildNetworkPolicyBaselineFromSources(sources) {
+  const entries = new Map()
+  const contributingFiles = new Set()
+
+  for (const src of sources) {
+    const docs = parseNetworkPoliciesFromSource(src)
+    for (const doc of docs) {
+      const kind = doc.kind
+      const namespace = doc?.metadata?.namespace
+      const name = doc?.metadata?.name
+      if (typeof namespace !== "string" || !namespace || typeof name !== "string" || !name) {
+        throw new Error(`${src.path}: ${kind} missing metadata.namespace or metadata.name`)
+      }
+      const key = `${kind}/${namespace}/${name}`
+      if (entries.has(key)) {
+        throw new Error(`Duplicate network policy ${key} across ${entries.get(key).sourceManifest} and ${src.path}`)
+      }
+      contributingFiles.add(src.path)
+      entries.set(key, {
+        kind,
+        namespace,
+        name,
+        sourceManifest: src.path,
+        specSha256: computeNetworkPolicySpecDigest(kind, doc.spec ?? {}),
+      })
+    }
+  }
+
+  for (const [ns, key] of Object.entries(NET01_DEFAULT_DENY_POLICIES)) {
+    if (key !== null && !entries.has(key)) {
+      throw new Error(`Missing required NET-01 default-deny baseline policy ${key} for namespace ${ns}`)
+    }
+  }
+  if (!entries.has(ETCD02_POLICY_KEY)) {
+    throw new Error(`Missing required ETCD-02 baseline policy ${ETCD02_POLICY_KEY}`)
+  }
+
+  const networkPolicies = {}
+  for (const [key, val] of [...entries.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    networkPolicies[key] = val
+  }
+
+  return {
+    networkPolicySourceManifests: [...contributingFiles].sort(),
+    net01DefaultDenyByNamespace: { ...NET01_DEFAULT_DENY_POLICIES },
+    etcd02PolicyKey: ETCD02_POLICY_KEY,
+    networkPolicies,
+  }
+}
+
+export function buildPolicyBaselineFromManifest(manifestText, networkSources = loadRepoNetworkPolicySources()) {
   const docs = yaml
     .loadAll(manifestText)
     .filter((d) => d && typeof d === "object" && d.kind === "ClusterPolicy")
@@ -115,11 +221,15 @@ export function buildPolicyBaselineFromManifest(manifestText) {
     }
   }
 
+  const netBaseline = buildNetworkPolicyBaselineFromSources(networkSources)
+
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sourceManifest: "gitops/resources/kyverno-policies.yaml",
     normalizedOutServerDefaults: [...KYVERNO_ADMISSION_DEFAULTS],
     policies,
+    normalizedOutNetworkPolicyDefaults: [...NETWORK_POLICY_DEFAULTS],
+    ...netBaseline,
   }
 }
 
@@ -129,7 +239,7 @@ export function validateBaseline(actual, expected) {
     return ["baseline must be a JSON object"]
   }
   if (canonicalJson(actual) !== canonicalJson(expected)) {
-    errors.push("kisa-policy-baseline.json is out of sync with gitops/resources/kyverno-policies.yaml")
+    errors.push("kisa-policy-baseline.json is out of sync with gitops/resources/*.yaml")
   }
   for (const [name, role] of Object.entries(IMG02_POLICY_ROLES)) {
     const entry = actual.policies?.[name]
@@ -155,6 +265,25 @@ export function validateBaseline(actual, expected) {
       }
     }
   }
+
+  const netPols = actual.networkPolicies ?? {}
+  for (const [ns, key] of Object.entries(NET01_DEFAULT_DENY_POLICIES)) {
+    if (actual.net01DefaultDenyByNamespace?.[ns] !== key) {
+      errors.push(`net01DefaultDenyByNamespace[${ns}] mismatch`)
+    }
+    if (key !== null) {
+      const npEntry = netPols[key]
+      if (!npEntry) {
+        errors.push(`missing network policy baseline entry ${key}`)
+      } else if (typeof npEntry.specSha256 !== "string" || !/^[0-9a-f]{64}$/.test(npEntry.specSha256)) {
+        errors.push(`${key}: invalid specSha256`)
+      }
+    }
+  }
+  if (actual.etcd02PolicyKey !== ETCD02_POLICY_KEY || !netPols[ETCD02_POLICY_KEY]) {
+    errors.push(`missing or mismatched etcd02PolicyKey ${ETCD02_POLICY_KEY}`)
+  }
+
   return errors
 }
 
@@ -178,7 +307,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       process.exit(1)
     }
     console.log(
-      `kisa-policy-baseline.json is in sync (${Object.keys(actual.policies).length} policies: ${Object.entries(actual.policies).map(([k, v]) => `${k}=${v.specSha256.slice(0, 12)}`).join(", ")})`,
+      `kisa-policy-baseline.json is in sync (${Object.keys(actual.policies).length} Kyverno, ${Object.keys(actual.networkPolicies).length} Network/Cilium policies)`,
     )
     process.exit(0)
   }

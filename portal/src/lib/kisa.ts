@@ -18,7 +18,7 @@ import {
   checkRbacLive,
   type KisaPolicyBaseline,
 } from "./kisa-checks-ops"
-import type { KisaNetworkPolicyPeer, KisaRawNetworkPolicy } from "./k8s-client"
+import { computeNetworkPolicySpecDigest } from "./kisa-policy-canonical.mjs"
 import type { Localized } from "./i18n-utils"
 import type { KisaControl, KisaReasonKey, KisaResponse, KisaStatus } from "@/types/kisa"
 
@@ -45,50 +45,6 @@ function hasCliFlagWithValue(args: string[], flag: string): boolean {
     }
   }
   return false
-}
-
-function isRestrictedIngressPeer(peer: KisaNetworkPolicyPeer): boolean {
-  const hasPodSel =
-    Boolean(peer.podSelector) &&
-    (Object.keys(peer.podSelector?.matchLabels ?? {}).length > 0 ||
-      (peer.podSelector?.matchExpressions?.length ?? 0) > 0)
-  const hasNsSel =
-    Boolean(peer.namespaceSelector) &&
-    (Object.keys(peer.namespaceSelector?.matchLabels ?? {}).length > 0 ||
-      (peer.namespaceSelector?.matchExpressions?.length ?? 0) > 0)
-  const cidr = peer.ipBlock?.cidr?.trim() ?? ""
-  const hasRestrictedIpBlock = Boolean(cidr) && cidr !== "0.0.0.0/0" && cidr !== "::/0"
-  const sameNsAllPods = Boolean(peer.podSelector) && !hasPodSel && !peer.namespaceSelector && !peer.ipBlock
-  if (!hasPodSel && !hasNsSel && !hasRestrictedIpBlock && !sameNsAllPods) {
-    return false
-  }
-  return true
-}
-
-function hasAllowAllIngressRule(pol: KisaRawNetworkPolicy): boolean {
-  const types = pol.spec?.policyTypes ?? (pol.spec?.ingress ? ["Ingress"] : [])
-  if (!types.includes("Ingress")) return false
-  for (const rule of pol.spec?.ingress ?? []) {
-    const peers = rule.from
-    if (!peers || peers.length === 0) return true
-    if (peers.some((peer) => !isRestrictedIngressPeer(peer))) return true
-  }
-  return false
-}
-
-function isIngressDefaultDenyPolicy(pol: KisaRawNetworkPolicy): boolean {
-  const types = pol.spec?.policyTypes ?? (pol.spec?.ingress ? ["Ingress"] : [])
-  if (!types.includes("Ingress")) return false
-  const sel = pol.spec?.podSelector
-  const podSelectorEmpty =
-    !sel ||
-    ((!sel.matchLabels || Object.keys(sel.matchLabels).length === 0) &&
-      (!sel.matchExpressions || sel.matchExpressions.length === 0))
-  if (!podSelectorEmpty) return false
-
-  // D-KISA-CLOSED-WORLD: podSelector:{} + policyTypes:[Ingress] is NOT default-deny if any
-  // ingress rule allows all sources (empty rule / missing from / empty peer {} / empty namespaceSelector:{} / 0.0.0.0/0 / ::/0).
-  return !hasAllowAllIngressRule(pol)
 }
 
 // --- Live check helpers ---
@@ -602,56 +558,99 @@ async function checkPod01(): Promise<KisaCheckOutcome> {
   )
 }
 
-async function checkNet01(): Promise<KisaCheckOutcome> {
-  const { getKisaNetworkPolicies } = await import("./k8s-client")
-  const npRes = await getKisaNetworkPolicies()
+export async function checkNet01(baseline: KisaPolicyBaseline = KISA_ADM_BASELINE): Promise<KisaCheckOutcome> {
+  const { getKisaNetworkPolicies, getKisaCiliumNetworkPolicies } = await import("./k8s-client")
+  const [npRes, cnpRes] = await Promise.all([
+    getKisaNetworkPolicies(),
+    getKisaCiliumNetworkPolicies(),
+  ])
   if (npRes.status !== "ok") {
     return fetchErrorOutcome(npRes, "NetworkPolicy 목록", "NetworkPolicy list")
   }
-  const policies = npRes.data
+  if (cnpRes.status !== "ok") {
+    return fetchErrorOutcome(cnpRes, "CiliumNetworkPolicy 목록", "CiliumNetworkPolicy list")
+  }
 
-  // D-KISA-CLOSED-WORLD (R7): Kubernetes NetworkPolicies are additive — a namespace counts
-  // as default-deny ONLY when it has a deny-all ingress policy AND zero policies in that
-  // namespace declare an allow-all ingress rule.
+  const baselineMap = baseline.networkPolicies ?? {}
+  const defaultDenyMap = baseline.net01DefaultDenyByNamespace ?? {}
+
+  // D-KISA-CLOSED-WORLD (R8): Never interpret arbitrary selector expressions.
+  // A namespace counts as default-deny ONLY when (a) its reviewed baseline default-deny
+  // policy is present with equal canonical spec SHA-256 digest, AND (b) EVERY NetworkPolicy
+  // and CiliumNetworkPolicy present in that namespace is in the baseline with equal digest.
   const covered: string[] = []
   const uncovered: string[] = []
-  const allowAllNs: string[] = []
+  const unreviewedByNs: string[] = []
+
   for (const ns of KISA_NET01_NAMESPACES) {
-    const nsPolicies = policies.filter((p) => p.metadata?.namespace === ns)
-    const hasDefaultDeny = nsPolicies.some(isIngressDefaultDenyPolicy)
-    const hasAllowAll = nsPolicies.some(hasAllowAllIngressRule)
-    if (hasDefaultDeny && !hasAllowAll) {
+    const nsPolicies: Array<{ kind: "NetworkPolicy" | "CiliumNetworkPolicy"; name: string; spec: Record<string, unknown> }> = [
+      ...npRes.data
+        .filter((p) => p.metadata?.namespace === ns)
+        .map((p) => ({ kind: "NetworkPolicy" as const, name: p.metadata?.name ?? "unknown", spec: (p.spec ?? {}) as Record<string, unknown> })),
+      ...cnpRes.data
+        .filter((c) => c.metadata?.namespace === ns)
+        .map((c) => ({ kind: "CiliumNetworkPolicy" as const, name: c.metadata?.name ?? "unknown", spec: (c.spec ?? {}) as Record<string, unknown> })),
+    ]
+
+    const defaultDenyKey = defaultDenyMap[ns] ?? null
+    const defaultDenyEntry = defaultDenyKey ? baselineMap[defaultDenyKey] : undefined
+    let hasBaselineDefaultDeny = false
+    if (defaultDenyEntry) {
+      const match = nsPolicies.find(
+        (p) => p.kind === defaultDenyEntry.kind && p.name === defaultDenyEntry.name,
+      )
+      if (match && computeNetworkPolicySpecDigest(match.kind, match.spec) === defaultDenyEntry.specSha256) {
+        hasBaselineDefaultDeny = true
+      }
+    }
+
+    const nsUnreviewed: string[] = []
+    for (const pol of nsPolicies) {
+      const key = `${pol.kind}/${ns}/${pol.name}`
+      const entry = baselineMap[key]
+      if (!entry) {
+        nsUnreviewed.push(`${pol.kind}/${pol.name}`)
+      } else if (computeNetworkPolicySpecDigest(pol.kind, pol.spec) !== entry.specSha256) {
+        nsUnreviewed.push(`${pol.kind}/${pol.name}(differs)`)
+      }
+    }
+
+    if (hasBaselineDefaultDeny && nsUnreviewed.length === 0) {
       covered.push(ns)
     } else {
       uncovered.push(ns)
-      if (hasAllowAll) allowAllNs.push(ns)
+      if (nsUnreviewed.length > 0) {
+        unreviewedByNs.push(`${ns}: ${nsUnreviewed.sort().join(", ")}`)
+      }
     }
   }
 
-  const allowAllNoteKo = allowAllNs.length > 0 ? ` · 가산 allow-all 존재: ${allowAllNs.join(", ")}` : ""
-  const allowAllNoteEn = allowAllNs.length > 0 ? `; additive allow-all present: ${allowAllNs.join(", ")}` : ""
+  const unreviewedNoteKo =
+    unreviewedByNs.length > 0 ? ` · 미검토/불일치 정책 존재(unreviewed policy present): ${unreviewedByNs.join("; ")}` : ""
+  const unreviewedNoteEn =
+    unreviewedByNs.length > 0 ? `; unreviewed policy present: ${unreviewedByNs.join("; ")}` : ""
 
   if (covered.length === KISA_NET01_NAMESPACES.length) {
     return makeOutcome(
       "pass",
       "compliance.kisa.reason.netDenyAll",
-      `대상 네임스페이스 ${KISA_NET01_NAMESPACES.length}건 모두 default-deny 적용`,
-      `All ${KISA_NET01_NAMESPACES.length} target namespace(s) enforce ingress default-deny`,
+      `대상 네임스페이스 ${KISA_NET01_NAMESPACES.length}건 모두 기준선 default-deny 일치·미검토 정책 없음`,
+      `All ${KISA_NET01_NAMESPACES.length} target namespace(s) match baseline default-deny with zero unreviewed policies`,
     )
   }
-  if (covered.length > 0) {
+  if (covered.length > 0 || unreviewedByNs.length > 0) {
     return makeOutcome(
       "warn",
       "compliance.kisa.reason.netDenyPartial",
-      `default-deny 적용 ${covered.length}/${KISA_NET01_NAMESPACES.length}건 (미적용: ${uncovered.join(", ")})${allowAllNoteKo}`,
-      `default-deny applied in ${covered.length}/${KISA_NET01_NAMESPACES.length} namespace(s) (uncovered: ${uncovered.join(", ")})${allowAllNoteEn}`,
+      `기준선 default-deny 일치 ${covered.length}/${KISA_NET01_NAMESPACES.length}건 (미충족: ${uncovered.join(", ")})${unreviewedNoteKo}`,
+      `baseline default-deny matched in ${covered.length}/${KISA_NET01_NAMESPACES.length} namespace(s) (uncovered: ${uncovered.join(", ")})${unreviewedNoteEn}`,
     )
   }
   return makeOutcome(
     "fail",
     "compliance.kisa.reason.netDenyMissing",
-    `대상 네임스페이스에 유효한 ingress default-deny 격리 없음 (미적용: ${uncovered.join(", ")})${allowAllNoteKo}`,
-    `No target namespace has effective ingress default-deny isolation (uncovered: ${uncovered.join(", ")})${allowAllNoteEn}`,
+    `대상 네임스페이스에 검토된 ingress default-deny 격리 없음 (미충족: ${uncovered.join(", ")})`,
+    `No target namespace has reviewed ingress default-deny isolation (uncovered: ${uncovered.join(", ")})`,
   )
 }
 

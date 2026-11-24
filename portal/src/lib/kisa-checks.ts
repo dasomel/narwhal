@@ -1,12 +1,16 @@
 import "server-only"
+import policyBaselineData from "@/data/kisa-policy-baseline.json"
+import { computeNetworkPolicySpecDigest } from "./kisa-policy-canonical.mjs"
 import type { Localized } from "./i18n-utils"
 import type { KisaReasonKey, KisaStatus } from "@/types/kisa"
 import type {
   KisaFetchResult,
-  KisaNetworkPolicyPeer,
+  KisaRawCiliumNetworkPolicy,
+  KisaRawDeployment,
   KisaRawNetworkPolicy,
   KisaRawPeerAuthentication,
 } from "./k8s-client"
+import type { KisaPolicyBaseline } from "./kisa-checks-ops"
 
 export interface KisaCheckOutcome {
   status: KisaStatus
@@ -133,34 +137,25 @@ function selectorMatchesLabels(
   return true
 }
 
-function isApisixGatewayPeer(peer: KisaNetworkPolicyPeer): boolean {
-  if (peer.ipBlock) return false
-  if (peer.namespaceSelector) {
-    const nsLabels = peer.namespaceSelector.matchLabels ?? {}
-    if (
-      nsLabels["kubernetes.io/metadata.name"] !== "platform-system" ||
-      (peer.namespaceSelector.matchExpressions && peer.namespaceSelector.matchExpressions.length > 0)
-    ) {
-      return false
-    }
-  }
-  const podLabels = peer.podSelector?.matchLabels
-  if (!podLabels || Object.keys(podLabels).length === 0) return false
-  if (peer.podSelector?.matchExpressions && peer.podSelector.matchExpressions.length > 0) return false
-  return podLabels["app.kubernetes.io/name"] === "apisix" || podLabels["app"] === "apisix"
-}
-
-export async function checkEtcd02(): Promise<KisaCheckOutcome> {
-  const { getKisaDeployment, getKisaNamespacedNetworkPolicies } = await import("./k8s-client")
-  const [depRes, npRes] = await Promise.all([
+export async function checkEtcd02(
+  baseline: KisaPolicyBaseline = policyBaselineData as KisaPolicyBaseline,
+): Promise<KisaCheckOutcome> {
+  const {
+    getKisaDeployment,
+    getKisaNamespacedNetworkPolicies,
+    getKisaNamespacedCiliumNetworkPolicies,
+  } = await import("./k8s-client")
+  const [depRes, npRes, cnpRes] = await Promise.all([
     getKisaDeployment("platform-system", "apisix-etcd"),
     getKisaNamespacedNetworkPolicies("platform-system"),
+    getKisaNamespacedCiliumNetworkPolicies("platform-system"),
   ])
 
   if (depRes.status !== "ok") return fetchErrorOutcome(depRes, "Deployment platform-system/apisix-etcd", "Deployment platform-system/apisix-etcd")
   if (npRes.status !== "ok") return fetchErrorOutcome(npRes, "platform-system NetworkPolicy", "platform-system NetworkPolicies")
+  if (cnpRes.status !== "ok") return fetchErrorOutcome(cnpRes, "platform-system CiliumNetworkPolicy", "platform-system CiliumNetworkPolicies")
 
-  const dep = depRes.data
+  const dep: KisaRawDeployment = depRes.data
   const podLabels = dep.spec?.template?.metadata?.labels ?? { app: "apisix-etcd" }
   const containers = dep.spec?.template?.spec?.containers ?? []
   // D-KISA-CLOSED-WORLD: inspect ONLY the exact "etcd" container defined in
@@ -187,86 +182,131 @@ export async function checkEtcd02(): Promise<KisaCheckOutcome> {
   const hasClientAuth = hasEnabledFlag(tokens, "--client-cert-auth") && extractFlagValues(tokens, "--trusted-ca-file").length > 0
   const tlsAuthEnabled = hasHttpsClient && hasCertFiles && hasClientAuth
 
-  const policies: KisaRawNetworkPolicy[] = npRes.data
-  const selectingIngress = policies.filter((p) => {
-    const types = p.spec?.policyTypes ?? (p.spec?.ingress ? ["Ingress"] : [])
-    return types.includes("Ingress") && selectorMatchesLabels(p.spec?.podSelector, podLabels)
-  })
+  // D-KISA-CLOSED-WORLD: Verify the reviewed baseline apisix-etcd-ingress-policy digest
+  // and ensure no non-baseline (or drifted) NetworkPolicy/CiliumNetworkPolicy selects the etcd pods.
+  const etcdPolicyKey = baseline.etcd02PolicyKey ?? "NetworkPolicy/platform-system/apisix-etcd-ingress-policy"
+  const etcdBaselineEntry = baseline.networkPolicies?.[etcdPolicyKey]
+  if (!etcdBaselineEntry) {
+    return makeOutcome(
+      "manual",
+      "compliance.kisa.reason.resourceMissing",
+      `기준선 정책(${etcdPolicyKey}) 정의 없음 — 평가 불가`,
+      `Baseline policy (${etcdPolicyKey}) not defined — not evaluated`,
+      { live: false },
+    )
+  }
 
-  if (selectingIngress.length === 0) {
+  const policies: KisaRawNetworkPolicy[] = npRes.data
+  const ciliumPolicies: KisaRawCiliumNetworkPolicy[] = cnpRes.data
+  const baselinePolicyObj = policies.find((p) => p.metadata?.name === etcdBaselineEntry.name)
+  if (!baselinePolicyObj) {
     return makeOutcome(
       "fail",
       "compliance.kisa.reason.etcdPolicyMissing",
-      `apisix-etcd를 선택하는 Ingress NetworkPolicy 없음 (${tlsAuthEnabled ? "TLS·인증 활성" : "etcd 클라이언트 TLS·인증 미활성화 (평문 HTTP)"})`,
-      `No Ingress NetworkPolicy selects apisix-etcd (${tlsAuthEnabled ? "client TLS/auth enabled" : "etcd client TLS/auth not enabled (plain HTTP)"})`,
+      `기준선 보호 정책(${etcdBaselineEntry.name}) 없음 (${tlsAuthEnabled ? "TLS·인증 설정" : "etcd 클라이언트 TLS·인증 미활성화 (평문 HTTP)"})`,
+      `Baseline isolation policy (${etcdBaselineEntry.name}) missing (${tlsAuthEnabled ? "client TLS/auth configured" : "etcd client TLS/auth not enabled (plain HTTP)"})`,
     )
   }
 
-  let hasBroadOrAllowAll = false
-  let hasApisix2379Allow = false
-  const policyNames = selectingIngress.map((p) => p.metadata?.name ?? "unknown")
-
-  for (const pol of selectingIngress) {
-    const ingressRules = pol.spec?.ingress ?? []
-    for (const rule of ingressRules) {
-      const fromPeers = rule.from
-      if (!fromPeers || fromPeers.length === 0) {
-        hasBroadOrAllowAll = true
-        continue
-      }
-      if (!fromPeers.every(isApisixGatewayPeer)) {
-        hasBroadOrAllowAll = true
-        continue
-      }
-      const ports = rule.ports
-      if (!ports || ports.length === 0 || ports.some((pt) => String(pt.port) === "2379")) {
-        hasApisix2379Allow = true
-      }
+  const unreviewedOrDrifted: string[] = []
+  const baselineDigest = computeNetworkPolicySpecDigest("NetworkPolicy", baselinePolicyObj.spec ?? {})
+  if (baselineDigest !== etcdBaselineEntry.specSha256) {
+    unreviewedOrDrifted.push(`${etcdPolicyKey}(differs)`)
+  }
+  for (const pol of policies) {
+    const name = pol.metadata?.name ?? "unknown"
+    const key = `NetworkPolicy/platform-system/${name}`
+    if (key === etcdPolicyKey) continue
+    const entry = baseline.networkPolicies?.[key]
+    const matchesBaseline =
+      Boolean(entry) && computeNetworkPolicySpecDigest("NetworkPolicy", pol.spec ?? {}) === entry!.specSha256
+    if (!matchesBaseline && selectorMatchesLabels(pol.spec?.podSelector, podLabels)) {
+      unreviewedOrDrifted.push(entry ? `${key}(differs)` : key)
+    }
+  }
+  for (const cpol of ciliumPolicies) {
+    const name = cpol.metadata?.name ?? "unknown"
+    const key = `CiliumNetworkPolicy/platform-system/${name}`
+    const entry = baseline.networkPolicies?.[key]
+    const matchesBaseline =
+      Boolean(entry) && computeNetworkPolicySpecDigest("CiliumNetworkPolicy", cpol.spec ?? {}) === entry!.specSha256
+    if (!matchesBaseline && selectorMatchesLabels(cpol.spec?.endpointSelector, podLabels)) {
+      unreviewedOrDrifted.push(entry ? `${key}(differs)` : key)
     }
   }
 
-  if (hasBroadOrAllowAll) {
+  if (unreviewedOrDrifted.length > 0) {
     return makeOutcome(
-      "fail",
-      "compliance.kisa.reason.etcdPolicyBroad",
-      `apisix-etcd NetworkPolicy(${policyNames.join(", ")})가 전체 허용이거나 APISIX 외 피어를 허용함 (${tlsAuthEnabled ? "TLS·인증 활성" : "평문 HTTP"})`,
-      `apisix-etcd NetworkPolicy (${policyNames.join(", ")}) allows all sources or non-APISIX peers (${tlsAuthEnabled ? "TLS/auth enabled" : "plain HTTP"})`,
+      "warn",
+      "compliance.kisa.reason.etcdPolicyUnreviewed",
+      `apisix-etcd 정책이 검토된 기준선과 다르거나 미검토 정책이 etcd 파드를 선택함 (${unreviewedOrDrifted.join(", ")}) · ${tlsAuthEnabled ? "TLS·인증 설정" : "평문 HTTP"}`,
+      `apisix-etcd policy differs from the reviewed baseline or unreviewed policy selects etcd pods (${unreviewedOrDrifted.join(", ")}); ${tlsAuthEnabled ? "TLS/auth configured" : "plain HTTP"}`,
     )
   }
 
-  const isolationNoteKo = hasApisix2379Allow
-    ? `NetworkPolicy(${policyNames.join(", ")})가 2379/TCP 인바운드를 APISIX 게이트웨이로만 제한`
-    : `NetworkPolicy(${policyNames.join(", ")})가 apisix-etcd 인바운드를 차단(default-deny)`
-  const isolationNoteEn = hasApisix2379Allow
-    ? `NetworkPolicy (${policyNames.join(", ")}) restricts TCP 2379 ingress strictly to APISIX gateway pods`
-    : `NetworkPolicy (${policyNames.join(", ")}) denies ingress to apisix-etcd`
+  const isolationNoteKo = `기준선 NetworkPolicy(${etcdBaselineEntry.name}) SHA-256 일치 및 미검토 etcd 선택 정책 없음`
+  const isolationNoteEn = `Baseline NetworkPolicy (${etcdBaselineEntry.name}) matches SHA-256 with no unreviewed policies selecting etcd pods`
 
   if (tlsAuthEnabled) {
+    const generation = dep.metadata?.generation
+    const observedGeneration = dep.status?.observedGeneration
     const specReplicas = dep.spec?.replicas
+    const updatedReplicas = dep.status?.updatedReplicas
     const readyReplicas = dep.status?.readyReplicas
+    const availableReplicas = dep.status?.availableReplicas
     const statusReplicas = dep.status?.replicas
-    if (typeof specReplicas !== "number" || typeof readyReplicas !== "number") {
+
+    if (
+      typeof generation !== "number" ||
+      typeof observedGeneration !== "number" ||
+      typeof specReplicas !== "number" ||
+      typeof updatedReplicas !== "number" ||
+      typeof readyReplicas !== "number" ||
+      typeof availableReplicas !== "number"
+    ) {
       return makeOutcome(
         "manual",
         "compliance.kisa.reason.etcdWorkloadNotReady",
-        `${isolationNoteKo} · etcd 클라이언트 TLS·인증 활성화 · Deployment replicas/readyReplicas 상태 미확인 — 평가 불가`,
-        `${isolationNoteEn}; etcd client TLS/auth enabled; Deployment replicas/readyReplicas status missing — not evaluated`,
+        `${isolationNoteKo} · etcd 클라이언트 TLS·인증 설정 · Deployment generation/rollout 상태 필드 미확인 — 평가 불가`,
+        `${isolationNoteEn}; etcd client TLS/auth configured; Deployment generation/rollout status fields missing — not evaluated`,
         { live: false },
       )
     }
-    if (readyReplicas < 1 || specReplicas !== readyReplicas || (statusReplicas !== undefined && statusReplicas !== readyReplicas)) {
+    if (dep.spec?.paused === true) {
       return makeOutcome(
         "warn",
         "compliance.kisa.reason.etcdWorkloadNotReady",
-        `${isolationNoteKo} · etcd 클라이언트 TLS·인증 설정됨 · 워크로드 미준비(readyReplicas ${readyReplicas}/${specReplicas})`,
-        `${isolationNoteEn}; etcd client TLS/auth configured; workload not ready (readyReplicas ${readyReplicas}/${specReplicas})`,
+        `${isolationNoteKo} · etcd 클라이언트 TLS·인증 설정됨 · Deployment 일시중지(spec.paused=true)로 현재 템플릿 적용 미확인`,
+        `${isolationNoteEn}; etcd client TLS/auth configured; Deployment paused (spec.paused=true) — running template unverified`,
+      )
+    }
+    if (generation !== observedGeneration) {
+      return makeOutcome(
+        "warn",
+        "compliance.kisa.reason.etcdWorkloadNotReady",
+        `${isolationNoteKo} · etcd 클라이언트 TLS·인증 설정됨 · 세대 불일치(generation ${generation} != observedGeneration ${observedGeneration})`,
+        `${isolationNoteEn}; etcd client TLS/auth configured; rollout generation mismatch (generation ${generation} != observedGeneration ${observedGeneration})`,
+      )
+    }
+    if (
+      specReplicas < 1 ||
+      updatedReplicas !== specReplicas ||
+      readyReplicas !== specReplicas ||
+      availableReplicas !== specReplicas ||
+      (statusReplicas !== undefined && statusReplicas !== specReplicas)
+    ) {
+      return makeOutcome(
+        "warn",
+        "compliance.kisa.reason.etcdWorkloadNotReady",
+        `${isolationNoteKo} · etcd 클라이언트 TLS·인증 설정됨 · 워크로드 롤아웃/준비 미완료(updated ${updatedReplicas}, ready ${readyReplicas}, available ${availableReplicas}/${specReplicas})`,
+        `${isolationNoteEn}; etcd client TLS/auth configured; workload rollout/readiness incomplete (updated ${updatedReplicas}, ready ${readyReplicas}, available ${availableReplicas}/${specReplicas})`,
       )
     }
     return makeOutcome(
       "pass",
       "compliance.kisa.reason.etcdIsolatedTls",
-      `${isolationNoteKo} · etcd 클라이언트 TLS·인증(--client-cert-auth) 활성화 (ready ${readyReplicas}/${specReplicas})`,
-      `${isolationNoteEn}; etcd client TLS and --client-cert-auth enabled (ready ${readyReplicas}/${specReplicas})`,
+      `${isolationNoteKo} · etcd 클라이언트 TLS·인증(--client-cert-auth) 활성화 및 실행 템플릿 일치(gen ${generation}, updated/ready/available ${readyReplicas}/${specReplicas})`,
+      `${isolationNoteEn}; etcd client TLS and --client-cert-auth active on running template (gen ${generation}, updated/ready/available ${readyReplicas}/${specReplicas})`,
     )
   }
 

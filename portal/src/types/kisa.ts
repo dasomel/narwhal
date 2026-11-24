@@ -12,6 +12,7 @@ export type KisaReasonKey =
   | "compliance.kisa.reason.etcdIsolatedPlainHttp"
   | "compliance.kisa.reason.etcdPolicyMissing"
   | "compliance.kisa.reason.etcdPolicyBroad"
+  | "compliance.kisa.reason.etcdPolicyUnreviewed"
   | "compliance.kisa.reason.etcdContainerMissing"
   | "compliance.kisa.reason.secCronJobNotEvaluated"
   | "compliance.kisa.reason.secNoExternalKms"
@@ -24,6 +25,7 @@ export type KisaReasonKey =
   | "compliance.kisa.reason.tlsNotStrict"
   | "compliance.kisa.reason.obsConfigured"
   | "compliance.kisa.reason.obsNoChannel"
+  | "compliance.kisa.reason.obsInvalidDestination"
   | "compliance.kisa.reason.obsFalcoDown"
   | "compliance.kisa.reason.obsConfigMissing"
   | "compliance.kisa.reason.imgPolicyEnforced"
@@ -75,6 +77,7 @@ export interface KisaControl {
   status: KisaStatus
   standardRefs: string[]
   evidence: string
+  evidenceLocalized?: Localized
   remediation: string
   live: boolean
   detail?: string

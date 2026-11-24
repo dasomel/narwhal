@@ -12,6 +12,11 @@ export const KYVERNO_ADMISSION_DEFAULTS = [
   "spec.rules[].verifyImages[].attestations[].attestors[].entries[].keys.signatureAlgorithm (when sha256)",
 ]
 
+export const NETWORK_POLICY_DEFAULTS = [
+  "NetworkPolicy spec.ingress (when empty array [])",
+  "NetworkPolicy spec.egress (when empty array [])",
+]
+
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
@@ -113,6 +118,27 @@ export function canonicalizeKyvernoPolicySpec(spec) {
 
 export function computeKyvernoSpecDigest(spec) {
   const canonical = canonicalizeKyvernoPolicySpec(spec)
+  return createHash("sha256").update(canonicalJson(canonical), "utf8").digest("hex")
+}
+
+/**
+ * Strips ONLY Kubernetes networking.k8s.io/v1 NetworkPolicySpec Go `omitempty`
+ * empty slices (`spec.ingress: []`, `spec.egress: []`), which the API server omits
+ * on readback while preserving identical NetworkPolicy semantics. Every non-empty
+ * rule, selector, port, policyTypes, and CiliumNetworkPolicy field is preserved.
+ */
+export function canonicalizeNetworkPolicySpec(kind, spec) {
+  if (!isRecord(spec)) return {}
+  const out = { ...spec }
+  if (kind === "NetworkPolicy") {
+    if (Array.isArray(out.ingress) && out.ingress.length === 0) delete out.ingress
+    if (Array.isArray(out.egress) && out.egress.length === 0) delete out.egress
+  }
+  return JSON.parse(canonicalJson(out))
+}
+
+export function computeNetworkPolicySpecDigest(kind, spec) {
+  const canonical = canonicalizeNetworkPolicySpec(kind, spec)
   return createHash("sha256").update(canonicalJson(canonical), "utf8").digest("hex")
 }
 

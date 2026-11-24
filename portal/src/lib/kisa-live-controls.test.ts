@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import type {
   KisaFetchResult,
   KisaRawAlertmanagerConfig,
+  KisaRawAlertmanagerReceiver,
+  KisaRawCiliumNetworkPolicy,
   KisaRawClusterPolicy,
   KisaRawCronJob,
   KisaRawDeployment,
@@ -25,6 +27,7 @@ const mockGetKisaStatefulSet = vi.fn<() => Promise<KisaFetchResult<KisaRawStatef
 const mockGetKisaCronJob = vi.fn<() => Promise<KisaFetchResult<KisaRawCronJob>>>()
 const mockGetKisaSecretMetadata = vi.fn<() => Promise<KisaFetchResult<KisaSecretMetadata>>>()
 const mockGetKisaNamespacedNetworkPolicies = vi.fn<() => Promise<KisaFetchResult<KisaRawNetworkPolicy[]>>>()
+const mockGetKisaNamespacedCiliumNetworkPolicies = vi.fn<() => Promise<KisaFetchResult<KisaRawCiliumNetworkPolicy[]>>>()
 const mockGetKisaPeerAuthentications = vi.fn<() => Promise<KisaFetchResult<KisaRawPeerAuthentication[]>>>()
 const mockGetKisaNotificationConfig = vi.fn<() => Promise<KisaFetchResult<KisaRawAlertmanagerConfig>>>()
 const mockGetKisaNamespacedPods = vi.fn<() => Promise<KisaFetchResult<KisaRawPodStatus[]>>>()
@@ -39,6 +42,7 @@ vi.mock("./k8s-client", () => ({
   getKisaCronJob: () => mockGetKisaCronJob(),
   getKisaSecretMetadata: () => mockGetKisaSecretMetadata(),
   getKisaNamespacedNetworkPolicies: () => mockGetKisaNamespacedNetworkPolicies(),
+  getKisaNamespacedCiliumNetworkPolicies: () => mockGetKisaNamespacedCiliumNetworkPolicies(),
   getKisaPeerAuthentications: () => mockGetKisaPeerAuthentications(),
   getKisaNotificationConfig: () => mockGetKisaNotificationConfig(),
   getKisaNamespacedPods: () => mockGetKisaNamespacedPods(),
@@ -54,13 +58,15 @@ import { computeKyvernoSpecDigest } from "./kisa-policy-canonical.mjs"
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mockGetKisaNamespacedCiliumNetworkPolicies.mockResolvedValue({ status: "ok", data: [] })
 })
 
 describe("KISA-ETCD-02 live evaluation", () => {
   const etcdDepPlain: KisaRawDeployment = {
-    metadata: { name: "apisix-etcd", namespace: "platform-system" },
+    metadata: { name: "apisix-etcd", namespace: "platform-system", generation: 1 },
     spec: {
       replicas: 1,
+      paused: false,
       template: {
         metadata: { labels: { app: "apisix-etcd" } },
         spec: {
@@ -68,12 +74,13 @@ describe("KISA-ETCD-02 live evaluation", () => {
         },
       },
     },
-    status: { replicas: 1, readyReplicas: 1 },
+    status: { observedGeneration: 1, replicas: 1, updatedReplicas: 1, readyReplicas: 1, availableReplicas: 1 },
   }
   const etcdDepTls: KisaRawDeployment = {
-    metadata: { name: "apisix-etcd", namespace: "platform-system" },
+    metadata: { name: "apisix-etcd", namespace: "platform-system", generation: 2 },
     spec: {
       replicas: 1,
+      paused: false,
       template: {
         metadata: { labels: { app: "apisix-etcd" } },
         spec: {
@@ -91,18 +98,12 @@ describe("KISA-ETCD-02 live evaluation", () => {
         },
       },
     },
-    status: { replicas: 1, readyReplicas: 1 },
+    status: { observedGeneration: 2, replicas: 1, updatedReplicas: 1, readyReplicas: 1, availableReplicas: 1 },
   }
-  const strictPolicy: KisaRawNetworkPolicy = {
-    metadata: { name: "apisix-etcd-ingress-policy", namespace: "platform-system" },
-    spec: {
-      podSelector: { matchLabels: { app: "apisix-etcd" } },
-      policyTypes: ["Ingress"],
-      ingress: [{ from: [{ podSelector: { matchLabels: { "app.kubernetes.io/name": "apisix" } } }], ports: [{ port: 2379 }] }],
-    },
-  }
+  const etcdPolicyPath = path.resolve(__dirname, "../../../gitops/resources/apisix-etcd-ingress-policy.yaml")
+  const strictPolicy = yaml.load(fs.readFileSync(etcdPolicyPath, "utf8")) as KisaRawNetworkPolicy
 
-  it("passes only when NetworkPolicy restricts to APISIX and client TLS+auth is enabled", async () => {
+  it("passes only when baseline NetworkPolicy matches SHA-256, no unreviewed policy selects etcd, and running template has TLS+auth", async () => {
     mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: etcdDepTls })
     mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [strictPolicy] })
     const r = await checkEtcd02()
@@ -110,7 +111,7 @@ describe("KISA-ETCD-02 live evaluation", () => {
     expect(r.reasonKey).toBe("compliance.kisa.reason.etcdIsolatedTls")
   })
 
-  it("warns when NetworkPolicy isolates APISIX but etcd listens on plain HTTP", async () => {
+  it("warns when baseline NetworkPolicy matches SHA-256 but etcd listens on plain HTTP", async () => {
     mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: etcdDepPlain })
     mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [strictPolicy] })
     const r = await checkEtcd02()
@@ -119,24 +120,57 @@ describe("KISA-ETCD-02 live evaluation", () => {
     expect(r.detailLocalized.en).toContain("etcd client TLS/auth not enabled")
   })
 
-  it("fails when NetworkPolicy is missing or allow-all", async () => {
-    mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: etcdDepPlain })
+  it("fails when baseline NetworkPolicy is missing, and warns on one-field deviation or unreviewed policy selecting etcd pods", async () => {
+    mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: etcdDepTls })
     mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [] })
-    expect((await checkEtcd02()).status).toBe("fail")
+    const missing = await checkEtcd02()
+    expect(missing.status).toBe("fail")
+    expect(missing.reasonKey).toBe("compliance.kisa.reason.etcdPolicyMissing")
 
+    // One-field deviation on apisix-etcd-ingress-policy -> warn (never pass)
+    const deviated = JSON.parse(JSON.stringify(strictPolicy)) as KisaRawNetworkPolicy
+    deviated.spec!.ingress![0].ports!.push({ protocol: "TCP", port: 2380 })
+    mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [deviated] })
+    const devRes = await checkEtcd02()
+    expect(devRes.status).toBe("warn")
+    expect(devRes.reasonKey).toBe("compliance.kisa.reason.etcdPolicyUnreviewed")
+
+    // Extra unreviewed policy selecting etcd pods alongside valid baseline -> warn naming it
     mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({
       status: "ok",
-      data: [{
-        metadata: { name: "allow-all", namespace: "platform-system" },
-        spec: { podSelector: { matchLabels: { app: "apisix-etcd" } }, policyTypes: ["Ingress"], ingress: [{ ports: [{ port: 2379 }] }] },
-      }],
+      data: [
+        strictPolicy,
+        {
+          metadata: { name: "extra-etcd-open", namespace: "platform-system" },
+          spec: { podSelector: { matchLabels: { app: "apisix-etcd" } }, policyTypes: ["Ingress"], ingress: [{}] },
+        },
+      ],
     })
-    const broad = await checkEtcd02()
-    expect(broad.status).toBe("fail")
-    expect(broad.reasonKey).toBe("compliance.kisa.reason.etcdPolicyBroad")
+    const extraRes = await checkEtcd02()
+    expect(extraRes.status).toBe("warn")
+    expect(extraRes.reasonKey).toBe("compliance.kisa.reason.etcdPolicyUnreviewed")
+    expect(extraRes.detail).toContain("extra-etcd-open")
+
+    // Extra unreviewed CiliumNetworkPolicy with empty endpointSelector selecting etcd pods -> warn
+    mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [strictPolicy] })
+    mockGetKisaNamespacedCiliumNetworkPolicies.mockResolvedValue({
+      status: "ok",
+      data: [{ metadata: { name: "cnp-all", namespace: "platform-system" }, spec: { endpointSelector: {}, ingress: [{}] } }],
+    })
+    const cnpRes = await checkEtcd02()
+    expect(cnpRes.status).toBe("warn")
+    expect(cnpRes.reasonKey).toBe("compliance.kisa.reason.etcdPolicyUnreviewed")
+    expect(cnpRes.detail).toContain("cnp-all")
+
+    // Unreviewed policy targeting unrelated pods does NOT block pass
+    mockGetKisaNamespacedCiliumNetworkPolicies.mockResolvedValue({
+      status: "ok",
+      data: [{ metadata: { name: "cnp-other", namespace: "platform-system" }, spec: { endpointSelector: { matchLabels: { app: "other" } } } }],
+    })
+    expect((await checkEtcd02()).status).toBe("pass")
   })
 
-  it("returns manual with reason on 403 forbidden or missing Deployment", async () => {
+  it("returns manual with reason on 403 forbidden (Deployment or CiliumNetworkPolicy) or missing Deployment", async () => {
     mockGetKisaDeployment.mockResolvedValue({ status: "forbidden", resource: "deployments.apps/platform-system/apisix-etcd" })
     mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [] })
     const forb = await checkEtcd02()
@@ -144,6 +178,14 @@ describe("KISA-ETCD-02 live evaluation", () => {
     expect(forb.partial).toBe(true)
     expect(forb.reasonKey).toBe("compliance.kisa.reason.apiForbidden")
 
+    mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: etcdDepTls })
+    mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [strictPolicy] })
+    mockGetKisaNamespacedCiliumNetworkPolicies.mockResolvedValue({ status: "forbidden", resource: "ciliumnetworkpolicies.cilium.io/platform-system" })
+    const cnpForb = await checkEtcd02()
+    expect(cnpForb.status).toBe("manual")
+    expect(cnpForb.partial).toBe(true)
+
+    mockGetKisaNamespacedCiliumNetworkPolicies.mockResolvedValue({ status: "ok", data: [] })
     mockGetKisaDeployment.mockResolvedValue({ status: "not-found" })
     const miss = await checkEtcd02()
     expect(miss.status).toBe("manual")
@@ -152,8 +194,9 @@ describe("KISA-ETCD-02 live evaluation", () => {
 
   it("reproduction (R5): ignores TLS args on sidecar containers and returns manual if 'etcd' container is missing", async () => {
     const depWithSidecarTls: KisaRawDeployment = {
-      metadata: { name: "apisix-etcd", namespace: "platform-system" },
+      metadata: { name: "apisix-etcd", namespace: "platform-system", generation: 1 },
       spec: {
+        replicas: 1,
         template: {
           metadata: { labels: { app: "apisix-etcd" } },
           spec: {
@@ -174,6 +217,7 @@ describe("KISA-ETCD-02 live evaluation", () => {
           },
         },
       },
+      status: { observedGeneration: 1, replicas: 1, updatedReplicas: 1, readyReplicas: 1, availableReplicas: 1 },
     }
     mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: depWithSidecarTls })
     mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [strictPolicy] })
@@ -184,7 +228,7 @@ describe("KISA-ETCD-02 live evaluation", () => {
     mockGetKisaDeployment.mockResolvedValue({
       status: "ok",
       data: {
-        metadata: { name: "apisix-etcd", namespace: "platform-system" },
+        metadata: { name: "apisix-etcd", namespace: "platform-system", generation: 1 },
         spec: { template: { spec: { containers: [{ name: "other-container", command: ["etcd", "--listen-client-urls=https://0.0.0.0:2379", "--client-cert-auth"] }] } } },
       },
     })
@@ -194,10 +238,10 @@ describe("KISA-ETCD-02 live evaluation", () => {
     expect(noEtcdRes.reasonKey).toBe("compliance.kisa.reason.etcdContainerMissing")
   })
 
-  it("reproduction (R7): rejects empty TLS flag values (--cert-file=) and replicas/readyReplicas=0", async () => {
+  it("reproduction (R7+R8): rejects empty TLS flag values (--cert-file=), paused Deployment, generation mismatch, mid-rollout updatedReplicas=0, and missing status fields", async () => {
     mockGetKisaNamespacedNetworkPolicies.mockResolvedValue({ status: "ok", data: [strictPolicy] })
     const emptyFlagsDep: KisaRawDeployment = {
-      metadata: { name: "apisix-etcd", namespace: "platform-system" },
+      metadata: { name: "apisix-etcd", namespace: "platform-system", generation: 1 },
       spec: {
         replicas: 0,
         template: {
@@ -217,25 +261,68 @@ describe("KISA-ETCD-02 live evaluation", () => {
           },
         },
       },
-      status: { replicas: 0, readyReplicas: 0 },
+      status: { observedGeneration: 1, replicas: 0, updatedReplicas: 0, readyReplicas: 0, availableReplicas: 0 },
     }
     mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: emptyFlagsDep })
     const emptyRes = await checkEtcd02()
     expect(emptyRes.status).toBe("warn")
     expect(emptyRes.reasonKey).toBe("compliance.kisa.reason.etcdIsolatedPlainHttp")
 
+    // Reproduction (R8): paused Deployment edited to TLS template with updatedReplicas=0, old plaintext readyReplicas=1 MUST NOT pass
+    const pausedRolloutDep: KisaRawDeployment = {
+      ...etcdDepTls,
+      metadata: { ...etcdDepTls.metadata, generation: 2 },
+      spec: { ...etcdDepTls.spec, paused: true, replicas: 1 },
+      status: { observedGeneration: 1, replicas: 1, updatedReplicas: 0, readyReplicas: 1, availableReplicas: 1 },
+    }
+    mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: pausedRolloutDep })
+    const pausedRes = await checkEtcd02()
+    expect(pausedRes.status).toBe("warn")
+    expect(pausedRes.reasonKey).toBe("compliance.kisa.reason.etcdWorkloadNotReady")
+
+    // Paused even with matching generation/replicas -> still warn
+    const pausedSameGenDep: KisaRawDeployment = {
+      ...etcdDepTls,
+      spec: { ...etcdDepTls.spec, paused: true },
+    }
+    mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: pausedSameGenDep })
+    expect((await checkEtcd02()).status).toBe("warn")
+
+    // Generation mismatch -> warn
+    mockGetKisaDeployment.mockResolvedValue({
+      status: "ok",
+      data: {
+        ...etcdDepTls,
+        metadata: { ...etcdDepTls.metadata, generation: 3 },
+        status: { ...etcdDepTls.status, observedGeneration: 2 },
+      },
+    })
+    expect((await checkEtcd02()).status).toBe("warn")
+
+    // Mid-rollout updatedReplicas=0, readyReplicas=1 with same generation -> warn
+    mockGetKisaDeployment.mockResolvedValue({
+      status: "ok",
+      data: {
+        ...etcdDepTls,
+        status: { ...etcdDepTls.status, updatedReplicas: 0 },
+      },
+    })
+    expect((await checkEtcd02()).status).toBe("warn")
+
+    // Zero replicas -> warn
     const zeroReplicasTls: KisaRawDeployment = {
       ...etcdDepTls,
       spec: { ...etcdDepTls.spec, replicas: 0 },
-      status: { replicas: 0, readyReplicas: 0 },
+      status: { observedGeneration: 2, replicas: 0, updatedReplicas: 0, readyReplicas: 0, availableReplicas: 0 },
     }
     mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: zeroReplicasTls })
     const zeroRes = await checkEtcd02()
     expect(zeroRes.status).toBe("warn")
     expect(zeroRes.reasonKey).toBe("compliance.kisa.reason.etcdWorkloadNotReady")
 
+    // Missing rollout/generation status fields -> manual
     const missingStatusTls: KisaRawDeployment = {
-      metadata: etcdDepTls.metadata,
+      metadata: { name: "apisix-etcd", namespace: "platform-system" },
       spec: etcdDepTls.spec,
     }
     mockGetKisaDeployment.mockResolvedValue({ status: "ok", data: missingStatusTls })
@@ -438,13 +525,13 @@ describe("KISA-OBS-01 live evaluation", () => {
     },
   ]
 
-  it("passes when an external receiver is routed and Falco + falcosidekick are ready", async () => {
+  it("passes when an external receiver has a required destination, is routed, and Falco + falcosidekick are ready", async () => {
     mockGetKisaNotificationConfig.mockResolvedValue({
       status: "ok",
       data: {
         spec: {
           route: { receiver: "slack-sec" },
-          receivers: [{ name: "null" }, { name: "slack-sec", slackConfigs: [{ channel: "#sec" }] }],
+          receivers: [{ name: "null" }, { name: "slack-sec", slackConfigs: [{ apiURL: { name: "narwhal-notification-channels", key: "slack_webhook_url" }, channel: "#sec" }] }],
         },
       },
     })
@@ -452,12 +539,50 @@ describe("KISA-OBS-01 live evaluation", () => {
     const r = await checkObs01()
     expect(r.status).toBe("pass")
     expect(r.reasonKey).toBe("compliance.kisa.reason.obsConfigured")
+
+    // Also verifies other CRD integration types with valid required destinations
+    for (const receiver of [
+      { name: "wh", webhookConfigs: [{ urlSecret: { name: "s", key: "url" } }] },
+      { name: "em", emailConfigs: [{ to: "sec@example.com" }] },
+      { name: "pd", pagerdutyConfigs: [{ routingKey: { name: "s", key: "pd" } }] },
+      { name: "tg", telegramConfigs: [{ chatID: -10012345, botToken: { name: "s", key: "tg" } }] },
+    ]) {
+      mockGetKisaNotificationConfig.mockResolvedValue({
+        status: "ok",
+        data: { spec: { route: { receiver: receiver.name }, receivers: [receiver] } },
+      })
+      expect((await checkObs01()).status, receiver.name).toBe("pass")
+    }
+  })
+
+  it("reproduction (R8): rejects empty webhookConfigs:[{}], slackConfigs without apiURL, empty secret ref, and unknown integration types", async () => {
+    mockGetKisaNamespacedPods.mockResolvedValue({ status: "ok", data: readyFalcoPods })
+
+    const cases: Array<[string, KisaRawAlertmanagerReceiver & { name: string }]> = [
+      ["empty webhookConfigs:[{}]", { name: "wh-empty", webhookConfigs: [{}] }],
+      ["slackConfigs missing apiURL", { name: "slack-no-url", slackConfigs: [{ channel: "#sec" }] }],
+      ["slackConfigs empty secret name", { name: "slack-empty-name", slackConfigs: [{ apiURL: { name: "", key: "k" } }] }],
+      ["emailConfigs missing to", { name: "email-no-to", emailConfigs: [{ smarthost: "smtp:25" }] }],
+      ["pagerdutyConfigs missing keys", { name: "pd-empty", pagerdutyConfigs: [{ severity: "critical" }] }],
+      ["telegramConfigs missing botToken", { name: "tg-no-tok", telegramConfigs: [{ chatID: 123 }] }],
+      ["unknown integration type", { name: "custom", customConfigs: [{ url: "https://example.com" }] }],
+    ]
+    for (const [label, receiver] of cases) {
+      mockGetKisaNotificationConfig.mockResolvedValue({
+        status: "ok",
+        data: { spec: { route: { receiver: receiver.name }, receivers: [{ name: "null" }, receiver] } },
+      })
+      const res = await checkObs01()
+      expect(res.status, label).toBe("warn")
+      expect(res.reasonKey, label).toBe("compliance.kisa.reason.obsInvalidDestination")
+      expect(res.detailLocalized.en, label).toContain("receiver present but no valid destination")
+    }
   })
 
   it("warns on null-only or unrouted receiver when Falco is ready; fails on missing config", async () => {
     mockGetKisaNotificationConfig.mockResolvedValue({
       status: "ok",
-      data: { spec: { route: { receiver: "null" }, receivers: [{ name: "null" }, { name: "unrouted", slackConfigs: [{}] }] } },
+      data: { spec: { route: { receiver: "null" }, receivers: [{ name: "null" }, { name: "unrouted", slackConfigs: [{ apiURL: { name: "s", key: "k" } }] }] } },
     })
     mockGetKisaNamespacedPods.mockResolvedValue({ status: "ok", data: readyFalcoPods })
     const w = await checkObs01()
@@ -482,7 +607,7 @@ describe("KISA-OBS-01 live evaluation", () => {
       data: {
         spec: {
           route: { receiver: "slack-sec" },
-          receivers: [{ name: "slack-sec", slackConfigs: [{ channel: "#sec" }] }],
+          receivers: [{ name: "slack-sec", slackConfigs: [{ apiURL: { name: "s", key: "k" }, channel: "#sec" }] }],
         },
       },
     })
@@ -504,7 +629,7 @@ describe("KISA-OBS-01 live evaluation", () => {
       data: {
         spec: {
           route: { receiver: "slack-sec" },
-          receivers: [{ name: "slack-sec", slackConfigs: [{ channel: "#sec" }] }],
+          receivers: [{ name: "slack-sec", slackConfigs: [{ apiURL: { name: "s", key: "k" }, channel: "#sec" }] }],
         },
       },
     })
@@ -1580,7 +1705,7 @@ describe("KISA-RBAC-02 RBAC rule semantics, truth-table, and exact acceptance co
     expect(rbac01.detailLocalized.en).not.toContain("unnecessary")
   })
 
-  it("reproduction (R7): never excludes namespaced Role/dev/cluster-admin with roles/escalate", async () => {
+  it("reproduction (R7+R8): RBAC-02 flags namespaced Role/dev/cluster-admin with roles/escalate while RBAC-01 is unaffected by design", async () => {
     mockGetKisaRbacSnapshot.mockResolvedValue({
       clusterRoleBindings: { status: "ok", data: [] },
       roleBindings: {
@@ -1600,6 +1725,8 @@ describe("KISA-RBAC-02 RBAC rule semantics, truth-table, and exact acceptance co
         }],
       },
     })
+    const rbac01 = await checkRbacLive("KISA-RBAC-01")
+    expect(rbac01.status).toBe("pass")
     const rbac02 = await checkRbacLive("KISA-RBAC-02")
     expect(rbac02.status).toBe("fail")
     expect(rbac02.detail).toContain("dev/dev-cluster-admin-binding")

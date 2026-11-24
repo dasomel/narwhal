@@ -153,11 +153,15 @@ def check(texts: dict[str, str]) -> list[str]:
         "checkRbacLive(entry.id)",
         "if (r.partial) {",
         "if (!hasPartialCheck)",
-        "function hasAllowAllIngressRule(",
-        "function isIngressDefaultDenyPolicy(",
-        "if (!hasPodSel && !hasNsSel && !hasRestrictedIpBlock && !sameNsAllPods) {",
-        'cidr !== "::/0"',
-        "const hasAllowAll = nsPolicies.some(hasAllowAllIngressRule)",
+        "export async function checkNet01(",
+        "getKisaCiliumNetworkPolicies()",
+        'if (cnpRes.status !== "ok")',
+        "computeNetworkPolicySpecDigest(match.kind, match.spec) === defaultDenyEntry.specSha256",
+        "computeNetworkPolicySpecDigest(pol.kind, pol.spec) !== entry.specSha256",
+        "baseline.net01DefaultDenyByNamespace",
+        "baseline.networkPolicies",
+        "unreviewed policy present",
+        "if (covered.length > 0 || unreviewedByNs.length > 0)",
         "PSA_ENFORCED_LEVELS",
         "if (summary.failed) {",
         "if (summary.partial) {",
@@ -174,22 +178,41 @@ def check(texts: dict[str, str]) -> list[str]:
     ):
         if needle not in kisa:
             errors.append(f"kisa.ts missing {needle!r}")
+    for forbidden in ("isRestrictedIngressPeer", "hasAllowAllIngressRule", "isIngressDefaultDenyPolicy"):
+        if forbidden in kisa:
+            errors.append(f"kisa.ts must not reintroduce arbitrary NetworkPolicy semantic interpreter {forbidden!r}")
     if "applySimple" in kisa:
         errors.append("kisa.ts must not use unlocalized applySimple (all controls must emit ko + en detailLocalized)")
 
     # 3. Container isolation + closed-world checks in kisa-checks.ts & k8s-client.ts
-    if "function checkEtcd02(" not in checks:
+    if "export async function checkEtcd02(" not in checks:
         errors.append("kisa-checks.ts missing checkEtcd02")
     else:
-        etcd_body = checks.split("export async function checkEtcd02()", 1)[1].split("export async function checkSec01()", 1)[0]
+        etcd_body = checks.split("export async function checkEtcd02(", 1)[1].split("export async function checkSec01()", 1)[0]
         if 'containers.find((c) => c.name === "etcd")' not in etcd_body:
             errors.append("kisa-checks.ts checkEtcd02 must select strictly container name === 'etcd'")
         if "containers.flatMap" in etcd_body:
             errors.append("kisa-checks.ts checkEtcd02 must never merge args with containers.flatMap across containers")
         if "compliance.kisa.reason.etcdContainerMissing" not in etcd_body:
             errors.append("kisa-checks.ts checkEtcd02 must return etcdContainerMissing when etcd container absent")
-        if "if (readyReplicas < 1 || specReplicas !== readyReplicas" not in etcd_body:
-            errors.append("kisa-checks.ts checkEtcd02 must require readyReplicas >= 1 and specReplicas === readyReplicas")
+        for etcd_req in (
+            'getKisaNamespacedCiliumNetworkPolicies("platform-system")',
+            'if (cnpRes.status !== "ok") return fetchErrorOutcome',
+            'computeNetworkPolicySpecDigest("NetworkPolicy"',
+            'computeNetworkPolicySpecDigest("CiliumNetworkPolicy"',
+            "if (!matchesBaseline && selectorMatchesLabels(",
+            "if (unreviewedOrDrifted.length > 0)",
+            "if (dep.spec?.paused === true)",
+            "if (generation !== observedGeneration)",
+            "updatedReplicas !== specReplicas",
+            "availableReplicas !== specReplicas",
+            'typeof generation !== "number"',
+            "compliance.kisa.reason.etcdPolicyUnreviewed",
+        ):
+            if etcd_req not in etcd_body:
+                errors.append(f"kisa-checks.ts checkEtcd02 missing {etcd_req!r}")
+    if "isApisixGatewayPeer" in checks:
+        errors.append("kisa-checks.ts must not reintroduce arbitrary isApisixGatewayPeer NetworkPolicy interpreter")
     if "if (val.length > 0)" not in checks:
         errors.append("kisa-checks.ts extractFlagValues must reject empty flag values")
 
@@ -210,7 +233,6 @@ def check(texts: dict[str, str]) -> list[str]:
         errors.append("kisa-checks-ops.ts must enforce matchRbacBindingException in both KISA-RBAC-01 and KISA-RBAC-02")
 
     for needle in (
-        "isApisixGatewayPeer",
         "--listen-client-urls",
         "--client-cert-auth",
         "velero.io/exclude-from-backup",
@@ -245,6 +267,8 @@ def check(texts: dict[str, str]) -> list[str]:
     if "불필요" in checks_ops:
         errors.append("kisa-checks-ops.ts RBAC-01 wording must say 미수용 (not accepted by an exact rule), not 불필요")
     for needle in (
+        'if (!Array.isArray(binding.subjects) || !Array.isArray(binding.checkIds) || binding.checkIds.length === 0)',
+        '`${scope}\\0${binding.namespace}\\0${binding.kind}\\0${binding.name}\\0${binding.roleRefKind}\\0${binding.roleRefName}`',
         'bootstrapping !== "rbac-defaults" || autoupdate !== "true"',
         "if (!subjectsMatchExact(rule.subjects, binding.subjects))",
         "if (!normalizedChecks.every((cid) => rule.checks.has(cid)))",
@@ -308,7 +332,15 @@ def check(texts: dict[str, str]) -> list[str]:
         "subjects: b.subjects,",
         "!hasRbacBindingRule(bindingTarget)",
         "isBootstrapRbacRole(kind, roleNs, name)",
-        "matchRbacException(name, cid, roleNs, kind) !== null",
+        "if (triggeredCheckIds.length === 0) return false",
+        "triggeredCheckIds.every((cid) => matchRbacException(name, cid, roleNs, kind) !== null)",
+        "export const ALERTMANAGER_INTEGRATION_VALIDATORS",
+        "function receiverHasValidDestination(",
+        "webhookConfigs: (c) => hasNonEmptyStr(c.url) || hasSecretKeyRef(c.urlSecret)",
+        "slackConfigs: (c) => hasSecretKeyRef(c.apiURL)",
+        "routedExternalReceivers\n    .filter(receiverHasValidDestination)",
+        "compliance.kisa.reason.obsInvalidDestination",
+        "receiver present but no valid destination",
         "export function ruleGrants(",
         "if (!groups.includes(\"*\") && !groups.includes(targetGroup)) return false",
         "if (!verbs.includes(\"*\") && !verbs.includes(targetVerb)) return false",
@@ -343,6 +375,10 @@ def check(texts: dict[str, str]) -> list[str]:
                 errors.append(f"ClusterRole narwhal-portal peerauthentications verbs must be ['list'], got {sorted(verbs)}")
             if "policyreports" in resources and verbs != {"list"}:
                 errors.append(f"ClusterRole narwhal-portal policyreports verbs must be ['list'], got {sorted(verbs)}")
+            if "ciliumnetworkpolicies" in resources and verbs != {"list"}:
+                errors.append(f"ClusterRole narwhal-portal ciliumnetworkpolicies verbs must be ['list'], got {sorted(verbs)}")
+            if "ciliumclusterwidenetworkpolicies" in resources:
+                errors.append("ClusterRole narwhal-portal must not grant ciliumclusterwidenetworkpolicies")
             if "cronjobs" in resources and verbs != {"get", "list"}:
                 errors.append(f"ClusterRole narwhal-portal cronjobs verbs must be ['get', 'list'], got {sorted(verbs)}")
 
@@ -361,8 +397,8 @@ def check(texts: dict[str, str]) -> list[str]:
         errors.append("cache-keys.ts must version kisaComplianceList to compliance:v4:kisa:list")
 
     reason_keys = re.findall(r'"(compliance\.kisa\.reason\.[A-Za-z0-9_]+)"', types)
-    if len(reason_keys) < 23:
-        errors.append(f"types/kisa.ts expected >=23 KisaReasonKey entries, got {len(reason_keys)}")
+    if len(reason_keys) < 25:
+        errors.append(f"types/kisa.ts expected >=25 KisaReasonKey entries, got {len(reason_keys)}")
     for rk in reason_keys:
         if len(re.findall(r'"' + re.escape(rk) + r'": "[^"\n]+"', i18n)) != 2:
             errors.append(f"i18n.ts must define both ko and en entries for {rk}")
@@ -385,7 +421,7 @@ def check(texts: dict[str, str]) -> list[str]:
     ):
         if r5_needle not in test:
             errors.append(f"kisa-live-controls.test.ts missing R5 closed-world test marker {r5_needle!r}")
-    for sweep_needle in ("IMG-03 never passes", "POD-01 does not pass", "NET-01 rejects", "ADM-01 warns", "TLS-02 warns", "CP-01/ETCD-01 reject"):
+    for sweep_needle in ("IMG-03 never passes", "POD-01 does not pass", "NET-01 closed-world baseline:", "ADM-01 warns", "TLS-02 warns", "CP-01/ETCD-01 reject"):
         if sweep_needle not in unit_test:
             errors.append(f"kisa.test.ts missing sweep regression marker {sweep_needle!r}")
 
@@ -418,11 +454,27 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop bootstrap label+annotation check in matchRbacBindingException", "accepted", 'if (bootstrapping !== "rbac-defaults" || autoupdate !== "true") {', "if (false) {"),
     ("drop checks restriction in matchRbacBindingException", "accepted", "if (!normalizedChecks.every((cid) => rule.checks.has(cid))) {", "if (false) {"),
     ("drop subjects pin in matchRbacBindingException", "accepted", "if (!subjectsMatchExact(rule.subjects, binding.subjects)) {", "if (false) {"),
-    ("drop additive allow-all check in NET-01", "kisa", "const hasAllowAll = nsPolicies.some(hasAllowAllIngressRule)", "const hasAllowAll = false"),
+    ("remove roleRef pin in matchRbacBindingException", "accepted", "`${scope}\\0${binding.namespace}\\0${binding.kind}\\0${binding.name}\\0${binding.roleRefKind}\\0${binding.roleRefName}`", "`${scope}\\0${binding.namespace}\\0${binding.kind}\\0${binding.name}`"),
+    ("remove empty-checks rejection in matchRbacBindingException", "accepted", " || binding.checkIds.length === 0", ""),
+    ("role check every->some in isRoleAcceptedByExactRules", "checks_ops", "triggeredCheckIds.every((cid) => matchRbacException(name, cid, roleNs, kind) !== null)", "triggeredCheckIds.some((cid) => matchRbacException(name, cid, roleNs, kind) !== null)"),
+    ("drop NET-01 CiliumNetworkPolicy read/check", "kisa", 'if (cnpRes.status !== "ok") {', "if (false) {"),
+    ("drop NET-01 baseline digest check", "kisa", "computeNetworkPolicySpecDigest(pol.kind, pol.spec) !== entry.specSha256", "false"),
+    ("drop NET-01 unreviewed policy check", "kisa", "if (covered.length > 0 || unreviewedByNs.length > 0) {", "if (covered.length > 0) {"),
+    ("reintroduce arbitrary NetworkPolicy semantic interpreter in kisa.ts", "kisa", "export async function checkNet01(", "function isRestrictedIngressPeer() { return true }\nexport async function checkNet01("),
     ("drop baseline SHA-256 check in ADM-01", "kisa", "const digestMatches = Boolean(p.specSha256) && p.specSha256 === entry.specSha256", "const digestMatches = true"),
     ("treat missing Pod status as ready in mapApiServerPod", "k8s", 'p.status?.phase === "Running" &&', '(p.status?.phase === undefined || p.status.phase === "Running") &&'),
     ("accept empty flag value in extractFlagValues", "checks", "if (val.length > 0) {", "if (true) {"),
-    ("ignore replicas/readyReplicas=0 in checkEtcd02", "checks", "if (readyReplicas < 1 || specReplicas !== readyReplicas", "if (false && (readyReplicas < 1 || specReplicas !== readyReplicas"),
+    ("ignore paused Deployment in checkEtcd02", "checks", "if (dep.spec?.paused === true) {", "if (false) {"),
+    ("ignore generation mismatch in checkEtcd02", "checks", "if (generation !== observedGeneration) {", "if (false) {"),
+    ("ignore updatedReplicas/availableReplicas mismatch in checkEtcd02", "checks", "updatedReplicas !== specReplicas ||", "false ||"),
+    ("ignore missing rollout fields in checkEtcd02", "checks", 'typeof generation !== "number" ||', "false &&"),
+    ("drop unreviewed/drifted policy check in checkEtcd02", "checks", "if (unreviewedOrDrifted.length > 0) {", "if (false) {"),
+    ("reintroduce arbitrary isApisixGatewayPeer in kisa-checks.ts", "checks", "export async function checkEtcd02(", "function isApisixGatewayPeer() { return true }\nexport async function checkEtcd02("),
+    ("accept empty webhookConfigs:[{}] in OBS-01", "checks_ops", "webhookConfigs: (c) => hasNonEmptyStr(c.url) || hasSecretKeyRef(c.urlSecret),", "webhookConfigs: () => true,"),
+    ("drop slackConfigs apiURL requirement in OBS-01", "checks_ops", "slackConfigs: (c) => hasSecretKeyRef(c.apiURL),", "slackConfigs: () => true,"),
+    ("skip receiverHasValidDestination filter in OBS-01", "checks_ops", "routedExternalReceivers\n    .filter(receiverHasValidDestination)", "routedExternalReceivers"),
+    ("grant ciliumclusterwidenetworkpolicies in ClusterRole narwhal-portal", "rbac", "    resources: [ciliumnetworkpolicies]", "    resources: [ciliumnetworkpolicies, ciliumclusterwidenetworkpolicies]"),
+    ("grant get verb on ciliumnetworkpolicies in ClusterRole narwhal-portal", "rbac", "  - apiGroups: [cilium.io]\n    resources: [ciliumnetworkpolicies]\n    verbs: [list]", "  - apiGroups: [cilium.io]\n    resources: [ciliumnetworkpolicies]\n    verbs: [get, list]"),
     ("ignore Ready=False condition in OBS-01 isPodRunningAndReady", "checks_ops", "if (!readyCondition) return false", "if (false && !readyCondition) return false"),
     ("reintroduce 불필요 wording in RBAC-01", "checks_ops", "정확 규칙 미수용 cluster-admin 바인딩", "불필요·미수용 cluster-admin 바인딩"),
     ("drop exact matchRbacBindingException in KISA-RBAC-01/02", "checks_ops", "matchRbacBindingException({", "({ ...{} }) ? null : (() => { const x = {"),
@@ -443,7 +495,6 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop uids or userextras/* authentication.k8s.io impersonate check", "checks_ops", 'const impersonatesAuth = grantsAnyVerb(r, "authentication.k8s.io", ["uids", "userextras/*"], ["impersonate"])', 'const impersonatesAuth = grantsAnyVerb(r, "authentication.k8s.io", ["userextras"], ["impersonate"])'),
     ("allow res/* subresource wildcard in ruleGrants", "checks_ops", "res === `*/${sub}`", "res === `${parent}/*` || res === `*/${sub}`"),
     ("exclude literal * extra key userextras/* from sub === * query", "checks_ops", '(res.startsWith(`${parent}/`) && res.length > parent.length + 1)', '(res.startsWith(`${parent}/`) && res.length > parent.length + 1 && res !== `${parent}/*`)'),
-    ("allow NET-01 ingress:[{}] pass", "kisa", "if (!hasPodSel && !hasNsSel && !hasRestrictedIpBlock && !sameNsAllPods) {", "if (false) {"),
     ("ignore summary.failed in IMG-03", "kisa", "if (summary.failed) {", "if (false && summary.failed) {"),
     ("ignore missing notAfter in TLS-02", "kisa", "if (missingExpiry.length > 0) {", "if (false && missingExpiry.length > 0) {"),
     ("drop R397 wiring in regression-check-kakao.sh", "reg", "check R397 ", "check R9999 "),

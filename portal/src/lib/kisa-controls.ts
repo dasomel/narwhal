@@ -39,7 +39,11 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail" | "det
     severity: "High",
     standardRefs: ["CIS", "NSA/CISA"],
     evidence:
-      "Deployment platform-system/apisix-etcd 인자(--listen-client-urls TLS·--client-cert-auth)와 platform-system NetworkPolicy의 APISIX 게이트웨이 인바운드 제한 여부를 실시간 점검.",
+      "Deployment platform-system/apisix-etcd 실행 템플릿·인자(--listen-client-urls TLS·--client-cert-auth, generation==observedGeneration, paused!=true, updated/ready/availableReplicas)와 platform-system NetworkPolicy/CiliumNetworkPolicy의 기준선(kisa-policy-baseline.json) SHA-256 일치를 실시간 점검.",
+    evidenceLocalized: {
+      ko: "Deployment platform-system/apisix-etcd 실행 템플릿·인자(--listen-client-urls TLS·--client-cert-auth, generation==observedGeneration, paused!=true, updated/ready/availableReplicas)와 platform-system NetworkPolicy/CiliumNetworkPolicy의 기준선(kisa-policy-baseline.json) SHA-256 일치를 실시간 점검.",
+      en: "Verifies running template and flags (--listen-client-urls TLS, --client-cert-auth, generation==observedGeneration, not paused, updated/ready/availableReplicas) on Deployment platform-system/apisix-etcd and baseline SHA-256 parity (kisa-policy-baseline.json) with zero unreviewed policies selecting etcd pods.",
+    },
     remediation:
       "APISIX etcd 인바운드를 APISIX 게이트웨이로만 제한하는 NetworkPolicy 유지 및 클라이언트 TLS·mTLS 인증(--client-cert-auth) 전환.",
   },
@@ -60,7 +64,11 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail" | "det
     severity: "High",
     standardRefs: ["CIS 5.1", "NSA/CISA", "ISMS-P 2.6"],
     evidence:
-      "검토된 정확 수용 규칙(compliance-acceptance-rules.json + 부트스트랩 메타데이터 검증) 외 cluster-admin 바인딩 존재 여부를 실시간 점검. headlamp(view), velero-ui(velero-ui-readonly), velero-server(velero-server-least-privilege), platform-admin은 최소권한으로 전환됨.",
+      "ClusterRole/cluster-admin을 참조하는 바인딩(ClusterRoleBinding·RoleBinding)이 검토된 정확 수용 규칙(compliance-acceptance-rules.json + 부트스트랩 메타데이터·subjects·checks·roleRef 검증)에 속하는지 실시간 점검. 이름만 같은 네임스페이스 Role(예: Role/dev/cluster-admin)은 RBAC-01 대상이 아니며 KISA-RBAC-02가 평가함.",
+    evidenceLocalized: {
+      ko: "ClusterRole/cluster-admin을 참조하는 바인딩(ClusterRoleBinding·RoleBinding)이 검토된 정확 수용 규칙(compliance-acceptance-rules.json + 부트스트랩 메타데이터·subjects·checks·roleRef 검증)에 속하는지 실시간 점검. 이름만 같은 네임스페이스 Role(예: Role/dev/cluster-admin)은 RBAC-01 대상이 아니며 KISA-RBAC-02가 평가함.",
+      en: "Evaluates bindings (ClusterRoleBinding/RoleBinding) referencing ClusterRole/cluster-admin against reviewed exact acceptance rules (compliance-acceptance-rules.json + bootstrap metadata, subjects, checks, roleRef). A namespaced Role merely sharing the name (e.g. Role/dev/cluster-admin) is not RBAC-01's subject by design and is covered by KISA-RBAC-02.",
+    },
     remediation:
       "신규 cluster-admin 직접 부여를 금지하고 최소권한 Role/ClusterRole 유지.",
   },
@@ -103,7 +111,11 @@ export const KISA_CATALOG: Omit<KisaControl, "status" | "live" | "detail" | "det
     severity: "Medium",
     standardRefs: ["CIS 5.3", "NSA/CISA §4", "KISA 망분리"],
     evidence:
-      "대상 네임스페이스(iam·devtools·monitoring·storage·database)의 ingress default-deny NetworkPolicy(podSelector: {}) 적용 여부를 실시간 점검. egress는 현재 전체 허용(egress:[{}]) 상태.",
+      "대상 네임스페이스(iam·devtools·monitoring·storage·database)의 NetworkPolicy 및 CiliumNetworkPolicy를 기준선(kisa-policy-baseline.json) SHA-256과 대조해 기본 차단 정책 일치 및 미검토/드리프트 정책 부재를 실시간 점검. egress는 현재 전체 허용(egress:[{}]) 상태.",
+    evidenceLocalized: {
+      ko: "대상 네임스페이스(iam·devtools·monitoring·storage·database)의 NetworkPolicy 및 CiliumNetworkPolicy를 기준선(kisa-policy-baseline.json) SHA-256과 대조해 기본 차단 정책 일치 및 미검토/드리프트 정책 부재를 실시간 점검. egress는 현재 전체 허용(egress:[{}]) 상태.",
+      en: "Verifies that each target namespace (iam, devtools, monitoring, storage, database) has its baseline default-deny policy and zero unreviewed or drifted NetworkPolicy/CiliumNetworkPolicy objects against kisa-policy-baseline.json.",
+    },
     remediation: "미적용 네임스페이스에 ingress default-deny + 명시적 허용 정책을 단계 적용하고, egress 최소 허용목록 전환 검토.",
   },
   {

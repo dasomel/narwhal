@@ -29,8 +29,10 @@
       "portal/src/lib/kisa-live-controls.test.ts",
       "portal/CHANGELOG.md",
       "portal/CHANGELOG-ko.md",
+      "docs/common/compliance-hardening.md",
       "docs/common/lessons-log.md",
       "scripts/test/lib/check-portal-replicasets-rbac.py",
+      "scripts/test/lib/check-portal-exact-acceptance.py",
       "scripts/test/lib/check-portal-evidence-precedence.py",
       "scripts/test/lib/check-portal-kisa-live-controls.py",
       "scripts/test/lib/check-portal-kisa-policy-baseline.py",
@@ -42,7 +44,7 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Owner approved 'KISA 수정' (2026-11-24), including minimal read-only RBAC on ClusterRole narwhal-portal for live KISA controls and no new Secret read permission. Added list-only on security.istio.io/peerauthentications (KISA-TLS-01) and wgpolicyk8s.io/policyreports (KISA-IMG-02), and get/list on batch/cronjobs (KISA-SEC-01 get and KISA-IMG-02 list); no secrets rule was added."
+      "summary": "Owner approved 'KISA 수정' (2026-11-24), including minimal read-only RBAC on ClusterRole narwhal-portal for live KISA controls and no new Secret read permission. Added list-only on security.istio.io/peerauthentications (KISA-TLS-01), wgpolicyk8s.io/policyreports (KISA-IMG-02), and cilium.io/ciliumnetworkpolicies (KISA-NET-01/ETCD-02), plus get/list on batch/cronjobs (KISA-SEC-01 get and KISA-IMG-02 list); no secrets rule or ciliumclusterwidenetworkpolicies rule was added."
     },
     {
       "id": "e2",
@@ -50,27 +52,27 @@
       "summary": "Before this change, live measurement through kubectl proxy showed 6 static KISA controls (KISA-SEC-01/ETCD-02/IMG-01 fail, KISA-TLS-01/OBS-01/IMG-02 warn) with stale descriptions and KISA-RBAC-02 over-reporting 6 Critical bindings due to cross-rule wildcard combination and ignored apiGroups.",
       "evidence": [
         "test:kubectl proxy (admin kubeconfig) getKisaControls() before -> pass 6, fail 6, warn 4, manual 0 (6 static controls, KISA-RBAC-02 Critical 6)",
-        "test:kubectl auth can-i as system:serviceaccount:devtools:narwhal-portal -> no for security.istio.io/peerauthentications, batch/cronjobs, wgpolicyk8s.io/policyreports, storage secrets; yes for networkpolicies, deployments, statefulsets, replicasets, pods, clusterpolicies, and monitoring AlertmanagerConfig/narwhal-notification-channels"
+        "test:kubectl auth can-i as system:serviceaccount:devtools:narwhal-portal -> no for security.istio.io/peerauthentications, batch/cronjobs, wgpolicyk8s.io/policyreports, cilium.io/ciliumnetworkpolicies, storage secrets; yes for networkpolicies, deployments, statefulsets, replicasets, pods, clusterpolicies, and monitoring AlertmanagerConfig/narwhal-notification-channels"
       ]
     },
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Closed round-6 closed-world gaps across 7 MAJOR findings + 1 MINOR + THREAT MODEL: (a) deleted b.roleRef.name !== 'cluster-admin' exclusion; (b) pinned checks, roleRef, canonical subjects (44/44 identical to upstream Kubernetes release-1.35 bootstrappolicy defaults), and bootstrap metadata in rbacBindings with KSV046/047/049/111 coverage and blocked bootstrap-role fallback bypass; (c) NET-01 additive allow-all check across all policies in each namespace (incl. ::/0) naming devtools; (d) ADM-01 canonical baseline validation across all 9 admissionRelevant ClusterPolicies in kisa-policy-baseline.json exposing unreviewed headlamp-probe-tuning; (e) CP-01/ETCD-01 Ready=True condition requirement; (f) ETCD-02 non-empty flag values and readyReplicas === spec.replicas >= 1; (g) OBS-01 Ready=True condition authoritative; (h) removed applySimple so all 16 controls emit bilingual ko/en detailLocalized + reasonKey and fixed RBAC-01 text to 정확 규칙 미수용 / not accepted by an exact rule."
+      "summary": "Closed round-7 closed-world gaps across 3 MAJOR + 2 MINOR findings: (1) ETCD-02 running template verification (generation == observedGeneration, spec.paused !== true, updatedReplicas == spec.replicas == readyReplicas == availableReplicas >= 1, missing => manual); (2) NET-01 and ETCD-02 closed-world NetworkPolicy/CiliumNetworkPolicy baseline digest (schemaVersion 2, 33 policies from gitops/resources/*.yaml + narwhal-portal-k8s.yaml, stripping only empty NetworkPolicySpec ingress/egress []) and ciliumnetworkpolicies list-only RBAC; (3) OBS-01 CRD v1alpha1 15-integration required destination validator table rejecting webhookConfigs:[{}]; (4) R395/R397 surviving mutations (roleRef pin, empty-checks rejection, triggeredCheckIds every->some) + mutations for (1)-(3); (5) compliance-hardening.md threat model alignment + KISA-RBAC-01 ClusterRole/cluster-admin vs Role scope clarification in doc and control evidenceLocalized ko/en."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Portal typecheck/lint/vitest/build/harness-rules, all check-portal-*.py --mutation-verify (incl. R395, R397, R399), make validate, make test, make lint, and read-only live measurement via kubectl proxy (admin rights).",
-      "summary": "Live after-r7 measurement via kubectl proxy (admin rights) yielded pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r7.json): KISA-RBAC-01 fail ('정확 규칙 미수용 cluster-admin 바인딩 1건 (kubeadm:cluster-admins) (정확 수용 1건)'), KISA-RBAC-02 fail (Critical 3 incl. kubeadm:cluster-admins, High 39, exact-accepted 57 incl. cluster-admin), KISA-NET-01 warn (4/5 naming devtools), KISA-ADM-01 warn (5/9 + unreviewed headlamp-probe-tuning), all 16 controls with bilingual detailLocalized + reasonKey.",
+      "scope": "Portal typecheck/lint/vitest/build/harness-rules, all check-portal-*.py --mutation-verify (incl. R378, R395, R397, R399), make validate, make test, make lint, and read-only live measurement via kubectl proxy (admin rights).",
+      "summary": "Live after-r8 measurement via kubectl proxy (admin rights) yielded pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r8.json): KISA-NET-01 warn (4/5 baseline-matched across database/iam/monitoring/storage; devtools uncovered + 7 unreviewed argocd-*-network-policy objects), KISA-ETCD-02 warn (baseline apisix-etcd-ingress-policy SHA-256 matched, plain HTTP), KISA-OBS-01 warn (null receiver only), and KISA-RBAC-01/02 unchanged.",
       "evidence": [
-        "test:live measurement via kubectl proxy (admin rights) getKisaControls() after r7 -> summary pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r7.json)",
-        "test:44/44 rbacBindings subjects verified 100% identical to upstream Kubernetes release-1.35 bootstrappolicy defaults (0 differences)",
+        "test:live measurement via kubectl proxy (admin rights) getKisaControls() after r8 -> summary pass 3, fail 4, warn 8, manual 1 (.review/kisa-live-after-r8.json)",
         "test:cd portal && pnpm typecheck && pnpm lint && pnpm exec vitest run && pnpm build && bash scripts/harness-rules.sh",
-        "test:python3 scripts/test/lib/check-portal-exact-acceptance.py --mutation-verify -> PASS (33 mutations rejected)",
-        "test:python3 scripts/test/lib/check-portal-kisa-live-controls.py --mutation-verify -> PASS (51 mutations rejected)",
-        "test:python3 scripts/test/lib/check-portal-kisa-policy-baseline.py --mutation-verify -> PASS (6 mutations + 9 behavioral checks rejected)"
+        "test:python3 scripts/test/lib/check-portal-replicasets-rbac.py --mutation-verify -> PASS (30 mutations rejected)",
+        "test:python3 scripts/test/lib/check-portal-exact-acceptance.py --mutation-verify -> PASS (37 mutations rejected)",
+        "test:python3 scripts/test/lib/check-portal-kisa-live-controls.py --mutation-verify -> PASS (66 mutations rejected)",
+        "test:python3 scripts/test/lib/check-portal-kisa-policy-baseline.py --mutation-verify -> PASS (8 mutations + 13 behavioral checks rejected)"
       ]
     },
     {

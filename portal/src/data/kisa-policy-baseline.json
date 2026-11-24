@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "sourceManifest": "gitops/resources/kyverno-policies.yaml",
   "normalizedOutServerDefaults": [
     "spec.admission (when true)",
@@ -129,6 +129,264 @@
         "verifyImages.required=false",
         "narrow_imageReferences_scope"
       ]
+    }
+  },
+  "normalizedOutNetworkPolicyDefaults": [
+    "NetworkPolicy spec.ingress (when empty array [])",
+    "NetworkPolicy spec.egress (when empty array [])"
+  ],
+  "networkPolicySourceManifests": [
+    "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+    "gitops/resources/alloy-logs-ingress-policy.yaml",
+    "gitops/resources/apisix-admin-ingress-policy.yaml",
+    "gitops/resources/apisix-etcd-ingress-policy.yaml",
+    "gitops/resources/database-ingress-policy.yaml",
+    "gitops/resources/gitea-ingress-policy.yaml",
+    "gitops/resources/iam-ingress-policy.yaml",
+    "gitops/resources/monitoring-ingress-policy.yaml",
+    "gitops/resources/network-policies.yaml",
+    "gitops/resources/storage-ingress-policy.yaml",
+    "gitops/resources/tuning-job-network-policy.yaml"
+  ],
+  "net01DefaultDenyByNamespace": {
+    "database": "NetworkPolicy/database/database-default-deny-ingress",
+    "devtools": null,
+    "iam": "NetworkPolicy/iam/iam-default-deny-ingress",
+    "monitoring": "NetworkPolicy/monitoring/monitoring-default-deny-ingress",
+    "storage": "NetworkPolicy/storage/storage-default-deny-ingress"
+  },
+  "etcd02PolicyKey": "NetworkPolicy/platform-system/apisix-etcd-ingress-policy",
+  "networkPolicies": {
+    "CiliumNetworkPolicy/monitoring/prometheus-operator-webhook-ingress": {
+      "kind": "CiliumNetworkPolicy",
+      "namespace": "monitoring",
+      "name": "prometheus-operator-webhook-ingress",
+      "sourceManifest": "gitops/resources/monitoring-ingress-policy.yaml",
+      "specSha256": "912b8f0f2fa13fd60a08f709b2262d5f435b1d3310a782995e948706e570b103"
+    },
+    "CiliumNetworkPolicy/storage/openbao-agent-injector-webhook-ingress": {
+      "kind": "CiliumNetworkPolicy",
+      "namespace": "storage",
+      "name": "openbao-agent-injector-webhook-ingress",
+      "sourceManifest": "gitops/resources/storage-ingress-policy.yaml",
+      "specSha256": "3f42f5c4db819f4d9e59c6c3376ffa8b8279cedfbb727cec83a838910a5113de"
+    },
+    "NetworkPolicy/database/database-default-deny-ingress": {
+      "kind": "NetworkPolicy",
+      "namespace": "database",
+      "name": "database-default-deny-ingress",
+      "sourceManifest": "gitops/resources/database-ingress-policy.yaml",
+      "specSha256": "08c305fcb182b2f20d7bb367cc5055f9ed850b7f30619e81f88d57ee1a9512db"
+    },
+    "NetworkPolicy/database/database-egress": {
+      "kind": "NetworkPolicy",
+      "namespace": "database",
+      "name": "database-egress",
+      "sourceManifest": "gitops/resources/network-policies.yaml",
+      "specSha256": "501d72f77e09c2058ff272aba63b7353fa5c0c82dc0f2b744bb492fa956b9dbc"
+    },
+    "NetworkPolicy/database/database-prometheus-ingress": {
+      "kind": "NetworkPolicy",
+      "namespace": "database",
+      "name": "database-prometheus-ingress",
+      "sourceManifest": "gitops/resources/database-ingress-policy.yaml",
+      "specSha256": "e0c006746b8e90958a55f49f1cd7bdc6255f358d309054ad621262552fca2e58"
+    },
+    "NetworkPolicy/devtools/devtools-egress": {
+      "kind": "NetworkPolicy",
+      "namespace": "devtools",
+      "name": "devtools-egress",
+      "sourceManifest": "gitops/resources/network-policies.yaml",
+      "specSha256": "501d72f77e09c2058ff272aba63b7353fa5c0c82dc0f2b744bb492fa956b9dbc"
+    },
+    "NetworkPolicy/devtools/gitea-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "devtools",
+      "name": "gitea-ingress-policy",
+      "sourceManifest": "gitops/resources/gitea-ingress-policy.yaml",
+      "specSha256": "13081b61739529dac25390bb7a25b33b49fe3dd522189aca539e178530e9f833"
+    },
+    "NetworkPolicy/devtools/narwhal-portal-alertmanager-egress": {
+      "kind": "NetworkPolicy",
+      "namespace": "devtools",
+      "name": "narwhal-portal-alertmanager-egress",
+      "sourceManifest": "gitops/resources/network-policies.yaml",
+      "specSha256": "3f6a0291fd51b025d77c04893af3392dbc3b6e10f05dbc6e98f4fccd4c60441f"
+    },
+    "NetworkPolicy/devtools/narwhal-portal-valkey-ingress": {
+      "kind": "NetworkPolicy",
+      "namespace": "devtools",
+      "name": "narwhal-portal-valkey-ingress",
+      "sourceManifest": "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "specSha256": "d167ae7233832cd1a990b5577221c0e3626d357be6da6050024189d5c133fd10"
+    },
+    "NetworkPolicy/devtools/tuning-job-network-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "devtools",
+      "name": "tuning-job-network-policy",
+      "sourceManifest": "gitops/resources/tuning-job-network-policy.yaml",
+      "specSha256": "f2fe301f0e3aa422aba5ac49e6be5b637e8c08b0e858509a552006b939f1633a"
+    },
+    "NetworkPolicy/iam/iam-default-deny-ingress": {
+      "kind": "NetworkPolicy",
+      "namespace": "iam",
+      "name": "iam-default-deny-ingress",
+      "sourceManifest": "gitops/resources/iam-ingress-policy.yaml",
+      "specSha256": "3946ffa5362c53eb6b72e0c5e7b30c3c600ede2f1700be2e4dbf3327b9585440"
+    },
+    "NetworkPolicy/iam/iam-egress": {
+      "kind": "NetworkPolicy",
+      "namespace": "iam",
+      "name": "iam-egress",
+      "sourceManifest": "gitops/resources/network-policies.yaml",
+      "specSha256": "501d72f77e09c2058ff272aba63b7353fa5c0c82dc0f2b744bb492fa956b9dbc"
+    },
+    "NetworkPolicy/iam/keycloak-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "iam",
+      "name": "keycloak-ingress-policy",
+      "sourceManifest": "gitops/resources/iam-ingress-policy.yaml",
+      "specSha256": "67010bd01997a690ff08c976ac02ac500f3b6dbcbcc2382d87f58ab936fda4d9"
+    },
+    "NetworkPolicy/monitoring/alertmanager-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "monitoring",
+      "name": "alertmanager-ingress-policy",
+      "sourceManifest": "gitops/resources/monitoring-ingress-policy.yaml",
+      "specSha256": "8a2daa013938dd4c572cc378b7556c5738d241efe2ca09576dc2276bc2faa7e4"
+    },
+    "NetworkPolicy/monitoring/alloy-logs-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "monitoring",
+      "name": "alloy-logs-ingress-policy",
+      "sourceManifest": "gitops/resources/alloy-logs-ingress-policy.yaml",
+      "specSha256": "b671d1af9861fae868f477b69eb588b91c5855acd1356428689d20bf08ce1f0e"
+    },
+    "NetworkPolicy/monitoring/grafana-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "monitoring",
+      "name": "grafana-ingress-policy",
+      "sourceManifest": "gitops/resources/monitoring-ingress-policy.yaml",
+      "specSha256": "cad9ce6b3c58202c6b4f55544b562b63c937a2a9a934dc31e3fe62b964eeb876"
+    },
+    "NetworkPolicy/monitoring/kube-state-metrics-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "monitoring",
+      "name": "kube-state-metrics-ingress-policy",
+      "sourceManifest": "gitops/resources/monitoring-ingress-policy.yaml",
+      "specSha256": "b87668bc7e7959543bd782862e2e732f2600471fb358689b381c7a095d9c7fd0"
+    },
+    "NetworkPolicy/monitoring/loki-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "monitoring",
+      "name": "loki-ingress-policy",
+      "sourceManifest": "gitops/resources/monitoring-ingress-policy.yaml",
+      "specSha256": "57a5776e6872bec8ff54d9500a5372de1dd65900a3b8c58d625778eb3aba0174"
+    },
+    "NetworkPolicy/monitoring/monitoring-default-deny-ingress": {
+      "kind": "NetworkPolicy",
+      "namespace": "monitoring",
+      "name": "monitoring-default-deny-ingress",
+      "sourceManifest": "gitops/resources/monitoring-ingress-policy.yaml",
+      "specSha256": "3946ffa5362c53eb6b72e0c5e7b30c3c600ede2f1700be2e4dbf3327b9585440"
+    },
+    "NetworkPolicy/monitoring/monitoring-egress": {
+      "kind": "NetworkPolicy",
+      "namespace": "monitoring",
+      "name": "monitoring-egress",
+      "sourceManifest": "gitops/resources/network-policies.yaml",
+      "specSha256": "501d72f77e09c2058ff272aba63b7353fa5c0c82dc0f2b744bb492fa956b9dbc"
+    },
+    "NetworkPolicy/monitoring/monitoring-waypoint-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "monitoring",
+      "name": "monitoring-waypoint-ingress-policy",
+      "sourceManifest": "gitops/resources/monitoring-ingress-policy.yaml",
+      "specSha256": "bdd6e9899eca02bbf2b96792b9a0949b27a3fa03b400a7f1c3c2d0e81d52beb6"
+    },
+    "NetworkPolicy/monitoring/prometheus-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "monitoring",
+      "name": "prometheus-ingress-policy",
+      "sourceManifest": "gitops/resources/monitoring-ingress-policy.yaml",
+      "specSha256": "81291a21fb3c4331357aac35578177aaa9fdb581607dcc9f20d55e1278014a8a"
+    },
+    "NetworkPolicy/monitoring/prometheus-operator-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "monitoring",
+      "name": "prometheus-operator-ingress-policy",
+      "sourceManifest": "gitops/resources/monitoring-ingress-policy.yaml",
+      "specSha256": "15688d1a9203e0b89b597ae9fe3ec94233d0af251cba36d8ff0e5353ccc31c95"
+    },
+    "NetworkPolicy/monitoring/tempo-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "monitoring",
+      "name": "tempo-ingress-policy",
+      "sourceManifest": "gitops/resources/network-policies.yaml",
+      "specSha256": "ade78a230be963bd1fd5634f33cfe19fb5402267fcd70f70578aa22f81dea693"
+    },
+    "NetworkPolicy/platform-system/apisix-admin-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "platform-system",
+      "name": "apisix-admin-ingress-policy",
+      "sourceManifest": "gitops/resources/apisix-admin-ingress-policy.yaml",
+      "specSha256": "9ca36527321706f833dd573f77aa9812b611a367d6b4a4046801b463f5960533"
+    },
+    "NetworkPolicy/platform-system/apisix-etcd-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "platform-system",
+      "name": "apisix-etcd-ingress-policy",
+      "sourceManifest": "gitops/resources/apisix-etcd-ingress-policy.yaml",
+      "specSha256": "e906ba1cff0c2080bc59d34d2ee8a1e4ac5e2f6db9488fedce90abe454625b96"
+    },
+    "NetworkPolicy/storage/openbao-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "storage",
+      "name": "openbao-ingress-policy",
+      "sourceManifest": "gitops/resources/storage-ingress-policy.yaml",
+      "specSha256": "bf7bef8860ec6e7452709ff029d8a5ab6d4e8701b3be98deaa9739c38689cb93"
+    },
+    "NetworkPolicy/storage/seaweedfs-internal-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "storage",
+      "name": "seaweedfs-internal-ingress-policy",
+      "sourceManifest": "gitops/resources/storage-ingress-policy.yaml",
+      "specSha256": "5862fd4a7222a186c077649724b907943b42e463f71398b9e664a0ae878b4a71"
+    },
+    "NetworkPolicy/storage/seaweedfs-s3-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "storage",
+      "name": "seaweedfs-s3-ingress-policy",
+      "sourceManifest": "gitops/resources/storage-ingress-policy.yaml",
+      "specSha256": "24c1e14867a4e6b453a54cf7431e5ec6e678e0570ed3c55ef05909a2a97d6ee5"
+    },
+    "NetworkPolicy/storage/storage-default-deny-ingress": {
+      "kind": "NetworkPolicy",
+      "namespace": "storage",
+      "name": "storage-default-deny-ingress",
+      "sourceManifest": "gitops/resources/storage-ingress-policy.yaml",
+      "specSha256": "3946ffa5362c53eb6b72e0c5e7b30c3c600ede2f1700be2e4dbf3327b9585440"
+    },
+    "NetworkPolicy/storage/storage-egress": {
+      "kind": "NetworkPolicy",
+      "namespace": "storage",
+      "name": "storage-egress",
+      "sourceManifest": "gitops/resources/network-policies.yaml",
+      "specSha256": "501d72f77e09c2058ff272aba63b7353fa5c0c82dc0f2b744bb492fa956b9dbc"
+    },
+    "NetworkPolicy/storage/velero-metrics": {
+      "kind": "NetworkPolicy",
+      "namespace": "storage",
+      "name": "velero-metrics",
+      "sourceManifest": "gitops/resources/network-policies.yaml",
+      "specSha256": "8b15b64becf88c72e0356091439bca06954cc5fde664931c355fa0c784a937a2"
+    },
+    "NetworkPolicy/storage/velero-ui-ingress-policy": {
+      "kind": "NetworkPolicy",
+      "namespace": "storage",
+      "name": "velero-ui-ingress-policy",
+      "sourceManifest": "gitops/resources/storage-ingress-policy.yaml",
+      "specSha256": "f219e29eebe81777a0972f3f09105ff036c7e9c18f74df1f3f3530e0240a880b"
     }
   }
 }

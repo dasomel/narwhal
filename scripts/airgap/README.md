@@ -324,7 +324,7 @@ push 뒤 trivy-server는 다음 시간 주기에 새 DB를 한 번 받고 멈춘
 | Kyverno 서명 검증 | `verify-image-signatures` | 정적 공개키, `rekor.ignoreTlog: true` | TUF/Rekor 조회 없음 | 조치 없음 |
 | Falco 룰 | falco DaemonSet | 이미지에 내장 (falco-rules 5.2.0), falcoctl off | 영향 없음 | 이미지 핀으로 버전 관리 |
 | KISA/CIS/NSA/PSS 컴플라이언스 | ClusterComplianceReport | 저장소 YAML + operator 차트 | 영향 없음 | 조치 없음 |
-| OSS 업데이트 upstream | Portal `oss-updates/upstream.ts` | GitHub Releases API | 기본 OFF (`OSS_UPDATES_UPSTREAM`) | 조치 없음 (OCI 아티팩트 아님) |
+| OSS 업데이트 upstream | Portal `oss-updates/upstream.ts` | GitHub Releases API | 연결 프로파일 ON / `kakao` 프로파일 `"false"` (`OSS_UPDATES_UPSTREAM`) | 조치 없음 (OCI 아티팩트 아님, 실패 시 `unavailable`) |
 
 별개 사실: scan Job의 *대상 이미지* pull(`docker.io/...`)은 Trivy가 직접 레지스트리에서 받으므로 에어갭에서
 실패할 수 있다. 이는 보안 DB가 아니라 스캔 대상 이미지 문제이므로 이 목록과 무관하다.

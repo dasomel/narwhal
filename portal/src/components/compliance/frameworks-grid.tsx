@@ -337,7 +337,7 @@ export function FrameworksGrid() {
           const notEvaluated = fw.notEvaluatedCount ?? Math.max(0, fw.totalControls - fw.failCount)
           const evaluatedPass = fw.evaluatedPassCount ?? 0
           const testedPass = fw.benchmarkTestedPassCount ?? 0
-          const noFailurePass = fw.noFailureRecordedPassCount ?? evaluatedPass
+          const noFailurePass = fw.noFailureRecordedPassCount ?? Math.max(0, evaluatedPass - testedPass)
           const droppedChecks = fw.droppedCheckCount ?? 0
           const droppedControls = fw.droppedFailCount ?? 0
           const evaluatedRate = fw.evaluatedPassRate ?? 0
@@ -410,7 +410,7 @@ export function FrameworksGrid() {
                     </>
                   ) : (
                     <span className="text-green-600 font-medium" title={t("compliance.framework.noFailureRecordedLabel")}>
-                      ✓ {evaluatedPass} {t("compliance.framework.noFailureRecordedShort")}
+                      ✓ {noFailurePass} {t("compliance.framework.noFailureRecordedShort")}
                     </span>
                   )}
                   <span className={`font-medium ${actionableFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>

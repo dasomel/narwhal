@@ -322,7 +322,7 @@ export default async function FrameworkDetailPage({ params }: Props) {
   const acceptedControlsFail = detail.acceptedFailCount ?? acceptedControls.length
   const evaluatedPass = detail.evaluatedPassCount ?? 0
   const testedPass = detail.benchmarkTestedPassCount ?? 0
-  const noFailurePass = detail.noFailureRecordedPassCount ?? evaluatedPass
+  const noFailurePass = detail.noFailureRecordedPassCount ?? Math.max(0, evaluatedPass - testedPass)
   const hasBenchmarkTests = testedPass > 0 || (detail.benchmarkTestedFailCount ?? 0) > 0
   const notEvaluated = detail.notEvaluatedCount ?? Math.max(0, detail.totalControls - detail.failCount)
   const effectivePassNum = Math.round(effectiveRate * detail.totalControls)
@@ -354,7 +354,9 @@ export default async function FrameworkDetailPage({ params }: Props) {
         <div>
           <h1 className="text-xl font-bold text-foreground">{detail.title}</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {t(locale, "compliance.framework.evaluatedPassRate")}: {evaluatedPctText} ({evaluatedPass}/{detail.totalControls}) &middot;{" "}
+            {testedPass > 0
+              ? t(locale, "compliance.framework.evaluatedPassRateWithBenchmark")
+              : t(locale, "compliance.framework.evaluatedPassRate")}: {evaluatedPctText} ({evaluatedPass}/{detail.totalControls}) &middot;{" "}
             {t(locale, "compliance.framework.rawPassRate")}: {rawPctText} ({detail.passCount}/{detail.totalControls}) &middot;{" "}
             {t(locale, "compliance.framework.effectivePassRate")}: {effectivePctText} ({effectivePassNum}/{detail.totalControls}) &middot;{" "}
             {t(locale, "compliance.framework.controls", { count: detail.totalControls })}
@@ -374,7 +376,11 @@ export default async function FrameworkDetailPage({ params }: Props) {
       {/* Pass rate bar + counters */}
       <div className="rounded-lg border bg-card p-4 space-y-3">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">{t(locale, "compliance.framework.evaluatedPassRate")}</span>
+          <span className="text-muted-foreground">
+            {testedPass > 0
+              ? t(locale, "compliance.framework.evaluatedPassRateWithBenchmark")
+              : t(locale, "compliance.framework.evaluatedPassRate")}
+          </span>
           <span
             className={`font-bold text-lg ${
               evaluatedRate >= 0.8
@@ -398,7 +404,7 @@ export default async function FrameworkDetailPage({ params }: Props) {
               <span className="text-emerald-600 font-medium">✓ {noFailurePass} {t(locale, "compliance.framework.noFailureRecordedLabel")}</span>
             </>
           ) : (
-            <span className="text-green-600 font-medium">✓ {evaluatedPass} {t(locale, "compliance.framework.noFailureRecordedLabel")}</span>
+            <span className="text-green-600 font-medium">✓ {noFailurePass} {t(locale, "compliance.framework.noFailureRecordedLabel")}</span>
           )}
           <span className={`font-medium ${actionableControlsFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
             ✗ {actionableControlsFail} {t(locale, "compliance.framework.actionableFailed")}

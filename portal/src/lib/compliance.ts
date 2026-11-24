@@ -1983,6 +1983,82 @@ function classifyNonFailingControl(
   return { evaluationState: "passed" }
 }
 
+export function summarizeComplianceControls(
+  controls: readonly ComplianceControl[],
+  opts: { failCount: number; totalControls: number },
+): {
+  evaluatedPassCount: number
+  benchmarkTestedPassCount: number
+  benchmarkTestedFailCount: number
+  noFailureRecordedPassCount: number
+  notEvaluatedCount: number
+  failCount: number
+  actionableFailCount: number
+  acceptedFailCount: number
+  droppedFailCount: number
+  droppedCheckCount: number
+  unaccountedFailTotal: number
+} {
+  const { failCount, totalControls } = opts
+  const detailFailControls = controls.filter(
+    (c) => c.evaluationState === "failed" || c.failCount > 0,
+  ).length
+  const detailActionableFail = controls.filter((c) => {
+    const actionable = c.actionableFailCount ?? (c.accepted ? 0 : c.failCount)
+    return actionable > 0
+  }).length
+  const detailAcceptedFail = controls.filter((c) => c.accepted === true).length
+  const detailDroppedOnlyFail = controls.filter(
+    (c) =>
+      c.failCount > 0 &&
+      (c.actionableFailCount ?? 0) === 0 &&
+      (c.acceptedFailCount ?? 0) === 0 &&
+      (c.droppedFailCount ?? 0) > 0,
+  ).length
+
+  // Fail closed if summary.failCount exceeds failing controls present in merged controls.
+  const unaccountedFail = Math.max(0, failCount - detailFailControls)
+  const effectiveFailCount = Math.max(failCount, detailFailControls)
+  let actionableFailCount: number
+  if (controls.length === 0) {
+    // reportType=summary without spec/detail controls lacks per-check targets — fail closed.
+    actionableFailCount = failCount
+  } else {
+    actionableFailCount = detailActionableFail + unaccountedFail
+  }
+  const acceptedFailCount = detailAcceptedFail
+  const droppedFailCount = detailDroppedOnlyFail
+  const droppedCheckCount = controls.reduce((acc, c) => acc + (c.droppedFailCount ?? 0), 0)
+  const evaluatedPassCount = controls.filter((c) => c.evaluationState === "passed").length
+  const benchmarkTestedPassCount = controls.filter(
+    (c) => c.evaluationState === "passed" && c.testedByBenchmark === true,
+  ).length
+  const benchmarkTestedFailCount = controls.filter(
+    (c) => c.evaluationState === "failed" && c.benchmarkEvidence?.verdict === "failed",
+  ).length
+  const noFailureRecordedPassCount = controls.filter(
+    (c) => c.evaluationState === "passed" && c.testedByBenchmark !== true,
+  ).length
+  const notEvaluatedCount =
+    controls.length > 0
+      ? controls.filter((c) => c.evaluationState === "not_evaluated").length
+      : Math.max(0, totalControls - effectiveFailCount)
+
+  return {
+    evaluatedPassCount,
+    benchmarkTestedPassCount,
+    benchmarkTestedFailCount,
+    noFailureRecordedPassCount,
+    notEvaluatedCount,
+    failCount: effectiveFailCount,
+    actionableFailCount,
+    acceptedFailCount,
+    droppedFailCount,
+    droppedCheckCount,
+    unaccountedFailTotal: unaccountedFail,
+  }
+}
+
 function buildComplianceFrameworkData(
   item: RawComplianceReport,
   rsMap: Map<string, ReplicaSetSummary> | null,
@@ -2132,56 +2208,23 @@ function buildComplianceFrameworkData(
     controls = controls.map((ctrl) => mergeCisControlWithBenchmark(ctrl, evalCtx.benchmarkStore))
   }
 
-  let actionableFailCount: number
-  let acceptedFailCount: number
-  let droppedFailCount: number
-  let droppedCheckCount: number
-  let evaluatedPassCount: number
-  let benchmarkTestedPassCount: number
-  let benchmarkTestedFailCount: number
-  let noFailureRecordedPassCount: number
-  let notEvaluatedCount: number
-  let effectiveFailCount = failCount
-  let unaccountedFailTotal = 0
-
   const totalControls = Math.max(controls.length, specControls.length) || passCount + failCount
-
-  if (detailControls.length > 0) {
-    const detailFailControls = controls.filter((c) => c.failCount > 0).length
-    const detailActionableFail = controls.filter((c) => (c.actionableFailCount ?? 0) > 0).length
-    const detailAcceptedFail = controls.filter((c) => c.accepted === true).length
-    const detailDroppedOnlyFail = controls.filter(
-      (c) =>
-        c.failCount > 0 &&
-        (c.actionableFailCount ?? 0) === 0 &&
-        (c.acceptedFailCount ?? 0) === 0 &&
-        (c.droppedFailCount ?? 0) > 0,
-    ).length
-    // Fail closed if summary.failCount exceeds failing controls present in detailReport.results.
-    const unaccountedFail = Math.max(0, failCount - detailFailControls)
-    unaccountedFailTotal = unaccountedFail
-    effectiveFailCount = Math.max(failCount, detailFailControls)
-    actionableFailCount = detailActionableFail + unaccountedFail
-    acceptedFailCount = detailAcceptedFail
-    droppedFailCount = detailDroppedOnlyFail
-    droppedCheckCount = controls.reduce((acc, c) => acc + (c.droppedFailCount ?? 0), 0)
-    evaluatedPassCount = controls.filter((c) => c.evaluationState === "passed").length
-    benchmarkTestedPassCount = controls.filter((c) => c.evaluationState === "passed" && c.testedByBenchmark === true).length
-    benchmarkTestedFailCount = controls.filter((c) => c.evaluationState === "failed" && c.benchmarkEvidence?.verdict === "failed").length
-    noFailureRecordedPassCount = controls.filter((c) => c.evaluationState === "passed" && c.testedByBenchmark !== true).length
-    notEvaluatedCount = controls.filter((c) => c.evaluationState === "not_evaluated").length
-  } else {
-    // reportType=summary lacks per-check targets to verify exceptions or control evaluation — fail closed.
-    actionableFailCount = failCount
-    acceptedFailCount = 0
-    droppedFailCount = 0
-    droppedCheckCount = 0
-    evaluatedPassCount = 0
-    benchmarkTestedPassCount = 0
-    benchmarkTestedFailCount = 0
-    noFailureRecordedPassCount = 0
-    notEvaluatedCount = Math.max(0, totalControls - failCount)
-  }
+  const {
+    evaluatedPassCount,
+    benchmarkTestedPassCount,
+    benchmarkTestedFailCount,
+    noFailureRecordedPassCount,
+    notEvaluatedCount,
+    failCount: effectiveFailCount,
+    actionableFailCount,
+    acceptedFailCount,
+    droppedFailCount,
+    droppedCheckCount,
+    unaccountedFailTotal,
+  } = summarizeComplianceControls(controls, {
+    failCount,
+    totalControls,
+  })
 
   const passRate = totalControls > 0 ? Math.min(1, passCount / totalControls) : 0
   const evaluatedPassRate = totalControls > 0 ? Math.min(1, evaluatedPassCount / totalControls) : 0

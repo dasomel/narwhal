@@ -1372,9 +1372,15 @@ it("J1/J2 UI: renders cluster-scoped ConfigAuditRow with visible Cluster scope, 
     lastUpdated: new Date().toISOString(),
   }
   const benchCountersEn = renderToStaticMarkup(<FailureCounters summary={benchmarkSummary} locale="en" />)
+  expect(benchCountersEn).toContain("70 tested (benchmark) · 4 no failure recorded · 17 not evaluated · 23 actionable · 2 accepted")
   expect(benchCountersEn).toContain("70 tested (benchmark) · 4 no failure recorded")
+  expect(benchCountersEn).not.toContain("74 no failure recorded")
+  expect(benchCountersEn).toContain("evaluated as &#x27;tested (benchmark)&#x27; or failed when valid kube-bench test records exist")
   const benchCountersKo = renderToStaticMarkup(<FailureCounters summary={benchmarkSummary} locale="ko" />)
+  expect(benchCountersKo).toContain("테스트 통과(벤치마크) 70 · 실패 기록 없음 4 · 미평가 17 · 조치가능 23 · 수용 2")
   expect(benchCountersKo).toContain("테스트 통과(벤치마크) 70 · 실패 기록 없음 4")
+  expect(benchCountersKo).not.toContain("실패 기록 없음 74")
+  expect(benchCountersKo).toContain("유효한 kube-bench 테스트 기록이 있으면 &#x27;테스트 통과(벤치마크)&#x27; 또는 실패로 평가되며")
 
   vi.mocked(useQuery).mockReturnValue({
     data: benchmarkSummary.frameworks,

@@ -171,7 +171,27 @@ async function checkCfg01(): Promise<KisaCheckOutcome> {
   const actionableControls = frameworks.reduce((acc, f) => acc + (f.actionableFailCount ?? f.failCount), 0)
   const notEvaluatedControls = frameworks.reduce((acc, f) => acc + (f.notEvaluatedCount ?? Math.max(0, f.totalControls - f.failCount)), 0)
   const acceptedControls = frameworks.reduce((acc, f) => acc + (f.acceptedFailCount ?? 0), 0)
-  const evaluatedPassControls = frameworks.reduce((acc, f) => acc + (f.evaluatedPassCount ?? 0), 0)
+  const benchmarkTestedPassControls = frameworks.reduce((acc, f) => acc + (f.benchmarkTestedPassCount ?? 0), 0)
+  const noFailureRecordedControls = frameworks.reduce(
+    (acc, f) => acc + (f.noFailureRecordedPassCount ?? Math.max(0, (f.evaluatedPassCount ?? 0) - (f.benchmarkTestedPassCount ?? 0))),
+    0,
+  )
+  const passDetailKo =
+    benchmarkTestedPassControls > 0
+      ? `테스트 통과(벤치마크) ${benchmarkTestedPassControls} · 실패 기록 없음 ${noFailureRecordedControls} / ${totalControls}`
+      : `실패 기록 없음 ${noFailureRecordedControls}/${totalControls}`
+  const passDetailEn =
+    benchmarkTestedPassControls > 0
+      ? `${benchmarkTestedPassControls} tested (benchmark) · ${noFailureRecordedControls} no failure recorded / ${totalControls}`
+      : `no failure recorded ${noFailureRecordedControls}/${totalControls}`
+  const passCleanKo =
+    benchmarkTestedPassControls > 0
+      ? `테스트 통과(벤치마크) ${benchmarkTestedPassControls} · 실패 기록 없음 ${noFailureRecordedControls}`
+      : `실패 기록 없음 ${noFailureRecordedControls}`
+  const passCleanEn =
+    benchmarkTestedPassControls > 0
+      ? `${benchmarkTestedPassControls} tested (benchmark) · ${noFailureRecordedControls} no failure recorded`
+      : `no failure recorded ${noFailureRecordedControls}`
   const hasUnknownCoverage = frameworks.some((f) => (Boolean(f.coverageUnknown) || f.evaluatedPassCount === undefined || f.notEvaluatedCount === undefined))
   const partial = unavailableSources.length > 0
 
@@ -198,8 +218,8 @@ async function checkCfg01(): Promise<KisaCheckOutcome> {
     return makeOutcome(
       "fail",
       "compliance.kisa.reason.cfgActionableFail",
-      `조치가능 프레임워크 컨트롤 실패 ${actionableControls}건 [실패 소스: ${failingSourcesKo.join(", ")}] (실패 기록 없음 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 미평가 ${notEvaluatedControls}) ${breakdownKo}${unavailableNoteKo}`,
-      `${actionableControls} actionable framework control failure(s) [failing source(s): ${failingSourcesEn.join(", ")}] (no failure recorded ${evaluatedPassControls}/${totalControls}, accepted ${acceptedControls}, not evaluated ${notEvaluatedControls}) ${breakdownEn}${unavailableNoteEn}`,
+      `조치가능 프레임워크 컨트롤 실패 ${actionableControls}건 [실패 소스: ${failingSourcesKo.join(", ")}] (${passDetailKo}, 수용 ${acceptedControls}, 미평가 ${notEvaluatedControls}) ${breakdownKo}${unavailableNoteKo}`,
+      `${actionableControls} actionable framework control failure(s) [failing source(s): ${failingSourcesEn.join(", ")}] (${passDetailEn}, accepted ${acceptedControls}, not evaluated ${notEvaluatedControls}) ${breakdownEn}${unavailableNoteEn}`,
       { partial, partialSources: unavailableSources },
     )
   }
@@ -215,8 +235,8 @@ async function checkCfg01(): Promise<KisaCheckOutcome> {
     return makeOutcome(
       "warn",
       "compliance.kisa.reason.cfgUnevaluated",
-      `${leadKo} (실패 기록 없음 ${evaluatedPassControls}/${totalControls}, 수용 ${acceptedControls}, 조치가능 0건) ${breakdownKo}${unavailableNoteKo}`,
-      `${leadEn} (no failure recorded ${evaluatedPassControls}/${totalControls}, accepted ${acceptedControls}, actionable 0) ${breakdownEn}${unavailableNoteEn}`,
+      `${leadKo} (${passDetailKo}, 수용 ${acceptedControls}, 조치가능 0건) ${breakdownKo}${unavailableNoteKo}`,
+      `${leadEn} (${passDetailEn}, accepted ${acceptedControls}, actionable 0) ${breakdownEn}${unavailableNoteEn}`,
       { partial, partialSources: unavailableSources },
     )
   }
@@ -240,8 +260,8 @@ async function checkCfg01(): Promise<KisaCheckOutcome> {
   return makeOutcome(
     "pass",
     "compliance.kisa.reason.cfgClean",
-    `전 프레임워크 ${totalControls}개 컨트롤 평가 완료·조치가능 실패 없음 (실패 기록 없음 ${evaluatedPassControls}, 수용 ${acceptedControls}) ${breakdownKo}`,
-    `All ${totalControls} framework control(s) evaluated with 0 actionable failures (no failure recorded ${evaluatedPassControls}, accepted ${acceptedControls}) ${breakdownEn}`,
+    `전 프레임워크 ${totalControls}개 컨트롤 평가 완료·조치가능 실패 없음 (${passCleanKo}, 수용 ${acceptedControls}) ${breakdownKo}`,
+    `All ${totalControls} framework control(s) evaluated with 0 actionable failures (${passCleanEn}, accepted ${acceptedControls}) ${breakdownEn}`,
   )
 }
 

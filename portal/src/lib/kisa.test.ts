@@ -173,6 +173,53 @@ describe("KISA CFG-01 evaluated verdict", () => {
     expect(cfgPass?.status).toBe("pass")
     expect(cfgPass?.detail).toContain("10개 컨트롤 평가 완료")
   })
+
+  it("keeps benchmarkTestedPassCount separate from noFailureRecordedPassCount in CFG-01 ko and en detail text", async () => {
+    mockCache.clear()
+    mockGetComplianceFrameworks.mockResolvedValueOnce([
+      {
+        id: "k8s-cis-1.23",
+        title: "CIS",
+        totalControls: 116,
+        passCount: 95,
+        evaluatedPassCount: 74,
+        benchmarkTestedPassCount: 70,
+        benchmarkTestedFailCount: 5,
+        noFailureRecordedPassCount: 4,
+        notEvaluatedCount: 17,
+        failCount: 25,
+        actionableFailCount: 23,
+        acceptedFailCount: 2,
+        passRate: 95 / 116,
+        evaluatedPassRate: 74 / 116,
+        effectivePassRate: 76 / 116,
+      },
+      {
+        id: "k8s-nsa-1.0",
+        title: "NSA",
+        totalControls: 62,
+        passCount: 20,
+        evaluatedPassCount: 12,
+        benchmarkTestedPassCount: 0,
+        noFailureRecordedPassCount: 12,
+        notEvaluatedCount: 30,
+        failCount: 20,
+        actionableFailCount: 10,
+        acceptedFailCount: 10,
+        passRate: 20 / 62,
+        evaluatedPassRate: 12 / 62,
+        effectivePassRate: 22 / 62,
+      },
+    ])
+
+    const res = await getKisaControls()
+    const cfg = res.controls.find((c) => c.id === "KISA-CFG-01")
+    expect(cfg?.status).toBe("fail")
+    expect(cfg?.detail).toContain("테스트 통과(벤치마크) 70 · 실패 기록 없음 16 / 178")
+    expect(cfg?.detail).not.toContain("실패 기록 없음 86/178")
+    expect(cfg?.detailLocalized?.en).toContain("70 tested (benchmark) · 16 no failure recorded / 178")
+    expect(cfg?.detailLocalized?.en).not.toContain("no failure recorded 86/178")
+  })
 })
 
 it.each(["config", "rbac", "infra"])("G4 KISA CFG-01 fails on actionable %s findings without actionable framework controls", async (family) => {

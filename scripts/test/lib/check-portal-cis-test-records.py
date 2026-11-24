@@ -34,6 +34,8 @@ FILES = {
     "detail": ROOT / "portal/src/app/(dashboard)/compliance/frameworks/[id]/page.tsx",
     "rbac_yaml": ROOT / "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
     "kb_test": ROOT / "portal/src/lib/kube-bench.test.ts",
+    "kisa": ROOT / "portal/src/lib/kisa.ts",
+    "kisa_test": ROOT / "portal/src/lib/kisa.test.ts",
     "ui_test": ROOT / "portal/src/components/compliance/compliance-ui.test.tsx",
     "reg": ROOT / "scripts/test/regression-check-kakao.sh",
 }
@@ -59,6 +61,11 @@ def check(texts: dict[str, str]) -> list[str]:
         "nowMs - finishedMs > BENCHMARK_MAX_AGE_MS",
         "resultsByControlId.has(controlId)",
         "totals.pass !== counts.pass",
+        "if (validByNode.has(node))",
+        "validByNode.delete(node)",
+        "`duplicate kube-bench record for node ${node}`",
+        'if (top === "4") return "all-nodes"',
+        'if (scope === "control-plane" && role !== "master") continue',
         "configMapRes.data.metadata?.continue",
         '"benchmark_list_forbidden"',
         '"benchmark_stale"',
@@ -90,18 +97,21 @@ def check(texts: dict[str, str]) -> list[str]:
         if "sourceDisagreement" not in merge_body:
             errors.append("mergeCisControlWithBenchmark must record sourceDisagreement when tools disagree")
 
-    # 2. Compliance integration & partial non-caching
+    # 2. Compliance integration & partial non-caching & one-source-of-truth summary
     for needle in (
         "BENCHMARK_CONFIGMAP_LIST_PATH",
         "buildBenchmarkStore(",
         'item.spec.compliance.id === "k8s-cis-1.23"',
         "mergeCisControlWithBenchmark(ctrl, evalCtx.benchmarkStore)",
+        "export function summarizeComplianceControls(",
+        "summarizeComplianceControls(controls,",
         "partial: evalCtx.hasHttpError || evalCtx.benchmarkStore.listFailed",
         "if (!evalCtx.hasHttpError && !evalCtx.benchmarkStore.listFailed)",
-        "Math.max(failCount, detailFailControls)",
     ):
         if needle not in comp:
             errors.append(f"compliance.ts missing benchmark integration: {needle!r}")
+    if "benchmarkTestedFailCount = 0" in comp:
+        errors.append("compliance.ts must not hardcode benchmarkTestedFailCount = 0 in summary-only branch")
 
     # 3. Exact benchmark acceptance schema & matcher (empty in this lane, no pattern matching)
     try:
@@ -143,28 +153,58 @@ def check(texts: dict[str, str]) -> list[str]:
     if "resources: [nodes, pods, persistentvolumeclaims, namespaces, services, events, configmaps]" not in texts["rbac_yaml"]:
         errors.append("narwhal-portal-k8s.yaml must retain existing read-only configmaps/nodes permission")
 
-    # 5. UI separation & i18n
+    # 5. UI & KISA CFG-01 separation & i18n
     for ui_key in ("counters", "grid", "detail"):
         if "benchmarkTestedPassCount" not in texts[ui_key]:
             errors.append(f"{ui_key} must display benchmarkTestedPassCount separately from noFailureRecordedPassCount")
+    if "(acc, f) => acc + (f.benchmarkTestedPassCount ?? 0)" not in texts["counters"]:
+        errors.append("failure-counters.tsx must compute benchmarkTestedPassTotal from f.benchmarkTestedPassCount ?? 0")
+    if "compliance.counter.frameworksBreakdownWithBenchmark" not in texts["counters"]:
+        errors.append("failure-counters.tsx must use compliance.counter.frameworksBreakdownWithBenchmark when benchmark passes exist")
+    if "passed: String(evaluatedPassTotal)" in texts["counters"]:
+        errors.append("failure-counters.tsx must not pass evaluatedPassTotal into frameworksBreakdown")
+    for needle in (
+        "benchmarkTestedPassControls",
+        "noFailureRecordedControls",
+        "(acc, f) => acc + (f.benchmarkTestedPassCount ?? 0)",
+    ):
+        if needle not in texts["kisa"]:
+            errors.append(f"kisa.ts missing separate benchmark vs no-failure count: {needle!r}")
+    for needle in (
+        "compliance.framework.benchmarkSourceLine",
+        "compliance.framework.sourceDisagreement",
+        "compliance.framework.benchmarkActual",
+        "compliance.framework.benchmarkExpected",
+        "compliance.counter.frameworksBreakdownWithBenchmark",
+        "compliance.counter.frameworksPassRateWithBenchmark",
+        "compliance.framework.evaluatedPassRateWithBenchmark",
+    ):
+        if needle not in texts["i18n"]:
+            errors.append(f"i18n missing {needle!r}")
     for needle in (
         "compliance.framework.benchmarkSourceLine",
         "compliance.framework.sourceDisagreement",
         "compliance.framework.benchmarkActual",
         "compliance.framework.benchmarkExpected",
     ):
-        if needle not in texts["detail"] or needle not in texts["i18n"]:
-            errors.append(f"detail/i18n missing {needle!r}")
+        if needle not in texts["detail"]:
+            errors.append(f"detail missing {needle!r}")
 
     # 6. Behavioral tests & R402 wiring
     for needle in (
         "fails closed (never passed) on $name",
+        "handles two nodes where one lacks a record: control-plane passes when worker lacks record, node-scoped 4.x stays not_evaluated; missing control-plane node fails both",
+        "rejects duplicate kube-bench ConfigMaps for the same node as benchmark_malformed (never passed)",
+        "derives summary counters from merged controls even when CCR detailReport.results is absent (1.1.12 FAIL)",
+        "maintains counter partition invariant across real fixture and randomized Trivy/benchmark combinations",
         "handles ConfigMap list 403 by failing closed without caching while keeping Trivy failures failed",
         "keeps control failed with sourceDisagreement when Trivy passed (no failure recorded) but kube-bench failed",
     ):
         if needle not in texts["kb_test"]:
             errors.append(f"kube-bench.test.ts missing behavioral test: {needle!r}")
 
+    if "keeps benchmarkTestedPassCount separate from noFailureRecordedPassCount in CFG-01 ko and en detail text" not in texts["kisa_test"]:
+        errors.append("kisa.test.ts missing CFG-01 split test")
     if "70 tested (benchmark) · 4 no failure recorded" not in texts["ui_test"]:
         errors.append("compliance-ui.test.tsx missing benchmark UI separation assertion")
 
@@ -187,7 +227,12 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("pattern-based benchmark acceptance", "matcher", "const exactNodeRule = node !== undefined ? rules.find((r) => r.node === node) : undefined", "const exactNodeRule = node !== undefined ? rules.find((r) => node.includes(r.node ?? \"\")) : undefined"),
     ("add benchmark acceptance rule in this lane", "rules", '"benchmark": []', '"benchmark": [{"id":"x"}]'),
     ("cache response on kube-bench ConfigMap list 403", "compliance", "if (!evalCtx.hasHttpError && !evalCtx.benchmarkStore.listFailed)", "if (!evalCtx.hasHttpError)"),
+    ("remove duplicate-node ConfigMap validation", "kube_bench", "if (validByNode.has(node)) {", "if (false) {"),
+    ("exclude workers from section 4.x coverage", "kube_bench", 'if (top === "4") return "all-nodes"', 'if (top === "4") return "control-plane"'),
+    ("exclude non-master nodes unconditionally in node loop", "kube_bench", 'if (scope === "control-plane" && role !== "master") continue', 'if (role !== "master") continue'),
     ("conflate tested and no-failure-recorded in FailureCounters", "counters", "f.benchmarkTestedPassCount ?? 0", "0"),
+    ("conflate tested and no-failure-recorded in FailureCounters breakdown", "counters", "compliance.counter.frameworksBreakdownWithBenchmark", "compliance.counter.frameworksBreakdown"),
+    ("conflate tested and no-failure-recorded in KISA CFG-01", "kisa", "f.benchmarkTestedPassCount ?? 0", "0"),
     ("revert frameworks cache key to v3", "keys", 'complianceFrameworksList: () => "compliance:v4:frameworks:list"', 'complianceFrameworksList: () => "compliance:v3:frameworks:list"'),
     ("drop R402 wiring in regression-check-kakao.sh", "reg", "check R402 ", "check R9999 "),
 ]

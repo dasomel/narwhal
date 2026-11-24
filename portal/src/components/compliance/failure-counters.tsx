@@ -92,7 +92,7 @@ export function FailureCounters({ summary, locale }: Props) {
     0,
   )
   const noFailureRecordedTotal = summary.frameworks.reduce(
-    (acc, f) => acc + (f.noFailureRecordedPassCount ?? (f.evaluatedPassCount ?? 0)),
+    (acc, f) => acc + (f.noFailureRecordedPassCount ?? Math.max(0, (f.evaluatedPassCount ?? 0) - (f.benchmarkTestedPassCount ?? 0))),
     0,
   )
   const notEvaluatedTotal = summary.frameworks.reduce(
@@ -193,7 +193,11 @@ export function FailureCounters({ summary, locale }: Props) {
                   </span>
                 )}
               </div>
-              <div className="text-xs font-medium text-muted-foreground mt-1">{t(locale, labelKey)}</div>
+              <div className="text-xs font-medium text-muted-foreground mt-1">
+                {key === "frameworks" && benchmarkTestedPassTotal > 0
+                  ? t(locale, "compliance.counter.frameworksPassRateWithBenchmark")
+                  : t(locale, labelKey)}
+              </div>
               {!unavailable && key === "configAudit" && (unacceptedLowTotal > 0 || acceptedLowTotal > 0 || acceptedSystemTotal > 0 || droppedReports > 0) && (
                 <div className="text-[0.7rem] text-muted-foreground/80 mt-0.5 space-y-0.5">
                   <div>
@@ -240,12 +244,20 @@ export function FailureCounters({ summary, locale }: Props) {
                   </div>
                   {(acceptedControlsTotal > 0 || rawControlsTotal !== actionableControlsTotal || notEvaluatedTotal > 0) && (
                     <div>
-                      {t(locale, "compliance.counter.frameworksBreakdown", {
-                        passed: String(evaluatedPassTotal),
-                        notEvaluated: String(notEvaluatedTotal),
-                        actionable: String(actionableControlsTotal),
-                        accepted: String(acceptedControlsTotal),
-                      })}
+                      {benchmarkTestedPassTotal > 0
+                        ? t(locale, "compliance.counter.frameworksBreakdownWithBenchmark", {
+                            tested: String(benchmarkTestedPassTotal),
+                            noFailure: String(noFailureRecordedTotal),
+                            notEvaluated: String(notEvaluatedTotal),
+                            actionable: String(actionableControlsTotal),
+                            accepted: String(acceptedControlsTotal),
+                          })
+                        : t(locale, "compliance.counter.frameworksBreakdown", {
+                            passed: String(noFailureRecordedTotal),
+                            notEvaluated: String(notEvaluatedTotal),
+                            actionable: String(actionableControlsTotal),
+                            accepted: String(acceptedControlsTotal),
+                          })}
                       {rawControlsTotal !== actionableControlsTotal
                         ? ` (${t(locale, "compliance.framework.rawChecks", { count: String(rawControlsTotal) })})`
                         : ""}

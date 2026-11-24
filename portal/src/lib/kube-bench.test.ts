@@ -604,4 +604,259 @@ describe("kube-bench CIS test records", () => {
       },
     })
   })
+
+  it("rejects duplicate kube-bench ConfigMaps for the same node as benchmark_malformed (never passed)", async () => {
+    const recA = cloneTrimmedRecord({ node: "narwhal-master-1" })
+    const recB = cloneTrimmedRecord({ node: "narwhal-master-1" })
+    setupRoutes({
+      nodes: [{ name: "narwhal-master-1", controlPlane: true }],
+      controls: [
+        { id: "1.1.1", name: "CP file perms", severity: "HIGH", checks: [{ id: "AVD-KCV-0048" }] },
+        { id: "4.1.1", name: "kubelet service perms", severity: "HIGH", checks: [{ id: "AVD-KCV-0069" }] },
+      ],
+      benchmarkConfigMaps: [
+        makeConfigMap("cis-bench-m1-a", recA),
+        makeConfigMap("cis-bench-m1-b", recB),
+      ],
+    })
+
+    const detail = await getComplianceFrameworkDetail("k8s-cis-1.23")
+    expect(detail!.evaluatedPassCount).toBe(0)
+    expect(detail!.benchmarkTestedPassCount).toBe(0)
+    expect(detail!.notEvaluatedCount).toBe(2)
+    for (const ctrl of detail!.controls) {
+      expect(ctrl).toMatchObject({
+        evaluationState: "not_evaluated",
+        notEvaluatedReason: "benchmark_malformed",
+      })
+    }
+  })
+
+  it("derives summary counters from merged controls even when CCR detailReport.results is absent (1.1.12 FAIL)", async () => {
+    const rec = cloneTrimmedRecord({
+      totals: { pass: 0, fail: 1, warn: 0, info: 0 },
+      results: [
+        {
+          controlId: "1.1.12",
+          section: "1.1",
+          text: "etcd data dir ownership",
+          status: "FAIL",
+          scored: true,
+          type: "automated",
+          actualValue: "root:root",
+          expectedResult: "etcd:etcd",
+          reason: "",
+        },
+      ],
+    })
+    setupRoutes({
+      controls: [
+        { id: "1.1.12", name: "etcd data dir ownership", severity: "LOW", checks: [{ id: "AVD-KCV-0059" }] },
+      ],
+      benchmarkConfigMaps: [makeConfigMap("cis-bench-latest", rec)],
+    })
+    // Strip status.detailReport from CCR so only status.summary (failCount=0) + spec.controls exist.
+    const ccrPath = TRIVY_PREFIX + "clustercompliancereports"
+    const origRead = readMock.getMockImplementation()!
+    readMock.mockImplementation(async (res: { path: string }) => {
+      if (res.path === ccrPath) {
+        return {
+          items: [
+            {
+              metadata: { name: "k8s-cis-1.23", creationTimestamp: "2026-11-24T06:00:00Z" },
+              spec: {
+                compliance: {
+                  id: "k8s-cis-1.23",
+                  title: "CIS Kubernetes Benchmarks v1.23",
+                  controls: [
+                    { id: "1.1.12", name: "etcd data dir ownership", severity: "LOW", checks: [{ id: "AVD-KCV-0059" }] },
+                  ],
+                },
+              },
+              status: { updateTimestamp: "2026-11-24T06:00:00Z", summary: { passCount: 1, failCount: 0 } },
+            },
+          ],
+        }
+      }
+      return origRead(res)
+    })
+
+    const detail = await getComplianceFrameworkDetail("k8s-cis-1.23")
+    const frameworks = await getComplianceFrameworks()
+    const summary = await getComplianceSummary()
+    for (const fw of [detail!, frameworks[0], summary.frameworks[0]]) {
+      expect(fw).toMatchObject({
+        totalControls: 1,
+        failCount: 1,
+        actionableFailCount: 1,
+        acceptedFailCount: 0,
+        benchmarkTestedFailCount: 1,
+        benchmarkTestedPassCount: 0,
+        noFailureRecordedPassCount: 0,
+        evaluatedPassCount: 0,
+        notEvaluatedCount: 0,
+      })
+    }
+    expect(detail!.controls[0]).toMatchObject({
+      id: "1.1.12",
+      evaluationState: "failed",
+      actionableFailCount: 1,
+      testedByBenchmark: true,
+    })
+  })
+
+  it("maintains counter partition invariant across real fixture and randomized Trivy/benchmark combinations", async () => {
+    const recount = (detail: NonNullable<Awaited<ReturnType<typeof getComplianceFrameworkDetail>>>) => {
+      const c = detail.controls
+      const passedByTest = c.filter((x) => x.evaluationState === "passed" && x.testedByBenchmark === true).length
+      const noFailureRecorded = c.filter((x) => x.evaluationState === "passed" && x.testedByBenchmark !== true).length
+      const failedActionable = c.filter((x) => (x.actionableFailCount ?? 0) > 0).length
+      const failedAccepted = c.filter((x) => x.accepted === true).length
+      const notEvaluated = c.filter((x) => x.evaluationState === "not_evaluated").length
+      const benchFailed = c.filter((x) => x.evaluationState === "failed" && x.benchmarkEvidence?.verdict === "failed").length
+      return { passedByTest, noFailureRecorded, failedActionable, failedAccepted, notEvaluated, benchFailed }
+    }
+
+    const assertMatchesDetail = (
+      fw: NonNullable<Awaited<ReturnType<typeof getComplianceFrameworks>>>[number],
+      detail: NonNullable<Awaited<ReturnType<typeof getComplianceFrameworkDetail>>>,
+    ) => {
+      const r = recount(detail)
+      expect(r.passedByTest + r.noFailureRecorded + r.failedActionable + r.failedAccepted + r.notEvaluated).toBe(fw.totalControls)
+      expect(fw.benchmarkTestedPassCount).toBe(r.passedByTest)
+      expect(fw.noFailureRecordedPassCount).toBe(r.noFailureRecorded)
+      expect(fw.evaluatedPassCount).toBe(r.passedByTest + r.noFailureRecorded)
+      expect(fw.actionableFailCount).toBe(r.failedActionable)
+      expect(fw.acceptedFailCount).toBe(r.failedAccepted)
+      expect(fw.notEvaluatedCount).toBe(r.notEvaluated)
+      expect(fw.benchmarkTestedFailCount).toBe(r.benchFailed)
+      expect(fw.failCount).toBe(r.failedActionable + r.failedAccepted)
+    }
+
+    // 1. Real trimmed fixture (both with and without detailReport.results)
+    const trimmed = cloneTrimmedRecord()
+    const trimmedControls = trimmed.results.map((r) => ({
+      id: r.controlId,
+      name: r.text,
+      severity: "HIGH",
+      checks:
+        r.controlId === "3.1.1" || r.controlId === "3.2.1"
+          ? undefined
+          : r.controlId === "1.3.6"
+            ? [{ id: "AVD-KCV-0036" }]
+            : r.controlId === "5.2.2"
+              ? [{ id: "AVD-KSV-0017" }]
+              : [{ id: "AVD-KCV-0048" }],
+    }))
+    trimmedControls.push({ id: "5.1.8", name: "RBAC clean", severity: "HIGH", checks: [{ id: "AVD-KSV-0043" }] })
+    setupRoutes({
+      controls: trimmedControls,
+      benchmarkConfigMaps: [makeConfigMap("cis-bench-trimmed", trimmed)],
+      rbacItems: [{
+        metadata: { namespace: "dev", name: "role-clean", labels: { "trivy-operator.resource.kind": "Role", "trivy-operator.resource.name": "clean" } },
+        report: { summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0 }, checks: [] },
+      }],
+      configAuditItems: [{
+        metadata: { namespace: "security-system", name: "daemonset-falco", labels: { "trivy-operator.resource.kind": "DaemonSet", "trivy-operator.resource.name": "falco" } },
+        report: { summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 }, checks: [{ checkID: "KSV017", success: false, severity: "HIGH", title: "Privileged" }] },
+      }],
+    })
+    assertMatchesDetail((await getComplianceFrameworks())[0], (await getComplianceFrameworkDetail("k8s-cis-1.23"))!)
+
+    // 2. Deterministic seeded randomized combinations of Trivy + kube-bench states (with & without detailReport)
+    let seed = 42
+    const nextRand = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0
+      return seed / 0x100000000
+    }
+    for (let trial = 0; trial < 20; trial++) {
+      cache.clear()
+      const specControls = [
+        { id: "1.1.1", name: "C1", severity: "HIGH", checks: [{ id: "AVD-KCV-0048" }] },
+        { id: "1.3.6", name: "C2", severity: "HIGH", checks: [{ id: "AVD-KCV-0036" }] },
+        { id: "4.1.1", name: "C3", severity: "HIGH", checks: [{ id: "AVD-KCV-0069" }] },
+        { id: "5.1.8", name: "C4", severity: "HIGH", checks: [{ id: "AVD-KSV-0043" }] },
+        { id: "5.2.2", name: "C5", severity: "HIGH", checks: [{ id: "AVD-KSV-0017" }] },
+        { id: "5.7.1", name: "C6", severity: "MEDIUM", checks: [{ id: "AVD-KSV-0014" }] },
+      ]
+      const statuses = ["PASS", "FAIL", "WARN", "INFO", "OMIT"] as const
+      const kbResults = specControls
+        .map((c) => {
+          const st = statuses[Math.floor(nextRand() * statuses.length)]
+          if (st === "OMIT") return null
+          return {
+            controlId: c.id,
+            section: c.id.split(".").slice(0, 2).join("."),
+            text: c.name,
+            status: st,
+            scored: st !== "WARN",
+            type: (st === "WARN" ? "manual" : "automated") as "manual" | "automated",
+            actualValue: st === "FAIL" ? "bad" : "ok",
+            expectedResult: "ok",
+            reason: "",
+          }
+        })
+        .filter((x): x is NonNullable<typeof x> => x !== null)
+      const totals = {
+        pass: kbResults.filter((r) => r.status === "PASS").length,
+        fail: kbResults.filter((r) => r.status === "FAIL").length,
+        warn: kbResults.filter((r) => r.status === "WARN").length,
+        info: kbResults.filter((r) => r.status === "INFO").length,
+      }
+      const configAuditItems: unknown[] = []
+      if (nextRand() < 0.5) {
+        configAuditItems.push({
+          metadata: { namespace: "security-system", name: "daemonset-falco", labels: { "trivy-operator.resource.kind": "DaemonSet", "trivy-operator.resource.name": "falco" } },
+          report: { summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 }, checks: [{ checkID: "KSV017", success: false, severity: "HIGH", title: "Privileged" }] },
+        })
+      }
+      if (nextRand() < 0.5) {
+        configAuditItems.push({
+          metadata: { namespace: "dev", name: "deployment-app", labels: { "trivy-operator.resource.kind": "Deployment", "trivy-operator.resource.name": "app" } },
+          report: nextRand() < 0.5
+            ? { summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 }, checks: [{ checkID: "KSV014", success: false, severity: "HIGH", title: "RO" }] }
+            : { summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0 }, checks: [] },
+        })
+      }
+      const rbacItems = nextRand() < 0.5 ? [{
+        metadata: { namespace: "dev", name: "role-clean", labels: { "trivy-operator.resource.kind": "Role", "trivy-operator.resource.name": "clean" } },
+        report: { summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0 }, checks: [] },
+      }] : []
+      const infraItems = nextRand() < 0.5 ? [{
+        metadata: { namespace: "kube-system", name: "pod-cm", labels: { "trivy-operator.resource.kind": "Pod", "trivy-operator.resource.name": "cm" } },
+        report: { summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 }, checks: [{ checkID: "KCV0036", success: false, severity: "HIGH", title: "Rotate" }] },
+      }] : []
+
+      setupRoutes({
+        controls: specControls,
+        configAuditItems,
+        rbacItems,
+        infraItems,
+        benchmarkConfigMaps: kbResults.length > 0
+          ? [makeConfigMap(`cis-bench-t${trial}`, cloneTrimmedRecord({ totals, results: kbResults }))]
+          : [],
+      })
+      const omitDetail = trial % 2 === 1
+      if (omitDetail) {
+        const ccrPath = TRIVY_PREFIX + "clustercompliancereports"
+        const orig = readMock.getMockImplementation()!
+        readMock.mockImplementation(async (res: { path: string }) => {
+          if (res.path === ccrPath) {
+            return {
+              items: [{
+                metadata: { name: "k8s-cis-1.23", creationTimestamp: "2026-11-24T06:00:00Z" },
+                spec: { compliance: { id: "k8s-cis-1.23", title: "CIS", controls: specControls } },
+                status: { updateTimestamp: "2026-11-24T06:00:00Z", summary: { passCount: specControls.length, failCount: 0 } },
+              }],
+            }
+          }
+          return orig(res)
+        })
+      }
+
+      const fwList = await getComplianceFrameworks()
+      const fwDetail = await getComplianceFrameworkDetail("k8s-cis-1.23")
+      assertMatchesDetail(fwList[0], fwDetail!)
+    }
+  })
 })

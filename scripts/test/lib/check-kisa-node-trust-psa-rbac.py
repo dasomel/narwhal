@@ -31,6 +31,7 @@ Static, behavioral (bash 3.2 + default bash), and mutation-verified check for:
 """
 
 import base64
+from datetime import datetime, timedelta, timezone
 import os
 import re
 import shutil
@@ -300,8 +301,16 @@ def check_behavior(texts: dict[str, str]) -> list[str]:
         future_ca = t / "future.crt"
         key1 = generate_cert(ca1, "Narwhal Test CA 1", keep_key=True)
         generate_cert(ca2, "Narwhal Test CA 2")
-        generate_cert(expired_ca, "Narwhal Expired CA", "20190101000000Z", "20200101000000Z")
-        generate_cert(future_ca, "Narwhal Future CA", "20980101000000Z", "20990101000000Z")
+        now = datetime.now(timezone.utc)
+        fmt = "%Y%m%d%H%M%SZ"
+        generate_cert(
+            expired_ca, "Narwhal Expired CA",
+            (now - timedelta(days=365)).strftime(fmt), (now - timedelta(days=30)).strftime(fmt),
+        )
+        generate_cert(
+            future_ca, "Narwhal Future CA",
+            (now + timedelta(days=30)).strftime(fmt), (now + timedelta(days=365)).strftime(fmt),
+        )
         assert key1 is not None
 
         for idx, sh in enumerate(shells):

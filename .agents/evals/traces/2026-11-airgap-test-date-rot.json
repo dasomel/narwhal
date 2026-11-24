@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-airgap-test-date-rot-20261124",
+  "task": "Stop the air-gap license-gate test and two CA-validity checks from failing as the calendar advances (make test broke on main on 2026-11-24)",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/tests/test_upgrade_license_gate.py",
+      "scripts/test/lib/check-push-security-db-ca.py",
+      "scripts/test/lib/check-kisa-node-trust-psa-rbac.py",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-11-airgap-test-date-rot.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Test fixtures only. The bundle validator, its 90-day maximum age and the promotion gate are not changed."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "On unmodified main and on two unrelated branches make test failed R82c and R86c on 2026-11-24. The license-gate test passed a fixture with created_at 2026-08-25 to the real validator, which rejects bundles older than 90 days. R86c runs the whole scripts/airgap/tests directory and failed for the same test.",
+      "evidence": [
+        "test:make test (main, 2026-11-24) -> passed 503 failed 3; regressions: R19 R82c R86c (R19 is a stale local bundle directory in that checkout, not this defect)",
+        "test:python3 -m unittest scripts/airgap/tests/test_upgrade_license_gate.py -> AssertionError: 1 != 0 : ERROR: bundle is 91d old (max 90d): created_at=2026-08-25T00:00:00Z"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "test_upgrade_license_gate.py builds created_at relative to the current time and adds a test that a 91-day-old bundle is rejected. check-push-security-db-ca.py and check-kisa-node-trust-psa-rbac.py generate expired and not-yet-valid certificates with offsets relative to now instead of fixed years (2030, 2098)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static regression suite and the air-gap unit tests on the author's macOS host; no cluster involved.",
+      "summary": "The suite passes again, and the stale-bundle rejection still works with the reference time moved one year forward.",
+      "evidence": [
+        "test:make test -> passed 504 failed 0 warnings 3",
+        "test:python3 -m unittest discover -s scripts/airgap/tests -> Ran 83 tests OK",
+        "test:verify-upgrade-bundle.py --now 2027-11-24T00:15:08Z --max-age-days 90 -> fresh bundle rc=0, 91-day-old bundle rc=1",
+        "test:check-push-security-db-ca.py --mutation-verify -> 11 mutations caught",
+        "test:check-kisa-node-trust-psa-rbac.py --mutation-verify -> 32 mutations rejected",
+        "test:make validate -> exit 0",
+        "test:make lint -> shellcheck passed; yamllint exited non-zero on pre-existing line-length errors in untouched files"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The three fixtures no longer compare a fixed timestamp against the wall clock. Not verified by the author: the certificate fixtures on Linux OpenSSL before CI ran; the independent reviewer noted that macOS system LibreSSL 3.3.6 lacks req -not_before/-not_after (pre-existing; the author host uses a newer OpenSSL)."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified within the stated scope (test fixtures; production gates unchanged)"
+    }
+  ]
+}

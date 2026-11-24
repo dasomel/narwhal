@@ -87,6 +87,14 @@ export function FailureCounters({ summary, locale }: Props) {
     (acc, f) => acc + (f.evaluatedPassCount ?? 0),
     0,
   )
+  const benchmarkTestedPassTotal = summary.frameworks.reduce(
+    (acc, f) => acc + (f.benchmarkTestedPassCount ?? 0),
+    0,
+  )
+  const noFailureRecordedTotal = summary.frameworks.reduce(
+    (acc, f) => acc + (f.noFailureRecordedPassCount ?? (f.evaluatedPassCount ?? 0)),
+    0,
+  )
   const notEvaluatedTotal = summary.frameworks.reduce(
     (acc, f) => acc + (f.notEvaluatedCount ?? Math.max(0, f.totalControls - f.failCount)),
     0,
@@ -247,7 +255,16 @@ export function FailureCounters({ summary, locale }: Props) {
                         })}`}
                     </div>
                   )}
-                  <div>{t(locale, "compliance.framework.noFailureRecordedLabel")}</div>
+                  {benchmarkTestedPassTotal > 0 ? (
+                    <div>
+                      {t(locale, "compliance.counter.frameworksPassSplit", {
+                        tested: String(benchmarkTestedPassTotal),
+                        noFailure: String(noFailureRecordedTotal),
+                      })}
+                    </div>
+                  ) : (
+                    <div>{t(locale, "compliance.framework.noFailureRecordedLabel")}</div>
+                  )}
                 </div>
               )}
             </div>

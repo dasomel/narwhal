@@ -39,7 +39,7 @@ export type AcceptedScope = "system" | "builtin" | "accept" | "upstream" | "mixe
 
 export interface UnusedAcceptanceRule {
   id: string
-  domain: "configAudit" | "rbac" | "infra"
+  domain: "configAudit" | "rbac" | "infra" | "benchmark"
   scope: "cluster" | "namespace"
   namespace: string
   kind: string
@@ -151,6 +151,42 @@ export type ControlNotEvaluatedReason =
   | "no_evidence_in_report"
   | "absent_from_report"
   | "coverage_unknown"
+  | "benchmark_missing"
+  | "benchmark_stale"
+  | "benchmark_error"
+  | "benchmark_malformed"
+  | "benchmark_list_forbidden"
+  | "benchmark_info"
+
+export interface BenchmarkControlFinding {
+  node: string
+  status: "PASS" | "FAIL" | "WARN" | "INFO"
+  actualValue?: string
+  expectedResult?: string
+  reason?: string
+  accepted?: boolean
+  acceptedRuleId?: string
+  acceptedReasonKey?: string
+  acceptedReason?: string
+  acceptedOwner?: string
+  acceptedReviewedAt?: string
+}
+
+export interface BenchmarkSourceDisagreement {
+  trivyVerdict: ControlEvaluationState
+  benchmarkVerdict: ControlEvaluationState
+}
+
+export interface BenchmarkControlEvidence {
+  tool: string
+  toolVersion: string
+  benchmarkId: string
+  nodeCount: number
+  finishedAt: string
+  verdict: ControlEvaluationState
+  sourceDisagreement?: BenchmarkSourceDisagreement
+  failFindings?: BenchmarkControlFinding[]
+}
 
 export interface ComplianceFramework {
   id: string
@@ -159,8 +195,14 @@ export interface ComplianceFramework {
   passCount: number
   /** Alias for raw Trivy control pass count (`status.summary.passCount`). */
   rawPassCount?: number
-  /** Controls with no failure recorded across catalogued check IDs on in-scope reports (scanner records failures only; excludes not-evaluated controls). */
+  /** Controls with verified pass (tested by benchmark OR no failure recorded across catalogued check IDs on in-scope reports; excludes not-evaluated controls). */
   evaluatedPassCount?: number
+  /** Controls passed by active benchmark test execution (e.g. kube-bench PASS on all expected nodes with zero Trivy failures). */
+  benchmarkTestedPassCount?: number
+  /** Controls where active benchmark test execution recorded FAIL (may overlap with Trivy failures). */
+  benchmarkTestedFailCount?: number
+  /** Controls in passed state backed only by Trivy failure-only inference (no failure recorded; not actively tested by benchmark). */
+  noFailureRecordedPassCount?: number
   /** Controls that could not be evaluated on this cluster (not in catalogue, excluded scope, unsupported kind, absent node type, no report of family, manual/unlinked IDs, or unknown coverage). */
   notEvaluatedCount?: number
   failCount: number
@@ -175,7 +217,7 @@ export interface ComplianceFramework {
   totalControls: number
   /** Raw Trivy control pass rate: passCount / totalControls. */
   passRate: number
-  /** No-failure-recorded control rate: evaluatedPassCount / totalControls (scanner records failures only). */
+  /** Evaluated pass rate: evaluatedPassCount / totalControls (benchmark-tested passes + no-failure-recorded checks). */
   evaluatedPassRate?: number
   /** Exception-adjusted rate: (evaluatedPassCount + acceptedFailCount) / totalControls. Never counts not-evaluated controls as passed. */
   effectivePassRate?: number
@@ -199,6 +241,10 @@ export interface ComplianceControl {
   droppedFailCount?: number
   /** Three-state evaluation classification for this control. */
   evaluationState?: ControlEvaluationState
+  /** True when the control was actively tested by a benchmark runner (e.g. kube-bench) rather than inferred from failure-only absence. */
+  testedByBenchmark?: boolean
+  /** Active benchmark test evidence summary (e.g. kube-bench v0.16.0, node count, finishedAt, FAIL excerpts, source disagreement). */
+  benchmarkEvidence?: BenchmarkControlEvidence
   /** Why a control was classified as `not_evaluated`. */
   notEvaluatedReason?: ControlNotEvaluatedReason
   /** Human/diagnostic context for `not_evaluated` (e.g. excluded namespace, unsupported kind, missing node type). */

@@ -15,6 +15,13 @@ import {
 } from "./compliance-accepted"
 import { getCatalogueCheck, resolveCanonicalCheckId, type TrivyCheckCatalogueEntry } from "./trivy-check-catalogue"
 import {
+  BENCHMARK_CONFIGMAP_LIST_PATH,
+  buildBenchmarkStore,
+  mergeCisControlWithBenchmark,
+  type BenchmarkStore,
+  type RawConfigMapList,
+} from "./kube-bench"
+import {
   sumCheckSummary,
   type AcceptedClass,
   type AcceptedScope,
@@ -90,6 +97,14 @@ export class ComplianceDetailAmbiguousError extends Error {
   }
 }
 
+class K8sHttpError extends Error {
+  readonly status: number
+  constructor(status: number, statusText: string, path: string) {
+    super(`K8s API ${status} ${statusText} for ${path}`)
+    this.status = status
+  }
+}
+
 async function complianceK8sFetch<T>(path: string): Promise<T> {
   const apiServer = getK8sApiServer()
   const headers: Record<string, string> = { "Content-Type": "application/json" }
@@ -99,19 +114,23 @@ async function complianceK8sFetch<T>(path: string): Promise<T> {
   }
   const res = await fetchWithPolicy(`${apiServer}${path}`, { headers }, { ...K8S_POLICY, timeoutMs: 60_000 })
   if (!res.ok) {
-    throw new Error(`K8s API ${res.status} ${res.statusText} for ${path}`)
+    throw new K8sHttpError(res.status, res.statusText, path)
   }
   return readJsonWithPolicy<T>(res)
 }
 
-type TryFetchResult<T> = { ok: true; data: T } | { ok: false; error: string }
+type TryFetchResult<T> = { ok: true; data: T } | { ok: false; error: string; status?: number }
 
 async function tryComplianceK8sFetch<T>(path: string): Promise<TryFetchResult<T>> {
   try {
     const data = await complianceK8sFetch<T>(path)
     return { ok: true, data }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      ...(err instanceof K8sHttpError ? { status: err.status } : {}),
+    }
   }
 }
 
@@ -1296,6 +1315,7 @@ interface FrameworkEvalContext {
   hasInfraReports: boolean | "unknown"
   nodeRoles: ReadonlyMap<string, "master" | "worker">
   evidenceReports: { config: readonly RawAuditReport[]; rbac: readonly RawAuditReport[]; infra: readonly RawAuditReport[] }
+  benchmarkStore: BenchmarkStore
   operatorConfigError: boolean
   hasHttpError: boolean
   failedAuxSources: string[]
@@ -1405,6 +1425,7 @@ function buildFrameworkEvalContext(opts: {
   nodesRes: TryFetchResult<RawNodeList>
   operatorDeployRes: TryFetchResult<RawDeployment>
   trivyConfigRes: TryFetchResult<RawConfigMap>
+  benchmarkCmRes: TryFetchResult<RawConfigMapList>
   rsOk: boolean
 }): FrameworkEvalContext {
   const {
@@ -1417,6 +1438,7 @@ function buildFrameworkEvalContext(opts: {
     nodesRes,
     operatorDeployRes,
     trivyConfigRes,
+    benchmarkCmRes,
     rsOk,
   } = opts
 
@@ -1514,9 +1536,16 @@ function buildFrameworkEvalContext(opts: {
     hasWorkerNodes = workerCount > 0
   }
 
+  const benchmarkStore = buildBenchmarkStore({
+    configMapRes: benchmarkCmRes,
+    nodesAvailable: nodesRes.ok,
+    clusterNodes: nodeRoleByName,
+  })
+
   return {
     nodeRoles: nodeRoleByName,
     evidenceReports: { config: configItems, rbac: rbacItems, infra: infraItems },
+    benchmarkStore,
     excludedNamespaces,
     targetNamespaces,
     kubeSystemExcluded,
@@ -2099,12 +2128,20 @@ function buildComplianceFrameworkData(
     }))
   }
 
+  if (item.spec.compliance.id === "k8s-cis-1.23") {
+    controls = controls.map((ctrl) => mergeCisControlWithBenchmark(ctrl, evalCtx.benchmarkStore))
+  }
+
   let actionableFailCount: number
   let acceptedFailCount: number
   let droppedFailCount: number
   let droppedCheckCount: number
   let evaluatedPassCount: number
+  let benchmarkTestedPassCount: number
+  let benchmarkTestedFailCount: number
+  let noFailureRecordedPassCount: number
   let notEvaluatedCount: number
+  let effectiveFailCount = failCount
   let unaccountedFailTotal = 0
 
   const totalControls = Math.max(controls.length, specControls.length) || passCount + failCount
@@ -2123,11 +2160,15 @@ function buildComplianceFrameworkData(
     // Fail closed if summary.failCount exceeds failing controls present in detailReport.results.
     const unaccountedFail = Math.max(0, failCount - detailFailControls)
     unaccountedFailTotal = unaccountedFail
+    effectiveFailCount = Math.max(failCount, detailFailControls)
     actionableFailCount = detailActionableFail + unaccountedFail
     acceptedFailCount = detailAcceptedFail
     droppedFailCount = detailDroppedOnlyFail
     droppedCheckCount = controls.reduce((acc, c) => acc + (c.droppedFailCount ?? 0), 0)
     evaluatedPassCount = controls.filter((c) => c.evaluationState === "passed").length
+    benchmarkTestedPassCount = controls.filter((c) => c.evaluationState === "passed" && c.testedByBenchmark === true).length
+    benchmarkTestedFailCount = controls.filter((c) => c.evaluationState === "failed" && c.benchmarkEvidence?.verdict === "failed").length
+    noFailureRecordedPassCount = controls.filter((c) => c.evaluationState === "passed" && c.testedByBenchmark !== true).length
     notEvaluatedCount = controls.filter((c) => c.evaluationState === "not_evaluated").length
   } else {
     // reportType=summary lacks per-check targets to verify exceptions or control evaluation — fail closed.
@@ -2136,6 +2177,9 @@ function buildComplianceFrameworkData(
     droppedFailCount = 0
     droppedCheckCount = 0
     evaluatedPassCount = 0
+    benchmarkTestedPassCount = 0
+    benchmarkTestedFailCount = 0
+    noFailureRecordedPassCount = 0
     notEvaluatedCount = Math.max(0, totalControls - failCount)
   }
 
@@ -2151,8 +2195,11 @@ function buildComplianceFrameworkData(
     passCount,
     rawPassCount: passCount,
     evaluatedPassCount,
+    benchmarkTestedPassCount,
+    benchmarkTestedFailCount,
+    noFailureRecordedPassCount,
     notEvaluatedCount,
-    failCount,
+    failCount: effectiveFailCount,
     actionableFailCount,
     acceptedFailCount,
     droppedFailCount,
@@ -2161,7 +2208,9 @@ function buildComplianceFrameworkData(
     passRate,
     evaluatedPassRate,
     effectivePassRate,
-    ...(evalCtx.hasHttpError || controls.some((c) => c.notEvaluatedReason === "coverage_unknown")
+    ...(evalCtx.hasHttpError ||
+    (item.spec.compliance.id === "k8s-cis-1.23" && evalCtx.benchmarkStore.listFailed) ||
+    controls.some((c) => c.notEvaluatedReason === "coverage_unknown")
       ? { coverageUnknown: true }
       : {}),
     ...(reportTimestamp ? { lastUpdated: reportTimestamp } : {}),
@@ -2202,6 +2251,7 @@ async function fetchFrameworkContext(): Promise<{
     nodesRes,
     operatorDeployRes,
     trivyConfigRes,
+    benchmarkCmRes,
   ] = await Promise.all([
     fetchReplicaSetMap(),
     tryComplianceK8sFetch<RawAuditList>("/apis/aquasecurity.github.io/v1alpha1/configauditreports"),
@@ -2213,6 +2263,7 @@ async function fetchFrameworkContext(): Promise<{
     tryComplianceK8sFetch<RawNodeList>("/api/v1/nodes"),
     tryComplianceK8sFetch<RawDeployment>("/apis/apps/v1/namespaces/security-system/deployments/trivy-operator"),
     tryComplianceK8sFetch<RawConfigMap>("/api/v1/namespaces/security-system/configmaps/trivy-operator-trivy-config"),
+    tryComplianceK8sFetch<RawConfigMapList>(BENCHMARK_CONFIGMAP_LIST_PATH),
   ])
 
   const evalCtx = buildFrameworkEvalContext({
@@ -2225,6 +2276,7 @@ async function fetchFrameworkContext(): Promise<{
     nodesRes,
     operatorDeployRes,
     trivyConfigRes,
+    benchmarkCmRes,
     rsOk: rsMap !== null,
   })
 
@@ -2249,6 +2301,8 @@ interface FrameworksWithMeta {
   oldestUpdated: string | null
   partial: boolean
   partialSources: string[]
+  matchedBenchmarkRuleIds: Set<string>
+  benchmarkListFailed: boolean
 }
 
 async function fetchComplianceFrameworksWithMeta(): Promise<FrameworksWithMeta> {
@@ -2263,12 +2317,17 @@ async function fetchComplianceFrameworksWithMeta(): Promise<FrameworksWithMeta> 
     )
   }
   const { newest, oldest } = extractTimestampRange(list.items ?? [], true)
+  const partialSources = evalCtx.benchmarkStore.listFailed
+    ? [...evalCtx.failedAuxSources, "kube-bench-configmaps"]
+    : evalCtx.failedAuxSources
   return {
     frameworks,
     lastUpdated: newest,
     oldestUpdated: oldest,
-    partial: evalCtx.hasHttpError,
-    partialSources: evalCtx.failedAuxSources,
+    partial: evalCtx.hasHttpError || evalCtx.benchmarkStore.listFailed,
+    partialSources,
+    matchedBenchmarkRuleIds: evalCtx.benchmarkStore.matchedRuleIds,
+    benchmarkListFailed: evalCtx.benchmarkStore.listFailed,
   }
 }
 
@@ -2312,7 +2371,7 @@ export async function getComplianceFrameworkDetail(
         `[compliance] ReplicaSet(s) missing from cluster list, keeping framework checks fail-safe: ${Array.from(missingReplicaSets).join(", ")}`,
       )
     }
-    if (!evalCtx.hasHttpError) {
+    if (!evalCtx.hasHttpError && !evalCtx.benchmarkStore.listFailed) {
       await cacheSet(cacheKey, detail, cacheTtl("complianceFrameworksDetail"))
     }
     return detail
@@ -2466,6 +2525,9 @@ export async function getComplianceSummary(): Promise<ComplianceSummary> {
   if (infraRes.status === "fulfilled") {
     for (const id of infraRes.value.matchedRuleIds) matchedRuleIds.add(id)
   }
+  if (fwRes.status === "fulfilled") {
+    for (const id of fwRes.value.matchedBenchmarkRuleIds) matchedRuleIds.add(id)
+  }
   // D-P2-4: Surface exact acceptance rules that matched nothing across fulfilled families.
   // Unavailable sources are excluded from unused checks so outages never look like stale rules.
   const unusedAcceptanceRules = findUnusedAcceptanceRules(
@@ -2474,6 +2536,7 @@ export async function getComplianceSummary(): Promise<ComplianceSummary> {
       configAudit: carRes.status === "fulfilled",
       rbac: rbacRes.status === "fulfilled",
       infra: infraRes.status === "fulfilled",
+      benchmark: fwRes.status === "fulfilled" && !fwRes.value.benchmarkListFailed,
     },
     ACCEPTED_INFRA_RULES,
   )

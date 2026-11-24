@@ -9,6 +9,13 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Changed
+
+- **Compliance > CIS `kube-bench` test records integration (`src/lib/kube-bench.ts`, `src/lib/compliance.ts`, `src/lib/compliance-acceptance.ts`, `src/lib/compliance-accepted.ts`, `src/data/compliance-acceptance-rules.json`, `src/types/compliance.ts`, `src/lib/cache-keys.ts`, `src/lib/i18n.ts`, `src/components/compliance/failure-counters.tsx`, `src/components/compliance/frameworks-grid.tsx`, `src/app/(dashboard)/compliance/frameworks/[id]/page.tsx`):**
+  - Integrated daily `kube-bench` ConfigMap records (`security-system`, label `narwhal.io/compliance-tool=kube-bench`, key `record.json`, read with existing `configmaps` list/get RBAC) into `k8s-cis-1.23` evaluation under fail-closed validation (`schemaVersion=1`, `tool=kube-bench`, `benchmarkId=cis-1.23`, `status=complete`, non-empty unique `controlId`s, `totals` consistency, non-future `finishedAt`, `BENCHMARK_MAX_AGE_HOURS = 26`, existing cluster `node` check via `/api/v1/nodes`, `512 KiB` JSON byte cap, and truncation/403 non-caching) and section-scoped cluster node coverage (1.x/2.x/3.x across all control-plane nodes; 4.x across all nodes; 5.x cluster-once).
+  - Enforced failure-first cross-source precedence: any Trivy failure OR any node `kube-bench` `FAIL` keeps the control `failed` (with `sourceDisagreement` naming both verdicts when Trivy and `kube-bench` disagree, e.g. CIS `1.3.6`); `WARN`/`type: "manual"` stays `not_evaluated` (`manual`), `INFO` stays `not_evaluated` (`benchmark_info`), and validation/coverage gaps surface dedicated ko/en `benchmark_*` reasons.
+  - Extended `compliance-acceptance-rules.json` with an empty `benchmark` array and exact `(benchmarkId, controlId, node?)` loader/matcher (`matchBenchmarkException`) without adding acceptance rules in this lane; bumped `complianceFrameworksList`, `complianceFrameworksDetail`, and `complianceSummary` cache keys to `v4`; updated summary cards, grid, and framework detail UI to count `tested (benchmark)` separately from `no failure recorded` and show tool/version/node count/timestamp plus FAIL `actualValue`/`expectedResult` excerpts (`R402`).
+
 ## [1.1.25] - 2026-11-24
 
 ### Changed

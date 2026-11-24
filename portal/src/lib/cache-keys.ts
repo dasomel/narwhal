@@ -270,9 +270,14 @@ export const cacheKeys = {
     `compliance:v3:rbac-audit:${encodeURIComponent(namespace)}:${encodeURIComponent(name)}`,
   complianceInfraAuditList: () => "compliance:v2:infra-audit:list",
   complianceInfraAuditDetail: (node: string) => join("compliance", "infra-audit", node),
-  complianceFrameworksList: () => "compliance:v3:frameworks:list",
-  complianceFrameworksDetail: (id: string) => join("compliance", "v3", "frameworks", id),
-  complianceSummary: () => "compliance:v3:summary",
+  // D-KUBE-BENCH-CIS: Bump framework list, detail, and summary caches to v4 because
+  // k8s-cis-1.23 now merges kube-bench ConfigMap test records (testedByBenchmark,
+  // benchmarkEvidence, benchmarkTestedPassCount, noFailureRecordedPassCount, and
+  // benchmark_* notEvaluatedReason codes). Cost: one cold read after upgrade; escape
+  // hatch: advance version on future shape or verdict changes.
+  complianceFrameworksList: () => "compliance:v4:frameworks:list",
+  complianceFrameworksDetail: (id: string) => join("compliance", "v4", "frameworks", id),
+  complianceSummary: () => "compliance:v4:summary",
 
   serviceGraphCluster: (window: string, namespace: string | undefined) => join("graph", "cluster", window, namespace ?? "all"),
   serviceGraphClusterScoped: (scopeFingerprint: string, window: string, namespace: string | undefined) =>
@@ -906,8 +911,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide compliance audit data, not per-caller." },
   },
-  "compliance:v3:frameworks:list": {
-    example: "compliance:v3:frameworks:list",
+  "compliance:v4:frameworks:list": {
+    example: "compliance:v4:frameworks:list",
     dimensions: [],
     ttlSeconds: 60,
     owner: "src/lib/compliance.ts",
@@ -916,8 +921,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide compliance audit data, not per-caller." },
   },
-  "compliance:v3:frameworks:detail": {
-    example: "compliance:v3:frameworks:{id}",
+  "compliance:v4:frameworks:detail": {
+    example: "compliance:v4:frameworks:{id}",
     dimensions: ["query"],
     ttlSeconds: 60,
     owner: "src/lib/compliance.ts",
@@ -926,8 +931,8 @@ export const CACHE_NAMESPACES: Record<string, CacheNamespaceSpec> = {
     securitySensitive: false,
     unscopedReason: { code: "cluster-wide-state", detail: "Cluster-wide compliance audit data, not per-caller." },
   },
-  "compliance:v3:summary": {
-    example: "compliance:v3:summary",
+  "compliance:v4:summary": {
+    example: "compliance:v4:summary",
     dimensions: [],
     ttlSeconds: 60,
     owner: "src/lib/compliance.ts",
@@ -1333,14 +1338,14 @@ export const BUILDER_CHECKS: Record<keyof typeof cacheKeys, BuilderCheck> = {
     args: ["node-1"],
     dimensionArgIndex: { query: 0 },
   },
-  complianceFrameworksList: { registryKey: "compliance:v3:frameworks:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
+  complianceFrameworksList: { registryKey: "compliance:v4:frameworks:list", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
   complianceFrameworksDetail: {
-    registryKey: "compliance:v3:frameworks:detail",
+    registryKey: "compliance:v4:frameworks:detail",
     ttlSeconds: 60,
     args: ["id-1"],
     dimensionArgIndex: { query: 0 },
   },
-  complianceSummary: { registryKey: "compliance:v3:summary", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
+  complianceSummary: { registryKey: "compliance:v4:summary", ttlSeconds: 60, args: [], dimensionArgIndex: {} },
 
   // serviceGraphCluster's real TTL is computed at the call site (5s for the "1m"
   // window, 60s otherwise) — not a fixed per-namespace constant, so it's the one

@@ -117,6 +117,20 @@ export interface AcceptedRbacBindingRule {
   docAnchor: string
 }
 
+export interface AcceptedBenchmarkRule {
+  id: string
+  benchmarkId: string
+  controlId: string
+  /** Exact node name when scoped to a single node; undefined when targeting the control across nodes. */
+  node?: string
+  class: AcceptedClass
+  reasonKey: AcceptedReasonKey
+  reason: string
+  owner: string
+  reviewedAt: string
+  docAnchor: string
+}
+
 export interface AcceptedMatch {
   ruleId: string
   class: AcceptedClass
@@ -163,12 +177,24 @@ interface RawRbacBindingEntry {
   reviewedAt: string
 }
 
+interface RawBenchmarkRuleEntry {
+  id: string
+  benchmarkId: string
+  controlId: string
+  node?: string
+  class: string
+  reasonKey: string
+  owner: string
+  reviewedAt: string
+}
+
 interface RawAcceptanceRulesFile {
   schemaVersion: number
   configAudit: RawRuleEntry[]
   rbac: RawRuleEntry[]
   rbacBindings?: RawRbacBindingEntry[]
   infra: RawRuleEntry[]
+  benchmark?: RawBenchmarkRuleEntry[]
 }
 
 const VALID_WORKLOAD_KINDS = new Set<string>(["ReplicaSet", "DaemonSet", "StatefulSet", "Pod", "CronJob"])
@@ -265,10 +291,13 @@ function assertCommonRuleFields(raw: RawRuleEntry, seenIds: Set<string>): {
   return { scope: raw.scope, checks: normalizedChecks, cls: raw.class, reasonKey, reason }
 }
 
+const BENCHMARK_CONTROL_ID_RE = /^\d+(?:\.\d+)+$/
+
 function loadAcceptanceRules(rawFile: RawAcceptanceRulesFile): {
   configAudit: readonly AcceptedConfigAuditRule[]
   rbac: readonly AcceptedRbacRule[]
   rbacBindings: readonly AcceptedRbacBindingRule[]
+  benchmark: readonly AcceptedBenchmarkRule[]
 } {
   const seenIds = new Set<string>()
   const configAudit: AcceptedConfigAuditRule[] = []
@@ -446,7 +475,71 @@ function loadAcceptanceRules(rawFile: RawAcceptanceRulesFile): {
     })
   }
 
-  return { configAudit, rbac, rbacBindings }
+  const benchmark: AcceptedBenchmarkRule[] = []
+  const benchmarkAllowedFields = new Set([
+    "id",
+    "benchmarkId",
+    "controlId",
+    "node",
+    "class",
+    "reasonKey",
+    "owner",
+    "reviewedAt",
+  ])
+  const seenBenchmarkTargets = new Set<string>()
+  for (const raw of rawFile.benchmark ?? []) {
+    if (Object.keys(raw).some((field) => !benchmarkAllowedFields.has(field))) {
+      throw new Error(`Invalid benchmark acceptance rule ${raw.id}: unknown rule field`)
+    }
+    if (!raw.id || typeof raw.id !== "string" || seenIds.has(raw.id)) {
+      throw new Error(`Invalid or duplicate benchmark acceptance rule id: ${String(raw.id)}`)
+    }
+    seenIds.add(raw.id)
+    assertExactName(raw.benchmarkId, raw.id)
+    assertExactName(raw.controlId, raw.id)
+    if (!BENCHMARK_CONTROL_ID_RE.test(raw.controlId)) {
+      throw new Error(`Invalid benchmark acceptance rule ${raw.id}: invalid controlId "${raw.controlId}"`)
+    }
+    if (raw.node !== undefined) {
+      assertExactName(raw.node, raw.id)
+    }
+    const targetKey = `${raw.benchmarkId}\0${raw.controlId}\0${raw.node ?? ""}`
+    if (seenBenchmarkTargets.has(targetKey)) {
+      throw new Error(`Duplicate benchmark acceptance rule target for ${raw.id}: ${targetKey}`)
+    }
+    seenBenchmarkTargets.add(targetKey)
+    if (raw.class !== "accept" && raw.class !== "upstream") {
+      throw new Error(`Invalid benchmark acceptance rule ${raw.id}: class must be "accept" or "upstream"`)
+    }
+    if (!raw.reasonKey.startsWith("compliance.acceptedReason.") || !(raw.reasonKey in en)) {
+      throw new Error(`Invalid benchmark acceptance rule ${raw.id}: unknown reasonKey "${raw.reasonKey}"`)
+    }
+    const reasonKey = raw.reasonKey as AcceptedReasonKey
+    const reason = en[reasonKey]
+    if (!reason || reason.trim().length === 0) {
+      throw new Error(`Invalid benchmark acceptance rule ${raw.id}: empty en translation for "${reasonKey}"`)
+    }
+    if (typeof raw.owner !== "string" || raw.owner.trim().length === 0) {
+      throw new Error(`Invalid benchmark acceptance rule ${raw.id}: owner is required`)
+    }
+    if (typeof raw.reviewedAt !== "string" || !ISO_DATE_RE.test(raw.reviewedAt)) {
+      throw new Error(`Invalid benchmark acceptance rule ${raw.id}: reviewedAt must be YYYY-MM-DD`)
+    }
+    benchmark.push({
+      id: raw.id,
+      benchmarkId: raw.benchmarkId,
+      controlId: raw.controlId,
+      ...(raw.node !== undefined ? { node: raw.node } : {}),
+      class: raw.class,
+      reasonKey,
+      reason,
+      owner: raw.owner,
+      reviewedAt: raw.reviewedAt,
+      docAnchor: COMPLIANCE_EXCEPTIONS_DOC_ANCHOR,
+    })
+  }
+
+  return { configAudit, rbac, rbacBindings, benchmark }
 }
 
 const loaded = loadAcceptanceRules(rulesData as RawAcceptanceRulesFile)
@@ -454,6 +547,7 @@ const loaded = loadAcceptanceRules(rulesData as RawAcceptanceRulesFile)
 export const ACCEPTED_CONFIG_AUDIT_RULES: readonly AcceptedConfigAuditRule[] = loaded.configAudit
 export const ACCEPTED_RBAC_RULES: readonly AcceptedRbacRule[] = loaded.rbac
 export const ACCEPTED_RBAC_BINDING_RULES: readonly AcceptedRbacBindingRule[] = loaded.rbacBindings
+export const ACCEPTED_BENCHMARK_RULES: readonly AcceptedBenchmarkRule[] = loaded.benchmark
 
 export const configRuleIndex = new Map<string, AcceptedConfigAuditRule[]>()
 for (const rule of ACCEPTED_CONFIG_AUDIT_RULES) {
@@ -479,12 +573,21 @@ for (const rule of ACCEPTED_RBAC_BINDING_RULES) {
   else rbacBindingRuleIndex.set(key, [rule])
 }
 
+export const benchmarkRuleIndex = new Map<string, AcceptedBenchmarkRule[]>()
+for (const rule of ACCEPTED_BENCHMARK_RULES) {
+  const key = `${rule.benchmarkId}\0${rule.controlId}`
+  const bucket = benchmarkRuleIndex.get(key)
+  if (bucket) bucket.push(rule)
+  else benchmarkRuleIndex.set(key, [rule])
+}
+
 export function findUnusedAcceptanceRules(
   matchedRuleIds: ReadonlySet<string>,
   evaluatedDomains: {
     configAudit: boolean
     rbac: boolean
     infra: boolean
+    benchmark?: boolean
   },
   infraRules: readonly AcceptedInfraRule[] = [],
 ): UnusedAcceptanceRule[] {
@@ -534,6 +637,23 @@ export function findUnusedAcceptanceRules(
           kind: "Node",
           name: rule.node,
           checks: Array.from(rule.checks).sort(),
+          owner: rule.owner,
+          reviewedAt: rule.reviewedAt,
+        })
+      }
+    }
+  }
+  if (evaluatedDomains.benchmark) {
+    for (const rule of ACCEPTED_BENCHMARK_RULES) {
+      if (!matchedRuleIds.has(rule.id)) {
+        unused.push({
+          id: rule.id,
+          domain: "benchmark",
+          scope: "cluster",
+          namespace: "",
+          kind: rule.benchmarkId,
+          name: rule.node ?? "all-nodes",
+          checks: [rule.controlId],
           owner: rule.owner,
           reviewedAt: rule.reviewedAt,
         })

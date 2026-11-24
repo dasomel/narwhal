@@ -2513,5 +2513,7 @@
       "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
       "reviewedAt": "2026-11-24"
     }
-  ]
+  ],
+  "infra": [],
+  "benchmark": []
 }

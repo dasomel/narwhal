@@ -9,6 +9,13 @@
 
 ## [Unreleased]
 
+### 변경
+
+- **Compliance > CIS `kube-bench` 테스트 기록 연동 (`src/lib/kube-bench.ts`, `src/lib/compliance.ts`, `src/lib/compliance-acceptance.ts`, `src/lib/compliance-accepted.ts`, `src/data/compliance-acceptance-rules.json`, `src/types/compliance.ts`, `src/lib/cache-keys.ts`, `src/lib/i18n.ts`, `src/components/compliance/failure-counters.tsx`, `src/components/compliance/frameworks-grid.tsx`, `src/app/(dashboard)/compliance/frameworks/[id]/page.tsx`):**
+  - 기존 포털 `configmaps` get/list 권한으로 `security-system` 네임스페이스의 `narwhal.io/compliance-tool=kube-bench` ConfigMap(`record.json`)을 조회해 `k8s-cis-1.23` 평가에 연동했습니다. `schemaVersion=1`, `tool=kube-bench`, `benchmarkId=cis-1.23`, `status=complete`, 중복 없는 비어 있지 않은 `controlId`, `totals` 일치, 미래 시각이 아닌 `finishedAt`, 26시간 상한(`BENCHMARK_MAX_AGE_HOURS = 26`), `/api/v1/nodes` 실존 노드 일치, 512 KiB JSON 크기 상한, 잘림/403 비캐시 등 fail-closed 검증과 섹션별 노드 커버리지(1.x/2.x/3.x 전체 컨트롤플레인 노드, 4.x 전체 노드, 5.x 클러스터 1회)를 적용했습니다.
+  - 도구 간 실패 우선 원칙을 적용해 Trivy 실패 또는 노드 `kube-bench` `FAIL` 중 하나라도 있으면 컨트롤을 `failed`로 유지하고 판정 불일치(`sourceDisagreement`, 예: CIS `1.3.6`) 시 양쪽 판정을 함께 표시합니다. `WARN`/`type: "manual"`은 `manual`, `INFO`는 `benchmark_info`, 검증·커버리지 오류는 전용 한영 `benchmark_*` 미평가 사유로 표시합니다.
+  - `compliance-acceptance-rules.json`에 빈 `benchmark` 배열과 정확 일치 로더/매처(`matchBenchmarkException`: `benchmarkId + controlId`, 선택적 `node`, 본 레인에서 수용 규칙 미추가)를 확장하고, 프레임워크 목록·상세·요약 캐시 키를 `v4`로 올렸으며, 요약 카드·그리드·상세 UI가 `테스트 통과(벤치마크)`와 `실패 기록 없음`을 분리 집계하고 도구·버전·노드 수·완료 시각 및 FAIL `actualValue`/`expectedResult` 발췌를 표시하도록 개선했습니다(`R402`).
+
 ## [1.1.25] - 2026-11-24
 
 ### 변경

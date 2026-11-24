@@ -1336,4 +1336,155 @@ it("J1/J2 UI: renders cluster-scoped ConfigAuditRow with visible Cluster scope, 
   })
   const fwHtml = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-cis-1.23" }) }))
   expect(fwHtml).toContain("No report in the namespaces this check applies to")
+
+  // kube-bench benchmark evidence: tested (benchmark) separate from no-failure-recorded, source/time line,
+  // actual/expected excerpts for FAIL, and source disagreement verdicts in en + ko.
+  const benchmarkSummary: ComplianceSummary = {
+    totalConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    lowSeverityConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    acceptedSystemConfigAuditFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    totalRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    acceptedRbacFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    totalInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    acceptedInfraFailures: { Critical: 0, High: 0, Medium: 0, Low: 0 },
+    frameworks: [
+      {
+        id: "k8s-cis-1.23",
+        title: "CIS Kubernetes Benchmarks v1.23",
+        totalControls: 116,
+        passCount: 95,
+        evaluatedPassCount: 74,
+        benchmarkTestedPassCount: 70,
+        benchmarkTestedFailCount: 5,
+        noFailureRecordedPassCount: 4,
+        notEvaluatedCount: 17,
+        failCount: 25,
+        actionableFailCount: 23,
+        acceptedFailCount: 2,
+        passRate: 95 / 116,
+        evaluatedPassRate: 74 / 116,
+        effectivePassRate: 76 / 116,
+      },
+    ],
+    scannedWorkloads: 10,
+    scannedRbacObjects: 5,
+    scannedNodes: 1,
+    lastUpdated: new Date().toISOString(),
+  }
+  const benchCountersEn = renderToStaticMarkup(<FailureCounters summary={benchmarkSummary} locale="en" />)
+  expect(benchCountersEn).toContain("70 tested (benchmark) · 4 no failure recorded")
+  const benchCountersKo = renderToStaticMarkup(<FailureCounters summary={benchmarkSummary} locale="ko" />)
+  expect(benchCountersKo).toContain("테스트 통과(벤치마크) 70 · 실패 기록 없음 4")
+
+  vi.mocked(useQuery).mockReturnValue({
+    data: benchmarkSummary.frameworks,
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  } as unknown as ReturnType<typeof useQuery>)
+  const gridEnHtml = renderToStaticMarkup(
+    <LocaleProvider locale="en">
+      <FrameworksGrid />
+    </LocaleProvider>,
+  )
+  expect(gridEnHtml).toContain("70 tested (benchmark)")
+  expect(gridEnHtml).toContain("4 no failure recorded")
+
+  const cisBenchDetail: ComplianceFrameworkDetail = {
+    ...benchmarkSummary.frameworks[0],
+    controls: [
+      {
+        id: "1.1.1",
+        name: "Ensure that the API server pod specification file permissions are set to 644 or more restrictive",
+        severity: "High",
+        passCount: 1,
+        failCount: 0,
+        actionableFailCount: 0,
+        acceptedFailCount: 0,
+        evaluationState: "passed",
+        testedByBenchmark: true,
+        benchmarkEvidence: {
+          tool: "kube-bench",
+          toolVersion: "0.16.0",
+          benchmarkId: "cis-1.23",
+          nodeCount: 1,
+          finishedAt: "2026-11-24T12:42:23Z",
+          verdict: "passed",
+        },
+      },
+      {
+        id: "5.1.8",
+        name: "Limit use of the Bind, Impersonate and Escalate permissions in the Kubernetes cluster",
+        severity: "High",
+        passCount: 1,
+        failCount: 0,
+        actionableFailCount: 0,
+        acceptedFailCount: 0,
+        evaluationState: "passed",
+        testedByBenchmark: false,
+      },
+      {
+        id: "1.1.12",
+        name: "Ensure that the etcd data directory ownership is set to etcd:etcd",
+        severity: "Low",
+        passCount: 0,
+        failCount: 1,
+        actionableFailCount: 1,
+        acceptedFailCount: 0,
+        evaluationState: "failed",
+        testedByBenchmark: true,
+        benchmarkEvidence: {
+          tool: "kube-bench",
+          toolVersion: "0.16.0",
+          benchmarkId: "cis-1.23",
+          nodeCount: 1,
+          finishedAt: "2026-11-24T12:42:23Z",
+          verdict: "failed",
+          failFindings: [
+            {
+              node: "narwhal-master-1",
+              status: "FAIL",
+              actualValue: "UNKNOWN:UNKNOWN",
+              expectedResult: "'etcd:etcd' is present",
+            },
+          ],
+        },
+      },
+      {
+        id: "1.3.6",
+        name: "Ensure that the RotateKubeletServerCertificate argument is set to true",
+        severity: "High",
+        passCount: 0,
+        failCount: 1,
+        actionableFailCount: 1,
+        acceptedFailCount: 0,
+        evaluationState: "failed",
+        benchmarkEvidence: {
+          tool: "kube-bench",
+          toolVersion: "0.16.0",
+          benchmarkId: "cis-1.23",
+          nodeCount: 1,
+          finishedAt: "2026-11-24T12:42:23Z",
+          verdict: "passed",
+          sourceDisagreement: { trivyVerdict: "failed", benchmarkVerdict: "passed" },
+        },
+      },
+    ],
+  }
+  mockGetComplianceFrameworkDetail.mockResolvedValue(cisBenchDetail)
+  mockGetLocale.mockResolvedValue("en")
+  const detailEnHtml = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-cis-1.23" }) }))
+  expect(detailEnHtml).toContain("70 Tested (benchmark)")
+  expect(detailEnHtml).toContain("4 No failure recorded (scanner records failures only)")
+  expect(detailEnHtml).toContain("kube-bench v0.16.0 · cis-1.23 · 1 node(s) · 2026-11-24T12:42:23Z")
+  expect(detailEnHtml).toContain("UNKNOWN:UNKNOWN")
+  expect(detailEnHtml).toContain("&#x27;etcd:etcd&#x27; is present")
+  expect(detailEnHtml).toContain("Source verdicts disagree (Trivy: failed · kube-bench: passed) — kept failed")
+
+  mockGetLocale.mockResolvedValue("ko")
+  const detailKoHtml = renderToStaticMarkup(await FrameworkDetailPage({ params: Promise.resolve({ id: "k8s-cis-1.23" }) }))
+  expect(detailKoHtml).toContain("70 테스트 통과 (벤치마크)")
+  expect(detailKoHtml).toContain("4 실패 기록 없음 (스캐너는 실패만 기록)")
+  expect(detailKoHtml).toContain("kube-bench v0.16.0 · cis-1.23 · 1개 노드 · 2026-11-24T12:42:23Z")
+  expect(detailKoHtml).toContain("도구 판정 불일치 (Trivy: 실패 · kube-bench: 통과) — 실패 우선 유지")
 })

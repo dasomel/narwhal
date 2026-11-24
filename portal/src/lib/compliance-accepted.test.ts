@@ -3,11 +3,13 @@ import path from "node:path"
 import { describe, expect, it } from "vitest"
 import { en, ko } from "./i18n"
 import {
+  ACCEPTED_BENCHMARK_RULES,
   ACCEPTED_CONFIG_AUDIT_RULES,
   ACCEPTED_INFRA_RULES,
   ACCEPTED_RBAC_BINDING_RULES,
   ACCEPTED_RBAC_RULES,
   findUnusedAcceptanceRules,
+  matchBenchmarkException,
   matchConfigAuditException,
   matchInfraException,
   matchRbacBindingException,
@@ -230,6 +232,17 @@ describe("matchInfraException", () => {
     expect(matchInfraException("narwhal-master-1", "KCV0057")).toBeNull()
     expect(matchInfraException("", "KCV0056")).toBeNull()
     expect(matchInfraException("narwhal-master-1", "")).toBeNull()
+  })
+})
+
+describe("matchBenchmarkException", () => {
+  it("keeps ACCEPTED_BENCHMARK_RULES empty in this lane and fails closed on every input", () => {
+    expect(ACCEPTED_BENCHMARK_RULES).toEqual([])
+    expect(matchBenchmarkException("cis-1.23", "1.1.12", "narwhal-master-1")).toBeNull()
+    expect(matchBenchmarkException("cis-1.23", "1.3.7")).toBeNull()
+    expect(matchBenchmarkException("", "1.3.7")).toBeNull()
+    expect(matchBenchmarkException("cis-1.23", "")).toBeNull()
+    expect(matchBenchmarkException("cis-1.23", "1.3.7", "")).toBeNull()
   })
 })
 

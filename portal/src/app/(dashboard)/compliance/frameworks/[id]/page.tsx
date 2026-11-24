@@ -53,18 +53,26 @@ async function fetchDetail(id: string): Promise<DetailFetchResult> {
   }
 }
 
+function verdictText(locale: Locale, verdict: "passed" | "failed" | "not_evaluated"): string {
+  if (verdict === "passed") return t(locale, "compliance.framework.verdict.passed")
+  if (verdict === "failed") return t(locale, "compliance.framework.verdict.failed")
+  return t(locale, "compliance.framework.verdict.not_evaluated")
+}
+
 function ControlsTable({
   controls,
   frameworkId,
   locale,
   showAcceptedBadge,
   showNotEvaluated = false,
+  hasBenchmarkTests = false,
 }: {
   controls: ComplianceControl[]
   frameworkId: string
   locale: Locale
   showAcceptedBadge: boolean
   showNotEvaluated?: boolean
+  hasBenchmarkTests?: boolean
 }) {
   return (
     <div className="overflow-x-auto">
@@ -78,7 +86,11 @@ function ControlsTable({
               <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.framework.notEvaluatedShort")}</th>
             ) : (
               <>
-                <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.framework.noFailureRecordedLabel")}</th>
+                <th className="px-4 py-2.5 font-medium">
+                  {hasBenchmarkTests
+                    ? t(locale, "compliance.framework.passedTestsCol")
+                    : t(locale, "compliance.framework.noFailureRecordedLabel")}
+                </th>
                 <th className="px-4 py-2.5 font-medium">{t(locale, "compliance.framework.actionableFailed")}</th>
               </>
             )}
@@ -90,6 +102,8 @@ function ControlsTable({
             const acceptedFail = ctrl.acceptedFailCount ?? 0
             const droppedFail = ctrl.droppedFailCount ?? 0
             const isNotEvaluated = (ctrl.evaluationState === "not_evaluated" || (!ctrl.evaluationState && ctrl.failCount === 0))
+            const isTestedPass = ctrl.evaluationState === "passed" && ctrl.testedByBenchmark === true
+            const ev = ctrl.benchmarkEvidence
             return (
               <tr
                 key={ctrl.id}
@@ -111,6 +125,22 @@ function ControlsTable({
                         ? translateTitle("cis", ctrl.id, ctrl.name, locale)
                         : ctrl.name}
                     </p>
+                    {isTestedPass && (
+                      <Badge
+                        variant="outline"
+                        className="text-[0.65rem] px-1.5 py-0 text-green-700 border-green-300 dark:text-green-400 dark:border-green-800"
+                      >
+                        {t(locale, "compliance.framework.testedBenchmarkShort")}
+                      </Badge>
+                    )}
+                    {!isNotEvaluated && ctrl.evaluationState === "passed" && !isTestedPass && hasBenchmarkTests && (
+                      <Badge
+                        variant="outline"
+                        className="text-[0.65rem] px-1.5 py-0 text-muted-foreground border-muted-foreground/30"
+                      >
+                        {t(locale, "compliance.framework.noFailureRecordedShort")}
+                      </Badge>
+                    )}
                     {showAcceptedBadge && ctrl.accepted && (
                       <Badge
                         variant="outline"
@@ -123,6 +153,45 @@ function ControlsTable({
                   {ctrl.description && (
                     <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{ctrl.description}</p>
                   )}
+                  {ev && ev.finishedAt && (
+                    <p className="text-xs text-muted-foreground mt-0.5 font-mono">
+                      {t(locale, "compliance.framework.benchmarkSourceLine", {
+                        tool: ev.tool,
+                        version: ev.toolVersion,
+                        benchmarkId: ev.benchmarkId,
+                        nodes: t(locale, "compliance.framework.benchmarkNodes", { count: String(ev.nodeCount) }),
+                        finishedAt: ev.finishedAt,
+                      })}
+                    </p>
+                  )}
+                  {ev?.sourceDisagreement && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                      {t(locale, "compliance.framework.sourceDisagreement", {
+                        trivy: verdictText(locale, ev.sourceDisagreement.trivyVerdict),
+                        benchmark: verdictText(locale, ev.sourceDisagreement.benchmarkVerdict),
+                      })}
+                    </p>
+                  )}
+                  {ev?.failFindings?.map((f) => (
+                    <div key={f.node} className="mt-1 text-xs text-muted-foreground space-y-0.5">
+                      {f.actualValue && (
+                        <p className="break-all">
+                          <span className="font-medium text-foreground/80">
+                            {f.node} · {t(locale, "compliance.framework.benchmarkActual")}:
+                          </span>{" "}
+                          {f.actualValue}
+                        </p>
+                      )}
+                      {f.expectedResult && (
+                        <p className="break-all">
+                          <span className="font-medium text-foreground/80">
+                            {t(locale, "compliance.framework.benchmarkExpected")}:
+                          </span>{" "}
+                          {f.expectedResult}
+                        </p>
+                      )}
+                    </div>
+                  ))}
                 </td>
                 <td className="px-4 py-2.5">
                   <Badge className={`text-xs ${severityBadgeClass[ctrl.severity] ?? severityBadgeClass.Unknown}`}>
@@ -252,6 +321,9 @@ export default async function FrameworkDetailPage({ params }: Props) {
   const actionableControlsFail = detail.actionableFailCount ?? detail.failCount
   const acceptedControlsFail = detail.acceptedFailCount ?? acceptedControls.length
   const evaluatedPass = detail.evaluatedPassCount ?? 0
+  const testedPass = detail.benchmarkTestedPassCount ?? 0
+  const noFailurePass = detail.noFailureRecordedPassCount ?? evaluatedPass
+  const hasBenchmarkTests = testedPass > 0 || (detail.benchmarkTestedFailCount ?? 0) > 0
   const notEvaluated = detail.notEvaluatedCount ?? Math.max(0, detail.totalControls - detail.failCount)
   const effectivePassNum = Math.round(effectiveRate * detail.totalControls)
   const droppedControls = detail.droppedFailCount ?? 0
@@ -320,7 +392,14 @@ export default async function FrameworkDetailPage({ params }: Props) {
         </div>
         <p className="text-xs text-muted-foreground">{t(locale, "compliance.framework.failureOnlyNote")}</p>
         <div className="flex flex-wrap items-center gap-4 text-sm">
-          <span className="text-green-600 font-medium">✓ {evaluatedPass} {t(locale, "compliance.framework.noFailureRecordedLabel")}</span>
+          {testedPass > 0 ? (
+            <>
+              <span className="text-green-600 font-medium">✓ {testedPass} {t(locale, "compliance.framework.testedBenchmarkLabel")}</span>
+              <span className="text-emerald-600 font-medium">✓ {noFailurePass} {t(locale, "compliance.framework.noFailureRecordedLabel")}</span>
+            </>
+          ) : (
+            <span className="text-green-600 font-medium">✓ {evaluatedPass} {t(locale, "compliance.framework.noFailureRecordedLabel")}</span>
+          )}
           <span className={`font-medium ${actionableControlsFail > 0 ? "text-red-600" : "text-muted-foreground"}`}>
             ✗ {actionableControlsFail} {t(locale, "compliance.framework.actionableFailed")}
           </span>
@@ -381,6 +460,7 @@ export default async function FrameworkDetailPage({ params }: Props) {
           frameworkId={idDecoded}
           locale={locale}
           showAcceptedBadge={false}
+          hasBenchmarkTests={hasBenchmarkTests}
         />
       </div>
 
@@ -435,6 +515,7 @@ export default async function FrameworkDetailPage({ params }: Props) {
             frameworkId={idDecoded}
             locale={locale}
             showAcceptedBadge={true}
+            hasBenchmarkTests={hasBenchmarkTests}
           />
         </details>
       )}

@@ -1,0 +1,157 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chaos-controller-manager
+  namespace: chaos-testing
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: chaos-controller-manager-experiments
+  namespace: chaos-testing
+rules:
+  # v2.8.3 controllers/common watches and updates experiments. Schedule cron/pause/gc,
+  # Workflow chaos nodes and remotechaos add child create/delete and local updates.
+  - apiGroups: [chaos-mesh.org]
+    resources:
+      - awschaos
+      - azurechaos
+      - blockchaos
+      - dnschaos
+      - gcpchaos
+      - httpchaos
+      - iochaos
+      - jvmchaos
+      - kernelchaos
+      - networkchaos
+      - physicalmachinechaos
+      - podchaos
+      - stresschaos
+      - timechaos
+      - schedules
+      - workflows
+    verbs: [get, list, watch, create, update, delete]
+  # Per-pod HTTP, IO and network controllers and their transaction managers.
+  - apiGroups: [chaos-mesh.org]
+    resources: [podhttpchaos, podiochaos, podnetworkchaos]
+    verbs: [get, list, watch, create, update]
+  # Workflow controllers spawn and clean up nodes and status checks.
+  - apiGroups: [chaos-mesh.org]
+    resources: [statuschecks, workflownodes]
+    verbs: [get, list, watch, create, delete]
+  - apiGroups: [chaos-mesh.org]
+    resources: [podhttpchaos/status, podiochaos/status, podnetworkchaos/status, statuschecks/status, workflownodes/status, workflows/status]
+    verbs: [update]
+  # Schedule cron and Workflow child owner references set blockOwnerDeletion.
+  - apiGroups: [chaos-mesh.org]
+    resources: [schedules/finalizers, workflownodes/finalizers, workflows/finalizers]
+    verbs: [update]
+  # validate-auth's resourceFor lowercases Kind for SARs on generated objects.
+  - apiGroups: [chaos-mesh.org]
+    resources: [schedule, workflow]
+    verbs: [create]
+  # pkg/selector/physicalmachine and pkg/selector/nodevolumepath use cached Get.
+  - apiGroups: [chaos-mesh.org]
+    resources: [physicalmachines]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [get, list, watch]
+  # Pod selectors, workflow tasks (create/log), pod-kill (delete) and pod-failure (patch).
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, create, delete, patch]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  # Cached Secret Get in podhttpchaos/controller.go (TLS) and the AWS/Azure/GCP
+  # implementations (credentials). remotecluster/controller.go uses it for kubeconfig.
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  # Fresh name because the chart's old target-namespace binding has an immutable ClusterRole roleRef.
+  name: chaos-controller-manager-experiments
+  namespace: chaos-testing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: chaos-controller-manager-experiments
+subjects:
+  - kind: ServiceAccount
+    name: chaos-controller-manager
+    namespace: chaos-testing
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: chaos-controller-manager-control-plane
+  namespace: chaos-testing
+rules:
+  # provider/controller.go uses a Lease named chaos-mesh. Create cannot be name-scoped.
+  # The controller uses no ConfigMap lock. DNSChaos's Service lookup is for the
+  # disabled DNS server (controllers/chaosimpl/dnschaos/types.go).
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [create]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    resourceNames: [chaos-mesh]
+    verbs: [get, update]
+  # controllers/utils/chaosdaemon lists EndpointSlices using the control-plane cache.
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [list, watch]
+  # controllers/utils/recorder creates core Events. The leader election recorder patches them.
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: chaos-controller-manager-control-plane
+  namespace: chaos-testing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: chaos-controller-manager-control-plane
+subjects:
+  - kind: ServiceAccount
+    name: chaos-controller-manager
+    namespace: chaos-testing
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: chaos-controller-manager-cluster
+rules:
+  # Cached reads in pkg/selector/pod/node_selector.go and pkg/selector/nodevolumepath.
+  - apiGroups: [""]
+    resources: [nodes, persistentvolumes]
+    verbs: [get, list, watch]
+  # pkg/webhook/validate_auth.go checks the requesting user's permissions.
+  - apiGroups: [authorization.k8s.io]
+    resources: [subjectaccessreviews]
+    verbs: [create]
+  # remotecluster.Bootstrap watches the cluster-scoped kind even in namespace mode.
+  # Remote enrollment and its finalizer/status writes are outside D-OWN-CHAOS.
+  - apiGroups: [chaos-mesh.org]
+    resources: [remoteclusters]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: chaos-controller-manager-cluster
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: chaos-controller-manager-cluster
+subjects:
+  - kind: ServiceAccount
+    name: chaos-controller-manager
+    namespace: chaos-testing

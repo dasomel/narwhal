@@ -103,6 +103,8 @@ def check(texts: dict[str, str]) -> list[str]:
         errors.append(f"trivy-operator.yaml trivy.server.podSecurityContext.runAsGroup must be {NOBODY}, got {psc!r}")
     if psc.get("seccompProfile") != RD:
         errors.append(f"trivy-operator.yaml trivy.server.podSecurityContext must keep seccompProfile RuntimeDefault, got {psc!r}")
+    if dig(values_object(texts["trivy"]), "operator", "builtInServerRegistryInsecure") is not True:
+        errors.append("trivy-operator.yaml operator.builtInServerRegistryInsecure must be true (Harbor serves HTTP only; D-TRIVY-SERVER-INSECURE)")
     csc = srv.get("securityContext") or {}
     if csc.get("allowPrivilegeEscalation") is not False or csc.get("capabilities") != {"drop": ["ALL"]}:
         errors.append(f"trivy-operator.yaml trivy.server.securityContext must keep allowPrivilegeEscalation false + drop ALL, got {csc!r}")
@@ -113,6 +115,10 @@ def check(texts: dict[str, str]) -> list[str]:
             errors.append(f"{label} must set TOP-LEVEL seccompProfile RuntimeDefault (gateways.* does not reach istiod), got {vals.get('seccompProfile')!r}")
         if dig(vals, "gateways", "seccompProfile") != RD:
             errors.append(f"{label} must keep gateways.seccompProfile RuntimeDefault")
+
+    # The heredoc values only matter if the istiod install actually consumes them (review MINOR, 2026-11-26).
+    if not re.search(r'helm upgrade --install istiod[^\n]*\\\n(?:[^\n]*\\\n)*?\s*-f /tmp/istiod-values\.yaml', texts["istio-boot"]):
+        errors.append("09-istio-ambient.sh istiod install must pass -f /tmp/istiod-values.yaml")
 
     if "check R405 " not in texts["reg"] or "check-pod-security-batch-a.py --mutation-verify" not in texts["reg"]:
         errors.append("scripts/test/regression-check-kakao.sh must wire R405 with --mutation-verify")
@@ -133,6 +139,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("trivy-server seccomp dropped", "trivy", "              runAsGroup: 65534\n              seccompProfile:\n                type: RuntimeDefault\n", "              runAsGroup: 65534\n"),
     ("trivy-server container hardening dropped", "trivy", "              allowPrivilegeEscalation: false\n              capabilities:\n                drop:\n                  - ALL\n            resources:\n              requests:\n                cpu: 100m\n                memory: 512Mi", "            resources:\n              requests:\n                cpu: 100m\n                memory: 512Mi"),
     ("istiod top-level seccomp dropped (gateways only)", "istiod", "        seccompProfile:\n          type: RuntimeDefault\n        gateways:", "        gateways:"),
+    ("trivy-server registry insecure dropped", "trivy", "          builtInServerRegistryInsecure: true\n", ""),
+    ("istiod gateways seccomp dropped", "istiod", "        gateways:\n          seccompProfile:\n            type: RuntimeDefault\n", "        gateways: {}\n"),
+    ("istiod bootstrap gateways seccomp dropped", "istio-boot", "gateways:\n  seccompProfile:\n    type: RuntimeDefault\n", "gateways: {}\n"),
+    ("istiod bootstrap values file not consumed", "istio-boot", "  -f /tmp/istiod-values.yaml \\\n", "  -f /tmp/other-values.yaml \\\n"),
     ("istiod bootstrap top-level seccomp dropped", "istio-boot", "seccompProfile:\n  type: RuntimeDefault\ngateways:", "gateways:"),
     ("R405 wiring dropped", "reg", "check R405 ", "check R9999 "),
 ]

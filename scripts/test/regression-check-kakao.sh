@@ -3585,7 +3585,7 @@ PYEOF'
   check R404 "trivy-operator 0.36.1 (chart 0.38.1) sets string reportRecordFailedChecksOnly 'false', switches all ClusterComplianceReports (CIS/NSA/PSS/KISA) to reportType summary (D-CCR-SUMMARY), and syncs trivy/airgap/SBOM/version pins; 12 mutations caught" \
     python3 scripts/test/lib/check-trivy-pass-records.py --mutation-verify
   # 2026-11-25: pod-security Batch A (CIS KSV020/021/030/104) for cert-manager, MetalLB controller, trivy-server and istiod
-  check R405 "Pod-security Batch A: cert-manager (3 pods) runAsUser/runAsGroup 65532, MetalLB controller + trivy-server runAsGroup 65534 with seccomp kept, istiod top-level seccompProfile RuntimeDefault; GitOps and bootstrap identical; 15 mutations caught" \
+  check R405 "Pod-security Batch A: cert-manager (3 pods) runAsUser/runAsGroup 65532, MetalLB controller + trivy-server runAsGroup 65534 with seccomp kept, istiod top-level seccompProfile RuntimeDefault; GitOps and bootstrap identical and the istiod install consumes its values file, trivy-server builtInServerRegistryInsecure true; 19 mutations caught" \
     python3 scripts/test/lib/check-pod-security-batch-a.py --mutation-verify
 }
 

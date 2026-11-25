@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-ci-sbom-roundtrip-by-id-20261126",
+  "task": "Make the portal SBOM artifact round-trip check download the artifact this attempt uploaded",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/portal-license-and-sbom.yml",
+      "docs/common/lessons-log.md",
+      ".agents/evals/traces/2026-11-ci-sbom-roundtrip-by-id.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only the round-trip download step of the Portal dependency SBOM job; SBOM generation, upload and the release signing workflow are unchanged."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "PR runs on 2026-11-25 failed the job 3 of 4 times: a re-run downloaded the first attempt's 'sbom' artifact (cmp differ at byte 147), and fresh runs got 'Artifact not found for name: sbom' right after a successful upload.",
+      "evidence": [
+        "test:gh run view 45526948845 (re-run) -> sbom-cyclonedx.json roundtrip differ: byte 147; gh run view 45683647576 -> Unable to download artifact(s): Artifact not found for name: sbom"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "The upload step gets id sbom-upload; the download uses artifact-ids from its artifact-id output with merge-multiple true, continue-on-error, and one retry after 20 s when the first download fails (D-SBOM-ROUNDTRIP-ID)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Workflow syntax checks and the static suite on the orchestrator host; the workflow itself is exercised by this PR's own CI run.",
+      "summary": "actionlint and YAML parse pass; the full static suite passes.",
+      "evidence": [
+        "test:actionlint .github/workflows/portal-license-and-sbom.yml -> exit 0; python yaml.safe_load -> ok",
+        "test:make test -> passed 514   failed 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The round trip now targets the uploaded artifact by ID. Proven only when this PR's own Portal dependency SBOM job passes; recorded in the PR."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the stated scope (one workflow step)."
+    }
+  ]
+}

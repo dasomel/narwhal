@@ -9,6 +9,17 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.29] - 2026-11-25
+
+### Changed
+
+- The Trivy check catalogue (`scripts/gen-trivy-check-catalogue.mjs`, `src/data/trivy-check-catalogue.generated.sha256.json`) is regenerated for trivy-operator 0.36.1 (embedded trivy-checks `v1.12.2-0.20261012053351-ac85645895ed`); the generator reads the new `id` + `aliases` metadata format (#807).
+- The accepted-finding reason for `ReplicaSet/trivy-operator` now names `trivy-operator:0.36.1`; the operator still runs as UID/GID 10000 (measured on the live pod) (#807).
+
+### Security
+
+- Resolved OSV advisories with package overrides: `minimatch` `^11.0.1`, `glob` `^14.0.2`, `seroval` `~1.6.11` (#803).
+
 ## [1.1.28] - 2026-11-25
 
 ### Changed
@@ -1033,7 +1044,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.28...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.29...HEAD
+[1.1.29]: https://github.com/dasomel/narwhal/compare/portal/v1.1.28...portal/v1.1.29
 [1.1.28]: https://github.com/dasomel/narwhal/compare/portal/v1.1.27...portal/v1.1.28
 [1.1.27]: https://github.com/dasomel/narwhal/compare/portal/v1.1.26...portal/v1.1.27
 [1.1.26]: https://github.com/dasomel/narwhal/compare/portal/v1.1.25...portal/v1.1.26

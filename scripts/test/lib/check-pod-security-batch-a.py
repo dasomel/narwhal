@@ -147,7 +147,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("istiod top-level seccomp dropped (gateways only)", "istiod", "        seccompProfile:\n          type: RuntimeDefault\n        gateways:", "        gateways:"),
     ("trivy-server registry insecure dropped", "trivy", "          builtInServerRegistryInsecure: true\n", ""),
     ("trivy javaDbRegistry moved outside Harbor", "trivy", "          javaDbRegistry: harbor.devtools.svc.cluster.local\n", "          javaDbRegistry: ghcr.io\n"),
-    ("trivy server config-rev annotation dropped", "trivy", "            narwhal.io/trivy-server-config-rev: \"2026-11-26-registry-insecure\"\n", ""),
+    # Value-agnostic on purpose: bumping the revision (as D-TRIVY-SERVER-ROLL asks) must not break R405.
+    ("trivy server config-rev annotation dropped", "trivy", "            narwhal.io/trivy-server-config-rev: ", "            narwhal.io/not-the-config-rev: "),
     ("istiod values file renamed .bak", "istio-boot", "  -f /tmp/istiod-values.yaml \\\n", "  -f /tmp/istiod-values.yaml.bak \\\n"),
     ("istiod gateways seccomp dropped", "istiod", "        gateways:\n          seccompProfile:\n            type: RuntimeDefault\n", "        gateways: {}\n"),
     ("istiod bootstrap gateways seccomp dropped", "istio-boot", "gateways:\n  seccompProfile:\n    type: RuntimeDefault\n", "gateways: {}\n"),

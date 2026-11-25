@@ -224,6 +224,43 @@ collectors:
       internalTrafficPolicy: Local
       labels:
         istio.io/use-waypoint: "none"
+    # D-ALLOY-RBAC (KSV041): Secret read removed. The k8s-monitoring 4.2.0 upstream default
+    # (collectors/upstream/alloy-values.yaml) grants core [configmaps, secrets] get/list/watch cluster-wide
+    # "for remote.kubernetes.*". This collector has no remote.kubernetes.*, remoteConfig or Secret-backed
+    # destination auth (rendered and live config.alloy contain none; loki.secretfilter only redacts log
+    # lines), so only configmaps stay. A Helm list replaces the whole default, hence all 9 upstream rules
+    # are listed; clusterRules (nodes, /metrics) keep their chart default. Same block in
+    # gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml and scripts/cluster/08-2-monitoring.sh; pinned by R408.
+    # Escape hatch: add "secrets" back to the configmaps rule if a remote.kubernetes.* component is added.
+    rbac:
+      rules:
+        - apiGroups: ["", "discovery.k8s.io", "networking.k8s.io"]
+          resources: ["endpoints", "endpointslices", "ingresses", "pods", "services"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: [""]
+          resources: ["pods", "pods/log", "namespaces"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: ["monitoring.grafana.com"]
+          resources: ["podlogs"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: ["monitoring.coreos.com"]
+          resources: ["prometheusrules"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: ["monitoring.coreos.com"]
+          resources: ["alertmanagerconfigs"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: ["monitoring.coreos.com"]
+          resources: ["podmonitors", "servicemonitors", "probes", "scrapeconfigs"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: [""]
+          resources: ["events"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: [""]
+          resources: ["configmaps"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: ["apps", "extensions"]
+          resources: ["replicasets"]
+          verbs: ["get", "list", "watch"]
     extraConfig: |
       otelcol.receiver.otlp "otlp_traces" {
         grpc {

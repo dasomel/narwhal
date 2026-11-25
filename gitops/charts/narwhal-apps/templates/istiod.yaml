@@ -52,6 +52,11 @@ spec:
         global:
           defaultPodDisruptionBudget:
             enabled: false
+          # D-ISTIO-READER (KSV041/KSV046): no istio-reader ClusterRole/ClusterRoleBinding (and, in istio-base,
+          # no istio-reader-service-account). The chart documents them as multicluster remote-secret only; this is a
+          # single cluster with no remote secrets. Same value in istio-base.yaml, 09-istio-ambient.sh (both
+          # releases); pinned by R407. Escape hatch: set true on BOTH istio-base and istiod before adding a remote cluster.
+          enableReaderRBAC: false
         resources:
           requests:
             cpu: 100m

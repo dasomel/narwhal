@@ -34,7 +34,8 @@
       "scripts/verify/security-db-bundle-check.sh",
       "scripts/gitops/publish-chart-to-gitea.sh",
       "scripts/airgap/01-generate-image-list.sh",
-      "docs/common/agent-operational-rules.md"
+      "docs/common/agent-operational-rules.md",
+      "portal/src/lib/i18n.ts"
     ]
   },
   "events": [
@@ -70,7 +71,8 @@
         "test:vitest compliance + versions-sync -> 4 files, 66 tests passed",
         "test:make test (after adding scripts/gitops/publish-chart-to-gitea.sh and the image-list fix) -> passed 512   failed 0   warnings 3",
         "test:shellcheck scripts/gitops/publish-chart-to-gitea.sh -> exit 0",
-        "test:scripts/gitops/publish-chart-to-gitea.sh --fetch https://aquasecurity.github.io/helm-charts/ trivy-operator 0.38.1 against the local cluster -> trivy-operator-0.38.1.tgz 201 (run twice, rc 0; no temp file or port-forward left behind)"
+        "test:scripts/gitops/publish-chart-to-gitea.sh --fetch https://aquasecurity.github.io/helm-charts/ trivy-operator 0.38.1 against the local cluster -> trivy-operator-0.38.1.tgz 201 (run twice, rc 0; no temp file or port-forward left behind)",
+        "test:cd portal && pnpm exec tsc --noEmit && pnpm exec vitest run -> 200 files, 2839 passed, 0 failed (after aligning the trivyOperatorUid acceptance reason with 0.36.1; live operator pod id -> uid=10000 gid=10000)"
       ]
     },
     {

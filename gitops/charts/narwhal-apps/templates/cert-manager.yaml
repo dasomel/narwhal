@@ -41,6 +41,12 @@ spec:
               matchLabels:
                 app.kubernetes.io/instance: cert-manager
                 app.kubernetes.io/component: controller
+        # D-PSA-BATCH-A (KSV020/KSV021): explicit UID/GID = the image's own nonroot user (crane config User=65532,
+        # passwd nonroot:65532:65532), so the live identity does not change. Deep-merges with the chart default
+        # runAsNonRoot/seccompProfile (cert-manager-v1.20.2 values.yaml securityContext). Pinned by R405.
+        securityContext:
+          runAsUser: 65532
+          runAsGroup: 65532
         webhook:
           resources:
             requests:
@@ -49,6 +55,9 @@ spec:
             limits:
               cpu: 200m
               memory: 128Mi
+          securityContext:
+            runAsUser: 65532
+            runAsGroup: 65532
           replicaCount: 2
           strategy:
             type: RollingUpdate
@@ -74,6 +83,9 @@ spec:
             limits:
               cpu: 200m
               memory: 256Mi
+          securityContext:
+            runAsUser: 65532
+            runAsGroup: 65532
           replicaCount: 2
           strategy:
             type: RollingUpdate

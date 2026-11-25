@@ -101,7 +101,10 @@ spec:
           storageClassName: nfs-csi
           storageSize: 5Gi
           server:
+            # D-PSA-BATCH-A (KSV021): runAsGroup 65534 = nobody's group in the trivy image (passwd nobody:65534:65534);
+            # chart default runAsUser/fsGroup 65534 deep-merge in. Pinned by R405.
             podSecurityContext:
+              runAsGroup: 65534
               seccompProfile:
                 type: RuntimeDefault
             securityContext:

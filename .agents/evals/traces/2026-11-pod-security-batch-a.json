@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-pod-security-batch-a-20261126",
+  "task": "Pod-security Batch A: explicit non-root UID/GID and seccomp for cert-manager, MetalLB controller, trivy-server and istiod (CIS 5.7.2/5.7.3 KSV020/021/030/104)",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-pod-security-batch-a.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/cert-manager.yaml",
+      "gitops/charts/narwhal-apps/templates/istiod.yaml",
+      "gitops/charts/narwhal-apps/templates/metallb.yaml",
+      "gitops/charts/narwhal-apps/templates/trivy-operator.yaml",
+      "scripts/cluster/08-1-networking.sh",
+      "scripts/cluster/09-istio-ambient.sh",
+      "scripts/test/lib/check-pod-security-batch-a.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only the four workloads an independent Codex critic judged safe (owner request 2026-11-25 to resolve remaining CIS findings). istio-cni, Cilium, CoreDNS, Falco and every acceptance rule are out of scope."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Portal 1.1.29 measured as its ServiceAccount on 2026-11-25: CIS 5.7.3 actionable 113 and 5.7.2 actionable 9; the per-resource ConfigAuditReports of these workloads fail KSV020/KSV021 (cert-manager x3, MetalLB controller, trivy-server) and KSV030/KSV104 (istiod).",
+      "evidence": [
+        "test:live measurement via kubectl proxy as system:serviceaccount:devtools:narwhal-portal (2026-11-25) -> CIS actionable 21; triage table .omc/live/remediation/triage-pod.md rows for these workloads"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Explicit runAsUser/runAsGroup 65532 for cert-manager controller, webhook and cainjector (image nonroot user), placed after the existing resources blocks so R356 still matches; runAsGroup 65534 added to the existing MetalLB controller and trivy-server contexts (existing seccompProfile kept); top-level seccompProfile RuntimeDefault for istiod; GitOps Applications and bootstrap scripts 08-1-networking.sh / 09-istio-ambient.sh changed together (D-PSA-BATCH-A)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static regression suite and the new R405 check on the orchestrator host; nothing applied to a cluster.",
+      "summary": "R405 pins the values in both GitOps and bootstrap install blocks and rejects removal mutations; R356 still passes; the full static suite passes.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-pod-security-batch-a.py --mutation-verify -> PASS: R405 (15 mutations rejected)",
+        "test:python3 scripts/test/lib/check-networking-hardening.py --mutation-verify -> PASS (13 mutations caught)",
+        "test:make test -> passed 513   failed 0",
+        "test:make validate, check-version-consistency.sh, markdownlint-changed.py -> exit 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Values are in GitOps and bootstrap and pinned by R405. Not verified at authoring time: rollout on a live cluster, pods running with the new identity, and Trivy recording success:true for KSV020/021/030/104 on these workloads; checked during the pre-merge live trial."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the stated scope (manifests, bootstrap and static checks); live trial follows."
+    }
+  ]
+}

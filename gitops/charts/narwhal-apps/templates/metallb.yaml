@@ -50,7 +50,10 @@ spec:
               effect: "NoSchedule"
           # Trivy KSV030/104 (pod-level, verified via helm template; deep-merges with
           # chart default runAsNonRoot/runAsUser/fsGroup).
+          # D-PSA-BATCH-A (KSV021): runAsGroup 65534 = the image's own nobody group (passwd nobody:65534:65534);
+          # the chart already sets runAsUser/fsGroup 65534. Pinned by R405.
           securityContext:
+            runAsGroup: 65534
             seccompProfile:
               type: RuntimeDefault
   destination:

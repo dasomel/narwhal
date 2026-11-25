@@ -76,6 +76,10 @@ meshConfig:
 replicaCount: 2
 # autoscaleEnabled must be false, else the chart's HPA overrides replicaCount back to 1 (SPOF)
 autoscaleEnabled: false
+# D-PSA-BATCH-A (KSV030/KSV104): top-level seccompProfile reaches the discovery container; gateways.* does not.
+# Same block in gitops/charts/narwhal-apps/templates/istiod.yaml; pinned by R405.
+seccompProfile:
+  type: RuntimeDefault
 gateways:
   seccompProfile:
     type: RuntimeDefault

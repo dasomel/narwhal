@@ -7,7 +7,7 @@ Verifies:
    no container/initContainer override of either id. gitops/resources/openbao-backup.yaml
    (openbao-snapshot, openbao-snapshot-holder) must keep runAsUser: 100 and no runAsGroup:
    existing backup files on the PVC are owned by uid 100 (changing it needs an ownership migration).
-2. portal/src/lib/compliance-accepted.ts does NOT allowlist openbao-auto-unseal and holds EXACT
+2. portal/src/data/compliance-acceptance-rules.json does NOT allowlist openbao-auto-unseal and holds EXACT
    (set-equal) check lists for: database/Pod/narwhal-db-1 (accept), the pooler ReplicaSet
    (upstream: CNPG overwrites its securityContext), the snapshot CronJob and holder (accept) and
    nfs-quota-agent/DaemonSet/nfs-quota-agent (accept).
@@ -120,11 +120,12 @@ def check(texts: dict[str, str]) -> list[str]:
     if any(k[2] == "openbao-auto-unseal" for k, _ in rules):
         errors.append("compliance-acceptance-rules.json must not allowlist fixed workload openbao-auto-unseal")
 
-    # D-P2-2: no repo manifest proves the former CNPG UID/pooler necessity.
-    if any(k[2] in ("narwhal-db-1", "narwhal-db-pooler-rw") for k, _ in rules):
-        errors.append("unverified CNPG acceptance must stay absent")
-
+    # D-OWN-POD supersedes D-P2-2 for the reviewed UID/GID checks. Use the
+    # pooler's exact Deployment identity so a new ReplicaSet hash needs no rule update.
+    # Revoke the rule if the operator's UID/GID requirement changes.
     expected_rules = {
+        ("database", "Pod", "narwhal-db-1", "accept"): {"KSV020", "KSV021"},
+        ("database", "ReplicaSet", "narwhal-db-pooler-rw", "accept"): {"KSV020", "KSV021"},
         ("storage", "CronJob", "openbao-snapshot", "accept"): {"KSV020", "KSV021"},
         ("storage", "ReplicaSet", "openbao-snapshot-holder", "accept"): {"KSV020", "KSV021"},
         ("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", "accept"): {
@@ -142,7 +143,7 @@ def check(texts: dict[str, str]) -> list[str]:
             )
 
     # 3. i18n, docs, and regression wiring
-    for key in ("cnpgPoolerUid", "openbaoSnapshotUid"):
+    for key in ("cnpgPostgresUid26", "cnpgPoolerUid", "openbaoSnapshotUid"):
         if texts["i18n"].count(f'"compliance.acceptedReason.{key}"') < 2:
             errors.append(f"i18n.ts must define ko and en translations for compliance.acceptedReason.{key}")
     if "/etc/pgbouncer" in texts["i18n"] or "/etc/pgbouncer" in texts["doc"]:
@@ -150,7 +151,8 @@ def check(texts: dict[str, str]) -> list[str]:
     want_summary = f"{len(rules)} Config Audit rules across {len({k[:3] for k, _ in rules})} workloads"
     if want_summary not in texts["doc"]:
         errors.append(f"docs/common/compliance-hardening.md allowlist summary must read '{want_summary}'")
-    for row in ("CronJob/openbao-snapshot", "ReplicaSet/openbao-snapshot-holder"):
+    for row in ("CronJob/openbao-snapshot", "ReplicaSet/openbao-snapshot-holder",
+                "Pod/narwhal-db-1", "ReplicaSet/narwhal-db-pooler-rw"):
         if row not in texts["doc"]:
             errors.append(f"docs/common/compliance-hardening.md missing {row} row")
     if "Matching is exact: `database/Pod/narwhal-db-1`" not in texts["doc"]:
@@ -168,9 +170,10 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("openbao-snapshot switched to 10100", "backup", "            runAsUser: 100", "            runAsUser: 10100"),
     ("openbao-snapshot gains runAsGroup", "backup", "            runAsUser: 100\n", "            runAsUser: 100\n            runAsGroup: 10100\n"),
     ("openbao-snapshot-holder switched to 10100", "backup", "        runAsUser: 100", "        runAsUser: 10100"),
+    ("drop i18n cnpgPostgresUid26", "i18n", '"compliance.acceptedReason.cnpgPostgresUid26"', '"compliance.acceptedReason.removed"'),
     ("drop i18n cnpgPoolerUid", "i18n", '"compliance.acceptedReason.cnpgPoolerUid"', '"compliance.acceptedReason.removed"'),
     ("drop i18n openbaoSnapshotUid", "i18n", '"compliance.acceptedReason.openbaoSnapshotUid"', '"compliance.acceptedReason.removed"'),
-    ("stale doc count", "doc", "45 Config Audit rules across 45 workloads", "31 Config Audit rules across 31 workloads"),
+    ("stale doc count", "doc", "47 Config Audit rules across 47 workloads", "45 Config Audit rules across 45 workloads"),
     ("false /etc/pgbouncer claim", "doc", "### Config Audit allowlist", "### Config Audit allowlist /etc/pgbouncer"),
     ("drop exact-match doc note", "doc", "Matching is exact: `database/Pod/narwhal-db-1`", "Matching is loose: `database/Pod/narwhal-db-1`"),
     ("drop R383 wiring", "reg", "check R383 ", "check R9999 "),
@@ -186,14 +189,11 @@ def main() -> int:
 
     # Exercise the JSON artifact directly; preserve and strengthen the old rule mutations.
     data = json.loads(texts["accepted"])
-    json_mutations = []
-    for name in ("narwhal-db-1", "narwhal-db-pooler-rw", "openbao-auto-unseal"):
-        changed = copy.deepcopy(data)
-        rule = copy.deepcopy(data["configAudit"][0])
-        rule["name"] = name
-        changed["configAudit"].append(rule)
-        json_mutations.append((f"resurrect unverified/fixed {name}", changed))
-    for name in ("openbao-snapshot", "openbao-snapshot-holder", "nfs-quota-agent"):
+    changed = copy.deepcopy(data)
+    changed["configAudit"][0]["name"] = "openbao-auto-unseal"
+    json_mutations = [("allowlist fixed openbao-auto-unseal", changed)]
+    for name in ("openbao-snapshot", "openbao-snapshot-holder", "nfs-quota-agent",
+                 "narwhal-db-1", "narwhal-db-pooler-rw"):
         for mode in ("drop", "extra check"):
             changed = copy.deepcopy(data)
             rule = next(r for r in changed["configAudit"] if r["name"] == name)
@@ -202,6 +202,10 @@ def main() -> int:
             else:
                 rule["checks"].append("KSV014")
             json_mutations.append((f"{mode}: {name}", changed))
+    changed = copy.deepcopy(data)
+    pooler = next(r for r in changed["configAudit"] if r["name"] == "narwhal-db-pooler-rw")
+    pooler["name"] = "narwhal-db-pooler-rw-5b44f8765f"
+    json_mutations.append(("replace pooler Deployment identity with a ReplicaSet revision", changed))
 
     if "--mutation-verify" in sys.argv:
         for name, key, old, new in MUTATIONS:

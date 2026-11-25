@@ -746,6 +746,36 @@
       "reasonKey": "compliance.acceptedReason.verifiednodeExporterHost",
       "owner": "kube-prometheus-stack 86.2.3 (gitops/charts/narwhal-apps/templates/prometheus-stack.yaml)",
       "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "cfg:database:Pod:narwhal-db-1:accept",
+      "scope": "namespace",
+      "namespace": "database",
+      "kind": "Pod",
+      "name": "narwhal-db-1",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.cnpgPostgresUid26",
+      "owner": "CloudNativePG (gitops/resources/narwhal-db.yaml)",
+      "reviewedAt": "2026-11-26"
+    },
+    {
+      "id": "cfg:database:ReplicaSet:narwhal-db-pooler-rw:accept",
+      "scope": "namespace",
+      "namespace": "database",
+      "kind": "ReplicaSet",
+      "name": "narwhal-db-pooler-rw",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.cnpgPoolerUid",
+      "owner": "CloudNativePG (scripts/cluster/07-cnpg.sh)",
+      "reviewedAt": "2026-11-26"
     }
   ],
   "rbac": [
@@ -1469,6 +1499,34 @@
       "reasonKey": "compliance.acceptedReason.controlPlaneMetrics",
       "owner": "scripts/cluster/02-init-cluster.sh; docs/common/compliance-hardening.md#risk-accepted-exceptions",
       "reviewedAt": "2026-11-24"
+    },
+    {
+      "id": "infra:kube-system:Pod:kube-apiserver-narwhal-master-1:anonymous-auth",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Pod",
+      "name": "kube-apiserver-narwhal-master-1",
+      "checks": [
+        "KCV0001"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.apiServerAnonymousAuth",
+      "owner": "scripts/cluster/02-init-cluster.sh; docs/common/compliance-hardening.md#reviewed-exact-exceptions",
+      "reviewedAt": "2026-11-26"
+    },
+    {
+      "id": "infra:kube-system:Pod:kube-apiserver-narwhal-master-1:always-pull-images",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Pod",
+      "name": "kube-apiserver-narwhal-master-1",
+      "checks": [
+        "KCV0012"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.apiServerAlwaysPullImages",
+      "owner": "scripts/cluster/02-init-cluster.sh; docs/common/compliance-hardening.md#reviewed-exact-exceptions",
+      "reviewedAt": "2026-11-26"
     }
   ],
   "rbacBindings": [

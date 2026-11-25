@@ -332,6 +332,9 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
     expected = {
         ("Pod", "kube-system", "kube-controller-manager-narwhal-master-1", "KCV0039"),
         ("Pod", "kube-system", "kube-scheduler-narwhal-master-1", "KCV0041"),
+        # D-OWN-CP: measured on this Pod. Require fresh review for another node.
+        ("Pod", "kube-system", "kube-apiserver-narwhal-master-1", "KCV0001"),
+        ("Pod", "kube-system", "kube-apiserver-narwhal-master-1", "KCV0012"),
     }
     if targets != expected:
         errors.append("Infra rules must match reviewed exact control-plane Pod targets; KCV0056/KCV0059 stay actionable")
@@ -367,7 +370,7 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
     doc = texts["doc"]
     for needle in (
         "\n### Infra allowlist\n",
-        "**2 Infra rules**",
+        f"**{len(rules)} Infra rules**",
         "## Node collector & CIS 1.1.9 / 1.1.12 resolution",
         "D-NODE-COLLECTOR-PASSWD",
         "D-NODE-COLLECTOR-PASSWD-ROLLOUT",

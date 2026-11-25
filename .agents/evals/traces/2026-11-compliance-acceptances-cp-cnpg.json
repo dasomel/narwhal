@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-compliance-acceptances-cp-cnpg-20261126",
+  "task": "Record D-OWN-CP and D-OWN-POD as exact Portal compliance acceptances",
+  "changeContext": {
+    "paths": [
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      "portal/CHANGELOG.md",
+      "portal/CHANGELOG-ko.md",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/i18n.ts",
+      "portal/src/lib/compliance-accepted.test.ts",
+      "portal/src/lib/compliance.test.ts",
+      "scripts/test/lib/check-compliance-low-residuals.py",
+      "scripts/test/lib/check-node-compliance-checks.py",
+      "scripts/test/regression-check-kakao.sh"
+    ],
+    "traceTarget": ".agents/evals/traces/2026-11-compliance-acceptances-cp-cnpg.json",
+    "tracePlacement": "Written to a temporary directory because the sandbox denied writing to the repository trace directory."
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "D-OWN-CP covers KCV0001 and KCV0012 on a single API server Pod. D-OWN-POD covers KSV020 and KSV021 on the PostgreSQL instance and the pooler. Work is limited to Portal policy data, tests, and documentation."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "The supplied Trivy evidence identifies the API server Pod and both CNPG resources as failing the reviewed checks. The pooler ReplicaSet records Deployment/narwhal-db-pooler-rw as owner. The stored kube-bench records for narwhal-master-1 show WARN for 1.2.1 and 1.2.12. The previous R383 explicitly forbids the CNPG rules.",
+      "evidence": [
+        "artifact:orchestrator remediation/acceptance-facts.txt and remediation/triage-cp.md",
+        "artifact:orchestrator xverify/configauditreports.json and xverify/replicasets.json",
+        "artifact:orchestrator evidence/cis-record-live.json and evidence/cis-record-live-r2.json"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added two exact Infra Pod rules and two exact CNPG Config Audit rules dated 2026-11-26. The existing Deployment owner check resolves the pooler ReplicaSet hash to the exact Deployment name. The benchmark rule table retains its prior entries. R383 now requires both reviewed CNPG check sets and R385 pins the two new Infra tuples."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline typechecking, direct rule-loader and matcher checks, documentation parity, and static Python regression contracts. Vitest and live Portal verification are pending. The full R385 run hits the same six existing special-mode fixture failures as HEAD in this sandbox.",
+      "summary": "The offline matcher checks accept the approved identities and reject mismatched targets. The documented tables match the loaded rules. R385's static contract and mutation loop pass separately from the special-mode fixtures.",
+      "evidence": [
+        "test:portal pnpm exec tsc --noEmit --incremental false -> exit 0",
+        "test:Node assertions against the actual rule loader and matchers -> PASS, Config Audit and Infra table parity",
+        "test:python3 scripts/test/lib/check-compliance-low-residuals.py --mutation-verify -> PASS, 25 mutations rejected",
+        "test:python3 scripts/test/lib/check-portal-exact-acceptance.py --mutation-verify -> PASS, 42 mutations rejected",
+        "test:python3 scripts/test/lib/check-portal-cis-test-records.py --mutation-verify -> PASS, 24 mutations rejected",
+        "test:R385 static check and mutation loop with run_behavioral=False -> PASS, 23 mutations rejected",
+        "test:python3 scripts/test/lib/check-control-plane-flags.py --mutation-verify -> PASS, 13 mutations rejected",
+        "test:make test -> passed 513   failed 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The four scoped acceptance rules, bilingual reasons, owner decisions and regression tests are implemented. Verification is limited to the offline evidence listed above."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Author changes and scoped offline checks are complete. The orchestrator must place the trace, run Vitest and R385 outside the sandbox, and verify the deployed Portal results."
+    }
+  ]
+}

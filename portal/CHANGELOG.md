@@ -9,6 +9,10 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Changed
+
+- Compliance records scoped risk acceptances for the API server on `narwhal-master-1` (CIS 1.2.1 and 1.2.12) and for the low UID/GID checks on the `narwhal-db-1` Pod and the Deployment-owned `narwhal-db-pooler-rw` ReplicaSet.
+
 ## [1.1.29] - 2026-11-25
 
 ### Changed

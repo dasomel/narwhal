@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-chaos-mesh-least-privilege-20261126",
+  "task": "Limit Chaos Mesh to the chaos-testing namespace and run its controller manager non-root (CIS 5.1.x RBAC and 5.2/5.7 pod security)",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-chaos-mesh-least-privilege.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/chaos-mesh.yaml",
+      "gitops/resources/chaos-mesh-rbac.yaml",
+      "scripts/test/lib/check-chaos-mesh-scope.py",
+      "scripts/test/lib/check-devtools-compliance-hardening.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "D-OWN-CHAOS requires namespace-scoped experiments, explicit RBAC, removal of unused Secret verbs, and a non-root controller. D-CHAOS-OWN-RBAC replaces the chart grants with controller-only RBAC in the same Application."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "The orchestrator's 2026-11-26 trial of the first attempt observed four controller restarts and repeated denied RemoteCluster list requests with clusterScoped=false and ENABLED_CONTROLLERS=*. The target ClusterRole still contained wildcard and Secret write grants.",
+      "evidence": [
+        "test:orchestrator .omc/live/remediation/chaos-trial2.txt -> Synced/Healthy, controller restart count 4, failed RemoteCluster list, target RoleBinding and original ClusterRole rules",
+        "test:helm template chaos-mesh .review/chart/chaos-mesh -n chaos-testing --set extraObjects[0].kind=ServiceAccount -> undefined external-secrets.render helper"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Disable chart RBAC and load the explicit controller ServiceAccount, Roles and bindings from the same Argo CD Application's Git source. Keep RemoteCluster cache reads at cluster scope and Secret/PVC reads in chaos-testing. The daemon ServiceAccount remains chart-rendered. Pin controller UID/GID 65532 and RuntimeDefault seccomp."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static checks (R406, R364) plus a pre-merge live trial on the local cluster (branch files pushed to Gitea, reverted afterwards).",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-chaos-mesh-scope.py --mutation-verify -> PASS (23 mutations rejected)",
+        "test:python3 scripts/test/lib/check-devtools-compliance-hardening.py --mutation-verify -> R364 PASS (9 mutations rejected)",
+        "test:helm template chaos-mesh .review/chart/chaos-mesh -n chaos-testing -f extracted values --include-crds -> no chart Roles, ClusterRoles or bindings. Combined Application: 1 ClusterRole, 2 Roles, 1 ClusterRoleBinding, 2 RoleBindings, no wildcard RBAC rules, both workload ServiceAccounts present.",
+        "test:live trial before merge (branch files pushed with push-to-gitea.sh, 2026-11-26, chaos-trial3): controller UID/GID 65532, 0 restarts and 0 forbidden log lines over 12 min; only chaos-controller-manager-cluster ClusterRoleBinding and two RoleBindings in chaos-testing; PodChaos pod-kill Selected/AllInjected with Apply:Succeeded and the target pod deleted; auth can-i delete pods -n devtools -> no, list remoteclusters -> yes; after reverting to main the Application returned to Synced/Healthy and the explicit RBAC was pruned",
+        "test:make test -> passed 514 failed 0 (rebased on main a9481475)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Chart RBAC is off and the explicit least-privilege RBAC lives in gitops/resources/chaos-mesh-rbac.yaml (second source of the same Application), pinned by R406. The pre-merge live trial ran the controller stably non-root and executed a PodChaos in chaos-testing; other experiment kinds (NetworkChaos, StressChaos, Schedule, Workflow) were not exercised."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the stated scope (explicit RBAC, non-root controller, static checks and a pre-merge live trial of PodChaos)."
+    }
+  ]
+}

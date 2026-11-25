@@ -7,44 +7,69 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: platform
-  source:
-    repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
-    chart: chaos-mesh
-    targetRevision: 2.8.3
-    helm:
-      valuesObject:
-        chaosDaemon:
-          # chaos-daemon needs privileged + hostPID (hardcoded in the chart's
-          # DaemonSet, not a values toggle) to inject faults into other pods'
-          # network/IO namespaces. Excluded from Kyverno disallow-privileged-
-          # containers / disallow-host-namespaces for the chaos-testing
-          # namespace only (see gitops/resources/kyverno-policies.yaml).
-          runtime: containerd
-          socketPath: /run/containerd/containerd.sock
-          resources:
-            requests:
-              cpu: 50m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
-        controllerManager:
-          # Chart default replicaCount is 3 -- nodes are 2vCPU/6GB, so pin to 1.
-          replicaCount: 1
-          # Blast-radius guard: only namespaces explicitly annotated
-          # chaos-mesh.org/inject=enabled can be targeted by experiments.
-          enableFilterNamespace: true
-          resources:
-            requests:
-              cpu: 50m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
-        dashboard:
-          create: false
-        dnsServer:
-          create: false
+  sources:
+    - repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
+      chart: chaos-mesh
+      targetRevision: 2.8.3
+      helm:
+        valuesObject:
+          chaosDaemon:
+            # chaos-daemon needs privileged + hostPID (hardcoded in the chart's
+            # DaemonSet, not a values toggle) to inject faults into other pods'
+            # network/IO namespaces. Excluded from Kyverno disallow-privileged-
+            # containers / disallow-host-namespaces for the chaos-testing
+            # namespace only (see gitops/resources/kyverno-policies.yaml).
+            runtime: containerd
+            socketPath: /run/containerd/containerd.sock
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
+          # D-OWN-CHAOS: scope the manager cache and pod selection to chaos-testing.
+          clusterScoped: false
+          rbac:
+            create: false
+          controllerManager:
+            # The Deployment uses these settings to select its SA even with rbac.create=false.
+            serviceAccountCreate: true
+            serviceAccount: chaos-controller-manager
+            # Chart default replicaCount is 3 -- nodes are 2vCPU/6GB, so pin to 1.
+            replicaCount: 1
+            targetNamespace: chaos-testing
+            # The namespace annotation filter requires cluster-wide Namespace reads.
+            enableFilterNamespace: false
+            # The chart sets pod-level securityContext. The controller uses
+            # unprivileged ports and reads its certificates from mounted files.
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65532
+              runAsGroup: 65532
+              seccompProfile:
+                type: RuntimeDefault
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 256Mi
+          dashboard:
+            create: false
+          dnsServer:
+            create: false
+    # D-CHAOS-OWN-RBAC: use the same Application to sync and prune the chart and
+    # its RBAC. Chart 2.8.3 hardcodes wildcard grants and extraObjects calls an
+    # undefined helper. Cost: re-audit the explicit rules on each chart upgrade.
+    # Escape hatch: once a chart can render the same rules, migrate their ownership
+    # within this Application and drop this source after checking the rendered diff.
+    - repoURL: "{{ .Values.repoURL }}"
+      targetRevision: HEAD
+      path: resources
+      directory:
+        include: chaos-mesh-rbac.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: chaos-testing

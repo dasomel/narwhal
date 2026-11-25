@@ -75,7 +75,8 @@ def validate(files: dict[str, str]) -> None:
 
   # 4. Chaos Mesh
   cm_app = parse_helm_app(files[CHAOS_MESH])
-  cm_vals = cm_app['spec']['source']['helm']['valuesObject']
+  cm_vals = next(source['helm']['valuesObject'] for source in cm_app['spec']['sources']
+                 if source.get('chart') == 'chaos-mesh')
   daemon_lim = cm_vals.get('chaosDaemon', {}).get('resources', {}).get('limits', {})
   assert daemon_lim.get('cpu') == '500m' and daemon_lim.get('memory') == '256Mi', (
       f'chaosDaemon limits mismatch: {daemon_lim}'

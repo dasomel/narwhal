@@ -28,12 +28,31 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+        # D-OWN-CHAOS: namespace-scoped mode. The chart then binds the target-namespace
+        # ClusterRole with a RoleBinding in targetNamespace only (instead of a
+        # ClusterRoleBinding) and the manager caches/acts on chaos-testing alone, so
+        # Pod/ConfigMap/Secret and chaos-mesh.org verbs are no longer granted cluster-wide.
+        clusterScoped: false
         controllerManager:
           # Chart default replicaCount is 3 -- nodes are 2vCPU/6GB, so pin to 1.
           replicaCount: 1
-          # Blast-radius guard: only namespaces explicitly annotated
-          # chaos-mesh.org/inject=enabled can be targeted by experiments.
-          enableFilterNamespace: true
+          # Only experiments in this namespace can target pods (RBAC boundary).
+          targetNamespace: chaos-testing
+          # Blast-radius guard is the RoleBinding above, not the namespace annotation:
+          # the annotation filter reads Namespace objects cluster-wide, which the chart's
+          # namespace-scoped ClusterRole deliberately omits (namespaces/services only
+          # under clusterScoped), so keeping it true would deny every experiment.
+          enableFilterNamespace: false
+          # D-OWN-CHAOS: the chart's controller pod securityContext is the only knob
+          # (no container-level one). v2.8.3 image has no USER (root by default), runs a
+          # static Go controller on ports 10250/10080, reads webhook/daemon/chaosd certs from
+          # 0644 Secret volumes and needs only /tmp (1777) -> 65532 is safe.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
           resources:
             requests:
               cpu: 50m

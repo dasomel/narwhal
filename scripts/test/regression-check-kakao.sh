@@ -3587,6 +3587,9 @@ PYEOF'
   # 2026-11-25: pod-security Batch A (CIS KSV020/021/030/104) for cert-manager, MetalLB controller, trivy-server and istiod
   check R405 "Pod-security Batch A: cert-manager (3 pods) runAsUser/runAsGroup 65532, MetalLB controller + trivy-server runAsGroup 65534 with seccomp kept, istiod top-level seccompProfile RuntimeDefault; GitOps and bootstrap identical and the istiod install consumes its values file, trivy-server builtInServerRegistryInsecure true with Harbor-only DB registries and a config-rev roll annotation; 22 mutations caught" \
     python3 scripts/test/lib/check-pod-security-batch-a.py --mutation-verify
+  # 2026-11-25: D-OWN-CHAOS (R405 is claimed by fix/pod-security-batch-a)
+  check R406 "Chaos Mesh limited to chaos-testing (clusterScoped false, targetNamespace chaos-testing, annotation filter off) and controller manager non-root UID/GID 65532 with RuntimeDefault seccomp; 14 mutations caught" \
+    python3 scripts/test/lib/check-chaos-mesh-scope.py --mutation-verify
 }
 
 #=========================================

@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-chaos-mesh-least-privilege-20261126",
+  "task": "Limit Chaos Mesh to the chaos-testing namespace and run its controller manager non-root (CIS 5.1.x RBAC and 5.2/5.7 pod security)",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-chaos-mesh-least-privilege.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/chaos-mesh.yaml",
+      "scripts/test/lib/check-chaos-mesh-scope.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Owner decision D-OWN-CHAOS (chat, 2026-11-25): Chaos Mesh limited to namespace chaos-testing; controller non-root where the chart allows. Other components, acceptance rules and the chaos daemon are out of scope."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Portal 1.1.29 measured as its ServiceAccount on 2026-11-25 lists Chaos Mesh controller findings under CIS 5.1.3 (wildcards) and 5.2/5.7 (root controller); the RBAC triage (.omc/live/remediation/triage-rbac.md, P2) and pod triage (Batch 9) identify cluster-wide bindings and a root controller.",
+      "evidence": [
+        "test:live read-only measurement via kubectl proxy as system:serviceaccount:devtools:narwhal-portal (2026-11-25) -> 21 actionable CIS controls; Chaos Mesh rows in .omc/live/remediation/triage-rbac.md and triage-pod.md"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "chaos-mesh Application: clusterScoped false with controllerManager.targetNamespace chaos-testing (RoleBinding in that namespace instead of ClusterRoleBinding), enableFilterNamespace false because the namespace-scoped role cannot read Namespace objects, and controller pod securityContext runAsNonRoot with UID/GID 65532 and RuntimeDefault seccomp (D-OWN-CHAOS)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static regression suite and the new R406 check on the orchestrator host; nothing applied to a cluster.",
+      "summary": "R406 pins the namespace scope and non-root identity and rejects removal mutations; the full static suite passes.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-chaos-mesh-scope.py --mutation-verify -> PASS: R406 (14 mutations rejected)",
+        "test:make test -> passed 513   failed 0",
+        "test:make validate, check-version-consistency.sh, markdownlint-changed.py -> exit 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Values are in the GitOps Application and pinned by R406. Not verified at authoring time: rendered RBAC on the live cluster, a PodChaos experiment in chaos-testing, and Trivy records for the controller; checked during the pre-merge live trial."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the stated scope (GitOps values and static checks); live trial follows."
+    }
+  ]
+}

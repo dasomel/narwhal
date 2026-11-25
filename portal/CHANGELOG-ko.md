@@ -9,6 +9,10 @@
 
 ## [Unreleased]
 
+### 변경
+
+- 컴플라이언스에서 `narwhal-master-1`의 API 서버(CIS 1.2.1, 1.2.12)와 `narwhal-db-1` 파드 및 Deployment가 소유한 `narwhal-db-pooler-rw` ReplicaSet의 낮은 UID/GID 검사에 한해 위험 수용을 기록합니다.
+
 ## [1.1.29] - 2026-11-25
 
 ### 변경

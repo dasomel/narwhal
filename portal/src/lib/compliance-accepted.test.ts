@@ -185,6 +185,31 @@ describe("exact acceptance (D-P2-1/2/3)", () => {
     expect(matchRbacException("cert-manager-controller-certificates", "KSV048", "", "ClusterRole")).toBeNull()
   })
 
+  it.each(["KSV020", "KSV021"])("accepts CNPG %s for the exact Pod and the verified pooler Deployment", (check) => {
+    const pooler = "narwhal-db-pooler-rw"
+    const replicaSet = "narwhal-db-pooler-rw-5b44f8765f"
+    expect(matchConfigAuditException("database", "Pod", "narwhal-db-1", check)).toMatchObject({
+      ruleId: "cfg:database:Pod:narwhal-db-1:accept",
+      reviewedAt: "2026-11-26",
+    })
+    expect(matchConfigAuditException("database", "ReplicaSet", replicaSet, check, [pooler])).toMatchObject({
+      ruleId: "cfg:database:ReplicaSet:narwhal-db-pooler-rw:accept",
+      reviewedAt: "2026-11-26",
+    })
+    expect(matchConfigAuditException("database", "Pod", "narwhal-db-2", check)).toBeNull()
+    expect(matchConfigAuditException("default", "Pod", "narwhal-db-1", check)).toBeNull()
+    expect(matchConfigAuditException("default", "ReplicaSet", replicaSet, check, [pooler])).toBeNull()
+    expect(matchConfigAuditException("database", "ReplicaSet", replicaSet, check, [])).toBeNull()
+    expect(matchConfigAuditException("database", "ReplicaSet", replicaSet, check, ["another-pooler"])).toBeNull()
+    expect(matchConfigAuditException("database", "ReplicaSet", replicaSet, check)).toBeNull()
+    expect(matchConfigAuditException("database", "ReplicaSet", "narwhal-db-pooler-ro-5b44f8765f", check, ["narwhal-db-pooler-ro"])).toBeNull()
+  })
+
+  it("keeps other CNPG checks actionable on the approved targets", () => {
+    expect(matchConfigAuditException("database", "Pod", "narwhal-db-1", "KSV014")).toBeNull()
+    expect(matchConfigAuditException("database", "ReplicaSet", "narwhal-db-pooler-rw-5b44f8765f", "KSV014", ["narwhal-db-pooler-rw"])).toBeNull()
+  })
+
   it("matches RBAC by exact scope/namespace/kind/name AND explicit checks", () => {
     expect(matchRbacException("platform-admin", "KSV041", "", "ClusterRole")?.ruleId).toBe("rbac:cluster:ClusterRole:platform-admin:accept")
     expect(matchRbacException("narwhal-portal-jobs", "KSV048", "devtools", "Role")).not.toBeNull()
@@ -225,7 +250,7 @@ describe("findUnusedAcceptanceRules (D-P2-4)", () => {
 
 describe("matchInfraException", () => {
   it("accepts only measured exact nodes/checks and fails closed (KCV0056/KCV0057/KCV0059 stay actionable)", () => {
-    expect(ACCEPTED_INFRA_RULES).toHaveLength(2)
+    expect(ACCEPTED_INFRA_RULES).toHaveLength(4)
     for (const [target, check] of [["kube-controller-manager-narwhal-master-1", "KCV0039"], ["kube-scheduler-narwhal-master-1", "KCV0041"]]) {
       expect(matchInfraException(target, check, "Pod", "kube-system")?.reviewedAt).toBe("2026-11-24")
       expect(matchInfraException(target + "0", check, "Pod", "kube-system")).toBeNull()
@@ -243,9 +268,34 @@ describe("matchInfraException", () => {
     expect(matchInfraException("", "KCV0056")).toBeNull()
     expect(matchInfraException("narwhal-master-1", "")).toBeNull()
   })
+
+  it.each([
+    ["KCV0001", "anonymous-auth"],
+    ["KCV0012", "always-pull-images"],
+  ])("accepts API server %s only for the reviewed Pod", (check, suffix) => {
+    const pod = "kube-apiserver-narwhal-master-1"
+    expect(matchInfraException(pod, check, "Pod", "kube-system")).toMatchObject({
+      ruleId: `infra:kube-system:Pod:${pod}:${suffix}`,
+      reviewedAt: "2026-11-26",
+    })
+    expect(matchInfraException("kube-apiserver-narwhal-master-2", check, "Pod", "kube-system")).toBeNull()
+    expect(matchInfraException("another-apiserver", check, "Pod", "kube-system")).toBeNull()
+    expect(matchInfraException(pod, check, "Pod", "default")).toBeNull()
+    expect(matchInfraException("narwhal-master-1", check)).toBeNull()
+    expect(matchInfraException("narwhal-master-2", check)).toBeNull()
+  })
+
+  it("keeps other API server checks actionable on the approved Pod", () => {
+    expect(matchInfraException("kube-apiserver-narwhal-master-1", "KCV0010", "Pod", "kube-system")).toBeNull()
+  })
 })
 
 describe("matchBenchmarkException", () => {
+  it.each(["1.2.1", "1.2.12"])("keeps kube-bench %s outside the reviewed Trivy rules", (control) => {
+    expect(matchBenchmarkException("cis-1.23", control, "narwhal-master-1")).toBeNull()
+    expect(matchBenchmarkException("cis-1.23", control, "narwhal-master-2")).toBeNull()
+  })
+
   it("does not accept the same control on a worker node", () => {
     expect(matchBenchmarkException("cis-1.23", "1.1.12", "narwhal-worker-1")).toBeNull()
   })
@@ -299,14 +349,12 @@ describe("allowlist integrity and docs parity", () => {
       expect(rule.reason.trim().length).toBeGreaterThan(0)
     }
 
-    const seenInfraClass = new Set<string>()
+    // D-OWN-CP: one Pod has independent reasons for two checks. Keep the check
+    // tuples disjoint so either decision can be withdrawn without changing the other.
     const seenInfraChecks = new Set<string>()
     for (const rule of ACCEPTED_INFRA_RULES) {
-      const classKey = `${rule.node}|${rule.class}`
-      expect(seenInfraClass.has(classKey), `Duplicate Infra class entry: ${classKey}`).toBe(false)
-      seenInfraClass.add(classKey)
       for (const id of rule.checks) {
-        const checkKey = `${rule.node}|${id}`
+        const checkKey = `${rule.namespace}|${rule.kind}|${rule.node}|${id}`
         expect(seenInfraChecks.has(checkKey), `Overlapping Infra check entry: ${checkKey}`).toBe(false)
         seenInfraChecks.add(checkKey)
       }

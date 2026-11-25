@@ -329,7 +329,7 @@ allow in `devtools` and deny in another namespace and across all namespaces.
 Check controller readiness and logs, reconcile a local Cluster generator and
 any SCM/PR generators in use, confirm ordinary Application sync, and check
 KSV041 on the current ClusterRole UID after Trivy rescans. R409 provides offline
-render evidence. The live trial is pending.
+render evidence. Pre-merge live trial (2026-11-26): the rendered ClusterRole applied server-side; the controller stayed 1/1 Running with 0 restarts and no forbidden logs; `auth can-i list secrets -A` no, `-n devtools` yes. Re-run R409 with `--manifest` against the staged `argocd-install.yaml` on every `ARGOCD_VERSION` bump, because the filter keeps the rule unchanged if upstream changes its shape.
 
 ## Risk-accepted exceptions (do NOT "fix")
 

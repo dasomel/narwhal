@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+## [1.1.30] - 2026-11-26
+
 ### 변경
 
 - 컴플라이언스에서 `narwhal-master-1`의 API 서버(CIS 1.2.1, 1.2.12)와 `narwhal-db-1` 파드 및 Deployment가 소유한 `narwhal-db-pooler-rw` ReplicaSet의 낮은 UID/GID 검사에 한해 위험 수용을 기록합니다.
@@ -1002,7 +1004,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.29...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.30...HEAD
+[1.1.30]: https://github.com/dasomel/narwhal/compare/portal/v1.1.29...portal/v1.1.30
 [1.1.29]: https://github.com/dasomel/narwhal/compare/portal/v1.1.28...portal/v1.1.29
 [1.1.28]: https://github.com/dasomel/narwhal/compare/portal/v1.1.27...portal/v1.1.28
 [1.1.27]: https://github.com/dasomel/narwhal/compare/portal/v1.1.26...portal/v1.1.27

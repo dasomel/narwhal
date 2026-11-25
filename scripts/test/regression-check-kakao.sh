@@ -3590,6 +3590,8 @@ PYEOF'
   # 2026-11-25: D-OWN-CHAOS (R405 is claimed by fix/pod-security-batch-a)
   check R406 "Chaos Mesh limited to chaos-testing with explicit controller RBAC and non-root UID/GID 65532" \
     python3 scripts/test/lib/check-chaos-mesh-scope.py --mutation-verify
+  check R409 "ArgoCD bootstrap removes only the ApplicationSet ClusterRole Secret/ConfigMap read rule (CIS 5.1.2/KSV041); three mutations rejected" \
+    python3 scripts/test/lib/check-argocd-appset-secrets.py --mutation-verify
 }
 
 #=========================================

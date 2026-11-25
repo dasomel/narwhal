@@ -303,6 +303,34 @@ test is at `scripts/test/verify-nfs-root-squash.sh` (see its header comment for 
 what it checks and how to run it against a live server) — a future session with cluster
 access should run it and record the result here.
 
+### ApplicationSet controller Secret and ConfigMap reads (CIS 5.1.2/KSV041)
+
+`13-argocd.sh` filters the cluster-wide core Secret/ConfigMap `get/list/watch` rule
+from the bundled `argocd-applicationset-controller` ClusterRole before server-side apply.
+Bootstrap reruns submit the shortened RBAC rules list and replace the existing list.
+The same-named Role applied in `devtools` still grants all three verbs there.
+GitOps manages Argo CD settings and the server ClusterRole, and bootstrap owns
+the ApplicationSet controller ClusterRole.
+
+To trial only the ClusterRole on an existing cluster, stage the updated script on
+master-1 and run:
+
+```bash
+sudo -u vagrant env KUBECONFIG=/home/vagrant/.kube/config-local bash -o pipefail -c '
+  bash /home/vagrant/scripts/cluster/13-argocd.sh --render-install /home/vagrant/manifests/argocd-install.yaml |
+    yq -e "$1" |
+    kubectl apply --server-side --force-conflicts -f -
+' _ 'select(.kind == "ClusterRole" and .metadata.name == "argocd-applicationset-controller")'
+```
+
+Compare the live ClusterRole with the baseline and check the controller service
+account with `kubectl auth can-i` for each verb on Secrets and ConfigMaps. Expect
+allow in `devtools` and deny in another namespace and across all namespaces.
+Check controller readiness and logs, reconcile a local Cluster generator and
+any SCM/PR generators in use, confirm ordinary Application sync, and check
+KSV041 on the current ClusterRole UID after Trivy rescans. R409 provides offline
+render evidence. Pre-merge live trial (2026-11-26): the rendered ClusterRole applied server-side; the controller stayed 1/1 Running with 0 restarts and no forbidden logs; `auth can-i list secrets -A` no, `-n devtools` yes. Re-run R409 with `--manifest` against the staged `argocd-install.yaml` on every `ARGOCD_VERSION` bump, because the filter keeps the rule unchanged if upstream changes its shape.
+
 ## Risk-accepted exceptions (do NOT "fix")
 
 These failing controls are expected for this IDP platform. Changing them breaks

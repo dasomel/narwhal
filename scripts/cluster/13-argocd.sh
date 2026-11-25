@@ -1,6 +1,28 @@
 #!/bin/bash
 set -euo pipefail
 
+# D-ARGO-APPSET-SECRETS: no ApplicationSets run outside devtools, and the
+# namespaced Role covers devtools. ApplicationSets in other namespaces or
+# cluster generators reading Secrets elsewhere can fail until re-granted.
+# Restore the upstream rule by removing this filter and applying the manifest.
+render_argocd_install() {
+  yq eval-all 'del(
+    select(.apiVersion == "rbac.authorization.k8s.io/v1"
+      and .kind == "ClusterRole" and .metadata.name == "argocd-applicationset-controller")
+    | .rules[] | select(
+      ((keys | sort | @json) == "[\"apiGroups\",\"resources\",\"verbs\"]")
+      and ((.apiGroups | @json) == "[\"\"]")
+      and ((.resources | sort | @json) == "[\"configmaps\",\"secrets\"]")
+      and ((.verbs | sort | @json) == "[\"get\",\"list\",\"watch\"]")
+    )
+  )' "$1"
+}
+
+if [[ "${1:-}" == "--render-install" ]]; then
+  render_argocd_install "${2:?install.yaml path required}"
+  exit
+fi
+
 # Manifests come from the airgap bundle.
 # shellcheck source=/dev/null
 source /home/vagrant/scripts/common/lib-charts.sh
@@ -30,8 +52,9 @@ done
 kubectl create namespace devtools --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace devtools istio.io/dataplane-mode=ambient --overwrite
 
-# Install ArgoCD (server-side apply for large CRDs like applicationsets)
-kubectl apply -n devtools -f "$(manifest argocd-install.yaml)" \
+# Server-side apply for large CRDs and to replace the existing ClusterRole rules.
+argocd_manifest="$(manifest argocd-install.yaml)"
+render_argocd_install "$argocd_manifest" | kubectl apply -n devtools -f - \
   --server-side --force-conflicts
 # Narwhal#251: upstream's argocd-server ClusterRole grants `*` on `*` (reaching
 # nodes/proxy). Replace it right away with the narrowed role idp-apps reconciles, so

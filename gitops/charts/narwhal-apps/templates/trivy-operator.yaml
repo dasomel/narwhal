@@ -219,6 +219,10 @@ spec:
           # The trivy-server pod is a cache: keep Velero fs-backup off its PVC (see trivy.storageClassEnabled).
           serverAdditionalAnnotations:
             backup.velero.io/backup-volumes-excludes: data
+            # D-TRIVY-SERVER-ROLL: the chart pins checksum/config on the server pod template to a fixed
+            # hash, so TRIVY_* ConfigMap changes never restart the server (review MAJOR, 2026-11-26).
+            # Bump this value whenever a server-affecting trivy/operator value changes.
+            narwhal.io/trivy-server-config-rev: "2026-11-26-registry-insecure"
         # D-TRIVY-OPERATOR-MEM: the operator ran BestEffort (no requests/limits) and was
         # OOMKilled 33x/22h under node memory pressure (workers 5.4GB, 53-71% used). The
         # chart reads the TOP-LEVEL `resources` (templates/deployment.yaml); the old

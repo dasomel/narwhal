@@ -105,6 +105,12 @@ def check(texts: dict[str, str]) -> list[str]:
         errors.append(f"trivy-operator.yaml trivy.server.podSecurityContext must keep seccompProfile RuntimeDefault, got {psc!r}")
     if dig(values_object(texts["trivy"]), "operator", "builtInServerRegistryInsecure") is not True:
         errors.append("trivy-operator.yaml operator.builtInServerRegistryInsecure must be true (Harbor serves HTTP only; D-TRIVY-SERVER-INSECURE)")
+    tv = dig(values_object(texts["trivy"]), "trivy") or {}
+    for k in ("dbRegistry", "javaDbRegistry"):
+        if tv.get(k) != "harbor.devtools.svc.cluster.local":
+            errors.append(f"trivy-operator.yaml trivy.{k} must stay the in-cluster Harbor while the server registry is insecure, got {tv.get(k)!r}")
+    if not (dig(values_object(texts["trivy"]), "operator", "serverAdditionalAnnotations") or {}).get("narwhal.io/trivy-server-config-rev"):
+        errors.append("trivy-operator.yaml operator.serverAdditionalAnnotations must carry narwhal.io/trivy-server-config-rev (D-TRIVY-SERVER-ROLL)")
     csc = srv.get("securityContext") or {}
     if csc.get("allowPrivilegeEscalation") is not False or csc.get("capabilities") != {"drop": ["ALL"]}:
         errors.append(f"trivy-operator.yaml trivy.server.securityContext must keep allowPrivilegeEscalation false + drop ALL, got {csc!r}")
@@ -117,7 +123,7 @@ def check(texts: dict[str, str]) -> list[str]:
             errors.append(f"{label} must keep gateways.seccompProfile RuntimeDefault")
 
     # The heredoc values only matter if the istiod install actually consumes them (review MINOR, 2026-11-26).
-    if not re.search(r'helm upgrade --install istiod[^\n]*\\\n(?:[^\n]*\\\n)*?\s*-f /tmp/istiod-values\.yaml', texts["istio-boot"]):
+    if not re.search(r'helm upgrade --install istiod[^\n]*\\\n(?:[^\n]*\\\n)*?\s*-f /tmp/istiod-values\.yaml[ \t]*\\\n', texts["istio-boot"]):
         errors.append("09-istio-ambient.sh istiod install must pass -f /tmp/istiod-values.yaml")
 
     if "check R405 " not in texts["reg"] or "check-pod-security-batch-a.py --mutation-verify" not in texts["reg"]:
@@ -140,6 +146,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("trivy-server container hardening dropped", "trivy", "              allowPrivilegeEscalation: false\n              capabilities:\n                drop:\n                  - ALL\n            resources:\n              requests:\n                cpu: 100m\n                memory: 512Mi", "            resources:\n              requests:\n                cpu: 100m\n                memory: 512Mi"),
     ("istiod top-level seccomp dropped (gateways only)", "istiod", "        seccompProfile:\n          type: RuntimeDefault\n        gateways:", "        gateways:"),
     ("trivy-server registry insecure dropped", "trivy", "          builtInServerRegistryInsecure: true\n", ""),
+    ("trivy javaDbRegistry moved outside Harbor", "trivy", "          javaDbRegistry: harbor.devtools.svc.cluster.local\n", "          javaDbRegistry: ghcr.io\n"),
+    ("trivy server config-rev annotation dropped", "trivy", "            narwhal.io/trivy-server-config-rev: \"2026-11-26-registry-insecure\"\n", ""),
+    ("istiod values file renamed .bak", "istio-boot", "  -f /tmp/istiod-values.yaml \\\n", "  -f /tmp/istiod-values.yaml.bak \\\n"),
     ("istiod gateways seccomp dropped", "istiod", "        gateways:\n          seccompProfile:\n            type: RuntimeDefault\n", "        gateways: {}\n"),
     ("istiod bootstrap gateways seccomp dropped", "istio-boot", "gateways:\n  seccompProfile:\n    type: RuntimeDefault\n", "gateways: {}\n"),
     ("istiod bootstrap values file not consumed", "istio-boot", "  -f /tmp/istiod-values.yaml \\\n", "  -f /tmp/other-values.yaml \\\n"),

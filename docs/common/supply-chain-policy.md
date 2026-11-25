@@ -12,7 +12,7 @@
 
 | 검증 대상 / 영역 | 정책 내용 | 강제화 수단 (`Enforced by`) |
 | --- | --- | --- |
-| narwhal 린트 도구 버전 및 무결성 | `yq` `v4.53.3`, `kubeconform` `v0.8.0` 해시 검증 및 `markdownlint-cli@0.50.1` 잠금 설치 | `.github/workflows/lint.yml` (`sha256sum -c`로 `yq`, `kubeconform` 무결성 검증), `.github/tools/markdownlint/package-lock.json` (`npm ci --ignore-scripts`로 전이 의존성까지 무결성 해시 검증, Dependabot 추적) |
+| narwhal 린트 도구 버전 및 무결성 | `yq` `v4.53.3`, `kubeconform` `v0.8.0` 해시 검증 및 `markdownlint-cli@0.50.0` 잠금 설치 | `.github/workflows/lint.yml` (`sha256sum -c`로 `yq`, `kubeconform` 무결성 검증), `.github/tools/markdownlint/package-lock.json` (`npm ci --ignore-scripts`로 전이 의존성까지 무결성 해시 검증, Dependabot 추적) |
 | narwhal GitHub Actions Action 고정 | `.github/workflows/` 내 모든 `uses:` 지시자 커밋 SHA 고정 | `.github/workflows/` 내 모든 워크플로우 (40자리 hex commit SHA + `# vX.Y.Z` 주석) |
 | narwhal 에어갭 바이너리 무결성 | 에어갭 번들에 포함된 19개 아티팩트의 SHA-256 검증 | `scripts/airgap/lib/binary-checksums.tsv` 및 `scripts/airgap/07-save-binaries.sh` (`fetch()` 시 검증, 누락 시 즉시 실패), `scripts/airgap/lib/refresh-binary-checksums.sh`로 갱신 |
 | narwhal 외부 컴포넌트 커밋 고정 | `nfs-quota-agent` 커밋 SHA 고정 | `scripts/airgap/07-save-binaries.sh` (커밋 `386ac455d5f9e609d39e8e42c295db6a362917cc` 고정) |

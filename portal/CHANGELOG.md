@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.30] - 2026-11-26
+
 ### Changed
 
 - Compliance records scoped risk acceptances for the API server on `narwhal-master-1` (CIS 1.2.1 and 1.2.12) and for the low UID/GID checks on the `narwhal-db-1` Pod and the Deployment-owned `narwhal-db-pooler-rw` ReplicaSet.
@@ -1048,7 +1050,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.29...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.30...HEAD
+[1.1.30]: https://github.com/dasomel/narwhal/compare/portal/v1.1.29...portal/v1.1.30
 [1.1.29]: https://github.com/dasomel/narwhal/compare/portal/v1.1.28...portal/v1.1.29
 [1.1.28]: https://github.com/dasomel/narwhal/compare/portal/v1.1.27...portal/v1.1.28
 [1.1.27]: https://github.com/dasomel/narwhal/compare/portal/v1.1.26...portal/v1.1.27

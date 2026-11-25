@@ -46,7 +46,7 @@
         "test:python3 scripts/test/lib/check-devtools-compliance-hardening.py --mutation-verify -> R364 PASS (9 mutations rejected)",
         "test:helm template chaos-mesh .review/chart/chaos-mesh -n chaos-testing -f extracted values --include-crds -> no chart Roles, ClusterRoles or bindings. Combined Application: 1 ClusterRole, 2 Roles, 1 ClusterRoleBinding, 2 RoleBindings, no wildcard RBAC rules, both workload ServiceAccounts present.",
         "test:live trial before merge (branch files pushed with push-to-gitea.sh, 2026-11-26, chaos-trial3): controller UID/GID 65532, 0 restarts and 0 forbidden log lines over 12 min; only chaos-controller-manager-cluster ClusterRoleBinding and two RoleBindings in chaos-testing; PodChaos pod-kill Selected/AllInjected with Apply:Succeeded and the target pod deleted; auth can-i delete pods -n devtools -> no, list remoteclusters -> yes; after reverting to main the Application returned to Synced/Healthy and the explicit RBAC was pruned",
-        "test:make test -> passed 513   failed 0"
+        "test:make test -> passed 514 failed 0 (rebased on main a9481475)"
       ]
     },
     {

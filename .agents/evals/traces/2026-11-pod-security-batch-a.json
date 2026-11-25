@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-pod-security-batch-a-20261126",
+  "task": "Pod-security Batch A: explicit non-root UID/GID and seccomp for cert-manager, MetalLB controller, trivy-server and istiod (CIS 5.7.2/5.7.3 KSV020/021/030/104)",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-pod-security-batch-a.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/cert-manager.yaml",
+      "gitops/charts/narwhal-apps/templates/istiod.yaml",
+      "gitops/charts/narwhal-apps/templates/metallb.yaml",
+      "gitops/charts/narwhal-apps/templates/trivy-operator.yaml",
+      "scripts/cluster/08-1-networking.sh",
+      "scripts/cluster/09-istio-ambient.sh",
+      "scripts/test/lib/check-pod-security-batch-a.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only the four workloads an independent Codex critic judged safe (owner request 2026-11-25 to resolve remaining CIS findings). istio-cni, Cilium, CoreDNS, Falco and every acceptance rule are out of scope."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Portal 1.1.29 measured as its ServiceAccount on 2026-11-25: CIS 5.7.3 actionable 113 and 5.7.2 actionable 9; the per-resource ConfigAuditReports fail KSV020 and KSV021 for cert-manager, cert-manager-webhook and cert-manager-cainjector, KSV021 only for the MetalLB controller and trivy-server, and KSV030/KSV104 for istiod.",
+      "evidence": [
+        "test:live measurement via kubectl proxy as system:serviceaccount:devtools:narwhal-portal (2026-11-25) -> 21 actionable CIS controls; per-workload rows in .omc/live/remediation/triage-pod.md"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Explicit runAsUser/runAsGroup 65532 for cert-manager controller, webhook and cainjector (image nonroot user), placed after the existing resources blocks so R356 still matches; runAsGroup 65534 added to the existing MetalLB controller and trivy-server contexts (existing seccompProfile kept); top-level seccompProfile RuntimeDefault for istiod; GitOps Applications and bootstrap scripts 08-1-networking.sh / 09-istio-ambient.sh changed together (D-PSA-BATCH-A). Live trial found trivy-server crash-looping on https://harbor...:443 after its DB copy aged out; operator.builtInServerRegistryInsecure true added (D-TRIVY-SERVER-INSECURE, defect from #807)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static regression suite and R405 on the orchestrator host, plus a pre-merge live trial on the local cluster (branch files pushed to Gitea).",
+      "summary": "R405 pins the values in both GitOps and bootstrap install blocks and rejects removal mutations; R356 still passes; the full static suite passes.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-pod-security-batch-a.py --mutation-verify -> PASS: R405 (22 mutations rejected)",
+        "test:python3 scripts/test/lib/check-networking-hardening.py --mutation-verify -> PASS (13 mutations caught)",
+        "test:make test -> passed 513   failed 0",
+        "test:make validate, check-version-consistency.sh, markdownlint-changed.py -> exit 0",
+        "test:live trial before merge (branch files pushed with push-to-gitea.sh, 2026-11-26): cert-manager x3 pods 65532/65532, MetalLB controller and trivy-server 65534/65534, istiod container seccomp RuntimeDefault, all rolled out; 4 Certificates Ready; LoadBalancer IP kept; test-sso PASS 144 FAIL 0; trivy-server Ready with 0 restarts after builtInServerRegistryInsecure",
+        "test:live ConfigAuditReports after rescan (2026-11-26): AVD-KSV-0020/0021/0030/0104 success true for cert-manager, cert-manager-cainjector, cert-manager-webhook, metallb-controller and trivy-server; istiod 0030/0104 true, 0020/0021 false (out of scope)",
+        "test:live: pushing only the narwhal.io/trivy-server-config-rev annotation rolled trivy-server through an ArgoCD sync (new pod UID, Ready, 0 restarts), 2026-11-26"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Values are in GitOps and bootstrap and pinned by R405. The pre-merge live trial rolled them out, the workloads stayed healthy, Trivy recorded the targeted checks as passing, and the config-rev annotation rolled trivy-server through a plain sync."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the stated scope (manifests, bootstrap, static checks and a pre-merge live trial)."
+    }
+  ]
+}

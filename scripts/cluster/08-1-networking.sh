@@ -42,6 +42,7 @@ for attempt in 1 2 3 4 5; do
     --set controller.resources.requests.memory=64Mi \
     --set controller.resources.limits.cpu=200m \
     --set controller.resources.limits.memory=128Mi \
+    --set controller.securityContext.runAsGroup=65534 \
     --set controller.securityContext.seccompProfile.type=RuntimeDefault; then
     METALLB_OK=true; break
   fi
@@ -516,6 +517,12 @@ for attempt in 1 2 3 4 5; do
     --create-namespace \
     --version v1.20.2 \
     --set crds.enabled=true \
+    --set securityContext.runAsUser=65532 \
+    --set securityContext.runAsGroup=65532 \
+    --set webhook.securityContext.runAsUser=65532 \
+    --set webhook.securityContext.runAsGroup=65532 \
+    --set cainjector.securityContext.runAsUser=65532 \
+    --set cainjector.securityContext.runAsGroup=65532 \
     --set resources.requests.cpu=25m \
     --set resources.requests.memory=64Mi \
     --set resources.limits.cpu=200m \

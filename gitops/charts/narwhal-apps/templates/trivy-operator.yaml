@@ -101,7 +101,10 @@ spec:
           storageClassName: nfs-csi
           storageSize: 5Gi
           server:
+            # D-PSA-BATCH-A (KSV021): runAsGroup 65534 = nobody's group in the trivy image (passwd nobody:65534:65534);
+            # chart default runAsUser/fsGroup 65534 deep-merge in. Pinned by R405.
             podSecurityContext:
+              runAsGroup: 65534
               seccompProfile:
                 type: RuntimeDefault
             securityContext:
@@ -171,6 +174,12 @@ spec:
             - k8s-nsa-1.0
         operator:
           builtInTrivyServer: true
+          # D-TRIVY-SERVER-INSECURE (2026-11-26): chart 0.38.1 renders the built-in server's TRIVY_INSECURE
+          # from this key (default false), while in-cluster Harbor (harbor.devtools.svc) serves plain
+          # HTTP on :80 only. Without it the server retried https://harbor...:443 and crash-looped once
+          # its PVC DB copy was due for an update (measured 2026-11-26). Same trust boundary as
+          # trivy.dbRepositoryInsecure above. Escape hatch: serve Harbor over TLS and drop this key.
+          builtInServerRegistryInsecure: true
           scanJobsConcurrentLimit: 2 # was 3: fewer concurrent scan Jobs => lower peak
           # node CPU (combined with 300m scan cap = ~600m peak
           # vs 1500m before) to protect co-located workloads
@@ -210,6 +219,10 @@ spec:
           # The trivy-server pod is a cache: keep Velero fs-backup off its PVC (see trivy.storageClassEnabled).
           serverAdditionalAnnotations:
             backup.velero.io/backup-volumes-excludes: data
+            # D-TRIVY-SERVER-ROLL: the chart pins checksum/config on the server pod template to a fixed
+            # hash, so TRIVY_* ConfigMap changes never restart the server (review MAJOR, 2026-11-26).
+            # Bump this value whenever a server-affecting trivy/operator value changes.
+            narwhal.io/trivy-server-config-rev: "2026-11-26-registry-insecure"
         # D-TRIVY-OPERATOR-MEM: the operator ran BestEffort (no requests/limits) and was
         # OOMKilled 33x/22h under node memory pressure (workers 5.4GB, 53-71% used). The
         # chart reads the TOP-LEVEL `resources` (templates/deployment.yaml); the old

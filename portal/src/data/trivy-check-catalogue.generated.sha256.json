@@ -1,16 +1,16 @@
 {
   "algorithm": "sha256",
-  "canonicalDigest": "bde202d2bca632b1a33e91020888bc5e1758a6c9198d85421a69136626f51b41",
+  "canonicalDigest": "48bfdb43fbfa0ef31fe41cd28416ddbae361cb8489d16f9bdaa06a5b55f6936d",
   "source": {
-    "trivyOperatorVersion": "0.25.0",
-    "trivyOperatorChartVersion": "0.27.0",
+    "trivyOperatorVersion": "0.36.1",
+    "trivyOperatorChartVersion": "0.38.1",
     "trivyChecksModule": "github.com/aquasecurity/trivy-checks",
-    "trivyChecksVersion": "v1.7.1",
+    "trivyChecksVersion": "v1.12.2-0.20261012053351-ac85645895ed",
     "policyMode": "embedded",
     "excludedPaths": [
       "checks/kubernetes/advanced/optional"
     ]
   },
-  "checkCount": 158,
+  "checkCount": 165,
   "regenerationNote": "Generated from upstream trivy-checks source; do not hand-edit. Changing the catalogue requires regenerating from source (network) via `node portal/scripts/gen-trivy-check-catalogue.mjs` with pinned versions bumped consciously."
 }

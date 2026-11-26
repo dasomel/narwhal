@@ -1100,6 +1100,7 @@ kubectl --context narwhal -n database get cluster narwhal-db   # Cluster in heal
 2. **새 클러스터가 옛 PV를 그대로 마운트했다.** nfs-csi `subDir`은 `${pvc.metadata.namespace}/${pvc.metadata.name}`로 고정된다. 그래서 `01-nfs-server.sh`가 기존 XFS(라벨 `narwhal-nfs`)를 포맷 없이 다시 마운트하자, 같은 이름의 PVC가 옛 디렉터리를 이어받았다.
    - OpenBao: `Initialized true / Sealed true` 상태로 올라왔다. unseal key는 옛 클러스터의 etcd(`storage/openbao-init`)와 함께 사라져 복구할 수 없다. 옛 Raft 스냅샷(`storage/openbao-snapshots`)도 같은 키로 봉인돼 있다. Phase 2는 `13-2`에서 `secrets "openbao-init" not found`로 중단됐다.
    - Gitea: DB(CNPG)는 새것인데 `gitea-repositories/gitea-admin/narwhal-gitops`의 파일은 옛것이었다. `14-gitops-bootstrap.sh`가 `repository files already exist` (HTTP 500)로 실패했다.
+   - Grafana: `grafana.db`가 옛것이어서 사용자가 옛 Keycloak 사용자 ID(`user_auth.auth_id`)에 묶여 있었다. 새 Keycloak으로 로그인하면 "Login failed / User sync failed"가 나고, 로그에는 `user.sync ... unable to create user: user not found`가 찍혔다. 같은 email의 옛 사용자가 있어 새 사용자를 만들지 못한 것이다. 옛 admin 비밀번호도 DB에 남는다. 대시보드와 데이터소스는 프로비저닝되므로 `monitoring/prometheus-stack-grafana` 디렉터리를 같은 방식으로 치우고 Grafana 파드를 재시작하면 복구된다(2026-11-26 확인: admin은 GrafanaAdmin, dev는 Editor).
    - harbor-registry, seaweedfs, prometheus/loki/tempo, trivy-server의 PV도 옛 데이터를 이어받았다. 기동을 막지는 않았지만 새 클러스터와 일관된 상태가 아니다.
 
 지금 동작은 다음과 같다.

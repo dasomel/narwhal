@@ -33,6 +33,12 @@ spec:
         # k8s-app before falling back to the owner workload; export only those four pod labels
         # (low cardinality, 4 label keys on pods). Escape hatch: removing this restores the empty
         # allowlist and the portal silently uses the owner-workload fallback.
+        # D-KSM-RBAC (KSV041): kube-state-metrics 7.4.1 enables 28 collectors by default including
+        # `secrets`, which grants cluster-wide `secrets` list/watch on ClusterRole
+        # prometheus-stack-kube-state-metrics. Nothing in Narwhal queries `kube_secret_*` series, so
+        # keep the other 27 default collectors and omit `secrets` (a Helm list replaces the default;
+        # pinned by R418). Cost: no `kube_secret_*` metrics; re-diff on chart upgrade. Escape hatch:
+        # add `secrets` back to collectors or remove the list.
         kube-state-metrics:
           resources:
             requests:
@@ -43,6 +49,34 @@ spec:
               memory: 256Mi
           metricLabelsAllowlist:
             - pods=[app.kubernetes.io/instance,app.kubernetes.io/name,app,k8s-app]
+          collectors:
+            - certificatesigningrequests
+            - configmaps
+            - cronjobs
+            - daemonsets
+            - deployments
+            - endpointslices
+            - horizontalpodautoscalers
+            - ingresses
+            - jobs
+            - leases
+            - limitranges
+            - mutatingwebhookconfigurations
+            - namespaces
+            - networkpolicies
+            - nodes
+            - persistentvolumeclaims
+            - persistentvolumes
+            - poddisruptionbudgets
+            - pods
+            - replicasets
+            - replicationcontrollers
+            - resourcequotas
+            - services
+            - statefulsets
+            - storageclasses
+            - validatingwebhookconfigurations
+            - volumeattachments
         prometheusOperator:
           resources:
             requests:
@@ -190,13 +224,37 @@ spec:
                   - ALL
               seccompProfile:
                 type: RuntimeDefault
+            # D-GRAFANA-RBAC (KSV041): all dashboard and datasource definitions in Narwhal and the
+            # chart are ConfigMaps (no Secret carries grafana_dashboard or grafana_datasource; OIDC
+            # and admin credentials use mounted/env Secrets, not k8s-sidecar). Chart 12.4.5 hardcodes
+            # `resources: ["configmaps", "secrets"]` in templates/clusterrole.yaml when any sidecar
+            # is enabled, so set sidecar.{dashboards,datasources}.resource=configmap and replace
+            # prometheus-stack-grafana-clusterrole in-release via rbac.useExistingClusterRole +
+            # extraObjects (pinned by R418). Cost: Secret-backed dashboards/datasources are not
+            # watched. Escape hatch: remove resource, rbac.useExistingClusterRole and extraObjects.
             dashboards:
               enabled: true
               label: grafana_dashboard
               labelValue: "1"
               searchNamespace: ALL
+              resource: configmap
             datasources:
               enabled: true
+              resource: configmap
+          rbac:
+            useExistingClusterRole: prometheus-stack-grafana-clusterrole
+          extraObjects:
+            - apiVersion: rbac.authorization.k8s.io/v1
+              kind: ClusterRole
+              metadata:
+                name: prometheus-stack-grafana-clusterrole
+                labels:
+                  app.kubernetes.io/name: grafana
+                  app.kubernetes.io/instance: prometheus-stack
+              rules:
+                - apiGroups: [""]
+                  resources: ["configmaps"]
+                  verbs: ["get", "watch", "list"]
           # OIDC client_secret loaded from Secret via $__file{} Grafana file provider
           # Secret 'grafana-oauth-secret' is created by scripts/cluster/11-keycloak.sh
           # Required key: client_secret

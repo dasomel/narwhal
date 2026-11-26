@@ -76,6 +76,11 @@ for attempt in 1 2 3 4 5; do
     --set-json 'grafana.extraEmptyDirMounts=[{"name":"tmp","mountPath":"/tmp"}]' \
     --set-json 'grafana.sidecar.resources={"requests":{"cpu":"25m","memory":"64Mi"},"limits":{"cpu":"100m","memory":"128Mi"}}' \
     --set-json 'grafana.sidecar.securityContext={"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]},"seccompProfile":{"type":"RuntimeDefault"}}' \
+    --set grafana.sidecar.dashboards.resource=configmap \
+    --set grafana.sidecar.datasources.resource=configmap \
+    --set grafana.rbac.useExistingClusterRole=prometheus-stack-grafana-clusterrole \
+    --set-json 'grafana.extraObjects=[{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"ClusterRole","metadata":{"name":"prometheus-stack-grafana-clusterrole","labels":{"app.kubernetes.io/name":"grafana","app.kubernetes.io/instance":"prometheus-stack"}},"rules":[{"apiGroups":[""],"resources":["configmaps"],"verbs":["get","watch","list"]}]}]' \
+    --set-json 'kube-state-metrics.collectors=["certificatesigningrequests","configmaps","cronjobs","daemonsets","deployments","endpointslices","horizontalpodautoscalers","ingresses","jobs","leases","limitranges","mutatingwebhookconfigurations","namespaces","networkpolicies","nodes","persistentvolumeclaims","persistentvolumes","poddisruptionbudgets","pods","replicasets","replicationcontrollers","resourcequotas","services","statefulsets","storageclasses","validatingwebhookconfigurations","volumeattachments"]' \
     --set prometheus-node-exporter.tolerations[0].key=node-role.kubernetes.io/control-plane \
     --set prometheus-node-exporter.tolerations[0].operator=Exists \
     --set prometheus-node-exporter.tolerations[0].effect=NoSchedule; then
@@ -139,6 +144,7 @@ singleBinary:
       memory: 256Mi
     limits:
       memory: 768Mi
+# D-LOKI-RBAC (KSV041): see gitops/charts/narwhal-apps/templates/loki.yaml; pinned by R418.
 sidecar:
   resources:
     requests:
@@ -147,6 +153,22 @@ sidecar:
     limits:
       cpu: 100m
       memory: 192Mi
+  rules:
+    resource: configmap
+rbac:
+  useExistingRole: loki-clusterrole
+extraObjects:
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: loki-clusterrole
+      labels:
+        app.kubernetes.io/name: loki
+        app.kubernetes.io/instance: loki
+    rules:
+      - apiGroups: [""]
+        resources: ["configmaps"]
+        verbs: ["get", "watch", "list"]
 read:
   replicas: 0
 write:

@@ -10,6 +10,9 @@
 ## [Unreleased]
 
 - **CSI NFS Config Audit 수용 범위 축소 (R417):** controller KSV012/KSV020은 실측한 root 소유 0755 공유 CSI 소켓을 근거로 수용하고, sidecar 수정 후 KSV001은 privileged SYS_ADMIN nfs 컨테이너만 남으므로 두 워크로드에서 수용한다. KSV021과 KSV125는 조치 대상으로 남긴다.
+### 변경
+
+- **ArgoCD 권한 분리 1단계 RBAC 수용 규칙 갱신 (`D-OWN-ARGO-STAGED`):** `D-ARGO-SERVER-RO`로 해소된 `ClusterRole/argocd-server`(`KSV041`, `KSV046`, `KSV048`) 수용 규칙을 제거하고, 14개 차트와 플랫폼 역할의 ClusterRole/ClusterRoleBinding을 조정하는 `ClusterRole/argocd-application-controller`에 대해 `KSV044`/`KSV046` 정확 수용을 추가했다(제한 시 `escalate`/KSV050 또는 동일 말단 권한 필요; 설계안 C로 재검토 예정).
 
 ## [1.1.32] - 2026-11-26
 

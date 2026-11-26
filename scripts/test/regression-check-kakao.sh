@@ -3618,6 +3618,9 @@ PYEOF'
   # 2026-11-26: monitoring RBAC secrets access (CIS 5.1.2 KSV041): loki, grafana sidecars configmap-only + kube-state-metrics without secrets collector
   check R418 "Monitoring RBAC secrets access removed (CIS 5.1.2 KSV041): loki-clusterrole and prometheus-stack-grafana-clusterrole narrowed to configmaps with sidecar RESOURCE=configmap, prometheus-stack-kube-state-metrics drops the secrets collector across GitOps and 08-2-monitoring.sh; 23 mutations caught (D-LOKI-RBAC, D-GRAFANA-RBAC, D-KSM-RBAC)" \
     python3 scripts/test/lib/check-rbac-monitoring-secrets.py --mutation-verify
+  # 2026-11-27: ArgoCD privilege split Stage 1 (D-OWN-ARGO-STAGED, D-ARGO-SERVER-RO, D-ARGO-PROJECT-WHITELIST)
+  check R420 "ArgoCD privilege split Stage 1: read-only argocd-server (no secrets, no workload writes, no '*' resources), exact 12-kind AppProject/platform clusterResourceWhitelist with empty tenants, and exact argocd-application-controller KSV044/KSV046 acceptance; 16 mutations caught" \
+    python3 scripts/test/lib/check-argocd-privilege-split-stage1.py --mutation-verify
 }
 
 #=========================================

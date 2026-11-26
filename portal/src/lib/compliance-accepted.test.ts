@@ -228,6 +228,25 @@ describe("exact acceptance (D-P2-1/2/3)", () => {
     ]) expect(matchRbacException(name, check, ns, kind)).toBeNull()
     expect(matchRbacException("platform-admin", "KSV041")).toBeNull()
   })
+
+  it("accepts argocd-application-controller KSV044/KSV046 (D-OWN-ARGO-STAGED) and leaves argocd-server actionable", () => {
+    for (const check of ["KSV044", "KSV046"]) {
+      const rule = matchRbacException("argocd-application-controller", check, "", "ClusterRole")
+      expect(rule, `argocd-application-controller ${check}`).toMatchObject({
+        ruleId: "rbac:cluster:ClusterRole:argocd-application-controller:accept",
+        reasonKey: "compliance.acceptedReason.rbacArgocdApplicationController",
+        reviewedAt: "2026-11-27",
+      })
+      expect(rule?.reason).toContain("D-OWN-ARGO-STAGED")
+    }
+    for (const check of ["KSV041", "KSV048", "KSV050"]) {
+      expect(matchRbacException("argocd-application-controller", check, "", "ClusterRole")).toBeNull()
+    }
+    expect(matchRbacException("argocd-application-controller", "KSV044", "devtools", "Role")).toBeNull()
+    for (const check of ["KSV041", "KSV046", "KSV048"]) {
+      expect(matchRbacException("argocd-server", check, "", "ClusterRole")).toBeNull()
+    }
+  })
 })
 
 describe("findUnusedAcceptanceRules (D-P2-4)", () => {

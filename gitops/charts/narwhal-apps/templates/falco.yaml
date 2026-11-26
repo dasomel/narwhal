@@ -134,6 +134,8 @@ spec:
             # ptrace reads needed for container/K8s metadata (falcosecurity/falco#3256, charts#769).
             # The July note blaming leastPrivileged for the 0.39.2 failure does not hold: 0.39.2
             # also fails scap_init on a kernel 7.0.14 VM when run privileged (2026-10-28 lab).
+            # Verified live on the single-node cluster 2026-11-27 (Falco 0.45.1): no scap_init error,
+            # CapEff 000000c001080000, NoNewPrivs 1, Seccomp 2, events keep k8s.ns.name/pod/image.
             leastPrivileged: true
 
         # Falco DaemonSet (모든 노드)

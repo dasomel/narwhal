@@ -110,16 +110,18 @@ csi_nfs_plugins_dir="$(helm env | sed -n 's/^HELM_PLUGINS="\(.*\)"$/\1/p')"
 csi_nfs_installed_plugin="${csi_nfs_plugins_dir}/${csi_nfs_plugin_name}"
 csi_nfs_source_dir="$(cd "${csi_nfs_plugin_dir}" && pwd -P)"
 if helm plugin list | awk -v name="${csi_nfs_plugin_name}" '$1 == name { found=1 } END { exit !found }'; then
-  if [ ! -d "${csi_nfs_installed_plugin}" ]; then
-    echo "ERROR: Helm lists ${csi_nfs_plugin_name}, but its plugin directory is missing" >&2
-    exit 1
-  fi
-  csi_nfs_installed_dir="$(cd "${csi_nfs_installed_plugin}" && pwd -P)"
+  # A dev-mode install is a symlink; if its target moved, reinstall instead of failing.
+  csi_nfs_installed_dir="$(cd "${csi_nfs_installed_plugin}" 2>/dev/null && pwd -P || true)"
   if [ "${csi_nfs_installed_dir}" != "${csi_nfs_source_dir}" ]; then
     helm plugin uninstall "${csi_nfs_plugin_name}"
     helm plugin install "${csi_nfs_plugin_dir}"
   fi
 else
+  # Helm does not list a dev-mode plugin whose symlink target is gone, but the link
+  # still blocks a fresh install ("file exists"); remove only such a dangling link.
+  if [ -L "${csi_nfs_installed_plugin}" ] && [ ! -e "${csi_nfs_installed_plugin}" ]; then
+    rm -f "${csi_nfs_installed_plugin}"
+  fi
   helm plugin install "${csi_nfs_plugin_dir}"
 fi
 

@@ -25,7 +25,7 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Scope is the bootstrap-only csi-driver-nfs 4.13.2 release, exact portal Config Audit rules/reasons, R417, and corresponding documentation. No GitOps Application, cluster operation, network access, or commit was used. Live rollout and throttle measurements were outside this sandbox and remain unverified."
+      "summary": "Scope is the bootstrap-only csi-driver-nfs 4.13.2 release, exact portal Config Audit rules/reasons, R417, and corresponding documentation. No GitOps Application is involved."
     },
     {
       "id": "e2",
@@ -66,7 +66,7 @@
     {
       "id": "e6",
       "type": "scope_check",
-      "summary": "Not verified: live Helm upgrade/readiness, Trivy success status, CPU throttling after workload, and live cluster behavior. No cluster or network was used."
+      "summary": "Not verified: Trivy Config Audit results after the rollout (rescan pending), HA nodes, and a Kakao provisioning run."
     },
     {
       "id": "e9",
@@ -78,19 +78,20 @@
         "test:first attempt with --post-renderer <path> -> Helm 4 error 'plugin ... postrenderer/v1 not found' (defect reproduced; release stayed at revision 1)",
         "test:branch install block run twice -> plugin csi-nfs-postrender installed, second run idempotent; helm revision 3 deployed",
         "test:csi-nfs-controller 4 sidecars and csi-nfs-node 2 sidecars -> allowPrivilegeEscalation false, readOnlyRootFilesystem true, cpu limit 100m; both nfs containers unchanged except cpu limit 100m; pods 5/5 and 3/3 Running, 0 restarts",
-        "test:nfs-csi PVC bound, non-root pod wrote and read a file, namespace deleted; CSI pod cgroups nr_throttled at most 4 of 170 periods; test-sso 144/0"
+        "test:nfs-csi PVC bound, non-root pod wrote and read a file, namespace deleted; CSI pod cgroups nr_throttled at most 4 of 170 periods; test-sso 144/0",
+        "test:isolated HELM_DATA_HOME: plugin symlink target moved -> install block removes the dangling link and reinstalls (rc 0); immediate re-run rc 0 (orchestrator)"
       ]
     },
     {
       "id": "e7",
       "type": "completion_claim",
-      "summary": "Source, acceptance, R417, changelog, and trace changes are complete. Helm 4 plugin rendering and requested static checks passed. Live rollout and throttle measurements remain unverified."
+      "summary": "Source, acceptance, R417, changelog and trace changes are complete; the Helm 4 plugin and bootstrap install block were applied on the single-node cluster with the results in e9. Items in e6 are not claimed."
     },
     {
       "id": "e8",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Completed the authorized source changes and exact acceptance updates; live operational confirmation is outside the verified scope."
+      "summary": "Complete within the stated scope; coverage is bounded by e6."
     }
   ]
 }

@@ -57,11 +57,12 @@ def _assert_seaweedfs_values(vals, label):
     for comp in ("master", "filer", "s3"):
         c = vals[comp]
         psc = c.get("podSecurityContext") or {}
-        for k, expected in (("enabled", True), ("runAsNonRoot", True), ("runAsUser", 1000), ("runAsGroup", 1000), ("fsGroup", 1000)):
+        for k, expected in (("enabled", True), ("runAsNonRoot", True), ("runAsUser", 10100), ("runAsGroup", 10100), ("fsGroup", 10100)):
             assert psc.get(k) == expected and type(psc.get(k)) is type(expected), f"{label} {comp}.podSecurityContext.{k}"
         assert (c.get("logs") or {}).get("type") == "emptyDir", f"{label} {comp}.logs.type must be emptyDir"
-    assert not vals["volume"].get("podSecurityContext"), f"{label} volume.podSecurityContext must remain unset (hostPath root)"
-
+    volume_psc = vals["volume"].get("podSecurityContext") or {}
+    for k, expected in (("enabled", True), ("runAsNonRoot", True), ("runAsUser", 10100), ("runAsGroup", 10100)):
+        assert volume_psc.get(k) == expected and type(volume_psc.get(k)) is type(expected), f"{label} volume.podSecurityContext.{k}"
     for comp in ("master", "volume", "filer", "s3"):
         c = vals[comp]
         csc = c.get("containerSecurityContext") or {}
@@ -160,15 +161,15 @@ def verify(root):
         "--set filer.podSecurityContext.runAsNonRoot=true",
         "--set s3.podSecurityContext.enabled=true",
         "--set s3.podSecurityContext.runAsNonRoot=true",
-        "--set s3.podSecurityContext.runAsUser=1000",
-        "--set s3.podSecurityContext.runAsGroup=1000",
-        "--set s3.podSecurityContext.fsGroup=1000",
+        "--set s3.podSecurityContext.runAsUser=10100",
+        "--set s3.podSecurityContext.runAsGroup=10100",
+        "--set s3.podSecurityContext.fsGroup=10100",
         "--set s3.logs.type=emptyDir",
     ):
         assert flag in sh, f"08-4 missing {flag}"
     # Merge script --set hardening flags into the heredoc map for shared structural check.
     for comp in ("master", "filer", "s3"):
-        sw_sh[comp]["podSecurityContext"] = {"enabled": True, "runAsNonRoot": True, "runAsUser": 1000, "runAsGroup": 1000, "fsGroup": 1000}
+        sw_sh[comp]["podSecurityContext"] = {"enabled": True, "runAsNonRoot": True, "runAsUser": 10100, "runAsGroup": 10100, "fsGroup": 10100}
         sw_sh[comp]["logs"] = {"type": "emptyDir"}
     _assert_seaweedfs_values(sw_sh, "08-4 seaweedfs")
 
@@ -187,7 +188,7 @@ def verify(root):
 def mutation_verify(root):
     sources = {k: (root / rel).read_text() for k, rel in FILES.items()}
     mutations = [
-        ("seaweedfs", "            runAsNonRoot: true\n            runAsUser: 1000\n", "            runAsUser: 1000\n"),
+        ("seaweedfs", "            runAsNonRoot: true\n            runAsUser: 10100\n", "            runAsUser: 10100\n"),
         ("seaweedfs", "          logs:\n            type: emptyDir\n          extraVolumes:", "          extraVolumes:"),
         ("seaweedfs", "readOnlyRootFilesystem: true", "readOnlyRootFilesystem: false"),
         ("seaweedfs", "mountPath: /tmp", "mountPath: /var/tmp"),

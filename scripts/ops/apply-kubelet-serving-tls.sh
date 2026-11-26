@@ -2,14 +2,17 @@
 set -euo pipefail
 
 kubeconfig="" identity="" known_hosts="$HOME/.ssh/known_hosts" timeout=180
-dry_run=false target=true
+dry_run=false target=true control_plane=false
 nodes=() hosts=() ips=() previous=() ssh_opts=()
 helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/kubelet-serving-tls-node.sh"
+# shellcheck source=scripts/ops/lib/kubelet-serving-tls-control-plane.sh
+source "${helper%/*}/kubelet-serving-tls-control-plane.sh"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 usage() {
   echo "Usage: $0 --kubeconfig FILE (--node NAME=USER@HOST ... | --local NAME)"
-  echo "       [--identity KEY] [--known-hosts FILE] [--ssh-opt OPTION]... [--timeout SECONDS] [--dry-run | --rollback]"
+  echo "       [--identity KEY] [--known-hosts FILE] [--ssh-opt OPTION]... [--timeout SECONDS]"
+  echo "       [--control-plane] [--dry-run | --rollback]"
 }
 invocation=("$@")
 while (($#)); do
@@ -23,6 +26,7 @@ while (($#)); do
     --known-hosts) known_hosts="$2"; shift 2 ;;
     --ssh-opt) ssh_opts+=(-o "${2:?--ssh-opt requires an OpenSSH option}"); shift 2 ;;
     --timeout) timeout="$2"; shift 2 ;;
+    --control-plane) control_plane=true; shift ;;
     --dry-run) dry_run=true; shift ;;
     --rollback) target=false; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -37,6 +41,14 @@ ssh_cmd=(ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o S
 [[ -z "$identity" ]] || ssh_cmd+=(-i "$identity")
 ssh_cmd+=("${ssh_opts[@]+"${ssh_opts[@]}"}")
 kube() { kubectl --kubeconfig "$kubeconfig" --request-timeout=10s "$@"; }
+node_ip() {
+  local ip
+  ip=$(jq -er --arg node "$1" '
+    [.items[] | select(.metadata.name == $node) | .status.addresses[] | select(.type == "InternalIP") | .address]
+    | select(length == 1) | .[0]' "$work/nodes.json") || die "expected one InternalIP for $1"
+  [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "expected one IPv4 InternalIP for $1"
+  printf '%s\n' "$ip"
+}
 on_node() {
   local index="$1"
   shift
@@ -129,6 +141,16 @@ kube get nodes -o json > "$work/nodes.json"
 registered=$(jq -r '.items[].metadata.name' "$work/nodes.json" | LC_ALL=C sort)
 mapped=$(printf '%s\n' "${nodes[@]}" | LC_ALL=C sort)
 [[ "$registered" == "$mapped" ]] || die "supply exactly one mapping for each registered node: $registered"
+if [[ "$control_plane" == true || "$target" == false ]]; then
+  control_plane_preflight
+  if [[ "$control_plane" == true ]]; then
+    roll_control_plane
+    exit 0
+  fi
+  # D-R416-ROLLBACK: remove API-server CA enforcement before returning kubelets
+  # to self-signed TLS. Cost: two rollback steps. Escape: run --control-plane --rollback first.
+  guard_kubelet_rollback
+fi
 kube -n kube-system get cm kubelet-config -o json > "$work/cm.json"
 jq -er '.data.kubelet' "$work/cm.json" > "$work/cm.yaml"
 cm_before=$(kubelet_setting "$work/cm.yaml")
@@ -151,10 +173,7 @@ fi
 for index in "${!nodes[@]}"; do
   node="${nodes[index]}"
   [[ "$node" =~ ^[a-z0-9.-]+$ ]] || die "invalid node name $node"
-  ip=$(jq -er --arg node "$node" '
-    [.items[] | select(.metadata.name == $node) | .status.addresses[] | select(.type == "InternalIP") | .address]
-    | select(length == 1) | .[0]' "$work/nodes.json")
-  [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "expected one IPv4 InternalIP for $node"
+  ip=$(node_ip "$node")
   ips+=("$ip")
   if [[ "$target" == true ]]; then
     [[ "$node" =~ $name_regex ]] || die "$node is outside the approver name policy"

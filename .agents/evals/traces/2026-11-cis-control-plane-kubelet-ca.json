@@ -1,0 +1,106 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cis-control-plane-kubelet-ca-20261126",
+  "task": "Implement kubelet serving TLS stage 3 for CIS 1.2.6 and 1.3.6, with offline verification.",
+  "changeContext": {
+    "paths": [
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "scripts/cluster/02-init-cluster.sh",
+      "scripts/cluster/03-cni-install.sh",
+      "scripts/ops/apply-kubelet-serving-tls.sh",
+      "scripts/ops/lib/kubelet-serving-tls-control-plane.sh",
+      "scripts/ops/lib/kubelet-serving-tls-control-plane-node.sh",
+      "scripts/test/lib/check-kubelet-serving-tls-control-plane.py",
+      "scripts/test/regression-check-kakao.sh",
+      ".agents/evals/traces/2026-11-cis-control-plane-kubelet-ca.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Stage 3 control-plane flags, kubeadm persistence and safe rollout and rollback. Metrics-server and acceptance rules are outside this lane."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "reviewed": true,
+      "provenance": [
+        "Orchestrator measurements supplied in the Lane A brief, single-node Kubernetes v1.35.7, 2026-11-26",
+        "Repository stage 1\u20132 trace .agents/evals/traces/2026-11-kubelet-serving-csr-approver.json"
+      ],
+      "summary": "Trivy reported AVD-KCV-0038 and AVD-KCV-0006. kube-bench already passed 1.3.6 and failed 1.2.6. Controller-manager help reported that the gate defaults to true. The live kubelet served a cluster-CA leaf with its IP SAN after stage 2."
+    },
+    {
+      "id": "e3",
+      "type": "reproduction",
+      "summary": "The orchestrator measured both absent arguments. Repository inspection confirmed that init uses a fallback serving certificate and the post-CNI operator script enrolls the node before publishing join commands.",
+      "evidence": [
+        "artifact:scripts/cluster/02-init-cluster.sh",
+        "artifact:scripts/cluster/03-cni-install.sh",
+        "artifact:scripts/ops/apply-kubelet-serving-tls.sh"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Pin the default controller-manager gate at init. Apply stage 3 only after each control plane validates every current kubelet endpoint against its local CA and the IP SAN. Wait for the expected Ready static Pod and persist with a kubeadm-config resourceVersion test. Restore the exact saved API server manifest when applicable and otherwise remove only the owned CA flag."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline regression and mutation checks",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-kubelet-serving-tls-control-plane.py --mutation-verify -> PASS: R416 rejected 10 mutations; PASS: R416 staged control-plane TLS, dry-run, persistence and rollback (offline fixtures, also passed under Bash 3.2.57)",
+        "test:python3 scripts/test/lib/check-kubelet-authz-baseline.py --mutation-verify -> 5 assertions PASS, all 8 baseline mutations rejected",
+        "test:python3 scripts/test/lib/check-kubelet-serving-tls.py --mutation-verify -> PASS: 22 mutations rejected; PASS: R412 approver policy, air-gap pins, and staged serving TLS"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Shell, whitespace and Markdown",
+      "evidence": [
+        "test:bash -n and shellcheck -x -S warning -> 6 changed shell files passed each",
+        "test:git diff --check -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> exit 0; the tool evaluates committed revisions",
+        "test:markdownlint with the repository rule set, filtered to working-tree changed lines -> 4 files, 0 violations",
+        "test:single-node --local stage 3 dry-run and apply -> PASS (offline fixture)"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "scope_check",
+      "summary": "Not verified live: fresh-install ordering on a new cluster, HA control planes, joins, kubeadm upgrades, scheduled CSR rotation and the stage 3 rollback path (the author lane had no cluster; the orchestrator verified apply and re-run on the single-node cluster, e10)."
+    },
+    {
+      "id": "e10",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live single-node cluster (orchestrator, 2026-11-26)",
+      "summary": "Stage 3 apply on narwhal-master-1 with --timeout 600.",
+      "evidence": [
+        "test:apply-kubelet-serving-tls.sh --control-plane --dry-run/apply/re-run -> rc 0/0/0; :10250 verifies against /etc/kubernetes/pki/ca.crt with IP SAN",
+        "test:manifests contain --kubelet-certificate-authority=/etc/kubernetes/pki/ca.crt and --feature-gates=RotateKubeletServerCertificate=true; kubeadm-config ClusterConfiguration lists both as extraArgs",
+        "test:kubectl logs/exec ok, port-forward HTTP 200, nodes/proxy configz ok, kubectl top ok, 0 x509 lines in kube-apiserver logs, test-sso 144/0",
+        "test:Trivy infraassessmentreports 12:01Z for kube-apiserver and kube-controller-manager -> AVD-KCV-0006 and AVD-KCV-0038 success"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "Stage 3 is implemented, statically checked (R416) and applied on the single-node cluster with both Trivy checks passing (e10). The items in e7 are not claimed."
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the stated scope; runtime coverage is bounded by e7."
+    }
+  ]
+}

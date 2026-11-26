@@ -646,7 +646,7 @@ restarts on all 3 masters:
   join scripts log a `WARN` that CNI file permissions (CIS 1.1.9) remain unhardened until
   re-run and still harden the remaining node files. This wiring has NOT been validated by
   a clean install on a live cluster yet.
-- **`--anonymous-auth=false`**, `EventRateLimit`, `--kubelet-certificate-authority` —
+- **`--anonymous-auth=false`**, `EventRateLimit` —
   apiserver hardening (test probes first).
 - Portal/Valkey `readOnlyRootFilesystem` (CIS 5.7.3 / KSV014) — Next.js writes cache/tmp
   at runtime; needs writable `emptyDir` mounts before enabling.
@@ -870,8 +870,8 @@ These controls remain actionable. The single-node trial verified kubelet serving
 
 | Control | Concrete risk | Prerequisite / owner decision |
 | --- | --- | --- |
-| 1.2.6 kubelet-certificate-authority | Enforcing CA validation against a self-signed kubelet serving certificate breaks API server access to that kubelet. | **Stages 1–2 verified on one node.** Verify issuance and rotation on every node before stage 3 enables the API server CA flag. |
-| 1.3.6 RotateKubeletServerCertificate / KCV0038 | The pre-change single-node check recorded a self-signed :10250 issuer and zero CSRs. The kube-bench feature-gate PASS does not establish certificate rotation. | **Initial issuance verified on one node.** Scheduled rotation remains open. |
+| 1.2.6 kubelet-certificate-authority / AVD-KCV-0006 | Enforcing CA validation against a self-signed kubelet serving certificate breaks API server access to that kubelet. | Stage 3 verifies every registered kubelet from each control plane before enabling the CA flag. Verified on the single-node cluster on 2026-11-26: the flag is in the manifest and kubeadm-config, `logs`/`exec`/`port-forward`/node proxy work, and Trivy now passes AVD-KCV-0006. HA is not yet verified. |
+| 1.3.6 RotateKubeletServerCertificate / AVD-KCV-0038 | On the single-node cluster (2026-11-26), Trivy flagged the absent gate argument. The v1.35.7 controller-manager help reported the beta gate defaults to true, and kube-bench already passed. | Stage 3 makes the existing default explicit. On the single-node cluster (2026-11-26) Trivy now passes AVD-KCV-0038. Initial issuance was verified on one node in stages 1–2. Scheduled rotation remains open. |
 | 1.2.10 EventRateLimit | Enabling the plugin without admission configuration/budgets can fail API startup or discard operational events. | Define admission configuration volume/file and per-user/namespace/server budgets; measure event rates and stage saturation/recovery testing. |
 | 4.2.6 protect-kernel-defaults | Kubelet can refuse startup when required kernel values differ; the earlier hardening was removed for this reason. | Persist and verify on every node, including old base-marker nodes: vm.overcommit_memory=1, vm.panic_on_oom=0, kernel.panic=10, kernel.panic_on_oops=1, kernel.keys.root_maxkeys=1000000, kernel.keys.root_maxbytes=25000000; reboot-test first, then staged kubelet restart with rollback. |
 
@@ -933,7 +933,8 @@ kubectl --kubeconfig /absolute/admin.conf -n devtools get application kubelet-cs
 kubectl --kubeconfig /absolute/admin.conf -n kube-system rollout status deploy/kubelet-csr-approver --timeout=300s
 ```
 
-Pause joins and kubeadm upgrades during apply and rollback. Supply one trusted
+Pause joins, kubeadm upgrades and other control-plane manifest changes during
+apply and rollback. Run one rollout at a time. Supply one trusted
 SSH mapping for every registered node. The operator machine needs
 `kubectl`, `jq`, `yq` v4, Python 3 and OpenSSL. Each target needs passwordless
 sudo, `yq` v4 and OpenSSL. `--local NAME` can replace the SSH mapping when the
@@ -960,8 +961,7 @@ Dry run, apply and re-run each exited `0` (re-run `true` → `true`). CSR
 `csr-wwvp5` was Approved and Issued. The `:10250` issuer changed from
 `CN=narwhal-master-1-ca@1794714706` to `CN=kubernetes`, with the IP SAN verified.
 `kubectl logs`, `exec` and `top` worked, approver logs showed no forbidden or
-error entries, and `test-sso` passed 144 checks with 0 failures. Stage 3 and
-scheduled rotation remain open.
+error entries, and `test-sso` passed 144 checks with 0 failures.
 
 On Kakao, pass the bastion with `--ssh-opt`, which accepts multiple OpenSSH
 options. Configure its
@@ -975,7 +975,58 @@ bash scripts/ops/apply-kubelet-serving-tls.sh \
   --node host-172-16-0-10=ubuntu@172.16.0.10 --node host-172-16-0-21=ubuntu@172.16.0.21 --dry-run
 ```
 
-If apply fails during a new enrollment, it attempts to restore that node's
+#### Stage 3 control-plane CA validation
+
+D-R416-ORDER enables `--kubelet-certificate-authority=/etc/kubernetes/pki/ca.crt`
+after the post-Cilium serving rollout and before publishing the join commands.
+The first kubelet uses its self-signed certificate during init. Enforcing the CA
+at init would break API-server-mediated requests such as `logs`, `exec` and
+`port-forward` until the approver issues the signed certificate. A newly joined
+node becomes available to those requests when its signed certificate is served.
+
+On an existing cluster, run stage 3 after stages 1–2. Each control plane checks
+every registered node's `InternalIP:10250` against its local cluster CA and verifies
+the IP SAN and TLS server purpose. The API server must prefer `InternalIP`.
+Use the same mappings as above.
+
+```bash
+bash scripts/ops/apply-kubelet-serving-tls.sh "${args[@]}" --control-plane --dry-run
+bash scripts/ops/apply-kubelet-serving-tls.sh "${args[@]}" --control-plane
+```
+
+D-R416-SERIAL waits for the expected static Pod command and local readiness
+on each control plane before moving on. Each changed static Pod restarts,
+so allow for a brief API outage on a single-node cluster. D-R416-PERSIST
+updates `kube-system/kubeadm-config` after the rollout so joins and upgrades
+retain the flags. If interrupted, fix the failure and repeat the command.
+Confirm both checks in Trivy and kube-bench and exercise `logs`, `exec` and
+`port-forward` against a Pod on each node. The single-node trial on
+2026-11-26 used `--timeout 600` (etcd can stall under host IO; the 180-second
+default would trigger an automatic restore and a second restart). Apply,
+idempotent re-run and client checks were verified there; joins, upgrades,
+rollback and scheduled rotation have no live verification in this change.
+If the session dies between the manifest rename and the readiness wait, no
+automatic restore runs; the new manifest stays (every kubelet was verified
+first), and repeating the command converges.
+Metrics-server uses a separate kubelet client TLS configuration.
+
+To disable API server CA validation, run this first:
+
+```bash
+bash scripts/ops/apply-kubelet-serving-tls.sh "${args[@]}" --control-plane --rollback
+```
+
+D-R416-RESTORE uses the exact previous API server manifest stored in
+`/var/lib/narwhal/kubelet-serving-tls/kube-apiserver.pre-ca.yaml` if the current
+manifest still matches that rollout. On joined nodes or after later manifest
+changes it removes only the CA flag, preserving newer settings such as OIDC.
+The rollback also removes the CA flag from kubeadm's configuration and retains
+the controller-manager's explicit rotation default. If the API server cannot
+start, restore the saved manifest on the affected host using an atomic rename
+through a dotfile in `/etc/kubernetes/manifests`, and rerun rollback after the
+API becomes available.
+
+If stage 2 apply fails during a new enrollment, it attempts to restore that node's
 previous setting. Re-run to resume after investigating, or run the command
 below to disable serving bootstrap on all mapped nodes and the shared join
 configuration. The rollback preserves both the kubelet client keys and the

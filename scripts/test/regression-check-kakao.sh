@@ -3611,6 +3611,8 @@ PYEOF'
   # D-CI-PARITY: version snapshot and operational traces otherwise fail only after push.
   check R414 "CI parity: portal OSS snapshot plus every non-version behavior trace gated against baseline; 2 mutations rejected" \
     python3 scripts/test/lib/check-ci-parity.py --mutation-verify
+  check R416 "Control-plane kubelet TLS: explicit rotation gate, verify every serving cert before API server CA enforcement, persist and roll back" \
+    python3 scripts/test/lib/check-kubelet-serving-tls-control-plane.py --mutation-verify
 }
 
 #=========================================

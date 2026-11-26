@@ -124,6 +124,11 @@ def check_alloy_logs(texts: dict[str, str]) -> list[str]:
     errors += rules_errors("08-2-monitoring.sh values", kmon_boot_values(texts["mon-boot"]))
     if not re.search(r"helm upgrade --install k8s-monitoring[^\n]*\\\n(?:[^\n]*\\\n)*?\s*-f /tmp/k8s-monitoring-values\.yaml[ \t;]", texts["mon-boot"]):
         errors.append("08-2-monitoring.sh k8s-monitoring install must pass -f /tmp/k8s-monitoring-values.yaml")
+    # EXPECTED_RULES is the 4.2.0 upstream list; a chart bump must re-diff it (review MINOR, 2026-11-26).
+    if not re.search(r"^\s*targetRevision:\s*4\.2\.0\s*$", texts["kmon"], re.M):
+        errors.append("k8s-monitoring.yaml targetRevision changed: re-diff EXPECTED_RULES against the new chart's collectors/upstream/alloy-values.yaml")
+    if not re.search(r"helm upgrade --install k8s-monitoring[^\n]*\\\n(?:[^\n]*\\\n)*?\s*--version 4\.2\.0", texts["mon-boot"]):
+        errors.append("08-2-monitoring.sh k8s-monitoring --version changed: re-diff EXPECTED_RULES")
     if "check R408 " not in texts["reg"] or "check-rbac-istio-reader-alloy-logs.py alloy-logs --mutation-verify" not in texts["reg"]:
         errors.append("scripts/test/regression-check-kakao.sh must wire R408 with --mutation-verify")
     return errors
@@ -144,6 +149,8 @@ MUT_READER: list[tuple[str, str, str, str]] = [
 ]
 
 MUT_ALLOY: list[tuple[str, str, str, str]] = [
+    ("k8s-monitoring chart bumped without re-diff", "kmon", "targetRevision: 4.2.0", "targetRevision: 4.3.0"),
+    ("bootstrap k8s-monitoring bumped without re-diff", "mon-boot", "--version 4.2.0", "--version 4.3.0"),
     ("gitops secrets added back", "kmon", '              resources: ["configmaps"]\n', '              resources: ["configmaps", "secrets"]\n'),
     ("gitops wildcard resource", "kmon", '              resources: ["configmaps"]\n', '              resources: ["*"]\n'),
     ("gitops rbac block dropped (chart default returns)", "kmon", "            rbac:\n              rules:\n", "            noRbac:\n              rules:\n"),

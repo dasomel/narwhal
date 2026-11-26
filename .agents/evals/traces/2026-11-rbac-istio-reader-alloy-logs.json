@@ -46,7 +46,7 @@
       "scope": "Static checks plus a pre-merge live trial on the local cluster (branch files pushed to Gitea with push-to-gitea.sh).",
       "evidence": [
         "test:python3 scripts/test/lib/check-rbac-istio-reader-alloy-logs.py istio-reader --mutation-verify -> PASS (11 mutations rejected)",
-        "test:python3 scripts/test/lib/check-rbac-istio-reader-alloy-logs.py alloy-logs --mutation-verify -> PASS (13 mutations rejected)",
+        "test:python3 scripts/test/lib/check-rbac-istio-reader-alloy-logs.py alloy-logs --mutation-verify -> PASS (15 mutations rejected)",
         "test:helm template istiod/base with the edited valuesObject -> 0 istio-reader objects (before: ClusterRole, ClusterRoleBinding, ServiceAccount); rest of the istiod render unchanged",
         "test:helm template k8s-monitoring 4.2.0 -> Alloy CR spec.rbac.rules has 9 rules, none with secrets; helm template alloy 1.10.0 on that spec -> ClusterRole k8s-monitoring-alloy-logs keeps 12 of 13 rules, configmaps rule without secrets, clusterRules unchanged",
         "test:live trial 2026-11-26: istio-base, istiod and k8s-monitoring Synced/Healthy after 10 min; istio-reader ClusterRole/ClusterRoleBinding gone; istiod 2/2 pods, istio-cni and ztunnel 1/1 Running with 0 restarts; ClusterRole k8s-monitoring-alloy-logs 13 rules with no secrets; alloy-logs 2/2 Running, 0 forbidden log lines; Loki devtools lines per 5 min steady 2000-3600 across the change (1 h query_range); test-sso PASS 144 FAIL 0",
@@ -57,13 +57,13 @@
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Both values paths are changed in sync and the rendered RBAC is proven. Rollout behaviour (istiod and ztunnel health, ArgoCD prune of the reader objects, Alloy reconcile of the ClusterRole, Loki ingestion) is not verified here and must be checked in a live trial."
+      "summary": "Reader RBAC is off and Alloy logs no longer reads Secrets cluster-wide, in GitOps and bootstrap, pinned by R407/R408. The pre-merge live trial (e4) passed and was then reverted on Gitea to main while the change waited for review; the change goes live again at merge."
     },
     {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete within the stated scope (values, static pins, rendered proof); live rollout verification is a separate step."
+      "summary": "Complete within the stated scope; live state follows the merge."
     }
   ]
 }

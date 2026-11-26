@@ -3595,7 +3595,7 @@ PYEOF'
   # 2026-11-26: RBAC batch P3 + P4 (CIS KSV041/KSV046): istio-reader RBAC off, Alloy logs without Secret access
   check R407 "Istio reader RBAC (istio-reader ClusterRole/Binding + istio-reader-service-account) disabled on istio-base and istiod via global.enableReaderRBAC false, identical in the GitOps Applications and 09-istio-ambient.sh, istiod PDB flag kept; 11 mutations caught (D-ISTIO-READER)" \
     python3 scripts/test/lib/check-rbac-istio-reader-alloy-logs.py istio-reader --mutation-verify
-  check R408 "k8s-monitoring alloy-logs ClusterRole keeps the 9 upstream rules with only configmaps (no secrets, no wildcard) via collectors.alloy-logs.rbac.rules, identical in the GitOps Application and 08-2-monitoring.sh, clusterRules left at chart default; 13 mutations caught (D-ALLOY-RBAC)" \
+  check R408 "k8s-monitoring alloy-logs ClusterRole keeps the 9 upstream rules with only configmaps (no secrets, no wildcard) via collectors.alloy-logs.rbac.rules, identical in the GitOps Application and 08-2-monitoring.sh, clusterRules left at chart default; 15 mutations caught, chart pins re-diff guard (D-ALLOY-RBAC)" \
     python3 scripts/test/lib/check-rbac-istio-reader-alloy-logs.py alloy-logs --mutation-verify
 }
 

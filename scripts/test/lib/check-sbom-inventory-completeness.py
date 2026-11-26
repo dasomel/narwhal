@@ -12,6 +12,8 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 UNKNOWN_REVIEW = {
+    ("image", "ghcr.io/postfinance/kubelet-csr-approver"): ("The offline image evidence identifies the digest and source. SPDX verification is pending.", "supply-chain"),
+    ("chart", "kubelet-csr-approver@1.2.16"): ("The pinned chart tarball is inventoried. The bundle SBOM has no chart license mapping.", "supply-chain"),
     # Upstream repository aquasecurity/kube-bench reports Apache-2.0 (GitHub license API,
     # measured 2026-11-24); the bundle SBOM itself carries no license source for this image.
     ("image", "docker.io/aquasec/kube-bench"): ("Upstream repo license Apache-2.0 (GitHub license API, 2026-11-24); image license is not mapped by the bundle SBOM", "supply-chain"),

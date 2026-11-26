@@ -106,6 +106,7 @@ quay.io/prometheus/node-exporter:v1.11.1-distroless
 quay.io/prometheus/prometheus:v3.12.0-distroless
 quay.io/skopeo/stable:v1.22.2
 ghcr.io/kyverno/readiness-checker:v1.18.1
+ghcr.io/postfinance/kubelet-csr-approver:v1.2.16@sha256:3a09df2f9e1e628863fccbe5479e63b11bbc1f411c82134ee975778e1a25b5e6
 reg.kyverno.io/kyverno/background-controller:v1.18.1
 reg.kyverno.io/kyverno/cleanup-controller:v1.18.1
 reg.kyverno.io/kyverno/kyverno-cli:v1.18.1

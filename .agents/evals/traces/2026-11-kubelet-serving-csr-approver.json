@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-kubelet-serving-tls-20261126",
+  "task": "Implement PostFinance kubelet serving CSR approval and staged CA-signed serving TLS for CIS 1.2.6 and 1.3.6.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-kubelet-serving-csr-approver.json",
+      ".review/trace.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "VERSIONS.md",
+      "Vagrantfile",
+      "docs/common/compliance-hardening.md",
+      "docs/common/upgrade-waves.json",
+      "gitops/charts/narwhal-apps/templates/kubelet-csr-approver.yaml",
+      "gitops/charts/narwhal-apps/values.yaml",
+      "scripts/airgap/01-generate-image-list.sh",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/chart-upstream-sources.tsv",
+      "scripts/airgap/lib/image-digests.tsv",
+      "scripts/ci/check-version-consistency.sh",
+      "scripts/cluster/02-init-cluster.sh",
+      "scripts/cluster/03-cni-install.sh",
+      "scripts/cluster/14-gitops-bootstrap.sh",
+      "scripts/cluster/install-kubelet-csr-approver.sh",
+      "scripts/common/03-k8s-install.sh",
+      "scripts/ops/apply-kubelet-serving-tls.sh",
+      "scripts/ops/lib/kubelet-serving-tls-node.sh",
+      "scripts/test/lib/check-compliance-scan-coverage.py",
+      "scripts/test/lib/check-kubelet-authz-baseline.py",
+      "scripts/test/lib/check-kubelet-serving-tls.py",
+      "scripts/test/lib/check-sbom-inventory-completeness.py",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/test/verify-cluster.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Stages 1 and 2 cover approver packaging and ownership, fresh bootstrap, and sequential existing-node enrollment. API-server verification and strict metrics TLS are later stages."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "reviewed": true,
+      "provenance": [
+        "Orchestrator-provided .review/kubelet-csr-approver/Chart.yaml, README.md, values.yaml, and rendered templates for chart 1.2.16",
+        "Orchestrator-provided .review/IMAGE.txt with measured image digest and the task's amd64/arm64 facts",
+        "Orchestrator remediation files csr-facts.txt, plan-csr-approver.md, and owner-decisions-2026-11-25.md"
+      ],
+      "summary": "Applied D-OWN-CP, D-OWN-CSR, and D-OWN-LATEST-SEC. Repository Vagrant and OpenTofu inputs define the node names and private subnets."
+    },
+    {
+      "id": "e3",
+      "type": "reproduction",
+      "summary": "The supplied baseline records one Ready node, a self-signed serving leaf, and no CSRs. Local source inspection confirmed kubeadm did not opt in to serving bootstrap and there was no approver.",
+      "evidence": [
+        "artifact:orchestrator csr-facts.txt (baseline only, no new live reads)",
+        "artifact:HEAD scripts/cluster/02-init-cluster.sh and gitops/charts/narwhal-apps/templates"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Render the same digest-pinned chart values for bootstrap and GitOps, wait for rollout after CNI, and enroll each node before publishing the shared kubelet config. New enrollments verify the cluster CA, InternalIP SAN, and fingerprint match to an Approved+Issued CSR."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline regression, shell analysis, bundle inventory, and staged render",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-kubelet-serving-tls.py --mutation-verify -> PASS, 13 mutations rejected",
+        "test:python3 scripts/test/lib/check-compliance-scan-coverage.py --mutation-verify -> PASS, 35 mutations rejected",
+        "test:bash -n and shellcheck -x --severity=warning -> 11 changed scripts passed",
+        "test:bash scripts/ci/check-version-consistency.sh -> approver chart 1.2.16 matches and all checked versions are consistent",
+        "test:helm template against the vendored chart -> kube-system replicas 1 for Vagrant/Kakao single and 2 for Kakao HA, expected name filters and CIDRs, exact image digest, serving signer only",
+        "test:local staged installer harness used helm package and intercepted kubectl apply and rollout -> PASS",
+        "test:bundle discovery target kubelet-csr-approver chart 1.2.16 and static image generation emit one digest-qualified approver ref",
+        "test:SBOM inventory completeness, upgrade waves and R300 bundle preflight mutation checks -> PASS",
+        "test:git diff --check and ruby -c Vagrantfile -> PASS",
+        "test:make test -> passed 519   failed 0",
+        "test:python3 scripts/test/lib/check-kubelet-authz-baseline.py --mutation-verify -> 8 baseline mutations rejected (R232 now accepts the init copy that only drops serverTLSBootstrap)"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Offline two-node ops harness with real YAML edits and OpenSSL certificates, stub Kubernetes API, SSH and systemd",
+      "evidence": [
+        "test:offline two-node harness -> read-only dry run under Bash 3.2 and current Bash, sequential issuance before the next restart, and one shared ConfigMap patch",
+        "test:offline two-node harness -> converged Bash 3.2 re-run with zero restarts and zero patches, explicit rollback, and failed enrollment restores current node and stops rollout"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "verification",
+      "status": "pending",
+      "scope": "Single-node cluster trial, approver policy in Kubernetes, clean and HA bootstrap, actual rotation, and Kubernetes consumers",
+      "summary": "Runtime verification and image-license SPDX confirmation remain pending. Network and cluster were unavailable to the author."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "B",
+      "summary": "Author changes and offline checks are complete. Operational deployment evidence is pending.",
+      "next": "Orchestrator mirrors and publishes the chart/image, syncs the Application, trials stage 2 on the single-node cluster, and confirms the image SPDX license from upstream."
+    }
+  ]
+}

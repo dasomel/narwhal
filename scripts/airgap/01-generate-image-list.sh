@@ -62,6 +62,7 @@ velero/velero-plugin-for-aws:v1.14.1
 mirror.gcr.io/aquasec/trivy:0.76.1
 ghcr.io/aquasecurity/node-collector:0.3.1
 docker.io/aquasec/kube-bench:v0.16.0@sha256:75506f222d1eb6ce2a751a5533bdc0a3b54c898e2e49e7751d0ee22cfb862679
+ghcr.io/postfinance/kubelet-csr-approver:v1.2.16@sha256:3a09df2f9e1e628863fccbe5479e63b11bbc1f411c82134ee975778e1a25b5e6
 EOF
 )
 # D1: these build images are consumed by digest-pinned portal Jobs, so use the
@@ -235,7 +236,7 @@ if [[ "${MODE}" == "live" ]]; then
   pinned_transient=$(pin_transient_images) || exit 1
   {
     emit_header
-    { printf '%s\n' "${live}" | sed -E 's/@sha256:[^[:space:]]+//g'; \
+    { printf '%s\n' "${live}" | sed -E 's/@sha256:[^[:space:]]+//g' | grep -v '^ghcr.io/postfinance/kubelet-csr-approver:'; \
       printf '%s\n' "${pinned_transient}"; \
       printf '%s\n' "${kubeadm_imgs}" | sed -E 's/@sha256:[^[:space:]]+//g'; \
       printf '%s\n' "${hook_imgs}" | sed -E 's/@sha256:[^[:space:]]+//g'; } \

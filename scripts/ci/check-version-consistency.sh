@@ -48,6 +48,8 @@ compare "Keycloak" "$(versions_md Keycloak)" "11-keycloak.sh KEYCLOAK_VERSION" \
   "$(script_pin scripts/cluster/11-keycloak.sh KEYCLOAK_VERSION)"
 compare "APISIX chart" "$(versions_md APISIX 2)" "narwhal-apps apisix.yaml targetRevision" \
   "$(grep -E '^\s*targetRevision:' gitops/charts/narwhal-apps/templates/apisix.yaml | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+compare "kubelet-csr-approver chart" "$(versions_md kubelet-csr-approver 2)" "narwhal-apps kubelet-csr-approver.yaml targetRevision" \
+  "$(awk '$1 == "targetRevision:" {print $2}' gitops/charts/narwhal-apps/templates/kubelet-csr-approver.yaml)"
 
 echo "=== Summary ==="
 if [ "${FAIL}" -eq 1 ]; then

@@ -514,6 +514,8 @@ spec:
         # MetalLB gets re-created and the APISIX gateway flips back to LoadBalancer.
         provider: ${PROVIDER:-vagrant}
         podNetworkCidr: ${APISIX_ADMIN_CIDR_RESOLVED}
+        kubeletCsrTopology: ${NARWHAL_TOPOLOGY:-ha}
+        kubeletCsrNodeSubnet: "${HOST_NETWORK_CIDR:-}"
   destination:
     server: https://kubernetes.default.svc
     namespace: devtools

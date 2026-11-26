@@ -78,6 +78,7 @@ ghcr.io/headlamp-k8s/headlamp:v0.46.0	sha256:8a0ef97527544baa2b35825940ddf4db6e2
 ghcr.io/jkroepke/kube-webhook-certgen:1.8.3	sha256:8ce13c365c8e9ced0aad5ef350a53c50b7ca5817f99d856b9eec895db1056728	2026-09-28T12:06:18Z	crane digest
 ghcr.io/kube-vip/kube-vip:v1.1.2	sha256:840305b94ef2a89abb3b7fd2b09edfbde690d90052020da4dff90679fe892da2	2026-09-28T12:06:18Z	crane digest
 ghcr.io/kyverno/readiness-checker:v1.18.1	sha256:455400758235cf448dd9be3374ecb9e8bf543ee0c39adc880d25ed28cc7eb69d	2026-09-28T12:06:18Z	crane digest
+ghcr.io/postfinance/kubelet-csr-approver:v1.2.16	sha256:3a09df2f9e1e628863fccbe5479e63b11bbc1f411c82134ee975778e1a25b5e6	2026-11-26T05:11:22Z	orchestrator-measured
 kong:3.9	sha256:ad6cc0c8cca5b66b3cdab3bde7bc7ca973d4d820dd2c6651a7e3042f5428a76a	2026-11-19T01:01:43Z	crane digest
 mirror.gcr.io/aquasec/trivy-operator:0.36.1	sha256:05191a514247ae644dd5cc71306a94f44faff0a6a3fa817235911b911ecebcb9	2026-11-25T07:16:00Z	crane digest
 mirror.gcr.io/aquasec/trivy:0.76.1	sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c	2026-11-25T07:16:00Z	crane digest

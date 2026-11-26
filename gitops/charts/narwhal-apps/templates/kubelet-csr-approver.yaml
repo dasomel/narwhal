@@ -1,0 +1,73 @@
+{{- $prefix := "192.168.56.0/24" }}
+{{- $nodeRegex := "^narwhal-(master|worker)-[1-9][0-9]*$" }}
+{{- if eq .Values.provider "kakao" }}
+{{- $prefix = default "172.16.0.0/24" .Values.kubeletCsrNodeSubnet }}
+{{- $octet := "(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])" }}
+{{- $nodeRegex = printf "^host-%s-%s-%s-%s$" $octet $octet $octet $octet }}
+{{- $network := regexFind "^([0-9]{1,3}\\.){3}" $prefix }}
+{{- if and $network (hasSuffix "/24" $prefix) }}
+{{- $nodeRegex = printf "^host-%s%s$" (replace "." "-" $network) $octet }}
+{{- end }}
+{{- end }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kubelet-csr-approver
+  namespace: devtools
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
+    chart: kubelet-csr-approver
+    targetRevision: 1.2.16
+    helm:
+      skipTests: true
+      valuesObject:
+        # D1: Vagrant only writes node names to host /etc/hosts. Kakao keeps
+        # DHCP hostnames and provisions DNS for ingress names only. Pods have
+        # no provisioned node DNS records. Keep the chart's hostname check
+        # and require IP SANs to stay in the relevant private node subnet.
+        # Cost: subnet membership does not establish per-node IP ownership.
+        # Escape hatch: publish node DNS records and set bypassDnsResolution=false.
+        providerRegex: {{ $nodeRegex | quote }}
+        providerIpPrefixes:
+          - {{ $prefix | quote }}
+        bypassDnsResolution: true
+        allowedDnsNames: 1
+        replicas: {{ if eq .Values.kubeletCsrTopology "ha" }}2{{ else }}1{{ end }}
+        image:
+          repository: ghcr.io/postfinance/kubelet-csr-approver
+          tag: v1.2.16@sha256:3a09df2f9e1e628863fccbe5479e63b11bbc1f411c82134ee975778e1a25b5e6
+          pullPolicy: IfNotPresent
+        nodeSelector:
+          node-role.kubernetes.io/control-plane: ""
+        tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+            effect: NoSchedule
+        securityContext:
+          runAsUser: 65532
+          runAsGroup: 65532
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
+          readOnlyRootFilesystem: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 128Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

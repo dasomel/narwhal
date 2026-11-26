@@ -183,6 +183,27 @@ esac
 echo "Waiting for node to be ready..."
 kubectl wait --for=condition=Ready node --all --timeout=300s
 
+serving_state=/var/lib/narwhal/kubelet-serving-tls
+if [[ -f "${serving_state}/bootstrap-pending" ]]; then
+  scripts="${STAGE_DIR:-/home/vagrant}/scripts"
+  bash "${scripts}/cluster/install-kubelet-csr-approver.sh"
+  yq -e 'select(.kind == "KubeletConfiguration").serverTLSBootstrap == true' /tmp/kubeadm-config.yaml >/dev/null
+  bash "${scripts}/ops/apply-kubelet-serving-tls.sh" --kubeconfig "${KUBECONFIG}" --local "$(hostname)"
+  # D2: checkpoint before a join file becomes visible. An interrupted
+  # publication can retry even if a second node has already joined.
+  mv "${serving_state}/bootstrap-pending" "${serving_state}/join-pending"
+fi
+if [[ -f "${serving_state}/join-pending" ]]; then
+  for join_file in /home/vagrant/join-command.sh /home/vagrant/join-control-plane.sh; do
+    if [[ -f "${join_file}.pending" ]]; then
+      mv "${join_file}.pending" "${join_file}"
+    else
+      test -s "${join_file}"
+    fi
+  done
+  rm "${serving_state}/join-pending"
+fi
+
 # Harden node file permissions (CIS 1.1.9, 1.1.12, 4.1.1, 4.1.7, 4.1.9).
 # Non-fatal: failures must not block provisioning. Runs after Cilium is ready
 # so that /etc/cni/net.d conflist files are hardened to 600.

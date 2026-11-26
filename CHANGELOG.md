@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+- **Enable CA-signed kubelet serving certificates in stages (CIS 1.2.6/1.3.6, R412).** Bootstrap runs the pinned PostFinance approver after Cilium with provider-specific node names and private subnets. The rollout verifies each node's served certificate against the cluster CA and its issued CSR before publishing the kubeadm configuration for future joins. Existing clusters use the staged operator procedure. API server CA enforcement and strict metrics TLS are follow-up stages.
+
 - **Run the OpenBao agent injector and Headlamp as UID/GID 10100 (pod-security Batch B, CIS 5.7.3 KSV020/KSV021, R410):** both workloads are stateless, so `injector.uid`/`injector.gid` (chart 0.28.3) and Headlamp's main container plus its `ca-bundle` init container (`runAsUser`/`runAsGroup`, chart 0.46.0) move from 100 (GID 1000/101) to 10100 in the GitOps Applications and in the bootstrap installs (`08-4-storage.sh`, `08-3-security.sh`). The OpenBao server keeps UID 100 because its Raft PVC is owned by 100:1000. Harbor nginx/portal are deliberately unchanged: chart 1.19.1 hardcodes the pod UID 10000 and its only knob, `containerSecurityContext`, is shared by the PVC-owning core/jobservice/registry/redis, so R410 forbids setting a UID there. Existing pods restart on the next sync; revert by removing the keys.
 
 - **Scope ApplicationSet controller Secret and ConfigMap reads to `devtools` (CIS 5.1.2/KSV041, R409).** Argo CD bootstrap removes the exact cluster-wide `get/list/watch` rule and preserves the namespaced grant. Existing clusters converge when bootstrap reapplies the filtered manifest. R409 checks the render and rejects three mutations.

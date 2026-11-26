@@ -26,6 +26,7 @@
   },
   "NOT_YET_MODELLED": {
     "falco": "Security sensor add-on; no component-specific upgrade contract.",
+    "kubelet-csr-approver": "Serving certificate approval runs after CNI. Approver rollout and wire checks are gated by the serving TLS procedure in docs/common/compliance-hardening.md.",
     "kisa-compliance": "Compliance policy bundle; no independent workload upgrade.",
     "pss-compliance": "Compliance policy bundle (uppercase PSS baseline/restricted specs); no independent workload upgrade.",
     "k8s-monitoring": "Monitoring integration configuration owned with the stack.",

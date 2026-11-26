@@ -126,7 +126,14 @@ def repository_sources(init_text=None):
     if not INIT.is_file():
         raise ValueError(f"unresolvable kubeadm source: {INIT.relative_to(ROOT)} is missing")
     init_text = init_text if init_text is not None else INIT.read_text(encoding="utf-8")
-    if not re.search(r"kubeadm init\s+--config=/tmp/kubeadm-config\.yaml", init_text):
+    # D2 (kubelet serving TLS): the first init may consume a copy of the declared config that
+    # differs ONLY by dropping KubeletConfiguration.serverTLSBootstrap (re-enabled after the approver).
+    derived = re.search(
+        r"yq 'del\(select\(\.kind == \"KubeletConfiguration\"\)\.serverTLSBootstrap\)' \\\n"
+        r"\s*/tmp/kubeadm-config\.yaml > /tmp/kubeadm-initial-config\.yaml\n", init_text)
+    direct = re.search(r"kubeadm init\s+--config=/tmp/kubeadm-config\.yaml", init_text)
+    via_copy = derived and re.search(r"kubeadm init\s+--config=/tmp/kubeadm-initial-config\.yaml", init_text)
+    if not (direct or via_copy):
         raise ValueError("unresolvable kubeadm source: init does not consume its declared config")
     kubelet, apiserver = parse_kubeadm_documents(init_text)
 
@@ -165,6 +172,8 @@ def mutation_verify(init_text):
         ("apiserver Node authorizer is enabled", init_text.replace('value: "Node,RBAC"', 'value: "RBAC"', 1)),
         ("apiserver NodeRestriction admission plugin is enabled", init_text.replace('value: "NodeRestriction"', 'value: ""', 1)),
         ("kubelet readOnlyPort is disabled", init_text.replace("readOnlyPort: 0", "readOnlyPort: 10255", 1)),
+        ("init copy derived by more than the serverTLSBootstrap delete",
+         init_text.replace(".serverTLSBootstrap)' \\\n", ".serverTLSBootstrap, .authentication)' \\\n", 1)),
     ]
     parsed_docs = list(yaml.safe_load_all(re.sub(
         r"(?m)^(\s*certSANs):\$\{CERT_SANS\}\s*$", r"\1: []",

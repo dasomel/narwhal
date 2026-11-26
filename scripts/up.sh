@@ -218,6 +218,34 @@ k8s_ready_nodes() {
 
 check_macos_local_network_privacy
 
+# D-NFS-ORPHAN-DISK: the same test as the Vagrantfile "NFS data vmdk" trigger, run before any VM is
+# touched. Without it only master-1's `vagrant up` aborts (|| true below) and every other VM then waits
+# 5 minutes for a join command that never comes, on every attempt. Keep the size bound in sync.
+nfs_vmdk=".vagrant/narwhal-nfs/narwhal-nfs.vmdk"
+nfs_disk_gb="${NARWHAL_NFS_DISK_GB:-200}"
+# vm_state prints the second word of `vagrant status`, so "not created" arrives as "not".
+nfs_m1_state=$(vm_state master-1)
+if [ "${nfs_disk_gb}" != "0" ] && [ -f "${nfs_vmdk}" ] \
+   && { [ "${nfs_m1_state}" = "not" ] || [ "${nfs_m1_state}" = "not_created" ]; } \
+   && [ "${NARWHAL_NFS_REUSE_DISK:-}" != "yes-reuse-previous-cluster-data" ]; then
+  # wc -c, not stat: `stat -f` means "filesystem status" on GNU and would print text before failing.
+  nfs_size=$(wc -c < "${nfs_vmdk}" | tr -d '[:space:]')
+  # Capacity from the vmdk's embedded descriptor ("RW <sectors> SPARSE"), as in the Vagrantfile; fall back
+  # to NARWHAL_NFS_DISK_GB. awk reads all input (no SIGPIPE under pipefail); no match is not an error.
+  nfs_cap_gb=$(head -c 65536 "${nfs_vmdk}" | LC_ALL=C grep -a -o -E '^RW [0-9]+' \
+    | awk 'NR == 1 { printf "%d", $2 * 512 / 1073741824 }' || true)
+  [ -n "${nfs_cap_gb}" ] && [ "${nfs_cap_gb}" -gt 0 ] || nfs_cap_gb="${nfs_disk_gb}"
+  if [ "${nfs_size}" -gt $((nfs_cap_gb * 256 * 1024 + 64 * 1024 * 1024)) ]; then
+    echo "ERROR: master-1 is not created but ${nfs_vmdk} ($((nfs_size / 1024 / 1024))MiB) holds data from a previous" >&2
+    echo "       master-1 removed without 'vagrant destroy'. A new cluster would mount the old PVs (OpenBao sealed" >&2
+    echo "       with a lost unseal key, Gitea repo conflicts)." >&2
+    echo "       Fresh cluster: rm -rf .vagrant/narwhal-nfs   (deletes the old PV data)" >&2
+    echo "       Keep it on purpose: NARWHAL_NFS_REUSE_DISK=yes-reuse-previous-cluster-data ./scripts/up.sh" >&2
+    echo "       See docs/vagrant/operations.md section 15." >&2
+    exit 1
+  fi
+fi
+
 # Re-runs on a fully Ready cluster do not need the original host-side bundle.
 bundle_check_needed=false
 ready_nodes=$(k8s_ready_nodes)

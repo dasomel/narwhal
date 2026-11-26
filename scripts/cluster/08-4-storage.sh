@@ -474,15 +474,39 @@ if [ "${OPENBAO_INITIALIZED}" = "True" ]; then
     2>/dev/null || echo "true")
   if [ "${OPENBAO_SEALED}" = "true" ]; then
     echo "OpenBao is sealed — retrieving unseal key from openbao-init secret..."
-    UNSEAL_KEY=$(kubectl get secret openbao-init -n storage \
-      -o jsonpath='{.data.unseal_keys_b64}' 2>/dev/null \
-      | base64 -d 2>/dev/null || echo "")
+    # One read, its error kept: an API error must not look like "no key" (and then fail the run below),
+    # and NotFound must be told apart from a Secret that exists without the key.
+    UNSEAL_KEY=""
+    if key_read=$(kubectl get secret openbao-init -n storage -o jsonpath='{.data.unseal_keys_b64}' 2>&1); then
+      key_state="present"
+      UNSEAL_KEY=$(printf '%s' "${key_read}" | base64 -d 2>/dev/null || echo "")
+    else
+      case "${key_read}" in
+        *NotFound*) key_state="absent" ;;
+        *) echo "ERROR: cannot read Secret storage/openbao-init: ${key_read}" >&2; exit 1 ;;
+      esac
+    fi
     if [ -n "${UNSEAL_KEY}" ]; then
       echo "Unsealing OpenBao..."
       kubectl exec openbao-0 -n storage -- \
         bao operator unseal -tls-skip-verify "${UNSEAL_KEY}" || true
     else
-      echo "WARN: OpenBao initialized but unseal key not found in openbao-init secret"
+      # D-OPENBAO-ORPHAN-STORAGE (2026-11-26, live): this used to WARN and go on, and Phase 2 died much
+      # later in 13-2 on `secrets "openbao-init" not found`, which names the symptom, not the cause. An
+      # initialized, sealed OpenBao without its key cannot be unsealed by anything this script can do;
+      # the usual cause is a data PV left over from a previous cluster (the key was in that cluster's etcd).
+      # key_state comes from the single read above (API errors already exited there).
+      if [ "${key_state}" = "absent" ]; then
+        echo "ERROR: OpenBao is initialized and sealed, and Secret storage/openbao-init does not exist." >&2
+      else
+        echo "ERROR: OpenBao is initialized and sealed, and storage/openbao-init has no unseal_keys_b64." >&2
+      fi
+      echo "       Its unseal key is not in this cluster, so it cannot be unsealed. The usual cause is the" >&2
+      echo "       storage/data-openbao-0 PV holding a previous cluster's OpenBao (NFS export reused, see" >&2
+      echo "       docs/vagrant/operations.md section 15). With the old key: unseal it by hand and recreate" >&2
+      echo "       openbao-init. Without it the old data is unrecoverable: move the PV directory aside on the" >&2
+      echo "       NFS server, recreate an empty one, delete pod openbao-0 and re-run Phase 2." >&2
+      exit 1
     fi
   else
     echo "OpenBao already unsealed — nothing to do"

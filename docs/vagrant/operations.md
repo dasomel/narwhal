@@ -1092,6 +1092,38 @@ kubectl --context narwhal -n database get cluster narwhal-db   # Cluster in heal
 
 **이미 디스크가 붙은 머신에서 `NARWHAL_NFS_DISK_GB=0`을 쓰면 `Vagrantfile`이 거부하고 중단한다(R327).** 디스크 없이 부팅하면 루트 디스크에 남은 PV 옛 복사본을 export하게 된다. 판단 기준은 VM 디렉터리(또는 절대 경로)의 `narwhal-nfs.vmdk`, 머신 디렉터리의 `nfs-data*`, `disk_meta`의 `nfs-data`다. 데이터가 이미 없어진 클러스터를 `destroy`할 때만 `NARWHAL_NFS_DISK_ALLOW_DELETE=yes-delete-the-nfs-disk`로 우회한다. 디스크 이름 `narwhal-nfs.vmdk`는 바꾸지 않는다(라이브 vmx가 이 이름을 가리킨다). 포맷은 XFS(`prjquota`), fstab은 UUID로 쓰므로 장치 이름에 의존하지 않는다.
 
+### 디스크가 VM보다 오래 남은 경우 (D-NFS-ORPHAN-DISK, D-NFS-STALE-LOCK)
+
+절대 경로 vmdk(`.vagrant/narwhal-nfs/narwhal-nfs.vmdk`)는 `vagrant destroy`의 after 트리거만 지운다. master-1을 Fusion GUI, `vmrun deleteVM`, VM 디렉터리 삭제처럼 Vagrant 밖에서 없애거나 Vagrant를 재설치하는 동안 VM이 사라지면 디스크만 남는다. 2026-11-26 기동에서 실제로 일어난 일은 다음과 같다.
+
+1. **오래된 잠금 때문에 master-1 전원이 켜지지 않았다.** 11월 15일 비정상 종료된 VM이 `narwhal-nfs.vmdk.lck/M<pid>.lck`를 남겼다. `vmware.log`에 `Directory not empty`, `msg.disk.noBackEnd ... Cannot open the disk`, `Module 'Disk' power on failed`가 찍혔다. `up.sh`는 이 실패를 `|| true`로 넘기고 계속 진행했고, 나머지 VM은 모두 `Waiting for master node... (n/30)` 끝에 join에 실패했다.
+2. **새 클러스터가 옛 PV를 그대로 마운트했다.** nfs-csi `subDir`은 `${pvc.metadata.namespace}/${pvc.metadata.name}`로 고정된다. 그래서 `01-nfs-server.sh`가 기존 XFS(라벨 `narwhal-nfs`)를 포맷 없이 다시 마운트하자, 같은 이름의 PVC가 옛 디렉터리를 이어받았다.
+   - OpenBao: `Initialized true / Sealed true` 상태로 올라왔다. unseal key는 옛 클러스터의 etcd(`storage/openbao-init`)와 함께 사라져 복구할 수 없다. 옛 Raft 스냅샷(`storage/openbao-snapshots`)도 같은 키로 봉인돼 있다. Phase 2는 `13-2`에서 `secrets "openbao-init" not found`로 중단됐다.
+   - Gitea: DB(CNPG)는 새것인데 `gitea-repositories/gitea-admin/narwhal-gitops`의 파일은 옛것이었다. `14-gitops-bootstrap.sh`가 `repository files already exist` (HTTP 500)로 실패했다.
+   - Grafana: `grafana.db`가 옛것이어서 사용자가 옛 Keycloak 사용자 ID(`user_auth.auth_id`)에 묶여 있었다. 새 Keycloak으로 로그인하면 "Login failed / User sync failed"가 나고, 로그에는 `user.sync ... unable to create user: user not found`가 찍혔다. 같은 email의 옛 사용자가 있어 새 사용자를 만들지 못한 것이다. 옛 admin 비밀번호도 DB에 남는다. 대시보드와 데이터소스는 프로비저닝되므로 `monitoring/prometheus-stack-grafana` 디렉터리를 같은 방식으로 치우고 Grafana 파드를 재시작하면 복구된다(2026-11-26 확인: admin은 GrafanaAdmin, dev는 Editor).
+   - harbor-registry, seaweedfs, prometheus/loki/tempo, trivy-server의 PV도 옛 데이터를 이어받았다. 기동을 막지는 않았지만 새 클러스터와 일관된 상태가 아니다.
+
+지금 동작은 다음과 같다.
+
+- **D-NFS-STALE-LOCK:** master-1의 `before [:up, :reload]` 트리거는 `<vmdk>.lck`가 있을 때 `vmrun list`가 보고하는 실행 중인 VM의 vmx에 이 vmdk 이름이 있는지 본다. 그런 VM이 없을 때만 잠금 디렉터리를 지운다. vmx를 읽지 못하면 사용 중으로 보고, `vmrun`이 없으면 아무것도 지우지 않는다.
+- **D-NFS-ORPHAN-DISK:** master-1이 `not_created`인데 절대 경로 vmdk가 새 디스크보다 크면, 즉 어떤 VM이 쓴 적이 있으면 트리거와 `up.sh`가 VM을 만지기 전에 중단한다. 기준은 `용량(GiB) × 256KiB + 64MiB`다. 용량은 vmdk에 내장된 descriptor의 `RW <sectors> SPARSE`에서 읽고, 없으면 `NARWHAL_NFS_DISK_GB`를 쓴다. 그래서 디스크를 만든 뒤 변수를 바꿔도 판정이 흔들리지 않는다. 빈 200GB 디스크는 25MB, 빈 1000GB 디스크는 125MB다. 선택지는 둘이다.
+  - 새 클러스터로 시작: `rm -rf .vagrant/narwhal-nfs`. 옛 PV 데이터도 함께 지워진다.
+  - 옛 데이터를 의도적으로 재사용: `NARWHAL_NFS_REUSE_DISK=yes-reuse-previous-cluster-data ./scripts/up.sh`. 이 경우 OpenBao unseal key(옛 `openbao-init`의 `unseal_keys_b64`)를 갖고 있어야 한다.
+- **D-OPENBAO-ORPHAN-STORAGE:** `08-4-storage.sh`는 OpenBao가 초기화·봉인돼 있는데 `openbao-init`(또는 그 안의 키)이 없으면 원인을 적고 실패한다(critical). 이전에는 WARN만 내고 `13-2`에서야 엉뚱한 증상으로 실패했다. Secret 읽기는 한 번만 하고 오류 메시지를 보존한다. 그래서 NotFound, 키 없음, API 오류(별도 메시지로 실패, 재실행으로 회복)를 구분한다.
+
+이미 옛 데이터로 클러스터를 올렸고 키가 없다면, 2026-11-26에 한 복구 절차는 다음과 같다(master-1에서). 지우지 않고 옆으로 치우는 방식이다.
+
+```bash
+S=/srv/nfs/k8s/storage
+for d in data-openbao-0 audit-openbao-0; do
+  o=$(sudo stat -c %u:%g $S/$d); m=$(sudo stat -c %a $S/$d)
+  sudo mv $S/$d $S/$d.stale-$(date +%Y%m%d); sudo mkdir $S/$d; sudo chown $o $S/$d; sudo chmod $m $S/$d
+done
+kubectl -n storage delete pod openbao-0     # Initialized false로 올라오면 Phase 2를 다시 돈다
+```
+
+Gitea가 `repository files already exist`를 내면 그 저장소 디렉터리(`/srv/nfs/k8s/devtools/gitea-shared-storage/git/gitea-repositories/<owner>/<repo>.git`)를 같은 방식으로 치운다. 2026-11-26에는 Gitea가 실패하면서 직접 비웠다.
+
 ### 기존 클러스터 이전 (소유자 실행 점검 작업)
 
 **소유자 승인과 점검 시간이 필요하다.** master-1은 etcd 멤버이자 모든 PV의 NFS 서버라서, 디스크를 붙이려면 VM을 끄는 동안 NFS를 쓰는 모든 워크로드가 멈춘다(VMware는 실행 중인 VM에 디스크를 붙일 수 없다). 예상 중단 시간은 복사할 데이터 양에 달렸고 측정하지 않았다. 데이터가 100GB 미만이라면 쓰기 중단부터 복구까지 30~60분 정도로 추정한다(`sudo du -sx /srv/nfs/k8s`로 먼저 크기를 확인하고, 크면 늘려 잡는다). 쓰기를 모두 멈춘 뒤 한 번만 복사하므로 사전 online 복사 단계는 없다.

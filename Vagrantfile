@@ -320,6 +320,50 @@ Vagrant.configure("2") do |config|
           trigger.ruby do |_env, machine|
             next unless machine.provider_name == :vmware_desktop
             target = NFS_VMDK_IN_VMDIR ? File.join(NFS_VM_DIR, NFS_VMDK_NAME) : NFS_VMDK_ABS
+            if File.exist?(target)
+              # D-NFS-ORPHAN-DISK (2026-11-26, live): master-1's VM was removed outside `vagrant destroy` (the
+              # cleanup trigger below never ran), the absolute-path vmdk survived, and the new cluster mounted the
+              # old cluster's PVs by their deterministic ${namespace}/${pvc} paths: OpenBao came up initialized and
+              # sealed with its unseal key gone with the old etcd, Gitea refused to create a repo whose files
+              # already existed. A not-created master-1 with a disk that a VM has written to (larger than a fresh
+              # one: about 128KiB of grain tables per GiB of capacity) is that orphan. Capacity comes from the
+              # vmdk's embedded descriptor ("RW <sectors> SPARSE"), not today's NFS_DISK_GB, which may differ from
+              # the value the disk was created with. Escape hatch: reuse it on purpose.
+              cap_sectors = (File.binread(target, 65_536)[/^RW (\d+) /, 1].to_i rescue 0)
+              cap_gb = cap_sectors.positive? ? (cap_sectors * 512) / (1024**3) : NFS_DISK_GB
+              written = File.size(target) > cap_gb * 256 * 1024 + 64 * 1024 * 1024
+              if machine.state.id == :not_created && !NFS_VMDK_IN_VMDIR && written &&
+                 ENV["NARWHAL_NFS_REUSE_DISK"] != "yes-reuse-previous-cluster-data"
+                abort "REFUSING: master-1 is not created but #{target} (#{File.size(target) / 1024 / 1024}MiB) holds data " \
+                      "from a previous master-1 that was removed without `vagrant destroy`. A new cluster would mount the old " \
+                      "PVs (OpenBao sealed with a lost unseal key, Gitea repo conflicts). Fresh cluster: delete " \
+                      "#{File.dirname(target)} (the old PV data is gone with it). Keep the data on purpose: " \
+                      "NARWHAL_NFS_REUSE_DISK=yes-reuse-previous-cluster-data. See docs/vagrant/operations.md section 15."
+              end
+              # D-NFS-STALE-LOCK (2026-11-26, live): a VM that died without a clean power-off leaves
+              # <vmdk>.lck/M<pid>.lck behind and the next power-on fails with "Directory not empty / Cannot open
+              # the disk" (msg.disk.noBackEnd). Remove it only when vmrun reports no running VM whose vmx names
+              # this vmdk (an unreadable vmx counts as a holder); without vmrun nothing is touched.
+              lock = "#{target}.lck"
+              vmrun = "/Applications/VMware Fusion.app/Contents/Library/vmrun"
+              if File.directory?(lock) && File.executable?(vmrun)
+                listing = IO.popen([vmrun, "list"], err: File::NULL, &:read)
+                if $?.success?
+                  running = listing.lines.drop(1).map(&:strip).reject(&:empty?)
+                  holder = running.find do |vmx|
+                    File.read(vmx).include?(NFS_VMDK_NAME)
+                  rescue StandardError
+                    true
+                  end
+                  if holder
+                    machine.ui.info("NFS vmdk lock #{lock} is held by running #{holder}; left alone")
+                  else
+                    machine.ui.warn("Removing stale NFS vmdk lock #{lock} (no running VM uses #{NFS_VMDK_NAME})")
+                    FileUtils.rm_rf(lock)
+                  end
+                end
+              end
+            end
             next if File.exist?(target)
             tool = ["/Applications/VMware Fusion.app/Contents/Library/vmware-vdiskmanager"].find { |t| File.executable?(t) } ||
                    "vmware-vdiskmanager"

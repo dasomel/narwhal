@@ -9,6 +9,10 @@
 
 ## [Unreleased]
 
+## [1.1.31] - 2026-11-26
+
+### 변경
+
 - **Batch C 노드 에이전트 Config Audit 수용 범위 축소:** Falco KSV004/KSV030/KSV104, Cilium KSV003/KSV004/KSV025, Envoy KSV025, Envoy·MetalLB speaker·kube-vip·CSI NFS 노드 KSV021은 보고서에 나오면 조치 대상으로 표시된다. Istio CNI·ztunnel·Cilium Envoy의 KSV001 사유에는 SYS_ADMIN 실측과 차트 동작을 기록했다. kube-vip Pod와 MetalLB speaker DaemonSet의 KSV105는 실측에 근거해 해당 리소스에만 수용한다. Falco의 privileged eBPF 수용 사유에는 미검증 상태인 leastPrivileged 후속 경로를 명시했다. 다음 포털 릴리스부터 적용된다.
 
 ## [1.1.30] - 2026-11-26
@@ -1006,7 +1010,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.30...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.31...HEAD
+[1.1.31]: https://github.com/dasomel/narwhal/compare/portal/v1.1.30...portal/v1.1.31
 [1.1.30]: https://github.com/dasomel/narwhal/compare/portal/v1.1.29...portal/v1.1.30
 [1.1.29]: https://github.com/dasomel/narwhal/compare/portal/v1.1.28...portal/v1.1.29
 [1.1.28]: https://github.com/dasomel/narwhal/compare/portal/v1.1.27...portal/v1.1.28

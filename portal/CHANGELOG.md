@@ -9,6 +9,10 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.31] - 2026-11-26
+
+### Changed
+
 - **Narrow Batch C node-agent Config Audit acceptances:** Falco KSV004/KSV030/KSV104, Cilium KSV003/KSV004/KSV025, Envoy KSV025, and Envoy, MetalLB speaker, kube-vip and CSI NFS node KSV021 stay actionable when reported. KSV001 reasons for Istio CNI, ztunnel and Cilium Envoy record the measured SYS_ADMIN and the chart behavior. KSV105 is accepted for the exact kube-vip Pod and MetalLB speaker DaemonSet with measured UID 0 reasons. Falco’s accepted privileged eBPF mode retains the caveat about the untested leastPrivileged follow-up. The rule changes take effect with the next portal release.
 
 ## [1.1.30] - 2026-11-26
@@ -1052,7 +1056,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.30...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.31...HEAD
+[1.1.31]: https://github.com/dasomel/narwhal/compare/portal/v1.1.30...portal/v1.1.31
 [1.1.30]: https://github.com/dasomel/narwhal/compare/portal/v1.1.29...portal/v1.1.30
 [1.1.29]: https://github.com/dasomel/narwhal/compare/portal/v1.1.28...portal/v1.1.29
 [1.1.28]: https://github.com/dasomel/narwhal/compare/portal/v1.1.27...portal/v1.1.28

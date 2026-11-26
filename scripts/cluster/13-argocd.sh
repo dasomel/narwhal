@@ -218,9 +218,16 @@ patch_resources deployment  argocd-notifications-controller 25m 64Mi  200m 256Mi
 patch_resources deployment  argocd-dex-server              25m  64Mi  100m 128Mi
 
 # Set resource requests/limits on initContainers (Trivy KSV011/015/016/018)
-patch_init_resources deployment argocd-repo-server 0 10m 32Mi 100m 64Mi
+# D-ARGOCD-COPYUTIL-OOM (2026-11-26, live): the repo-server and dex-server init containers `cp -n`
+# the ~207MB argocd binary into an emptyDir. The dirty page cache is charged to the init container's
+# memcg, and at 64Mi the kernel OOM-killed cp at 75MB. The init container restarted, `cp -n` skipped
+# the existing truncated file and exited 0, so the dex container exec'd a truncated ELF and SIGSEGV'd
+# (exit 139, no log) for the life of the pod. 256Mi completed the copy on the same node. Requests stay
+# 32Mi (scheduling budget unchanged). redis's init runs the binary, it does not copy it, so it keeps 64Mi.
+# Recovery for an already broken pod: delete it (the emptyDir goes with it).
+patch_init_resources deployment argocd-repo-server 0 10m 32Mi 100m 256Mi
 patch_init_resources deployment argocd-redis       0 10m 32Mi 100m 64Mi
-patch_init_resources deployment argocd-dex-server  0 10m 32Mi 100m 64Mi
+patch_init_resources deployment argocd-dex-server  0 10m 32Mi 100m 256Mi
 
 # Fix Istio ambient mesh + kubelet health probe conflict
 # In ambient mode, ztunnel intercepts ALL inbound pod traffic including kubelet probes.

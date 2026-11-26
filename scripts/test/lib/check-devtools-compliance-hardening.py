@@ -120,9 +120,11 @@ def validate(files: dict[str, str]) -> None:
   # 7. ArgoCD
   argocd_script = files[ARGOCD]
   assert 'patch_init_resources()' in argocd_script, '13-argocd.sh missing patch_init_resources function'
-  for workload in ('argocd-repo-server', 'argocd-redis', 'argocd-dex-server'):
-    pattern = rf'patch_init_resources\s+deployment\s+{workload}\s+0\s+10m\s+32Mi\s+100m\s+64Mi'
-    assert re.search(pattern, argocd_script), f'13-argocd.sh missing {workload} initContainer patch'
+  # D-ARGOCD-COPYUTIL-OOM: the two inits that copy the ~207MB argocd binary need 256Mi (64Mi
+  # OOM-killed cp and left a truncated binary that `cp -n` never replaced); redis's init does not copy.
+  for workload, mem_lim in (('argocd-repo-server', '256Mi'), ('argocd-redis', '64Mi'), ('argocd-dex-server', '256Mi')):
+    pattern = rf'patch_init_resources\s+deployment\s+{workload}\s+0\s+10m\s+32Mi\s+100m\s+{mem_lim}\s*$'
+    assert re.search(pattern, argocd_script, re.M), f'13-argocd.sh missing {workload} initContainer patch ({mem_lim})'
 
 
 def main() -> None:
@@ -141,6 +143,8 @@ def main() -> None:
         (HARBOR, 'cpu: 200m', 'cpu: 50m'),
         (GITEA, '--set resources.limits.memory=1Gi', '--set resources.limits.memory=512Mi'),
         (ARGOCD, 'patch_init_resources deployment argocd-dex-server', '# patch_init_resources'),
+        (ARGOCD, 'argocd-dex-server  0 10m 32Mi 100m 256Mi', 'argocd-dex-server  0 10m 32Mi 100m 64Mi'),
+        (ARGOCD, 'argocd-repo-server 0 10m 32Mi 100m 256Mi', 'argocd-repo-server 0 10m 32Mi 100m 64Mi'),
     ]
     for path, old, new in mutations:
       changed = copy.copy(files)

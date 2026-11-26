@@ -380,8 +380,22 @@ stage_mirror() {
 }
 
 stage_init() {
+  local ip expected_hostname actual_hostname
   log "init: nfs-server, kubeadm init, CNI on master-1 (${MASTER1})"
   if stage_done "${MASTER1}" init; then note "skip (done)"; return 0; fi
+  # D-CSR-HOSTNAME: verify the names the approver will allow. Cost: one SSH read
+  # per additional node. Correct the node hostname before retrying on mismatch.
+  for ip in "${ALL_NODES[@]}"; do
+    expected_hostname="host-${ip//./-}"
+    actual_hostname="${MASTER_HOSTNAME}"
+    if [[ "${ip}" != "${MASTER1}" ]]; then
+      actual_hostname="$(ssh_node "${ip}" hostname | tr -d '\r')" || return 1
+    fi
+    if [[ "${actual_hostname}" != "${expected_hostname}" ]]; then
+      echo "ERROR: kubelet CSR inventory: node ${ip} reports hostname ${actual_hostname}, expected ${expected_hostname}" >&2
+      return 1
+    fi
+  done
   if run_scripts "${MASTER1}" init \
        cluster/01-nfs-server.sh cluster/02-init-cluster.sh cluster/03-cni-install.sh; then
     mark_done "${MASTER1}" init; note "ok"

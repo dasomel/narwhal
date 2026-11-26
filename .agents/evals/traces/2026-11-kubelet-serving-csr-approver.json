@@ -53,7 +53,7 @@
       "provenance": [
         "Orchestrator review-csr-findings.md and brief-csr.md",
         "Vendored PostFinance chart 1.2.16, including Chart.yaml and its RBAC, Deployment, and extraObjects templates",
-        "Orchestrator cached upstream csr_controller.go Apache-2.0 source header and supplied image digest evidence"
+        "Orchestrator resolved the upstream license with gh api repos/postfinance/kubelet-csr-approver/license (MIT) and supplied image digest evidence"
       ],
       "summary": "The chart declares the PostFinance source and the offline package contains no separate LICENSE or license annotation. Its SBOM row uses the license of the declared source project."
     },
@@ -103,16 +103,29 @@
     {
       "id": "e7",
       "type": "verification",
-      "status": "pending",
-      "scope": "Live approver election, CSR enrollment and rotation, Kubernetes consumers, and Argo CD adoption",
-      "summary": "The author round was offline. The upstream allowlist remains shared across listed node IPs and Argo CD client-side adoption can retain removed fields owned by bootstrap."
+      "status": "passed",
+      "scope": "Single-node stages 1–2 on fb50d343, measured by the orchestrator on 2026-11-26",
+      "evidence": [
+        "test:Gitea chart 1.2.16 published and idp-apps patched with kubeletCsrTopology=single and kubeletCsrNodes={\"narwhal-master-1\":\"192.168.56.10\"}; child Application Synced/Healthy",
+        "test:approver pod image digest sha256:3a09df2f9e1e628863fccbe5479e63b11bbc1f411c82134ee975778e1a25b5e6; approver log showed no forbidden or error entries",
+        "test:apply-kubelet-serving-tls.sh dry run, apply, and re-run exited 0; re-run true -> true; CSR csr-wwvp5 Approved,Issued",
+        "test:kubelet :10250 issuer changed from CN=narwhal-master-1-ca@1794714706 to CN=kubernetes; IP SAN verified",
+        "test:kubectl logs, exec, and top succeeded; test-sso passed 144 checks with 0 failures"
+      ]
     },
     {
       "id": "e8",
+      "type": "verification",
+      "status": "pending",
+      "scope": "HA rollout, scheduled serving certificate rotation, and stage 3 API server CA validation",
+      "summary": "The upstream allowlist remains shared across listed node IPs and Argo CD client-side adoption can retain removed fields owned by bootstrap."
+    },
+    {
+      "id": "e9",
       "type": "task_outcome",
       "state": "B",
-      "summary": "The requested offline author changes and checks are complete.",
-      "next": "Orchestrator publishes the chart/image and runs the staged single-node checks in docs/common/compliance-hardening.md."
+      "summary": "The orchestrator verified stages 1–2 on a single node. The follow-up covers manual bootstrap reruns and Kakao hostname and IP validation offline.",
+      "next": "Confirm the upstream SPDX license via GitHub API. Verify HA issuance and scheduled rotation before stage 3."
     }
   ]
 }

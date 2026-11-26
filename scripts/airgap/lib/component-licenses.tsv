@@ -6,9 +6,9 @@
 # question from "what do we depend on" to "what are we distributing, and under
 # what terms" — and the answer is not uniformly Apache-2.0.
 #
-# Rows use the upstream repository's license. The default source is
+# NOT GUESSED. Resolve each row from the upstream repository's own license via
 # `gh api repos/<owner>/<repo>/license`. Rows using source notices or other
-# upstream metadata carry a note.
+# upstream metadata carry a note, including any pending API confirmation.
 #
 # Refresh with: scripts/airgap/lib/refresh-component-licenses.sh
 # (re-resolves every row from upstream; overrides below are preserved by hand)
@@ -76,8 +76,8 @@ ghcr.io/headlamp-k8s/headlamp	kubernetes-sigs/headlamp	Apache-2.0
 ghcr.io/jkroepke/kube-webhook-certgen	jkroepke/kube-webhook-certgen	Apache-2.0	
 ghcr.io/kube-vip/kube-vip	kube-vip/kube-vip	Apache-2.0	
 ghcr.io/kyverno/readiness-checker	kyverno/kyverno	Apache-2.0	
-ghcr.io/postfinance/kubelet-csr-approver	postfinance/kubelet-csr-approver	Apache-2.0	Upstream source headers
-helm/kubelet-csr-approver@1.2.16	postfinance/kubelet-csr-approver	Apache-2.0	Project license of the upstream source declared in Chart.yaml
+ghcr.io/postfinance/kubelet-csr-approver	postfinance/kubelet-csr-approver	MIT	gh api repos/postfinance/kubelet-csr-approver/license -> MIT (LICENSE, 2026-11-26); some source files carry Apache-2.0 headers
+helm/kubelet-csr-approver@1.2.16	postfinance/kubelet-csr-approver	MIT	Upstream source declared in Chart.yaml; gh api repos/postfinance/kubelet-csr-approver/license -> MIT (LICENSE, 2026-11-26); some source files carry Apache-2.0 headers
 kong	Kong/kong	Apache-2.0	
 mirror.gcr.io/aquasec/trivy	aquasecurity/trivy	Apache-2.0	
 mirror.gcr.io/aquasec/trivy-operator	aquasecurity/trivy-operator	Apache-2.0	

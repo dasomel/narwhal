@@ -75,7 +75,7 @@ KAKAO_STATE = {
 }
 
 
-def kakao_nodes(provision, state, error=None):
+def kakao_nodes(provision, state, error=None, wrong_hostname_ip=""):
     with tempfile.TemporaryDirectory(prefix="r412-kakao-") as tmp:
         root = Path(tmp)
         script = root / KAKAO
@@ -87,18 +87,34 @@ def kakao_nodes(provision, state, error=None):
             f"{key}) printf '%s\\n' {shlex.quote(value)} ;;\n" for key, value in state.items()
         ) + "*) exit 1 ;;\nesac\n")
         ssh = root / "ssh"
-        ssh.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$TF_DIR/ssh.log"\necho host-172-16-3-10\n')
+        ssh.write_text(r'''#!/bin/bash
+printf "%s\\n" "$*" >> "$TF_DIR/ssh.log"
+if [[ "${@: -1}" == hostname ]]; then
+  target="${@: -2:1}"
+  ip="${target#*@}"
+  if [[ "$ip" == "$WRONG_HOSTNAME_IP" ]]; then
+    echo unexpected-hostname
+  else
+    echo "host-${ip//./-}"
+  fi
+fi
+''')
         for tool in (tofu, ssh):
             tool.chmod(0o700)
         (root / "test-key").touch()
         result = subprocess.run(
             ["bash", str(script), "init"], text=True, capture_output=True,
             env={**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}", "TF_DIR": tmp,
-                 "KAKAO_KNOWN_HOSTS": str(root / "known_hosts"), "FORCE": "1"},
+                 "KAKAO_KNOWN_HOSTS": str(root / "known_hosts"), "FORCE": "1",
+                 "WRONG_HOSTNAME_IP": wrong_hostname_ip},
         )
         log = root / "ssh.log"
         if error:
-            assert result.returncode and error in result.stderr and not log.exists(), result.stderr
+            assert result.returncode and error in result.stderr, result.stderr
+            if wrong_hostname_ip:
+                assert "03-cni-install.sh" not in log.read_text()
+            else:
+                assert not log.exists()
             return None
         assert result.returncode == 0, result.stderr
         return json.loads(re.search(r"KUBELET_CSR_NODES='([^']+)'", log.read_text())[1])
@@ -196,10 +212,52 @@ def check_fail_closed(chart, provision):
         ("vpc_cidr", "0.0.0.0/0", "private RFC 1918 VPC"),
         ("master_private_ips", "[]", "missing node IPs in master_private_ips"),
         ("worker_private_ips", "[]", "missing node IPs in worker_private_ips"),
+        ("master_private_ips", '["172.16.4.10"]', "node IP 172.16.4.10 is outside the node subnet"),
+        ("worker_private_ips", '["172.16.3.10"]', "node IP 172.16.3.10 is outside the node subnet, reserved or duplicated"),
+        ("worker_private_ips", '["172.16.3.4"]', "node IP 172.16.3.4 is outside the node subnet, reserved or duplicated"),
         ("master_lb_vip", "172.16.3.10", "reserved or duplicated"),
         ("worker_lb_vip", "172.16.3.21", "reserved or duplicated"),
     ):
         kakao_nodes(provision, {**KAKAO_STATE, key: value}, error)
+    for ip in ("172.16.3.10", "172.16.3.22"):
+        kakao_nodes(provision, KAKAO_STATE, f"node {ip} reports hostname unexpected-hostname", ip)
+
+
+def check_gitops_inventory(bootstrap, nodes):
+    prefix = bootstrap.split('\nGITEA_URL=', 1)[0].replace(
+        'source /home/vagrant/scripts/common/lib.sh', ':', 1,
+    )
+    harness = '''kubectl() {
+  case "$*" in
+    "get nodes") return 0 ;;
+    "-n devtools get application idp-apps --ignore-not-found -o json")
+      echo "read idp-apps" >&2
+      printf '%s' "$LIVE_APPLICATION" ;;
+    *) return 1 ;;
+  esac
+}
+''' + prefix + '\nprintf "\\n%s\\n" "$KUBELET_CSR_NODES"\n'
+    env = os.environ.copy()
+    env.pop("KUBELET_CSR_NODES", None)
+    application = json.dumps({"spec": {"source": {"helm": {"valuesObject": {"kubeletCsrNodes": nodes}}}}})
+    explicit_nodes = {"narwhal-master-1": "192.168.56.11"}
+    for live, supplied, expected in (
+        (application, None, nodes), (application, explicit_nodes, explicit_nodes),
+        ("", None, None), ("{}", None, None),
+    ):
+        case_env = {**env, "LIVE_APPLICATION": live}
+        if supplied is not None:
+            case_env["KUBELET_CSR_NODES"] = json.dumps(supplied)
+        result = subprocess.run(
+            ["bash", "-c", harness], text=True, capture_output=True,
+            env=case_env,
+        )
+        assert ("read idp-apps" in result.stderr) == (supplied is None), result.stderr
+        if expected is not None:
+            assert result.returncode == 0, result.stderr
+            assert json.loads(result.stdout.splitlines()[-1]) == expected
+        else:
+            assert result.returncode != 0 and "KUBELET_CSR_NODES" in result.stderr, result.stderr
 
 
 def ordered(text, *parts):
@@ -273,6 +331,8 @@ def verify_mutations(files, fixtures):
         (APP, "manage: false", "manage: true"),
         (APP, "resources: [certificatesigningrequests]", "resources: [certificatesigningrequests, leases]"),
         (KAKAO, "sys.argv[3:6]", "sys.argv[5:6]"),
+        (KAKAO, '"${actual_hostname}" != "${expected_hostname}"', '"${actual_hostname}" != "${actual_hostname}"'),
+        (GITOPS, 'if [[ -z "${KUBELET_CSR_NODES+x}" ]]; then', 'if false; then'),
         (IMAGES, REF, IMAGE),
         (DIGESTS, DIGEST, "sha256:" + "0" * 64),
         (GENERATOR, REF, IMAGE),
@@ -293,6 +353,8 @@ def verify_mutations(files, fixtures):
                     check_policy(chart, fixtures)
                 elif path == KAKAO:
                     check_fail_closed(chart, mutated[path])
+                elif path == GITOPS:
+                    check_gitops_inventory(mutated[path], fixtures[0][2])
                 else:
                     check_wiring(mutated)
             except (AssertionError, ValueError, subprocess.CalledProcessError):
@@ -309,6 +371,7 @@ def main():
     fixtures = policy_fixtures(files)
     check_policy(ROOT / APPS, fixtures)
     check_fail_closed(ROOT / APPS, files[KAKAO])
+    check_gitops_inventory(files[GITOPS], fixtures[0][2])
     check_wiring(files)
     check_initial_render(files[INIT])
     if args.mutation_verify:

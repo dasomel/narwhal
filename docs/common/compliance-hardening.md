@@ -812,12 +812,12 @@ The D-OWN-CP and D-OWN-POD rules were reviewed on 2026-11-26. The supplied kube-
 
 ### Needs owner decision / staged rollout
 
-These controls remain actionable. The kubelet serving TLS change is in stages 1 and 2.
+These controls remain actionable. The single-node trial verified kubelet serving TLS stages 1 and 2.
 
 | Control | Concrete risk | Prerequisite / owner decision |
 | --- | --- | --- |
-| 1.2.6 kubelet-certificate-authority | Enforcing CA validation against a self-signed kubelet serving certificate breaks API server access to that kubelet. | **Stages 1–2 in progress.** Verify serving issuance and rotation on every node first. Stage 3 enables the API server CA flag. |
-| 1.3.6 RotateKubeletServerCertificate / KCV0038 | The pre-change single-node trial recorded a self-signed :10250 issuer and zero CSRs. The kube-bench feature-gate PASS does not establish certificate rotation. | **Stages 1–2 in progress.** Use the approver and staged `serverTLSBootstrap` rollout below. Verify initial issuance and scheduled rotation. |
+| 1.2.6 kubelet-certificate-authority | Enforcing CA validation against a self-signed kubelet serving certificate breaks API server access to that kubelet. | **Stages 1–2 verified on one node.** Verify issuance and rotation on every node before stage 3 enables the API server CA flag. |
+| 1.3.6 RotateKubeletServerCertificate / KCV0038 | The pre-change single-node check recorded a self-signed :10250 issuer and zero CSRs. The kube-bench feature-gate PASS does not establish certificate rotation. | **Initial issuance verified on one node.** Scheduled rotation remains open. |
 | 1.2.10 EventRateLimit | Enabling the plugin without admission configuration/budgets can fail API startup or discard operational events. | Define admission configuration volume/file and per-user/namespace/server budgets; measure event rates and stage saturation/recovery testing. |
 | 4.2.6 protect-kernel-defaults | Kubelet can refuse startup when required kernel values differ; the earlier hardening was removed for this reason. | Persist and verify on every node, including old base-marker nodes: vm.overcommit_memory=1, vm.panic_on_oom=0, kernel.panic=10, kernel.panic_on_oops=1, kernel.keys.root_maxkeys=1000000, kernel.keys.root_maxbytes=25000000; reboot-test first, then staged kubelet restart with rollback. |
 
@@ -856,15 +856,25 @@ and verify those fields are gone after sync. If they persist, explicitly remove
 them as part of the rollout.
 
 For an existing cluster, publish the digest-preserving image to the configured
-mirror and the `kubelet-csr-approver-1.2.16.tgz` package to Gitea. For app-of-apps
-objects predating this inventory, re-run platform provisioning to populate
-`kubeletCsrNodes` (`vagrant provision master-1 --provision-with phase2-platform`
-or `FORCE=1 bash scripts/cloud/provision-kakao.sh phase2`). Sync `idp-apps` and
-wait for the child Application to report Synced and Healthy and for the
-approval Deployment to finish its rollout:
+mirror and publish the chart to Gitea. For an `idp-apps` Application that already
+references the updated chart templates, publish and patch the inventory directly.
+The example is for a single-node cluster. For HA, set `kubeletCsrTopology` to
+`ha` and list every control-plane and worker node with its exact name and IP.
 
 ```bash
-bash scripts/gitops/publish-chart-to-gitea.sh /absolute/kubelet-csr-approver-1.2.16.tgz
+bash scripts/gitops/publish-chart-to-gitea.sh --fetch https://postfinance.github.io/kubelet-csr-approver kubelet-csr-approver 1.2.16
+kubectl -n devtools patch application idp-apps --type merge -p '{"spec":{"source":{"helm":{"valuesObject":{"kubeletCsrTopology":"single","kubeletCsrNodes":{"narwhal-master-1":"192.168.56.10"}}}}}}'
+```
+
+Platform provisioning also populates `kubeletCsrNodes`
+(`vagrant provision master-1 --provision-with phase2-platform` or
+`FORCE=1 bash scripts/cloud/provision-kakao.sh phase2`). For an offline rollout,
+publish the local package with
+`bash scripts/gitops/publish-chart-to-gitea.sh /absolute/kubelet-csr-approver-1.2.16.tgz`.
+Sync `idp-apps` and wait for the child Application to report Synced and Healthy
+and for the approver Deployment to finish its rollout.
+
+```bash
 kubectl --kubeconfig /absolute/admin.conf -n devtools get application kubelet-csr-approver
 kubectl --kubeconfig /absolute/admin.conf -n kube-system rollout status deploy/kubelet-csr-approver --timeout=300s
 ```
@@ -888,6 +898,16 @@ The first apply should report an Approved+Issued CSR and the matching CA-signed
 leaf with the node's InternalIP SAN. The second apply should verify that leaf
 without restarting kubelet. Check pod logs, metrics-server and Prometheus
 kubelet targets before proceeding to stage 3. Test natural rotation separately.
+
+In the 2026-11-26 orchestrator trial on `fb50d343`, the Gitea package and
+single-node inventory patch yielded a Synced/Healthy child and approver image
+`sha256:3a09df2f9e1e628863fccbe5479e63b11bbc1f411c82134ee975778e1a25b5e6`.
+Dry run, apply and re-run each exited `0` (re-run `true` → `true`). CSR
+`csr-wwvp5` was Approved and Issued. The `:10250` issuer changed from
+`CN=narwhal-master-1-ca@1794714706` to `CN=kubernetes`, with the IP SAN verified.
+`kubectl logs`, `exec` and `top` worked, approver logs showed no forbidden or
+error entries, and `test-sso` passed 144 checks with 0 failures. Stage 3 and
+scheduled rotation remain open.
 
 On Kakao, pass the bastion with `--ssh-opt`, which accepts multiple OpenSSH
 options. Configure its

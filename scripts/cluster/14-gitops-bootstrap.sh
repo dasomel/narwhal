@@ -2,7 +2,6 @@
 set -euo pipefail
 
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
-: "${KUBELET_CSR_NODES:?missing provisioned node inventory}"
 
 echo "=== Bootstrapping GitOps ==="
 
@@ -21,6 +20,17 @@ for i in {1..30}; do
   echo "API server not ready, retrying... (${i}/30)"
   sleep 10
 done
+
+# D-CSR-RERUN: reuse the live inventory on manual reruns. Cost: one API read.
+# To bootstrap without a live inventory, pass KUBELET_CSR_NODES explicitly.
+if [[ -z "${KUBELET_CSR_NODES+x}" ]]; then
+  if ! KUBELET_CSR_NODES="$(kubectl -n devtools get application idp-apps --ignore-not-found -o json |
+    jq -ce '.spec.source.helm.valuesObject.kubeletCsrNodes | select(type == "object" and length > 0)')"; then
+    echo "ERROR: set KUBELET_CSR_NODES explicitly when no node inventory can be read from idp-apps." >&2
+    exit 1
+  fi
+fi
+: "${KUBELET_CSR_NODES:?missing provisioned node inventory}"
 
 GITEA_URL="http://gitea-http.devtools.svc.cluster.local:3000"
 GITEA_ADMIN_USER="gitea-admin"

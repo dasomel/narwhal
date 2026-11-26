@@ -3605,6 +3605,9 @@ PYEOF'
     python3 scripts/test/lib/check-pod-security-batch-c.py --mutation-verify
   check R412 "Kubelet serving TLS: pinned chart/image, exact names and node /32s excluding VIPs, scoped RBAC, staged rollout" \
     python3 scripts/test/lib/check-kubelet-serving-tls.py --mutation-verify
+  # D-CI-PARITY: version snapshot and operational traces otherwise fail only after push.
+  check R414 "CI parity: portal OSS snapshot plus every non-version behavior trace gated against baseline; 2 mutations rejected" \
+    python3 scripts/test/lib/check-ci-parity.py --mutation-verify
 }
 
 #=========================================

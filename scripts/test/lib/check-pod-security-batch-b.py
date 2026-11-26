@@ -13,6 +13,7 @@ chart keys were confirmed by `helm template` of the pinned charts (openbao 0.28.
    containerSecurityContext, is one value shared by core/jobservice/registry/redis (their PVC data is owned by
    10000/999), so harbor.yaml and 08-5-registry.sh must not set containerSecurityContext.runAsUser/runAsGroup.
 4. R410 is wired into scripts/test/regression-check-kakao.sh with --mutation-verify.
+5. Each OpenBao and Headlamp bootstrap Helm release pins --version to its GitOps targetRevision.
 --mutation-verify proves each broken variant is rejected.
 """
 
@@ -105,16 +106,28 @@ def check(texts: dict[str, str]) -> list[str]:
 
     if "check R410 " not in texts["reg"] or "check-pod-security-batch-b.py --mutation-verify" not in texts["reg"]:
         errors.append("scripts/test/regression-check-kakao.sh must wire R410 with --mutation-verify")
-    # The uid/gid keys were verified against these chart versions; a bump must re-render (review MINOR, 2026-11-26).
+    # D1: Pin the charts whose UID/GID keys were verified. To bump either chart, re-render and update both pins.
     for key, ver in (("openbao", "0.28.3"), ("headlamp", "0.46.0")):
-        if not re.search(rf"^\s*targetRevision:\s*{re.escape(ver)}\s*$", texts[key], re.M):
+        revision = re.search(r"^[ \t]*targetRevision:[ \t]*(\S+)[ \t]*$", texts[key], re.M)
+        if not revision or revision.group(1) != ver:
             errors.append(f"{key}.yaml targetRevision changed from {ver}: re-render and re-verify the uid/gid keys")
+            continue
+        bootstrap = FILES[f"{key}-boot"].name
+        command = re.search(
+            rf"^[ \t]*if helm upgrade --install {key}[ \t]+(?:[^\n]*\\\n)*[^\n]*",
+            texts[f"{key}-boot"], re.M,
+        )
+        versions = re.findall(r"[ \t]--version[ \t]+(\S+)", command.group() if command else "")
+        if versions != [revision.group(1)]:
+            errors.append(f"{bootstrap} {key} Helm release must set --version {revision.group(1)} to match {key}.yaml, got {versions}")
     return errors
 
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
     ("openbao chart bumped without re-verify", "openbao", "targetRevision: 0.28.3", "targetRevision: 0.29.0"),
     ("headlamp chart bumped without re-verify", "headlamp", "targetRevision: 0.46.0", "targetRevision: 0.47.0"),
+    ("openbao bootstrap chart bumped", "openbao-boot", "--version 0.28.3", "--version 0.29.0"),
+    ("headlamp bootstrap chart bumped", "headlamp-boot", "--version 0.46.0", "--version 0.47.0"),
     ("openbao injector uid dropped", "openbao", "          uid: 10100\n", ""),
     ("openbao injector gid left at chart default", "openbao", "          gid: 10100\n", "          gid: 1000\n"),
     ("openbao server UID moved with it", "openbao", "          updateStrategyType: OnDelete\n", "          updateStrategyType: OnDelete\n          uid: 10100\n"),

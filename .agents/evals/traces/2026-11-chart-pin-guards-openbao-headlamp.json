@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-chart-pin-guards-openbao-headlamp-20261126",
+  "task": "Close the R410 gap identified in the #819 review by checking OpenBao and Headlamp bootstrap Helm chart pins against GitOps targetRevision.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-chart-pin-guards-openbao-headlamp.json",
+      ".review/trace.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "scripts/test/lib/check-pod-security-batch-b.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Limit edits to R410, its regression description, both root changelogs, and this trace. check-version-consistency.sh has an individual APISIX chart check and no generic chart-pin table. Use .review/trace.json because the sandbox restricts writes under .agents/."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before adding the guard, R410 accepted independent in-memory bootstrap-only bumps from OpenBao 0.28.3 to 0.29.0 and Headlamp 0.46.0 to 0.47.0. With the mutations added before the fix, --mutation-verify stopped at FAIL: mutation not rejected: openbao bootstrap chart bumped."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "R410 keeps the GitOps chart pins and requires each named bootstrap Helm command to supply one matching --version. Added a bootstrap-only version mutation for each release and updated the regression description and both root changelogs."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Local static R410 mutation checks, existing version consistency checks, regression harness syntax and diff whitespace checks.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-pod-security-batch-b.py --mutation-verify -> PASS: R410 pod-security Batch B (21 mutations rejected)",
+        "test:bash scripts/ci/check-version-consistency.sh -> All checked versions are consistent.",
+        "test:bash -n scripts/test/regression-check-kakao.sh -> exit 0",
+        "test:git diff --check -> exit 0",
+        "test:make test -> passed 518   failed 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Local R410 now rejects each bootstrap-only bump and the existing version consistency check passes. Verification was offline with no cluster or network access."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Added bootstrap chart pin parity checks and mutations for both releases. Recorded the static test results in .review/trace.json."
+    }
+  ]
+}

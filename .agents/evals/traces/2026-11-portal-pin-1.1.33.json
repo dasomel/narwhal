@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-pin-1.1.33",
+  "task": "Pin the Narwhal IDP Portal GitOps image to 1.1.33",
+  "changeContext": {
+    "paths": [
+      "gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml",
+      "gitops/README.md",
+      "gitops/README-ko.md",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/image-digests.tsv",
+      "VERSIONS.md",
+      "SECURITY.md",
+      "docs/common/compatibility-matrix.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      "scripts/test/lib/check-compliance-scan-coverage.py",
+      "portal/src/lib/kisa-live-controls.test.ts",
+      "portal/src/data/oss-versions.generated.json",
+      ".agents/evals/traces/2026-11-portal-pin-1.1.33.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Pin change only: every place the previous pin commit ffbb99b9 bumped now moves 1.1.32 -> 1.1.33; no portal code changes."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "The GitOps chart still pinned 1.1.32 after tag portal/v1.1.33 was published on 9e62b0a5 (#837, #841, #842, #843).",
+      "evidence": [
+        "test:grep narwhal-portal:1.1.32 gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml -> 1 match before the change"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Mirrored the file set of ffbb99b9; image-digests.tsv row 1.1.33 sha256:b5b58cd6f323a824912a412b555d1a2730f7d7690795febd493dcee38ef32b2e recorded 2026-11-26T21:42:26Z (crane digest and cosign verify by the orchestrator); oss-versions.generated.json regenerated."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static checks on the orchestrator host; nothing applied to a cluster.",
+      "summary": "Version consistency, generated data, validation and the full static suite pass.",
+      "evidence": [
+        "test:make test -> passed 527   failed 0",
+        "test:make validate, check-version-consistency.sh, gen-oss-versions.mjs --check -> exit 0",
+        "test:crane digest ghcr.io/dasomel/narwhal-portal:1.1.33 -> sha256:b5b58cd6f323a824912a412b555d1a2730f7d7690795febd493dcee38ef32b2e at 2026-11-26T21:42:26Z after publish run 45899289967; cosign verify --key scripts/airgap/keys/cosign.pub -> verified (orchestrator)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The pin is in GitOps and consistent across docs and air-gap lists. Live rollout, in-cluster image verification and SSO checks happen after merge and are not claimed here."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the stated scope (pin only)."
+    }
+  ]
+}

@@ -55,7 +55,7 @@
       "status": "passed",
       "scope": "Offline regression and mutation checks",
       "evidence": [
-        "test:python3 scripts/test/lib/check-kubelet-serving-tls-control-plane.py --mutation-verify -> PASS: R416 rejected 8 mutations; PASS: R416 staged control-plane TLS, dry-run, persistence and rollback (offline fixtures, also passed under Bash 3.2.57)",
+        "test:python3 scripts/test/lib/check-kubelet-serving-tls-control-plane.py --mutation-verify -> PASS: R416 rejected 10 mutations; PASS: R416 staged control-plane TLS, dry-run, persistence and rollback (offline fixtures, also passed under Bash 3.2.57)",
         "test:python3 scripts/test/lib/check-kubelet-authz-baseline.py --mutation-verify -> 5 assertions PASS, all 8 baseline mutations rejected",
         "test:python3 scripts/test/lib/check-kubelet-serving-tls.py --mutation-verify -> PASS: 22 mutations rejected; PASS: R412 approver policy, air-gap pins, and staged serving TLS"
       ]

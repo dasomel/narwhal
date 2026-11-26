@@ -207,7 +207,9 @@ case "$1" in
   write)
     target="$2" node="$3" ip="$4" limit="$5"
     exec 9>/run/lock/narwhal-kubelet-serving-tls-control-plane.lock
-    flock 9
+    # D-R416-LOCK: bound the lock wait by --timeout; a bare flock waits forever on a wedged holder.
+    # Cost: a long-running holder fails this node. Escape: re-run once it finishes.
+    flock -w "$limit" 9 || die "$node: timed out waiting for the control-plane lock"
     work=$(mktemp -d)
     trap 'rm -rf "$work"' EXIT
     if [[ "$target" == true ]]; then

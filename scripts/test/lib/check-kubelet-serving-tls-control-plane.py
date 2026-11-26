@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 INIT = "scripts/cluster/02-init-cluster.sh"
@@ -118,7 +119,7 @@ def fixture(root, files):
     put(root / "scripts/ops/lib/kubelet-serving-tls-node.sh",
         '#!/bin/bash\n[[ "$1" == read && "$2" == "$SIM_HOST" ]]\n')
     for name, text in (("kubectl", KUBECTL), ("ssh", SSH), ("openssl", OPENSSL),
-                       ("flock", "#!/bin/bash\nexit 0\n"), ("timeout", '#!/bin/bash\nshift\nexec "$@"\n')):
+                       ("flock", '#!/bin/bash\necho "$*" >> "$FIXTURE/flock"\n'), ("timeout", '#!/bin/bash\nshift\nexec "$@"\n')):
         put(root / "bin" / name, text).chmod(0o755)
     nodes = []
     for host, ip in IPS.items():
@@ -170,8 +171,14 @@ def flow(files, scenario):
             base = ["bash", str(root / OPS), "--kubeconfig", str(root / "admin.conf"), "--timeout", "6"]
             for host in HOSTS:
                 base += ["--node", f"{host}=tester@{host}"]
-            p = subprocess.run(base + list(options), env={**env, "FAIL_PEER": bad_peer, "STALE_API": stale_api},
-                               capture_output=True, text=True, timeout=120)
+            try:
+                p = subprocess.run(base + list(options), env={**env, "FAIL_PEER": bad_peer, "STALE_API": stale_api},
+                                   stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+            except subprocess.TimeoutExpired:
+                # Diagnose an intermittent stall seen 2026-11-26 that did not reproduce: show what is blocked.
+                print(subprocess.run(["ps", "-o", "pid,ppid,etime,command", "-ax"], capture_output=True,
+                                     text=True).stdout, file=sys.stderr)
+                raise
             if failure:
                 assert p.returncode and failure in p.stderr, (p.stdout, p.stderr)
             else:
@@ -195,6 +202,7 @@ def flow(files, scenario):
 
         logged = run("--control-plane")
         assert logged[:6] == probes and logged[-1] == "patch", logged
+        assert (root / "flock").read_text().split("\n").count("-w 6 9") >= 2, (root / "flock").read_text()
         assert [line.split()[1:3] for line in logged[6:-1]] == [
             [host, component] for host in MASTERS for component in ("kube-controller-manager", "kube-apiserver")]
         assert all(p.read_text().count(FLAG) == 1 and "--profiling=false" in p.read_text() for p in api)
@@ -244,6 +252,7 @@ def main():
             (CONTROL, '[[ "$dry_run" == false ]] || return 0', "true", lambda fs: flow(fs, "dry")),
             (CONTROL, 'kube -n kube-system patch cm kubeadm-config', 'cat "$work/kubeadm.json" #', lambda fs: flow(fs, "apply")),
             (NODE, 'cat "$backup"', 'cat "$file"', lambda fs: flow(fs, "rollback")),
+            (NODE, 'flock -w "$limit" 9', "flock 9", lambda fs: flow(fs, "apply")),
         )
         for name, old, new, check in cases:
             assert old in files[name], (name, old)

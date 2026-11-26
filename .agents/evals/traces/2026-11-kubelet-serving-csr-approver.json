@@ -37,7 +37,8 @@
       "scripts/test/lib/check-sbom-inventory-completeness.py",
       "scripts/test/lib/check-trivy-db-auto-refresh.py",
       "scripts/test/regression-check-kakao.sh",
-      "scripts/test/verify-cluster.sh"
+      "scripts/test/verify-cluster.sh",
+      "portal/src/data/oss-versions.generated.json"
     ]
   },
   "events": [
@@ -84,7 +85,8 @@
         "test:python3 scripts/test/lib/check-single-node-topology.py -> PASS, Vagrant single/HA and staged publication",
         "test:python3 scripts/test/lib/check-sbom-inventory-completeness.py --mutation-verify and check-license-policy.py -> PASS, 105 license rows",
         "test:bash scripts/ci/check-version-consistency.sh -> all checked versions are consistent",
-        "test:make test on the final head -> passed 519   failed 0"
+        "test:make test on the final head -> passed 519   failed 0",
+        "test:node portal/scripts/gen-oss-versions.mjs --check -> in sync; bash scripts/ci/check-version-consistency.sh -> exit 0"
       ]
     },
     {

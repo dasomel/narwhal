@@ -42,6 +42,7 @@ helm upgrade --install istio-base "$(chart base)" \
   --force-conflicts \
   --namespace istio-system \
   --version "${ISTIO_VERSION}" \
+  --set global.enableReaderRBAC=false \
   --timeout 120s || echo "WARN: istio-base install issue, continuing..."
 
 # Wait for CRDs to be established
@@ -87,6 +88,8 @@ gateways:
 global:
   defaultPodDisruptionBudget:
     enabled: false
+  # D-ISTIO-READER (KSV041/KSV046): see the same value in gitops/charts/narwhal-apps/templates/istiod.yaml; pinned by R407.
+  enableReaderRBAC: false
 resources:
   requests:
     cpu: 100m

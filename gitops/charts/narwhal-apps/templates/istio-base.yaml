@@ -13,6 +13,12 @@ spec:
     repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
     chart: base
     targetRevision: 1.30.1
+    helm:
+      valuesObject:
+        # D-ISTIO-READER (KSV041/KSV046): the base chart owns istio-reader-service-account; see
+        # istiod.yaml for the ClusterRole/Binding half. Kept in sync with 09-istio-ambient.sh; pinned by R407.
+        global:
+          enableReaderRBAC: false
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-system

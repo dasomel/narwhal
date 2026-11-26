@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-rbac-istio-reader-alloy-logs-20261126",
+  "task": "Remove the unused Istio reader RBAC and the Alloy logs cluster-wide Secret read (CIS 5.1.2 KSV041, 5.1.3 KSV046), RBAC batch P3 + P4",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-rbac-istio-reader-alloy-logs.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/istio-base.yaml",
+      "gitops/charts/narwhal-apps/templates/istiod.yaml",
+      "gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml",
+      "scripts/cluster/08-2-monitoring.sh",
+      "scripts/cluster/09-istio-ambient.sh",
+      "scripts/test/lib/check-rbac-istio-reader-alloy-logs.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "P3 and P4 only: istio-reader ClusterRole/Binding/ServiceAccount via global.enableReaderRBAC on istio-base and istiod, and the Secret verbs of the k8s-monitoring-alloy-logs ClusterRole via collectors.alloy-logs.rbac.rules, each in the GitOps Application and the bootstrap script. The k8s-monitoring-alloy-operator ClusterRole Secret verbs are a different rule and were left alone."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before the change the pinned charts render the objects and the live ClusterRole matches the render. Read-only live checks found no consumer of the istio reader and no Secret use in the Alloy logs configuration.",
+      "evidence": [
+        "test:helm template istiod istio/istiod 1.30.1 + istiod.yaml valuesObject -> 8 istio-reader lines (ClusterRole + ClusterRoleBinding); helm template istio/base 1.30.1 -> istio-reader-service-account present",
+        "test:helm template alloy grafana/alloy 1.10.0 -f Alloy CR spec rendered from k8s-monitoring 4.2.0 + current values -> ClusterRole k8s-monitoring-alloy-logs with 13 rules incl. core [configmaps, secrets]; identical to the live ClusterRole (kubectl get clusterrole, read-only)",
+        "test:kubectl read-only -> no secret labelled istio/multiCluster, 126 Secrets scanned with no multicluster label/annotation or reader token, 0 of 106 pods use istio-reader-service-account, 1 node, meshNetworks empty, istiod logs show no remote-cluster lines; live alloy-logs config.alloy has no remote.kubernetes and discovery.kubernetes uses role pod only"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Set global.enableReaderRBAC false in istio-base.yaml, istiod.yaml (inside the existing global map) and 09-istio-ambient.sh (istiod values heredoc plus --set on istio-base). Set collectors.alloy-logs.rbac.rules to the 9 upstream rules with the remote.kubernetes.* rule narrowed to configmaps in k8s-monitoring.yaml and 08-2-monitoring.sh. Pin both with R407 and R408."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static checks plus a pre-merge live trial on the local cluster (branch files pushed to Gitea with push-to-gitea.sh).",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-rbac-istio-reader-alloy-logs.py istio-reader --mutation-verify -> PASS (11 mutations rejected)",
+        "test:python3 scripts/test/lib/check-rbac-istio-reader-alloy-logs.py alloy-logs --mutation-verify -> PASS (15 mutations rejected)",
+        "test:helm template istiod/base with the edited valuesObject -> 0 istio-reader objects (before: ClusterRole, ClusterRoleBinding, ServiceAccount); rest of the istiod render unchanged",
+        "test:helm template k8s-monitoring 4.2.0 -> Alloy CR spec.rbac.rules has 9 rules, none with secrets; helm template alloy 1.10.0 on that spec -> ClusterRole k8s-monitoring-alloy-logs keeps 12 of 13 rules, configmaps rule without secrets, clusterRules unchanged",
+        "test:live trial 2026-11-26: istio-base, istiod and k8s-monitoring Synced/Healthy after 10 min; istio-reader ClusterRole/ClusterRoleBinding gone; istiod 2/2 pods, istio-cni and ztunnel 1/1 Running with 0 restarts; ClusterRole k8s-monitoring-alloy-logs 13 rules with no secrets; alloy-logs 2/2 Running, 0 forbidden log lines; Loki devtools lines per 5 min steady 2000-3600 across the change (1 h query_range); test-sso PASS 144 FAIL 0",
+        "test:live: ServiceAccount istio-system/istio-reader-service-account remains, owned by the bootstrap Helm release istio-base (no ArgoCD tracking id, not pruned by ArgoCD); it has no RBAC bound and is not created on fresh installs; a helm upgrade of istio-base removes it",
+        "test:make test -> passed 516   failed 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Reader RBAC is off and Alloy logs no longer reads Secrets cluster-wide, in GitOps and bootstrap, pinned by R407/R408. The pre-merge live trial (e4) passed and was then reverted on Gitea to main while the change waited for review; the change goes live again at merge."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the stated scope; live state follows the merge."
+    }
+  ]
+}

@@ -9,6 +9,13 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.32] - 2026-11-26
+
+### Changed
+
+- **Velero node-agent Config Audit acceptance narrowed:** `storage/node-agent` no longer has KSV003/KSV106 accepted; it now drops all capabilities (#831). The accepted reason records the measured backup and restore.
+- **OSS versions list includes kubelet-csr-approver 1.2.16** (#825).
+
 ## [1.1.31] - 2026-11-26
 
 ### Changed
@@ -1056,7 +1063,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.31...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.32...HEAD
+[1.1.32]: https://github.com/dasomel/narwhal/compare/portal/v1.1.31...portal/v1.1.32
 [1.1.31]: https://github.com/dasomel/narwhal/compare/portal/v1.1.30...portal/v1.1.31
 [1.1.30]: https://github.com/dasomel/narwhal/compare/portal/v1.1.29...portal/v1.1.30
 [1.1.29]: https://github.com/dasomel/narwhal/compare/portal/v1.1.28...portal/v1.1.29

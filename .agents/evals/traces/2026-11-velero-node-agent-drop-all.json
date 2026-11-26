@@ -33,7 +33,7 @@
         "Owner supplied chart inspection: nodeAgent.privileged is ignored; the live container was not privileged.",
         "Offline chart copy at .review/charts/velero; chart template rendered locally for both values sources."
       ],
-      "summary": "Measured fs-backup and restore succeeded with no added capabilities. KSV003 and KSV106 can be removed from this exact acceptance; remaining accepted checks are retained."
+      "summary": "Measured fs-backup and restore succeeded with no added capabilities. KSV003 and KSV106 can be removed from this exact acceptance; remaining accepted checks are retained. The data copy runs in per-volume data-path Pods, not in node-agent."
     },
     {
       "id": "e8",
@@ -67,7 +67,7 @@
     {
       "id": "e5",
       "type": "scope_check",
-      "summary": "Not verified in this worktree: live cluster behavior (no cluster access requested); integrated R371 chart-bundle branch (the script reports skipped because the other required offline charts are not bundled, while the Velero chart was rendered independently); portal TypeScript check (pnpm exec tsc --noEmit reports Command tsc not found); vitest was not run. scripts/test/lib/check-ci-parity.py is absent."
+      "summary": "Not verified: NFS-backed PVC backups under the new node-agent context (to be checked live after merge with a schedule-based backup), the integrated R371 chart-bundle render (no airgap bundle locally; the Velero render was checked separately). The author lane could not run portal checks; the orchestrator ran them (e9)."
     },
     {
       "id": "e9",
@@ -76,7 +76,7 @@
       "scope": "Live trial on the single-node cluster plus static checks (orchestrator)",
       "summary": "Zero-capability node-agent backs up and restores; static checks pass.",
       "evidence": [
-        "test:drop ALL, no added capabilities -> CapEff 0000000000000000; kopia fs-backup Completed, restore Completed, content and uid/gid 1234 modes 0600/0700 preserved",
+        "test:drop ALL, no added capabilities -> node-agent CapEff 0000000000000000 (data copy ran in a per-volume data-path Pod, UID 0, privileged false, chart-default capabilities); kopia fs-backup Completed, restore Completed, content and uid/gid 1234 modes 0600/0700 preserved",
         "test:python3 scripts/test/lib/check-round4-compliance-hardening.py --mutation-verify -> PASS, 15 mutations rejected",
         "test:portal tsc --noEmit -> 0; vitest src/lib/compliance-accepted.test.ts -> 53 passed"
       ]

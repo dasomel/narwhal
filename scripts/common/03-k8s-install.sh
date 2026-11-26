@@ -74,6 +74,30 @@ retry sudo apt-get install -y --allow-downgrades \
   "kubelet=${K8S_APT_VERSION}" "kubeadm=${K8S_APT_VERSION}" "kubectl=${K8S_APT_VERSION}"
 sudo apt-mark hold kubelet kubeadm kubectl
 
+# D7: Vagrant has a separate NAT interface. Use its declared private IP in the
+# Node and serving CSR. Cost: new VMs pin the address; change the Vagrant private
+# IP and the kubelet args together when renumbering. Existing nodes are untouched.
+if [[ -n "${KUBELET_NODE_IP:-}" && ! -e /etc/kubernetes/kubelet.conf ]]; then
+  # Preserve flags in the package's EnvironmentFile and let systemd consume the
+  # updated value on kubeadm's first start. The same pending provision can retry.
+  KUBELET_EXTRA_ARGS=""
+  if [[ -r /etc/default/kubelet ]]; then
+    # shellcheck source=/dev/null
+    source /etc/default/kubelet
+  fi
+  if [[ " ${KUBELET_EXTRA_ARGS} " != *" --node-ip=${KUBELET_NODE_IP} "* ]]; then
+    if [[ " ${KUBELET_EXTRA_ARGS} " == *" --node-ip"* ]]; then
+      echo "ERROR: /etc/default/kubelet already pins a different node IP" >&2
+      exit 1
+    fi
+    # Backslashes and double quotes are special inside systemd's quoted value.
+    escaped="${KUBELET_EXTRA_ARGS//\\/\\\\}"
+    escaped="${escaped//\"/\\\"}"
+    printf '\nKUBELET_EXTRA_ARGS="%s--node-ip=%s"\n' "${escaped:+${escaped} }" "${KUBELET_NODE_IP}" |
+      sudo tee -a /etc/default/kubelet >/dev/null
+  fi
+fi
+
 # Enable kubelet
 sudo systemctl enable kubelet
 

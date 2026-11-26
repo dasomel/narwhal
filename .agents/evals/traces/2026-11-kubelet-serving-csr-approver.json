@@ -1,0 +1,136 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-kubelet-serving-tls-20261126",
+  "task": "Apply the author remediation for the kubelet serving CSR approver review.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-kubelet-serving-csr-approver.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "VERSIONS.md",
+      "Vagrantfile",
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      "docs/common/upgrade-waves.json",
+      "gitops/charts/narwhal-apps/templates/kubelet-csr-approver.yaml",
+      "gitops/charts/narwhal-apps/values.yaml",
+      "scripts/airgap/01-generate-image-list.sh",
+      "scripts/airgap/08-generate-sbom.sh",
+      "scripts/airgap/images.txt",
+      "scripts/airgap/lib/build_sbom.py",
+      "scripts/airgap/lib/chart-upstream-sources.tsv",
+      "scripts/airgap/lib/component-licenses.tsv",
+      "scripts/airgap/lib/image-digests.tsv",
+      "scripts/ci/check-version-consistency.sh",
+      "scripts/cloud/provision-kakao.sh",
+      "scripts/cluster/02-init-cluster.sh",
+      "scripts/cluster/03-cni-install.sh",
+      "scripts/cluster/14-gitops-bootstrap.sh",
+      "scripts/cluster/install-kubelet-csr-approver.sh",
+      "scripts/common/03-k8s-install.sh",
+      "scripts/ops/apply-kubelet-serving-tls.sh",
+      "scripts/ops/lib/kubelet-serving-tls-node.sh",
+      "scripts/test/lib/check-compliance-scan-coverage.py",
+      "scripts/test/lib/check-kubelet-authz-baseline.py",
+      "scripts/test/lib/check-kubelet-serving-tls.py",
+      "scripts/test/lib/check-sbom-inventory-completeness.py",
+      "scripts/test/lib/check-trivy-db-auto-refresh.py",
+      "scripts/test/regression-check-kakao.sh",
+      "scripts/test/verify-cluster.sh",
+      "portal/src/data/oss-versions.generated.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope: CIS 1.2.6/1.3.6 stages 1-2 only (approver with exact node names and /32s, own RBAC, staged serverTLSBootstrap for new and existing clusters, R412). Document the SSA-to-CSA ownership risk and keep the existing handoff behavior."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "reviewed": true,
+      "provenance": [
+        "Orchestrator review-csr-findings.md and brief-csr.md",
+        "Vendored PostFinance chart 1.2.16, including Chart.yaml and its RBAC, Deployment, and extraObjects templates",
+        "Orchestrator resolved the upstream license with gh api repos/postfinance/kubelet-csr-approver/license (MIT) and supplied image digest evidence"
+      ],
+      "summary": "The chart declares the PostFinance source and the offline package contains no separate LICENSE or license annotation. Its SBOM row uses the license of the declared source project."
+    },
+    {
+      "id": "e3",
+      "type": "reproduction",
+      "summary": "The pre-fix subnet values include Vagrant's API VIP and MetalLB pool. Kakao's node subnet also hosts the load balancer VIPs. The vendored default ClusterRole includes leases and events.",
+      "evidence": [
+        "artifact:593793ce gitops/charts/narwhal-apps/templates/kubelet-csr-approver.yaml",
+        "artifact:Vagrantfile, scripts/cluster/00-kube-vip.sh, gitops/resources/metallb-config.yaml",
+        "artifact:csp/kakao-cloud/terraform/modules/loadbalancer/main.tf and vendored chart templates/clusterrole.yaml"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Render exact names and /32s from Vagrant VM assignments or validated Kakao OpenTofu node IPs. Bootstrap and GitOps share the render with chart RBAC disabled, the serving CSR ClusterRole, and a kube-system Lease/events Role. Add repeatable SSH options, recovery instructions, and component license mappings."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline regression and inventory",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-kubelet-serving-tls.py --mutation-verify -> PASS, 22 mutations rejected",
+        "test:python3 scripts/test/lib/check-kubelet-authz-baseline.py --mutation-verify -> PASS, 8 mutations rejected",
+        "test:python3 scripts/test/lib/check-compliance-scan-coverage.py --mutation-verify -> PASS, 35 mutations rejected",
+        "test:python3 scripts/test/lib/check-single-node-topology.py -> PASS, Vagrant single/HA and staged publication",
+        "test:python3 scripts/test/lib/check-sbom-inventory-completeness.py --mutation-verify and check-license-policy.py -> PASS, 105 license rows",
+        "test:bash scripts/ci/check-version-consistency.sh -> all checked versions are consistent",
+        "test:make test on the final head -> passed 519   failed 0",
+        "test:node portal/scripts/gen-oss-versions.mjs --check -> in sync; bash scripts/ci/check-version-consistency.sh -> exit 0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Offline manifest, shell, and SSH option verification",
+      "evidence": [
+        "test:helm template against vendored chart and local packaged bootstrap harness -> identical manifests for Vagrant single/HA and stubbed Kakao HA, exact /32s and custom RBAC",
+        "test:generated SBOM components from local fixture -> MIT for the image and Helm package (gh api repos/postfinance/kubelet-csr-approver/license -> MIT, orchestrator 2026-11-26)",
+        "test:bash -n and shellcheck -x --severity=warning -> all 13 shell scripts in the branch diff passed",
+        "test:ruby -c Vagrantfile, helm lint narwhal-apps and git diff --check -> PASS",
+        "test:mocked dry-run under /bin/bash -> repeatable ProxyJump/IdentitiesOnly options forwarded to both nodes with no writes",
+        "test:R322 Helm render cases -> PASS; full R322 HTTP fixture was blocked by sandbox socket binding"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Single-node stages 1\u20132 on fb50d343, measured by the orchestrator on 2026-11-26",
+      "evidence": [
+        "test:Gitea chart 1.2.16 published and idp-apps patched with kubeletCsrTopology=single and kubeletCsrNodes={\"narwhal-master-1\":\"192.168.56.10\"}; child Application Synced/Healthy",
+        "test:approver pod image digest sha256:3a09df2f9e1e628863fccbe5479e63b11bbc1f411c82134ee975778e1a25b5e6; approver log showed no forbidden or error entries",
+        "test:apply-kubelet-serving-tls.sh dry run, apply, and re-run exited 0; re-run true -> true; CSR csr-wwvp5 Approved,Issued",
+        "test:kubelet :10250 issuer changed from CN=narwhal-master-1-ca@1794714706 to CN=kubernetes; IP SAN verified",
+        "test:kubectl logs, exec, and top succeeded; test-sso passed 144 checks with 0 failures"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "scope_check",
+      "summary": "Out of scope and not verified here: HA rollout, scheduled serving certificate rotation, and stage 3 API server CA validation (follow-up work). Known residual risks recorded in docs: the upstream allowlist is shared across listed node IPs, and Argo CD client-side adoption can retain removed fields owned by bootstrap."
+    },
+    {
+      "id": "e10",
+      "type": "completion_claim",
+      "summary": "Stages 1-2 are implemented and verified on the single-node cluster: the approver issues cluster-CA kubelet serving certificates for the exact node inventory, and the static suite passes. HA issuance, scheduled rotation and stage 3 (API server --kubelet-certificate-authority) are not claimed."
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the stated scope (stages 1-2): verified live on the single-node cluster and by the full static suite. HA issuance, scheduled rotation and stage 3 are follow-up work outside this change."
+    }
+  ]
+}

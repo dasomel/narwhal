@@ -580,7 +580,9 @@ def helm_behavior(root):
         return p.stdout.count("name: trivy-db-refresh\n")
 
     assert n("--set", "provider=vagrant") == 1, "vagrant must render the Application"
-    assert n("--set", "provider=kakao") == 0, "kakao (airgap) must not render it"
+    assert n("--set", "provider=kakao", "--set-json", 'kubeletCsrNodes={"host-172-16-0-10":"172.16.0.10"}') == 0, (
+        "kakao (airgap) must not render it"
+    )
     assert n("--set", "securityDbAutoRefresh.enabled=false") == 0, "enabled=false must not render it"
 
 

@@ -184,8 +184,8 @@ verify_node_file_hardening() {
   # D-NODE-VERIFY-COVERAGE (2026-11-22): directly assert node controls where upstream
   # node-collector returns empty values (CMD-0019/0020/0021 PKI, CMD-0028/0029 kubelet CA,
   # kubelet systemd drop-in under /usr/lib/systemd/system/kubelet.service.d, and kubelet
-  # config.yaml CIS 4.1.9 perms). Deferred kubelet runtime settings (CIS 4.2.6/4.2.12/4.2.13)
-  # are reported as WARN-level known gaps (never PASS, never FAIL) with a pointer to docs.
+  # config.yaml CIS 4.1.9 perms). Report missing kubelet runtime settings
+  # (CIS 4.2.6/4.2.12/4.2.13) at WARN level with a pointer to docs.
   local pki_dir="${prefix}/etc/kubernetes/pki"
   if ! _node_priv test -d "${pki_dir}" || _node_priv test -L "${pki_dir}"; then
     fail "CIS 1.1.19-21/4.1.7 PKI dir missing or symlink: ${pki_dir}"
@@ -290,10 +290,9 @@ verify_node_file_hardening() {
       pass "CIS 4.1.9 kubelet config perms: <=600 (${expected_cni_owner})"
     fi
 
-    # D-KUBELET-DEFERRED-GAPS (2026-11-22): CIS 4.2.6 (protectKernelDefaults), 4.2.12
-    # (serverTLSBootstrap), and 4.2.13 (tlsCipherSuites) are open, non-compliant, and not
-    # evaluated by trivy-operator when unset. Surface them as WARN-level known gaps (never
-    # PASS, never FAIL) until node sysctl/CSR/TLS-consumer rollout prerequisites are met.
+    # D-KUBELET-DEFERRED-GAPS: report missing settings directly. The serving TLS
+    # rollout verifies the wire separately because serverTLSBootstrap is only
+    # a config field. The two other runtime settings still have rollout prerequisites.
     local kbody kgap=""
     if ! kbody=$(_node_priv cat "${kubelet_cfg}" 2>/dev/null); then
       warn "CIS 4.2.6/4.2.12/4.2.13 kubelet config unreadable (known gap; see docs/common/compliance-hardening.md#scan-coverage): ${kubelet_cfg}"

@@ -170,6 +170,12 @@
       "chartVersion": null
     },
     {
+      "component": "kubelet-csr-approver",
+      "section": "Security",
+      "version": "1.2.16",
+      "chartVersion": "1.2.16"
+    },
+    {
       "component": "Kyverno",
       "section": "Security",
       "version": "1.18.1",

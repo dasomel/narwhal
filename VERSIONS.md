@@ -75,6 +75,7 @@ Components and versions used in this project.
 | cert-manager | v1.20.2 (chart) | TLS certificate automation (container UID/GID now 65532/65532 — PSA check) |
 | OpenBao | v2.5.4 (chart 0.28.3) | Secret management (standalone). ARM64 confirmed on quay.io + docker.io. config: disable_unauthed_rekey_endpoints default→true |
 | kube-bench | v0.16.0 | Explicit `cis-1.23` benchmark (automatic K8s mapping differs); upstream Docker Hub multi-arch image measured by orchestrator 2026-11-24. Digest in `scripts/ops/render-cis-benchmark.py` and airgap inventories; scheduled GitOps workload not yet trialled live. |
+| kubelet-csr-approver | v1.2.16 (chart 1.2.16) | PostFinance kubelet-serving CSR controller. The orchestrator measured the amd64/arm64 image index on 2026-11-26. Argo CD and bootstrap use the digest pin and the air-gap bundle preserves that index. Stage 1–2 live trial pending. |
 | Kyverno | v1.18.1 (chart 3.8.1) | Policy management (CVE-2026-4789 / -41323 fixed) |
 | trivy-operator | 0.36.1 (chart 0.38.1) | Kubernetes vulnerability, config-audit, RBAC, and infra scanner (`reportRecordFailedChecksOnly: "false"` records passing checks in per-resource reports; ClusterComplianceReports use `reportType: summary` per D-CCR-SUMMARY) |
 | Trivy | 0.76.1 | Scanner image used by `trivy-operator` (ClientServer mode via built-in `trivy-server`, `node-collector:0.3.1`, embedded `trivy-checks`) |

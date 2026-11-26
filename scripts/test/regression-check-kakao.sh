@@ -3600,7 +3600,7 @@ PYEOF'
   # 2026-11-26: pod-security Batch B (CIS 5.7.3 KSV020/KSV021): stateless OpenBao injector and Headlamp move to UID/GID 10100
   check R410 "Pod-security Batch B: OpenBao injector uid/gid and Headlamp (main + ca-bundle) runAsUser/runAsGroup 10100 in GitOps and bootstrap, server keeps its PVC UID, Harbor takes no shared containerSecurityContext UID; 19 mutations caught" \
     python3 scripts/test/lib/check-pod-security-batch-b.py --mutation-verify
-  check R412 "Kubelet serving TLS: PostFinance chart and digest pins, provider-scoped SAN policy, approver before enablement, and sequential wire verification" \
+  check R412 "Kubelet serving TLS: pinned chart/image, exact names and node /32s excluding VIPs, scoped RBAC, staged rollout" \
     python3 scripts/test/lib/check-kubelet-serving-tls.py --mutation-verify
 }
 

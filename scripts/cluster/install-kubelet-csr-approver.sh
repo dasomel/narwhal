@@ -10,7 +10,7 @@ trap 'rm -rf "$tmp"' EXIT
 helm template narwhal-apps "${STAGE_DIR}/configs/gitops/charts/narwhal-apps" \
   --show-only templates/kubelet-csr-approver.yaml \
   --set-string "provider=${PROVIDER:-vagrant},kubeletCsrTopology=${NARWHAL_TOPOLOGY:-ha}" \
-  --set-string "kubeletCsrNodeSubnet=${HOST_NETWORK_CIDR:-}" > "$tmp/application"
+  --set-json "kubeletCsrNodes=${KUBELET_CSR_NODES:?missing provisioned node inventory}" > "$tmp/application"
 yq -e '.spec.source.helm.valuesObject' "$tmp/application" > "$tmp/values"
 revision="$(yq -er '.spec.source.targetRevision' "$tmp/application")"
 package="$(chart kubelet-csr-approver)"

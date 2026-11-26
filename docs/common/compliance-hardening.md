@@ -825,26 +825,43 @@ These controls remain actionable. The kubelet serving TLS change is in stages 1 
 
 D-OWN-CSR selects the PostFinance approver with the D-OWN-LATEST-SEC pin
 `1.2.16`. It runs on the pod network after Cilium and Argo CD adopts the
-same Helm render from the mirrored Gitea package. Vagrant uses its
-`192.168.56.0/24` private network and `narwhal-master-N` / `narwhal-worker-N`.
-Kakao uses `host-A-B-C-D` and its OpenTofu node subnet (`172.16.0.0/24` by
-default). Kakao installs pass the actual subnet via `kubeletCsrNodeSubnet` on
-the `idp-apps` Application. Set that value before sync on older Kakao installs
-with a custom subnet. Bootstrap and GitOps use one replica in single topology
-and two in HA. Existing app-of-apps definitions default to one until republished.
+same Helm render from the mirrored Gitea package. Both consume the exact
+node-name-to-IP inventory from provisioning (`kubeletCsrNodes` on `idp-apps`).
+Vagrant uses the same names and private IPs assigned to VMs by the Vagrantfile
+for the selected topology. Kakao derives `host-A-B-C-D` names and IPs from the
+OpenTofu master and worker IP outputs. Kakao provisioning checks that the node
+subnet fits inside a private RFC 1918 VPC and rejects missing IPs and collisions
+with either LB VIP. Bootstrap and GitOps use one replica in single topology and
+two in HA.
 
 The Vagrant provisioner writes node names to the host OS's `/etc/hosts`.
 Kakao keeps DHCP hostnames and the provisioned DNS zone covers ingress names.
 Neither pod DNS configuration publishes records for the Node hostnames.
 The approver bypasses name resolution, keeps the hostname check and one DNS
-SAN, and checks IP SANs against the private subnet. This policy establishes
-subnet membership and retains residual risk around individual IP ownership.
-If the cluster provides resolvable node DNS records, disable the bypass.
+SAN, and checks names against the exact inventory and IP SANs against individual
+`/32` entries. The API VIP and load balancers share the node subnet
+(`D-CSR-EXACT-IPS`). The approver checks IP membership across the whole node
+inventory, so a node can still request another listed node's IP. Add new node
+addresses before joining them. A separate kubelet-serving signer CA can isolate
+this trust from the API server's CA. If the cluster provides resolvable node DNS
+records, disable the bypass.
+
+Narwhal supplies the approver RBAC through the same chart render. CSR read and
+approval plus approval of the kubelet-serving signer are cluster-scoped. Lease
+and event access is scoped to `kube-system`. Bootstrap applies using server-side
+apply as `narwhal-bootstrap`. The child Application uses Argo CD's client-side
+apply by default. A field removed from future Helm output can persist under the
+bootstrap field manager. When removing fields, inspect `metadata.managedFields`
+and verify those fields are gone after sync. If they persist, explicitly remove
+them as part of the rollout.
 
 For an existing cluster, publish the digest-preserving image to the configured
-mirror and the `kubelet-csr-approver-1.2.16.tgz` package to Gitea. Sync
-`idp-apps` and wait for the child Application to report Synced and Healthy and
-for the approval Deployment to finish its rollout:
+mirror and the `kubelet-csr-approver-1.2.16.tgz` package to Gitea. For app-of-apps
+objects predating this inventory, re-run platform provisioning to populate
+`kubeletCsrNodes` (`vagrant provision master-1 --provision-with phase2-platform`
+or `FORCE=1 bash scripts/cloud/provision-kakao.sh phase2`). Sync `idp-apps` and
+wait for the child Application to report Synced and Healthy and for the
+approval Deployment to finish its rollout:
 
 ```bash
 bash scripts/gitops/publish-chart-to-gitea.sh /absolute/kubelet-csr-approver-1.2.16.tgz
@@ -867,10 +884,22 @@ kubectl --kubeconfig /absolute/admin.conf get csr
 kubectl --kubeconfig /absolute/admin.conf top nodes
 ```
 
-The first run should report an Approved+Issued CSR and the matching CA-signed
-leaf with the node's InternalIP SAN. The second run should verify that leaf
+The first apply should report an Approved+Issued CSR and the matching CA-signed
+leaf with the node's InternalIP SAN. The second apply should verify that leaf
 without restarting kubelet. Check pod logs, metrics-server and Prometheus
 kubelet targets before proceeding to stage 3. Test natural rotation separately.
+
+On Kakao, pass the bastion with `--ssh-opt`, which accepts multiple OpenSSH
+options. Configure its
+identity and verified host key in `~/.ssh/config` and supply each node mapping.
+
+```bash
+bash scripts/ops/apply-kubelet-serving-tls.sh \
+  --kubeconfig /absolute/kakao-admin.conf --identity /absolute/node-key \
+  --known-hosts /absolute/kakao_known_hosts --ssh-opt 'ProxyJump=narwhal-kakao-bastion' \
+  --ssh-opt 'IdentitiesOnly=yes' \
+  --node host-172-16-0-10=ubuntu@172.16.0.10 --node host-172-16-0-21=ubuntu@172.16.0.21 --dry-run
+```
 
 If apply fails during a new enrollment, it attempts to restore that node's
 previous setting. Re-run to resume after investigating, or run the command
@@ -883,6 +912,14 @@ retrying a denied request.
 ```bash
 bash scripts/ops/apply-kubelet-serving-tls.sh "${args[@]}" --rollback
 ```
+
+If a reboot between `02-init-cluster.sh` and `03-cni-install.sh` clears
+`/tmp/kubeadm-config.yaml`, rerun the initial provisioning sequence before
+joining nodes. Run `vagrant provision master-1` for Vagrant or
+`FORCE=1 bash scripts/cloud/provision-kakao.sh init` for Kakao. Step 02 detects
+the existing `admin.conf`, regenerates the temporary config and pending join
+files, then step 03 resumes after CNI is ready. Keep the pending markers under
+`/var/lib/narwhal/kubelet-serving-tls` so step 03 can complete enrollment.
 
 ### Existing-cluster trial and recovery (orchestrator only)
 

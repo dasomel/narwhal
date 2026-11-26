@@ -1,6 +1,8 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
+require "json"
+
 #=========================================
 # Domain Configuration (from configs/cluster.env)
 #=========================================
@@ -70,6 +72,9 @@ MASTER_COUNT = TOPOLOGY == "single" ? 1 : 3
 MASTER_IP_BASE = "192.168.56.1"  # master-1: .10, master-2: .11, master-3: .12
 WORKER_IP_BASE = "192.168.56.2"  # worker-1: .21, worker-2: .22, worker-3: .23
 WORKER_COUNT = TOPOLOGY == "single" ? 0 : 3
+MASTER_NODES = (1..MASTER_COUNT).to_h { |i| ["#{CLUSTER_NAME}-master-#{i}", "#{MASTER_IP_BASE}#{i - 1}"] }
+WORKER_NODES = (1..WORKER_COUNT).to_h { |i| ["#{CLUSTER_NAME}-worker-#{i}", "#{WORKER_IP_BASE}#{i}"] }
+KUBELET_CSR_NODES = MASTER_NODES.merge(WORKER_NODES).to_json
 DEFINED_MACHINES = (1..MASTER_COUNT).map { |i| "master-#{i}" } + (1..WORKER_COUNT).map { |i| "worker-#{i}" }
 # D-SINGLE-NODE-GUARD: provider id files mark created machines, unlike leftover empty dirs.
 # Refuse hidden machines; cost: explicit cleanup; escape hatch: select their original topology.
@@ -275,10 +280,11 @@ Vagrant.configure("2") do |config|
   # Master Nodes
   #=========================================
   (1..MASTER_COUNT).each do |i|
-    master_ip = "#{MASTER_IP_BASE}#{i - 1}"  # master-1: .10, master-2: .11
+    master_name = "#{CLUSTER_NAME}-master-#{i}"
+    master_ip = MASTER_NODES.fetch(master_name)
 
     config.vm.define "master-#{i}", primary: (i == 1) do |master|
-      master.vm.hostname = "#{CLUSTER_NAME}-master-#{i}"
+      master.vm.hostname = master_name
       master.vm.network "private_network", ip: master_ip
 
       master.vm.provider "virtualbox" do |vb|
@@ -389,7 +395,12 @@ Vagrant.configure("2") do |config|
             "K8S_PATCH_VERSION" => K8S_PATCH_VERSION
           }
         master.vm.provision "shell", path: "scripts/cluster/03-cni-install.sh",
-          env: { "MASTER_IP" => VIP_ADDRESS, "DOMAIN" => BASE_DOMAIN, "NARWHAL_TOPOLOGY" => TOPOLOGY }
+          env: {
+            "MASTER_IP" => VIP_ADDRESS,
+            "DOMAIN" => BASE_DOMAIN,
+            "NARWHAL_TOPOLOGY" => TOPOLOGY,
+            "KUBELET_CSR_NODES" => KUBELET_CSR_NODES
+          }
         master.vm.provision "shell", path: "scripts/cluster/04-addons.sh",
           env: {
             "NFS_SERVER_IP" => NFS_SERVER_IP,
@@ -414,6 +425,7 @@ Vagrant.configure("2") do |config|
             "MASTER_IP_BASE" => MASTER_IP_BASE,
             "MASTER_COUNT" => MASTER_COUNT,
             "NARWHAL_TOPOLOGY" => TOPOLOGY,
+            "KUBELET_CSR_NODES" => KUBELET_CSR_NODES,
             "METALLB_IP" => "192.168.56.200",
             "DOMAIN" => BASE_DOMAIN
           }
@@ -446,9 +458,11 @@ Vagrant.configure("2") do |config|
   # Worker Nodes
   #=========================================
   (1..WORKER_COUNT).each do |i|
+    worker_name = "#{CLUSTER_NAME}-worker-#{i}"
+    worker_ip = WORKER_NODES.fetch(worker_name)
     config.vm.define "worker-#{i}" do |worker|
-      worker.vm.hostname = "#{CLUSTER_NAME}-worker-#{i}"
-      worker.vm.network "private_network", ip: "#{WORKER_IP_BASE}#{i}"
+      worker.vm.hostname = worker_name
+      worker.vm.network "private_network", ip: worker_ip
 
       worker.vm.provider "virtualbox" do |vb|
         vb.name = "#{CLUSTER_NAME}-worker-#{i}"
@@ -473,7 +487,7 @@ Vagrant.configure("2") do |config|
           "VIP_ADDRESS" => VIP_ADDRESS,
           "WORKER_COUNT" => WORKER_COUNT,
           "WORKER_IP_BASE" => WORKER_IP_BASE,
-          "NODE_IP" => "#{WORKER_IP_BASE}#{i}",
+          "NODE_IP" => worker_ip,
           "DOMAIN" => BASE_DOMAIN,
           "AIRGAP" => AIRGAP,
           "AIRGAP_REGISTRY" => AIRGAP_REGISTRY
@@ -481,7 +495,7 @@ Vagrant.configure("2") do |config|
       worker.vm.provision "shell", path: "scripts/common/02-containerd.sh",
         env: { "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP, "AIRGAP_REGISTRY" => AIRGAP_REGISTRY }
       worker.vm.provision "shell", path: "scripts/common/03-k8s-install.sh",
-        env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP, "KUBELET_NODE_IP" => "#{WORKER_IP_BASE}#{i}" }
+        env: { "K8S_VERSION" => K8S_VERSION, "K8S_PATCH_VERSION" => K8S_PATCH_VERSION, "DOMAIN" => BASE_DOMAIN, "AIRGAP" => AIRGAP, "KUBELET_NODE_IP" => worker_ip }
       worker.vm.provision "boot-heal", type: "shell", path: "scripts/common/06-boot-heal-install.sh",
         env: { "NARWHAL_TOPOLOGY" => TOPOLOGY }
 

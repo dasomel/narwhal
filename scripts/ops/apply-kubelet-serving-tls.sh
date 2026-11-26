@@ -3,13 +3,13 @@ set -euo pipefail
 
 kubeconfig="" identity="" known_hosts="$HOME/.ssh/known_hosts" timeout=180
 dry_run=false target=true
-nodes=() hosts=() ips=() previous=()
+nodes=() hosts=() ips=() previous=() ssh_opts=()
 helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/kubelet-serving-tls-node.sh"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 usage() {
   echo "Usage: $0 --kubeconfig FILE (--node NAME=USER@HOST ... | --local NAME)"
-  echo "       [--identity KEY] [--known-hosts FILE] [--timeout SECONDS] [--dry-run | --rollback]"
+  echo "       [--identity KEY] [--known-hosts FILE] [--ssh-opt OPTION]... [--timeout SECONDS] [--dry-run | --rollback]"
 }
 invocation=("$@")
 while (($#)); do
@@ -21,6 +21,7 @@ while (($#)); do
     --local) nodes+=("$2"); hosts+=("local"); shift 2 ;;
     --identity) identity="$2"; shift 2 ;;
     --known-hosts) known_hosts="$2"; shift 2 ;;
+    --ssh-opt) ssh_opts+=(-o "${2:?--ssh-opt requires an OpenSSH option}"); shift 2 ;;
     --timeout) timeout="$2"; shift 2 ;;
     --dry-run) dry_run=true; shift ;;
     --rollback) target=false; shift ;;
@@ -34,6 +35,7 @@ done
 ssh_cmd=(ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3
   -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$known_hosts")
 [[ -z "$identity" ]] || ssh_cmd+=(-i "$identity")
+ssh_cmd+=("${ssh_opts[@]+"${ssh_opts[@]}"}")
 kube() { kubectl --kubeconfig "$kubeconfig" --request-timeout=10s "$@"; }
 on_node() {
   local index="$1"

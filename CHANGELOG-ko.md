@@ -9,7 +9,7 @@
 
 ## [Unreleased]
 
-- **kubelet 서빙 인증서의 클러스터 CA 서명을 단계적으로 적용 (CIS 1.2.6/1.3.6, R412).** Cilium 이후 고정 버전의 PostFinance 승인기를 배포하고 프로바이더별 노드 이름과 사설 서브넷을 적용한다. 노드가 실제 제공하는 인증서를 클러스터 CA와 발급된 CSR로 검증한 뒤, 이후 조인에 사용할 kubeadm 설정을 게시한다. 기존 클러스터에는 운영 절차로 적용한다. API 서버 CA 강제 검증과 메트릭 수집기의 엄격한 TLS 검증은 후속 단계다.
+- **kubelet 서빙 인증서의 클러스터 CA 서명을 단계적으로 적용 (CIS 1.2.6/1.3.6, R412).** Cilium 이후 고정 버전의 PostFinance 승인기를 배포하고 프로비저닝에서 받은 정확한 노드 이름과 사설 `/32` 주소를 사용한다. 리더 선출과 이벤트 권한은 `kube-system`으로 제한한다. 노드가 실제 제공하는 인증서를 클러스터 CA와 발급된 CSR로 검증한 뒤, 이후 조인에 사용할 kubeadm 설정을 게시한다. 기존 클러스터에는 운영 절차로 적용한다. API 서버 CA 강제 검증과 메트릭 수집기의 엄격한 TLS 검증은 후속 단계다.
 
 - **OpenBao agent injector와 Headlamp를 UID/GID 10100으로 실행 (pod-security Batch B, CIS 5.7.3 KSV020/KSV021, R410):** 두 워크로드는 상태가 없으므로 `injector.uid`/`injector.gid`(차트 0.28.3)와 Headlamp 본체 및 `ca-bundle` init 컨테이너(`runAsUser`/`runAsGroup`, 차트 0.46.0)를 기존 100(GID 1000/101)에서 10100으로 옮겼다. GitOps Application과 부트스트랩 설치(`08-4-storage.sh`, `08-3-security.sh`)에 함께 반영했다. OpenBao 서버는 Raft PVC 소유자가 100:1000이라 UID 100을 유지한다. Harbor nginx/portal은 의도적으로 바꾸지 않았다. 차트 1.19.1은 파드 UID 10000을 하드코딩하고, 유일한 설정 키인 `containerSecurityContext`는 PVC를 가진 core/jobservice/registry/redis와 공유되므로 R410이 여기에 UID를 두는 것을 막는다. 기존 파드는 다음 동기화 때 재시작되며, 키를 제거하면 되돌아간다.
 

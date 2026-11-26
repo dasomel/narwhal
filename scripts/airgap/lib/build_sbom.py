@@ -53,7 +53,7 @@ LICENSE_MAP = pathlib.Path(__file__).with_name("component-licenses.tsv")
 
 
 def load_license_map() -> dict:
-    """image repository -> (spdx, note), from the checked-in TSV.
+    """Image repository or helm/name@version -> (spdx, note), from the checked-in TSV.
 
     The map is data, not inference: every row was resolved from the upstream
     project's own license. A repository missing from it is reported as unmapped
@@ -154,18 +154,26 @@ def image_components(bundle: pathlib.Path) -> list:
 def chart_components(bundle: pathlib.Path) -> list:
     """Helm charts: <name>-<semver>.tgz, so split on the last dash before a digit."""
     out = []
+    license_map = load_license_map()
     for tgz in sorted((bundle / "charts").glob("*.tgz")):
         stem = tgz.name[: -len(".tgz")]
         m = re.match(r"^(?P<name>.+)-(?P<version>v?\d[^-]*)$", stem)
         name = m.group("name") if m else stem
         version = m.group("version") if m else "unknown"
-        out.append({
+        component = {
             "type": "library",
             "name": name,
             "version": version,
             "purl": f"pkg:helm/{name}@{version}",
             "hashes": [{"alg": "SHA-256", "content": sha256_file(tgz)}],
-        })
+        }
+        spdx, note = license_map.get(f"helm/{name}@{version}", ("", ""))
+        entries = licenses_for(spdx)
+        if entries:
+            component["licenses"] = entries
+            if note:
+                component["properties"] = [{"name": "narwhal:license-note", "value": note}]
+        out.append(component)
     return out
 
 

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 DOMAIN="${DOMAIN:-local.narwhal.internal}"
+: "${KUBELET_CSR_NODES:?missing provisioned node inventory}"
 
 echo "=== Bootstrapping GitOps ==="
 
@@ -515,7 +516,7 @@ spec:
         provider: ${PROVIDER:-vagrant}
         podNetworkCidr: ${APISIX_ADMIN_CIDR_RESOLVED}
         kubeletCsrTopology: ${NARWHAL_TOPOLOGY:-ha}
-        kubeletCsrNodeSubnet: "${HOST_NETWORK_CIDR:-}"
+        kubeletCsrNodes: ${KUBELET_CSR_NODES}
   destination:
     server: https://kubernetes.default.svc
     namespace: devtools

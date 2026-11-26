@@ -3608,6 +3608,9 @@ PYEOF'
   # 2026-11-26: live bring-up with an NFS vmdk that outlived master-1 (stale lock, old PVs, sealed OpenBao)
   check R413 "NFS vmdk outliving master-1: stale .lck removed only when no running vmx names it, orphan written disk aborts in the trigger and up.sh (shared size bound and NARWHAL_NFS_REUSE_DISK escape hatch), 08-4 fails on an initialized sealed OpenBao without its key; 24 mutations caught" \
     python3 scripts/test/lib/check-nfs-disk-reuse-guards.py --mutation-verify
+  # D-CI-PARITY: version snapshot and operational traces otherwise fail only after push.
+  check R414 "CI parity: portal OSS snapshot plus every non-version behavior trace gated against baseline; 2 mutations rejected" \
+    python3 scripts/test/lib/check-ci-parity.py --mutation-verify
 }
 
 #=========================================

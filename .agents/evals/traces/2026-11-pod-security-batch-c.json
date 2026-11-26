@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-pod-security-batch-c-20261126",
+  "task": "Pod-security Batch C: fix or exactly accept the remaining CIS pod-security findings on node agents and system DaemonSets (istio-cni, ztunnel, kube-vip, MetalLB speaker, Cilium, cilium-envoy, csi-nfs-node, Falco, chaos-daemon, nfs-quota-agent, velero node-agent)",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-pod-security-batch-c.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "gitops/charts/narwhal-apps/templates/istio-cni.yaml",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/compliance-accepted.test.ts",
+      "portal/src/lib/compliance.test.ts",
+      "portal/src/lib/i18n.ts",
+      "scripts/cluster/02-init-cluster.sh",
+      "scripts/cluster/02-join-control-plane.sh",
+      "scripts/cluster/09-istio-ambient.sh",
+      "scripts/test/lib/check-compliance-low-residuals.py",
+      "scripts/test/lib/check-pod-security-batch-c.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Node agents and system DaemonSets only (owner request 2026-11-25: real fixes, or an exact (namespace, kind, name, checks) acceptance whose reason is measured on the live object, never a pattern or an upstream-default reason alone). The live cluster was read-only for this lane; Falco driver mode and every privileged agent's privilege are untouched."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "The actionable set was recomputed from the live ConfigAuditReports (CIS-mapped checks minus the existing rules) and each agent was measured read-only: CapEff, Seccomp, NoNewPrivs and UID from /proc status, host path ownership, the node LSM list, and the DaemonSet specs.",
+      "evidence": [
+        "test:kubectl exec /proc/1/status -> cilium-agent CapEff 00000004012170eb, cilium-envoy 0000000000201000, ztunnel 0000000000203000, csi-nfs nfs/falco/nfs-quota-agent/chaos-daemon 000001ffffffffff with Seccomp 0 (nfs-quota-agent keeps Seccomp 0 under a pod-level RuntimeDefault because it is privileged) (2026-11-26)",
+        "test:host process status via the hostPID chaos-daemon -> metallb speaker UID 0 CapEff 0000000000002000 NoNewPrivs 1; install-cni CapEff 0000000000283002 Seccomp 0; kube-vip CapEff a80435fb Seccomp 0; velero node-agent CapEff 00000000a80425fb",
+        "test:ls -ld on host paths -> /etc/kubernetes/kube-vip.conf 0600 root:root, kubelet plugins_registry 0750 root, csi-nfsplugin 0755 root; /sys/kernel/security/lsm -> lockdown,capability,landlock,yama,apparmor,bpf,ima,evm (no SELinux)",
+        "test:helm template cni 1.30.1 with cni.seccompProfile.type RuntimeDefault renders seccompProfile on install-cni; ztunnel 1.30.1 values and template have no seccomp key (container context hard-coded)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "FIX: istio-cni cni.seccompProfile RuntimeDefault (GitOps Application and 09-istio-ambient.sh); kube-vip static Pod drops ALL, adds only NET_ADMIN/NET_RAW, allowPrivilegeEscalation false and pod-level seccomp RuntimeDefault in both manifest generators. ACCEPT: nine existing node-agent rules extended and one new MetalLB speaker rule, each an exact (namespace, kind, name, checks) rule with the measured fact in the en and ko reason. LEFT actionable: cilium KSV001/KSV012/KSV020/KSV021/KSV030/KSV104, cilium-envoy KSV030/KSV104, ztunnel KSV030/KSV104, csi-nfs-node KSV001 and storage/node-agent KSV004 (no proven need or an unmeasured trial)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static checks and portal unit tests only; no live rollout of the FIX values and no portal release.",
+      "summary": "R411 pins the istio-cni and kube-vip values and rejects 14 mutations; vitest covers every new rule (accepts exactly its checks, rejects another check, name and namespace) and the docs table parity.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-pod-security-batch-c.py --mutation-verify -> PASS: R411 pod-security Batch C (14 mutations rejected)",
+        "test:cd portal && pnpm exec vitest run -> Test Files 200 passed, Tests 2859 passed; pnpm exec tsc --noEmit clean; pnpm lint 0 errors",
+        "test:python3 scripts/test/lib/check-compliance-low-residuals.py --mutation-verify -> PASS: R383 (25 mutations rejected)",
+        "test:make test -> passed 519   failed 0   warnings 3"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Within the stated scope the node-agent findings are either fixed in source (istio-cni seccomp, kube-vip context), accepted by exact measured rules, or left actionable with the reason recorded in docs/common/compliance-hardening.md. The acceptances need a portal release and the two FIX values need a live trial before the page changes."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within scope: source changes, portal data, tests and docs. No live rollout was performed by this lane."
+    }
+  ]
+}

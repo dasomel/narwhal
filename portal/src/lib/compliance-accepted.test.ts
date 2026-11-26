@@ -513,3 +513,50 @@ describe("allowlist integrity and docs parity", () => {
     ).toBeNull()
   })
 })
+
+describe("node-agent acceptances (pod-security Batch C, measured 2026-11-26)", () => {
+  // [namespace, kind, name, newly accepted checks, a check that must stay actionable]
+  const cases = [
+    ["platform-system", "DaemonSet", "metallb-speaker", ["KSV009", "KSV012", "KSV020", "KSV021", "KSV022"], "KSV119"],
+    ["chaos-testing", "DaemonSet", "chaos-daemon", ["KSV004"], "KSV014"],
+    ["nfs-quota-agent", "DaemonSet", "nfs-quota-agent", ["KSV004"], "KSV030"],
+    ["security-system", "DaemonSet", "falco", ["KSV004", "KSV030", "KSV104"], "KSV014"],
+    ["istio-system", "DaemonSet", "istio-cni-node", ["KSV001"], "KSV030"],
+    ["istio-system", "DaemonSet", "ztunnel", ["KSV001"], "KSV030"],
+    ["kube-system", "DaemonSet", "cilium", ["KSV003", "KSV004", "KSV024", "KSV025"], "KSV012"],
+    ["kube-system", "DaemonSet", "cilium-envoy", ["KSV001", "KSV012", "KSV020", "KSV021", "KSV024", "KSV025"], "KSV030"],
+    ["kube-system", "DaemonSet", "csi-nfs-node", ["KSV012", "KSV020", "KSV021"], "KSV001"],
+    ["kube-system", "Pod", "kube-vip-narwhal-master-1", ["KSV012", "KSV020", "KSV021"], "KSV001"],
+  ] as const
+
+  it.each(cases)("accepts exactly the verified checks for %s/%s/%s", (ns, kind, name, checks, stillActionable) => {
+    for (const check of checks) {
+      const rule = matchConfigAuditException(ns, kind, name, check, [])
+      expect(rule, `${name} ${check}`).not.toBeNull()
+      expect(rule?.reviewedAt).toBe("2026-11-26")
+    }
+    expect(matchConfigAuditException(ns, kind, name, stillActionable, [])).toBeNull()
+    expect(matchConfigAuditException(ns, kind, `${name}-evil`, checks[0], [])).toBeNull()
+    expect(matchConfigAuditException("dev", kind, name, checks[0], [])).toBeNull()
+  })
+
+  it("keeps the fixed and unverified node-agent checks actionable", () => {
+    for (const [ns, kind, name, check] of [
+      ["istio-system", "DaemonSet", "istio-cni-node", "KSV104"],
+      ["kube-system", "Pod", "kube-vip-narwhal-master-1", "KSV003"],
+      ["kube-system", "Pod", "kube-vip-narwhal-master-1", "KSV104"],
+      ["kube-system", "DaemonSet", "cilium", "KSV001"],
+      ["kube-system", "DaemonSet", "cilium", "KSV104"],
+      ["kube-system", "DaemonSet", "cilium-envoy", "KSV104"],
+      ["istio-system", "DaemonSet", "ztunnel", "KSV104"],
+      ["storage", "DaemonSet", "node-agent", "KSV004"],
+    ] as const) expect(matchConfigAuditException(ns, kind, name, check, []), `${name} ${check}`).toBeNull()
+  })
+
+  it("writes the measured facts into the reasons", () => {
+    expect(matchConfigAuditException("platform-system", "DaemonSet", "metallb-speaker", "KSV022", [])?.reason).toContain("CapEff 0000000000002000")
+    expect(matchConfigAuditException("security-system", "DaemonSet", "falco", "KSV030", [])?.reason).toContain("Seccomp 0")
+    expect(matchConfigAuditException("kube-system", "DaemonSet", "cilium", "KSV025", [])?.reason).toContain("no SELinux")
+    expect(matchConfigAuditException("kube-system", "Pod", "kube-vip-narwhal-master-1", "KSV012", [])?.reason).toContain("0600 root:root")
+  })
+})

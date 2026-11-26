@@ -3600,6 +3600,9 @@ PYEOF'
   # 2026-11-26: pod-security Batch B (CIS 5.7.3 KSV020/KSV021): stateless OpenBao injector and Headlamp move to UID/GID 10100
   check R410 "Pod-security Batch B: OpenBao injector uid/gid and Headlamp (main + ca-bundle) runAsUser/runAsGroup 10100 in GitOps and bootstrap, server keeps its PVC UID, Harbor takes no shared containerSecurityContext UID, OpenBao and Headlamp bootstrap chart pins match GitOps; 21 mutations caught" \
     python3 scripts/test/lib/check-pod-security-batch-b.py --mutation-verify
+  # 2026-11-26: pod-security Batch C (CIS 5.2.6/5.2.9/5.2.10/5.7.2/5.7.3): istio-cni seccomp RuntimeDefault, kube-vip static Pod drop ALL + seccomp
+  check R411 "Pod-security Batch C: istio-cni cni.seccompProfile RuntimeDefault in GitOps and bootstrap; kube-vip static Pod (init + join) drops ALL, adds only NET_ADMIN/NET_RAW, allowPrivilegeEscalation false, pod seccomp RuntimeDefault; 14 mutations caught" \
+    python3 scripts/test/lib/check-pod-security-batch-c.py --mutation-verify
 }
 
 #=========================================

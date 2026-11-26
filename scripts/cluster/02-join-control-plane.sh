@@ -290,6 +290,9 @@ metadata:
     k8s-app: kube-vip
 spec:
   hostNetwork: true
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
   containers:
   - name: kube-vip
     image: ${KUBE_VIP_IMAGE}
@@ -337,8 +340,12 @@ spec:
         memory: 64Mi
       limits:
         memory: 256Mi
+    # D-PSA-BATCH-C: keep in sync with the same block in 02-init-cluster.sh (R411).
     securityContext:
+      allowPrivilegeEscalation: false
       capabilities:
+        drop:
+        - ALL
         add:
         - NET_ADMIN
         - NET_RAW

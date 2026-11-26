@@ -331,6 +331,9 @@ metadata:
     k8s-app: kube-vip
 spec:
   hostNetwork: true
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
   containers:
   - name: kube-vip
     image: ${KUBE_VIP_IMAGE}
@@ -381,8 +384,14 @@ spec:
         memory: 64Mi
       limits:
         memory: 256Mi
+    # D-PSA-BATCH-C (KSV001/003/004/030/104): the live process held the containerd default set plus
+    # NET_ADMIN/NET_RAW (CapEff a80435fb); ARP and netlink need only those two. Keep in sync with
+    # 02-join-control-plane.sh (R411). Escape hatch: delete drop/allowPrivilegeEscalation and the pod-level block.
     securityContext:
+      allowPrivilegeEscalation: false
       capabilities:
+        drop:
+        - ALL
         add:
         - NET_ADMIN
         - NET_RAW

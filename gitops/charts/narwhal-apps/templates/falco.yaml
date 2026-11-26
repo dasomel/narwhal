@@ -20,7 +20,7 @@ expected on arm64 and not a kernel 7.0 regression. Coverage impact: none, since 
 those syscalls; the openat/openat2/connect TOCTOU programs attach without a warning. master-3 shows no
 warning only because its log now starts mid-stream (startup lines rotated out); its tracefs lacks the same events.
 
-Cost: a privileged DaemonSet on every node, masters included (~300Mi each, see
+Cost: a least-privileged modern_ebpf DaemonSet on every node, masters included (~300Mi each, see
 docs/common/master-memory-pressure.md). falcoctl is OFF (airgap), so the rules (falco-rules 5.2.0) and the
 container plugin (0.7.5) are the ones baked into the image and change only with an image bump.
 
@@ -126,21 +126,46 @@ spec:
           enabled: true
           kind: modern_ebpf
           modernEbpf:
-            # leastPrivileged:false (full privileged), unchanged. 0.45.1 was not tried with true. The July
-            # note blaming leastPrivileged for the 0.39.2 failure does not hold: 0.39.2 also fails
-            # scap_init on a kernel 7.0.14 VM when run privileged (2026-10-28 lab, lessons-log).
-            leastPrivileged: false
+            # D-FALCO-LEAST-PRIV (2026-11-26): run modern_ebpf with the 4 least-privileged
+            # capabilities instead of privileged: true (resolves KSV001, KSV003, KSV004, KSV017,
+            # KSV030, KSV104). Chart 9.2.1 (templates/pod-template.tpl:15-21) renders the pod
+            # annotation container.apparmor.security.beta.kubernetes.io/falco: unconfined when
+            # this is true so containerd's default AppArmor profile does not block /host/proc
+            # ptrace reads needed for container/K8s metadata (falcosecurity/falco#3256, charts#769).
+            # The July note blaming leastPrivileged for the 0.39.2 failure does not hold: 0.39.2
+            # also fails scap_init on a kernel 7.0.14 VM when run privileged (2026-10-28 lab).
+            leastPrivileged: true
 
         # Falco DaemonSet (모든 노드)
         tty: true
-        # D-falco-rofs (KSV014): read-only root. With modern_ebpf nothing is built or written on the
-        # root filesystem; the chart already mounts /root/.falco as a volume. Setting containerSecurityContext REPLACES the
-        # chart's computed context, so `privileged: true` must be repeated here: without it Falco
-        # fails scap_init ('ring buffer map type is not supported ... Operation not permitted') and
-        # crash-loops (seen live 2026-11-19). Escape hatch: remove the whole key.
+        # D-FALCO-LEAST-PRIV + D-falco-rofs (KSV001/KSV003/KSV004/KSV014/KSV017/KSV030/KSV104):
+        # pod-level RuntimeDefault seccomp and least-privileged containerSecurityContext with
+        # read-only root. With modern_ebpf nothing is built or written on the root filesystem;
+        # the chart already mounts /root/.falco as an emptyDir volume. Setting
+        # containerSecurityContext REPLACES chart 9.2.1's computed context
+        # (templates/pod-template.tpl:378-397), so the 4 capabilities the chart computes for
+        # driver.modernEbpf.leastPrivileged=true (BPF, SYS_RESOURCE, PERFMON, SYS_PTRACE) must be
+        # repeated here alongside drop:[ALL], allowPrivilegeEscalation:false, and
+        # readOnlyRootFilesystem:true (without those capabilities or privileged:true, Falco fails
+        # scap_init with 'ring buffer map type is not supported ... Operation not permitted',
+        # seen live 2026-11-19). Cost: KSV002 (AppArmor unconfined annotation) and KSV022
+        # (capabilities.add) are accepted in compliance-acceptance-rules.json. Escape hatch: set
+        # driver.modernEbpf.leastPrivileged back to false, remove podSecurityContext, and restore
+        # containerSecurityContext to {privileged: true, readOnlyRootFilesystem: true}.
+        podSecurityContext:
+          seccompProfile:
+            type: RuntimeDefault
         containerSecurityContext:
-          privileged: true
+          allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+            add:
+              - BPF
+              - SYS_RESOURCE
+              - PERFMON
+              - SYS_PTRACE
 
         # Container/K8s metadata (Falco >= 0.41): the `container` plugin replaces the old built-in
         # container engine. It is BAKED INTO the Falco image (/usr/share/falco/plugins/libcontainer.so),

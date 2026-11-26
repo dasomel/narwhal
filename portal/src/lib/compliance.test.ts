@@ -1330,7 +1330,7 @@ describe("compliance framework actionable vs accepted split", () => {
             name: "falco",
             checks: [
               { checkID: "KSV9999", severity: "HIGH", success: false },
-              { checkID: "KSV017", severity: "MEDIUM", success: false },
+              { checkID: "KSV121", severity: "MEDIUM", success: false },
             ],
           }),
           {
@@ -1394,7 +1394,7 @@ describe("compliance framework actionable vs accepted split", () => {
               { id: "C2", name: "Unknown target", severity: "HIGH", checks: [{ id: "AVD-KSV-0018" }] },
               { id: "C3", name: "Mixed control", severity: "HIGH", checks: [{ id: "AVD-KSV-0020" }] },
               { id: "C4", name: "Actionable node checks", severity: "LOW", checks: [{ id: "AVD-KCV-0056" }, { id: "AVD-KCV-0059" }] },
-              { id: "C5", name: "Mixed exact accepted and uncovered control", severity: "MEDIUM", checks: [{ id: "AVD-KSV-0014" }, { id: "AVD-KSV-0017" }] },
+              { id: "C5", name: "Mixed exact accepted and uncovered control", severity: "MEDIUM", checks: [{ id: "AVD-KSV-0014" }, { id: "AVD-KSV-0121" }] },
             ],
             results: [
               { id: "C0", name: "No failure recorded", severity: "LOW", checks: [{ checkID: "", success: true }] },
@@ -1851,7 +1851,7 @@ describe("compliance framework actionable vs accepted split", () => {
             namespace: "security-system",
             kind: "DaemonSet",
             name: "falco",
-            checks: [{ checkID: "KSV017", severity: "HIGH", success: false }],
+            checks: [{ checkID: "KSV121", severity: "HIGH", success: false }],
           }),
           makeCar({
             namespace: "dev",
@@ -1869,7 +1869,7 @@ describe("compliance framework actionable vs accepted split", () => {
             failCount: 5,
             specControls: [
               { id: "C-EMPTY", name: "Empty checks control", severity: "LOW" },
-              { id: "C-ACCEPTED", name: "Accepted control", severity: "HIGH", checks: [{ id: "AVD-KSV-0017" }] },
+              { id: "C-ACCEPTED", name: "Accepted control", severity: "HIGH", checks: [{ id: "AVD-KSV-0121" }] },
               { id: "C-ACTIONABLE", name: "Actionable control", severity: "HIGH", checks: [{ id: "AVD-KSV-0014" }] },
             ],
             results: [
@@ -2316,10 +2316,10 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     expect(summary.scannedWorkloads).toBe(3)
     expect(summary.scannedRbacObjects).toBe(2)
     expect(summary.scannedNodes).toBe(1)
-    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 1, Low: 0 })
+    expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 2, Medium: 1, Low: 0 })
     expect(summary.unacceptedLowConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 3 })
     expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
-    expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+    expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
     expect(summary.droppedConfigAuditReports).toBe(1)
     expect(summary.droppedConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 2 })
     expect(summary.totalRbacFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
@@ -2337,7 +2337,7 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     //   3.1.1 (Manual) -> not_evaluated (manual)
     //   4.1.5 (KCV0073, master/worker Node) -> not_evaluated (infra_no_per_check_evidence)
     //   5.1.1 (KSV111, RoleBinding/ClusterRoleBinding) -> not_evaluated (unsupported_kind)
-    //   5.2.2 (KSV017) -> failed (accepted: falco)
+    //   5.2.2 (KSV017) -> failed (actionable: falco KSV017 removed by D-FALCO-LEAST-PRIV)
     //   5.7.3 (KSV020/KSV021) -> failed (actionable: argocd-dex-server, accepted: harbor-core; droppedCheckCount: 2)
     expect(byId.get("k8s-cis-1.23")).toMatchObject({
       totalControls: 8,
@@ -2345,17 +2345,17 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
       evaluatedPassCount: 0,
       notEvaluatedCount: 6,
       failCount: 2,
-      actionableFailCount: 1,
-      acceptedFailCount: 1,
+      actionableFailCount: 2,
+      acceptedFailCount: 0,
       droppedFailCount: 0,
       droppedCheckCount: 2,
     })
     expect(byId.get("k8s-cis-1.23")!.evaluatedPassRate).toBeCloseTo(0)
-    expect(byId.get("k8s-cis-1.23")!.effectivePassRate).toBeCloseTo(1 / 8)
+    expect(byId.get("k8s-cis-1.23")!.effectivePassRate).toBeCloseTo(0)
 
     // k8s-pss-restricted-0.1 (3 controls):
     //   1 (AVD-KSV-0103, Workload) -> no failure recorded (in-scope Workload ConfigAuditReports exist)
-    //   3 (AVD-KSV-0017) -> failed (accepted: falco)
+    //   3 (AVD-KSV-0017) -> failed (actionable: falco KSV017 removed by D-FALCO-LEAST-PRIV)
     //   13 (avd-ksv-0001, lowercase) -> not_evaluated (unlinked_check_id)
     expect(byId.get("k8s-pss-restricted-0.1")).toMatchObject({
       totalControls: 3,
@@ -2363,8 +2363,8 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
       evaluatedPassCount: 1,
       notEvaluatedCount: 1,
       failCount: 1,
-      actionableFailCount: 0,
-      acceptedFailCount: 1,
+      actionableFailCount: 1,
+      acceptedFailCount: 0,
     })
 
     const reasonCounts = (d: NonNullable<Awaited<ReturnType<typeof getComplianceFrameworkDetail>>>) =>
@@ -2390,7 +2390,7 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
       actionable: acc.actionable + (f.actionableFailCount ?? 0),
       accepted: acc.accepted + (f.acceptedFailCount ?? 0),
     }), { controls: 0, raw: 0, evaluated: 0, notEvaluated: 0, actionable: 0, accepted: 0 })
-    expect(totals).toEqual({ controls: 11, raw: 7, evaluated: 1, notEvaluated: 7, actionable: 1, accepted: 2 })
+    expect(totals).toEqual({ controls: 11, raw: 7, evaluated: 1, notEvaluated: 7, actionable: 3, accepted: 0 })
     console.info("trimmed snapshot replay:", JSON.stringify(totals))
 
     // Pin the measured 2026-11-22 full-snapshot pooled aggregate expectations carried in the trimmed fixture.

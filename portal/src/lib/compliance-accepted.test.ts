@@ -144,7 +144,7 @@ describe("exact acceptance (D-P2-1/2/3)", () => {
     expect(match).toMatchObject({ ruleId: "cfg:devtools:ReplicaSet:narwhal-portal:accept", class: "accept", reviewedAt: "2026-11-23" })
     expect(match?.owner).toContain("portal/Dockerfile")
     expect(match?.reason).toContain("1001")
-    expect(matchConfigAuditException("security-system", "DaemonSet", "falco", "KSV017")?.reason).toContain("privileged")
+    expect(matchConfigAuditException("security-system", "DaemonSet", "falco", "KSV022")?.reason).toContain("leastPrivileged")
   })
 
   it("rejects same-name wrong-kind/namespace, lookalikes, unknown checks and missing ownership", () => {
@@ -554,7 +554,10 @@ describe("node-agent acceptances (pod-security Batch C, measured 2026-11-26)", (
       ["storage", "DaemonSet", "node-agent", "KSV003"],
       ["storage", "DaemonSet", "node-agent", "KSV004"],
       ["storage", "DaemonSet", "node-agent", "KSV106"],
+      ["security-system", "DaemonSet", "falco", "KSV001"],
+      ["security-system", "DaemonSet", "falco", "KSV003"],
       ["security-system", "DaemonSet", "falco", "KSV004"],
+      ["security-system", "DaemonSet", "falco", "KSV017"],
       ["security-system", "DaemonSet", "falco", "KSV030"],
       ["security-system", "DaemonSet", "falco", "KSV104"],
       ["kube-system", "DaemonSet", "cilium", "KSV025"],
@@ -581,12 +584,21 @@ describe("node-agent acceptances (pod-security Batch C, measured 2026-11-26)", (
     expect(matchConfigAuditException("kube-system", "Pod", "kube-vip-narwhal-master-2", "KSV105", [])).toBeNull()
   })
 
-  it("keeps the untested leastPrivileged follow-up in both Falco KSV017 reasons", () => {
-    const falco = matchConfigAuditException("security-system", "DaemonSet", "falco", "KSV017", [])
+  it("keeps the original D-falco-rofs caveat and appends the D-FALCO-LEAST-PRIV KSV002/KSV022 reasons", () => {
+    for (const checkId of ["KSV002", "KSV022"]) {
+      const falco = matchConfigAuditException("security-system", "DaemonSet", "falco", checkId, [])
+      const key = "compliance.acceptedReason.falcoAccept"
+      expect(falco?.reasonKey).toBe(key)
+    }
     const key = "compliance.acceptedReason.falcoAccept"
-    expect(falco?.reasonKey).toBe(key)
     expect(en[key]).toContain("driver.modernEbpf.leastPrivileged path remains untested")
+    expect(en[key]).toContain("D-FALCO-LEAST-PRIV")
+    expect(en[key]).toContain("container.apparmor.security.beta.kubernetes.io/falco: unconfined")
+    expect(en[key]).toContain("BPF, SYS_RESOURCE, PERFMON, SYS_PTRACE")
     expect(ko[key]).toContain("driver.modernEbpf.leastPrivileged 경로는 미검증")
+    expect(ko[key]).toContain("D-FALCO-LEAST-PRIV")
+    expect(ko[key]).toContain("container.apparmor.security.beta.kubernetes.io/falco: unconfined")
+    expect(ko[key]).toContain("BPF, SYS_RESOURCE, PERFMON, SYS_PTRACE")
   })
 
   it.each([

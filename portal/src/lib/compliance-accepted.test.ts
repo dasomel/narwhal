@@ -513,3 +513,86 @@ describe("allowlist integrity and docs parity", () => {
     ).toBeNull()
   })
 })
+
+describe("node-agent acceptances (pod-security Batch C, measured 2026-11-26)", () => {
+  // [namespace, kind, name, newly accepted checks, a check that must stay actionable]
+  const cases = [
+    ["platform-system", "DaemonSet", "metallb-speaker", ["KSV009", "KSV012", "KSV020", "KSV022", "KSV105"], "KSV119"],
+    ["chaos-testing", "DaemonSet", "chaos-daemon", ["KSV004"], "KSV014"],
+    ["nfs-quota-agent", "DaemonSet", "nfs-quota-agent", ["KSV004"], "KSV030"],
+    ["istio-system", "DaemonSet", "istio-cni-node", ["KSV001"], "KSV030"],
+    ["istio-system", "DaemonSet", "ztunnel", ["KSV001"], "KSV030"],
+    ["kube-system", "DaemonSet", "cilium", ["KSV024"], "KSV012"],
+    ["kube-system", "DaemonSet", "cilium-envoy", ["KSV001", "KSV012", "KSV020", "KSV024"], "KSV030"],
+    ["kube-system", "DaemonSet", "csi-nfs-node", ["KSV012", "KSV020"], "KSV001"],
+    ["kube-system", "Pod", "kube-vip-narwhal-master-1", ["KSV012", "KSV020", "KSV105"], "KSV001"],
+  ] as const
+
+  it.each(cases)("accepts exactly the verified checks for %s/%s/%s", (ns, kind, name, checks, stillActionable) => {
+    for (const check of checks) {
+      const rule = matchConfigAuditException(ns, kind, name, check, [])
+      expect(rule, `${name} ${check}`).not.toBeNull()
+      expect(rule?.reviewedAt).toBe("2026-11-26")
+    }
+    expect(matchConfigAuditException(ns, kind, name, stillActionable, [])).toBeNull()
+    expect(matchConfigAuditException(ns, kind, `${name}-evil`, checks[0], [])).toBeNull()
+    expect(matchConfigAuditException("dev", kind, name, checks[0], [])).toBeNull()
+  })
+
+  it("keeps the fixed and unverified node-agent checks actionable", () => {
+    for (const [ns, kind, name, check] of [
+      ["istio-system", "DaemonSet", "istio-cni-node", "KSV104"],
+      ["kube-system", "Pod", "kube-vip-narwhal-master-1", "KSV003"],
+      ["kube-system", "Pod", "kube-vip-narwhal-master-1", "KSV104"],
+      ["kube-system", "DaemonSet", "cilium", "KSV001"],
+      ["kube-system", "DaemonSet", "cilium", "KSV003"],
+      ["kube-system", "DaemonSet", "cilium", "KSV004"],
+      ["kube-system", "DaemonSet", "cilium", "KSV104"],
+      ["kube-system", "DaemonSet", "cilium-envoy", "KSV104"],
+      ["istio-system", "DaemonSet", "ztunnel", "KSV104"],
+      ["storage", "DaemonSet", "node-agent", "KSV004"],
+      ["security-system", "DaemonSet", "falco", "KSV004"],
+      ["security-system", "DaemonSet", "falco", "KSV030"],
+      ["security-system", "DaemonSet", "falco", "KSV104"],
+      ["kube-system", "DaemonSet", "cilium", "KSV025"],
+      ["kube-system", "DaemonSet", "cilium-envoy", "KSV025"],
+      ["kube-system", "DaemonSet", "cilium-envoy", "KSV021"],
+      ["platform-system", "DaemonSet", "metallb-speaker", "KSV021"],
+      ["kube-system", "Pod", "kube-vip-narwhal-master-1", "KSV021"],
+      ["kube-system", "DaemonSet", "csi-nfs-node", "KSV021"],
+    ] as const) expect(matchConfigAuditException(ns, kind, name, check, []), `${name} ${check}`).toBeNull()
+  })
+
+  it("writes the measured facts into the reasons", () => {
+    const metallb = matchConfigAuditException("platform-system", "DaemonSet", "metallb-speaker", "KSV105", [])
+    expect(metallb?.reasonKey).toBe("compliance.acceptedReason.metallbSpeakerHost")
+    expect(metallb?.reason).toContain("CapEff 0000000000002000")
+    expect(metallb?.reason).toContain("user group 10100 is specified without user")
+
+    for (const checkId of ["KSV012", "KSV020", "KSV105"]) {
+      const kubeVip = matchConfigAuditException("kube-system", "Pod", "kube-vip-narwhal-master-1", checkId, [])
+      expect(kubeVip?.reasonKey).toBe("compliance.acceptedReason.verifiedkubeVipHost")
+      expect(kubeVip?.reason).toContain("CapEff 0000000000003000")
+      expect(kubeVip?.reason).toContain("without ambient capabilities")
+    }
+    expect(matchConfigAuditException("kube-system", "Pod", "kube-vip-narwhal-master-2", "KSV105", [])).toBeNull()
+  })
+
+  it("keeps the untested leastPrivileged follow-up in both Falco KSV017 reasons", () => {
+    const falco = matchConfigAuditException("security-system", "DaemonSet", "falco", "KSV017", [])
+    const key = "compliance.acceptedReason.falcoAccept"
+    expect(falco?.reasonKey).toBe(key)
+    expect(en[key]).toContain("driver.modernEbpf.leastPrivileged path remains untested")
+    expect(ko[key]).toContain("driver.modernEbpf.leastPrivileged 경로는 미검증")
+  })
+
+  it.each([
+    ["istio-system", "istio-cni-node", "0000000000283002", "exposes no allowPrivilegeEscalation value"],
+    ["istio-system", "ztunnel", "0000000000203000", "hardcodes allowPrivilegeEscalation: true"],
+    ["kube-system", "cilium-envoy", "0000000000201000", "exposes no allowPrivilegeEscalation value"],
+  ])("records the measured SYS_ADMIN and chart behavior for %s/%s KSV001", (ns, name, capEff, chartBehavior) => {
+    const rule = matchConfigAuditException(ns, "DaemonSet", name, "KSV001", [])
+    expect(rule?.reason).toContain(`CapEff ${capEff}`)
+    expect(rule?.reason).toContain(chartBehavior)
+  })
+})

@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+- **Narrow Batch C node-agent Config Audit acceptances:** Falco KSV004/KSV030/KSV104, Cilium KSV003/KSV004/KSV025, Envoy KSV025, and Envoy, MetalLB speaker, kube-vip and CSI NFS node KSV021 stay actionable when reported. KSV001 reasons for Istio CNI, ztunnel and Cilium Envoy record the measured SYS_ADMIN and the chart behavior. KSV105 is accepted for the exact kube-vip Pod and MetalLB speaker DaemonSet with measured UID 0 reasons. Falco’s accepted privileged eBPF mode retains the caveat about the untested leastPrivileged follow-up. The rule changes take effect with the next portal release.
+
 ## [1.1.30] - 2026-11-26
 
 ### Changed

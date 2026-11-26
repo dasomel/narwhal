@@ -160,6 +160,9 @@ cni:
     # D-576-DETECTION-RETRY: keep in sync with gitops/charts/narwhal-apps/templates/istio-cni.yaml
     # (R306); retry the pod lookup so a reboot-time API blip cannot leave a pod un-enrolled (#576).
     enableAmbientDetectionRetry: true
+  # D-PSA-BATCH-C (KSV030/KSV104): keep in sync with gitops/charts/narwhal-apps/templates/istio-cni.yaml (R411).
+  seccompProfile:
+    type: RuntimeDefault
 tolerations:
   - key: node-role.kubernetes.io/control-plane
     operator: Exists

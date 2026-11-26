@@ -10,6 +10,7 @@
 ## [Unreleased]
 
 - R410이 OpenBao와 Headlamp의 부트스트랩 Helm 차트 버전이 GitOps에 고정된 버전과 다르면 실패하도록 수정했다.
+- **노드 에이전트 Pod 보안 강화 (Batch C, R411):** Istio CNI는 GitOps와 부트스트랩에서 RuntimeDefault seccomp를 설정한다. kube-vip 정적 Pod 생성 경로 두 곳은 UID 0과 기본 GID 10100을 지정하고, 모든 capability를 드롭한 뒤 NET_ADMIN/NET_RAW만 추가하며, 권한 상승을 끄고 Pod seccomp를 RuntimeDefault로 설정한다. MetalLB 0.16.1은 GitOps와 부트스트랩에서 speaker GID 10100과 `runAsUser: 0`을 명시해 containerd 샌드박스 생성 요건을 충족한다. kube-vip와 MetalLB는 병합 전 라이브 시험을 통과했고, Istio CNI는 차트 렌더로 검증했다. 시험 결과와 기존 노드의 kube-vip 적용 절차는 컴플라이언스 강화 문서에 기록했다.
 
 - **OpenBao agent injector와 Headlamp를 UID/GID 10100으로 실행 (pod-security Batch B, CIS 5.7.3 KSV020/KSV021, R410):** 두 워크로드는 상태가 없으므로 `injector.uid`/`injector.gid`(차트 0.28.3)와 Headlamp 본체 및 `ca-bundle` init 컨테이너(`runAsUser`/`runAsGroup`, 차트 0.46.0)를 기존 100(GID 1000/101)에서 10100으로 옮겼다. GitOps Application과 부트스트랩 설치(`08-4-storage.sh`, `08-3-security.sh`)에 함께 반영했다. OpenBao 서버는 Raft PVC 소유자가 100:1000이라 UID 100을 유지한다. Harbor nginx/portal은 의도적으로 바꾸지 않았다. 차트 1.19.1은 파드 UID 10000을 하드코딩하고, 유일한 설정 키인 `containerSecurityContext`는 PVC를 가진 core/jobservice/registry/redis와 공유되므로 R410이 여기에 UID를 두는 것을 막는다. 기존 파드는 다음 동기화 때 재시작되며, 키를 제거하면 되돌아간다.
 

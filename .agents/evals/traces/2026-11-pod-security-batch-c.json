@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-pod-security-batch-c-20261126",
+  "task": "Pod-security Batch C: fix or exactly accept the remaining CIS pod-security findings on node agents and system DaemonSets (istio-cni, ztunnel, kube-vip, MetalLB speaker, Cilium, cilium-envoy, csi-nfs-node, Falco, chaos-daemon, nfs-quota-agent, velero node-agent)",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-pod-security-batch-c.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/istio-cni.yaml",
+      "gitops/charts/narwhal-apps/templates/metallb.yaml",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/compliance-accepted.test.ts",
+      "portal/src/lib/i18n.ts",
+      "scripts/cluster/02-init-cluster.sh",
+      "scripts/cluster/02-join-control-plane.sh",
+      "scripts/cluster/08-1-networking.sh",
+      "scripts/cluster/09-istio-ambient.sh",
+      "scripts/test/lib/check-compliance-low-residuals.py",
+      "scripts/test/lib/check-pod-security-batch-c.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Author fix round 3 at a3ecaabc7105ee24c3e312a37e60c1383ac2811e. Address both reviews and the orchestrator\u2019s decisions using local files and recorded trial evidence. This round is offline."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Review 2 identified missing KSV105 reasons for explicit UID 0, Cilium acceptance of two chart-configurable findings, and a missing Falco caveat.",
+      "evidence": [
+        "artifact:review-batch-c-findings.md and review-batch-c2-findings.md record both sets of findings.",
+        "test:R411 at the starting HEAD rejected 32 mutations. With the new guards and the original rules, it reported both missing KSV105 entries and both remaining Cilium acceptances."
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Both kube-vip static Pod generators and both MetalLB speaker value paths explicitly set UID 0 and GID 10100. The KSV105 exceptions match only the reviewed kube-vip Pod and MetalLB speaker DaemonSet with measured reasons. Cilium KSV003/KSV004 are actionable with a provisioning-mounted bpffs candidate. Falco\u2019s privileged eBPF acceptance carries the untested leastPrivileged caveat and the follow-up lists KSV001/KSV003/KSV017 alongside KSV004/KSV030/KSV104. Istio CNI and Cilium Envoy record the missing allowPrivilegeEscalation value."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Round 3 offline static checks and Portal tests, with prior chart render and recorded pre-merge trials.",
+      "summary": "R411 rejected 32 mutations at the starting HEAD and now rejects 39, including both KSV105 removals, both KSV105 reason changes, the Falco KSV017 reason change, and both Cilium restorations. R383 rejected 25 mutations.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-pod-security-batch-c.py --mutation-verify -> PASS: R411 pod-security Batch C (39 mutations rejected)",
+        "test:python3 scripts/test/lib/check-compliance-low-residuals.py --mutation-verify -> PASS: R383 low-severity compliance hardening & allowlist (25 mutations rejected)",
+        "test:cd portal && pnpm exec tsc --noEmit -> exit 0",
+        "test:cd portal && TMPDIR=/private/tmp pnpm exec vitest run src/lib/compliance-accepted.test.ts src/lib/compliance.test.ts -> 2 files passed, 86 tests passed",
+        "test:make validate -> exit 0 and Vagrantfile Syntax OK",
+        "artifact:review-batch-c-findings.md records a render of the Istio CNI 1.30.1 install-cni container with privileged false and RuntimeDefault. Istio CNI remains render-only.",
+        "runtime:Prior trial on 2026-11-26, kube-vip on narwhal-master-1: UID 0, GID 10100, CapEff 0x3000 (NET_ADMIN and NET_RAW), NoNewPrivs 1, Seccomp 2, VIP /readyz HTTP 200, VIP address present, plndr-cp-lock renewing.",
+        "runtime:Prior trial on 2026-11-26, MetalLB speaker: the group-only attempt failed sandbox creation (user group 10100 is specified without user). After recovery, explicit UID 0 with GID 10100 yielded speaker Ready, LoadBalancer IP retained, and test-sso 144 passes and 0 failures.",
+        "test:make test -> passed 519   failed 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Round 3 offline checks passed. Prior live evidence covers kube-vip and MetalLB speaker. The compliance guide records that evidence and the kube-vip backup, apply, verification and rollback steps. Istio CNI still needs live verification. Falco leastPrivileged and the Cilium settings remain follow-up work."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Author fix round 3 complete in the worktree. The corrected trace is saved at .review/trace.json for the orchestrator to copy to the canonical path. Independent review and Portal release are pending."
+    }
+  ]
+}

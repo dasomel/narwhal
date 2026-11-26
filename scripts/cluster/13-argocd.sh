@@ -224,8 +224,8 @@ patch_resources deployment  argocd-dex-server              25m  64Mi  100m 128Mi
 # existing truncated file and exited 0, so the dex container exec'd a truncated ELF and SIGSEGV'd (exit
 # 139, no log) for the life of the pod. repo-server's init uses plain `cp` (overwrites), so a restart
 # re-copies; it only loses time to the same OOM, not the binary. 256Mi completed the copy on the same
-# node. Requests stay
-# 32Mi (scheduling budget unchanged). redis's init runs the binary, it does not copy it, so it keeps 64Mi.
+# node. Requests stay 32Mi (scheduling budget unchanged). redis's init runs the binary, it does not copy
+# it, so it keeps 64Mi.
 # Recovery for an already broken pod: delete it (the emptyDir goes with it).
 patch_init_resources deployment argocd-repo-server 0 10m 32Mi 100m 256Mi
 patch_init_resources deployment argocd-redis       0 10m 32Mi 100m 64Mi

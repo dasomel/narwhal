@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-ci-parity-r414-20261126",
+  "task": "Move the CI-only OSS snapshot and operational trace gates into make test.",
+  "changeContext": {
+    "paths": [
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/lessons-log.md",
+      "scripts/test/lib/check-ci-parity.py",
+      "scripts/test/regression-check-kakao.sh",
+      ".agents/evals/traces/2026-11-ci-parity-r414.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "R414 adds the portal OSS version snapshot check and behavior-contract trace gate to the static regression suite. CI workflow files are unchanged; no cluster or network verification is in scope. The checked-in version-consistency trace is excluded because CI binds fresh command evidence into a temporary trace before gating it."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "PR #825 had two CI-only failures: the Version Consistency portal snapshot step and the behavior-contract operational trace gate were absent from make test."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "R414 registers a static check that runs the Node snapshot command and calls gate.py with the CI baseline and temporary current/comparison outputs for each non-version trace."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline local behavior and mutation verification",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-ci-parity.py --mutation-verify",
+        "test:make test -> passed 521 failed 0 (orchestrator)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "scope_check",
+      "summary": "Not verified: hosted GitHub Actions execution, network-dependent behavior, and cluster state. No live results are claimed."
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "R414 is implemented and locally mutation-verified: the portal snapshot and eligible checked-in behavior traces are now covered by the static regression suite."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for the requested local CI-parity coverage; hosted CI and live environment results remain outside this verification."
+    }
+  ]
+}

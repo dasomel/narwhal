@@ -56,9 +56,10 @@ kubectl label namespace devtools istio.io/dataplane-mode=ambient --overwrite
 argocd_manifest="$(manifest argocd-install.yaml)"
 render_argocd_install "$argocd_manifest" | kubectl apply -n devtools -f - \
   --server-side --force-conflicts
-# Narwhal#251: upstream's argocd-server ClusterRole grants `*` on `*` (reaching
-# nodes/proxy). Replace it right away with the narrowed role idp-apps reconciles, so
-# this file is the single source and a re-run never reopens the grant until selfHeal.
+# Narwhal#251 + D-ARGO-SERVER-RO (D-OWN-ARGO-STAGED): upstream's argocd-server ClusterRole
+# grants `*` on `*` (reaching secrets, workload writes, and nodes/proxy). Replace it right
+# away with the read-only + argoproj.io role idp-apps reconciles, so this file is the single
+# source and a re-run never reopens the grant until selfHeal.
 kubectl apply --server-side --force-conflicts \
   -f /home/vagrant/configs/gitops/charts/narwhal-apps/templates/argocd-server-rbac.yaml
 

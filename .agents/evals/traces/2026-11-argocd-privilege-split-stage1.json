@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-argocd-privilege-split-stage1-20261127",
+  "task": "Implement ArgoCD privilege split Stage 1 (D-OWN-ARGO-STAGED): read-only argocd-server ClusterRole, exact AppProject/platform clusterResourceWhitelist, exact argocd-application-controller KSV044/KSV046 acceptance, and R420.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-argocd-privilege-split-stage1.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "gitops/charts/narwhal-apps/templates/argocd-server-rbac.yaml",
+      "gitops/resources/argocd-projects.yaml",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/compliance-accepted.test.ts",
+      "portal/src/lib/i18n.ts",
+      "scripts/cluster/13-argocd.sh",
+      "scripts/test/lib/check-argocd-privilege-split-stage1.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope is ArgoCD privilege split Stage 1 (D-OWN-ARGO-STAGED): argocd-server read-only ClusterRole (single source for GitOps and 13-argocd.sh bootstrap), AppProject/platform exact clusterResourceWhitelist (tenants empty), exact ClusterRole/argocd-application-controller KSV044/KSV046 acceptance (removing argocd-server), R420 with --mutation-verify, docs, and changelogs. ClusterRole/argocd-application-controller itself, dex, namespaced devtools Roles, live cluster mutations, and git commits/pushes are excluded."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "reviewed": true,
+      "provenance": [
+        "Owner decision 2026-11-27 D-OWN-ARGO-STAGED: narrow argocd-server and AppProject/platform first; accept argocd-application-controller KSV044/KSV046 until design option C decouples privileged ClusterRole reconciliation.",
+        "Reused design inventory at .review/argocd-split-design.md (Section 1 and Section 3.C).",
+        "Measured repo API callers: portal/src/lib/argocd.ts:102,141,170,274,336 calls only /api/v1/applications GET, /sync, and /rollback; scripts/cluster/13-2-narwhal-portal-bindings.sh:518-548 calls /api/v1/session, /api/v1/account, and /api/v1/applications; scripts/test/test-sso.sh:865-1010 calls /api/v1/session, /userinfo, /applications, and /sync.",
+        "Derived explicit CRD plural resource names from repo live-API exports: gitops/resources/velero-server-rbac.yaml, gitops/charts/narwhal-platform/templates/narwhal-portal-k8s.yaml, gitops/resources/chaos-mesh-rbac.yaml, and gitops/charts/kubernetes-dashboard/charts/kong/crds/custom-resource-definitions.yaml."
+      ],
+      "summary": "All portal and test ArgoCD callers operate through /api/v1/applications (GET, /sync, /rollback) and session/account endpoints without workload delete/patch or Job creation; removing secrets, workload writes, and CRD '*' wildcards from ClusterRole/argocd-server preserves all portal and read-only UI paths."
+    },
+    {
+      "id": "e3",
+      "type": "reproduction",
+      "summary": "Before Stage 1, ClusterRole/argocd-server granted cluster-wide core secrets get/list/watch (KSV041), resources: ['*'] across 11 CRD groups (KSV046), apps workload delete/patch, pods delete, and batch/jobs create (KSV048); AppProject/platform allowed clusterResourceWhitelist */*; and ClusterRole/argocd-application-controller had no exact acceptance for KSV044/KSV046.",
+      "evidence": [
+        "test:gitops/charts/narwhal-apps/templates/argocd-server-rbac.yaml prior rules -> secrets read, 11-group '*' wildcard, apps delete/patch, pods delete, jobs create",
+        "test:gitops/resources/argocd-projects.yaml prior lines 68-70 -> clusterResourceWhitelist group '*' kind '*'",
+        "test:portal/src/data/compliance-acceptance-rules.json prior lines 864-878 -> accepted argocd-server KSV041/KSV046/KSV048 and omitted argocd-application-controller"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Replaced argocd-server-rbac.yaml with read-only non-secret discovery, explicit CRD plural names across 23 installed platform CRD groups (dropping uninstalled grafana.integreatly.org), pods/log get, and argoproj.io app lifecycle verbs (D-ARGO-SERVER-RO, applied verbatim by 13-argocd.sh); replaced AppProject/platform clusterResourceWhitelist with the exact 12 cluster-scoped kinds (D-ARGO-PROJECT-WHITELIST, omitting bootstrap-owned StorageClass/CSIDriver, keeping tenants empty); replaced ClusterRole/argocd-server acceptance with exact ClusterRole/argocd-application-controller KSV044/KSV046 acceptance across JSON, ko/en i18n, unit test, and compliance-hardening.md; added R420 (check-argocd-privilege-split-stage1.py --mutation-verify, 16 mutations) and updated changelogs."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline static, Helm render, mutation, lint, and CI parity checks",
+      "summary": "All offline syntax, shellcheck, Helm render, R420/R409/R395/R383/R414 mutation checks, AppProject fit, nodes/proxy check, and markdownlint checks passed.",
+      "evidence": [
+        "test:bash -n scripts/cluster/13-argocd.sh scripts/test/regression-check-kakao.sh -> exit 0",
+        "test:shellcheck -S warning scripts/cluster/13-argocd.sh -> exit 0",
+        "test:python3 scripts/test/lib/check-argocd-privilege-split-stage1.py --mutation-verify -> PASS: R420 ArgoCD privilege split Stage 1 (16 mutations rejected)",
+        "test:python3 scripts/test/lib/check-nodes-proxy-narrow.py -> PASS rendered argocd-server ClusterRole (wildcard mutation rejected); PASS allowlist reasons (empty-reason mutation rejected)",
+        "test:python3 scripts/test/lib/check-appproject-fit.py -> exit 0",
+        "test:python3 scripts/test/lib/check-argocd-appset-secrets.py --mutation-verify -> PASS: R409 exact rule removal, unchanged surrounding documents and idempotent render (3 mutations rejected)",
+        "test:python3 scripts/test/lib/check-portal-exact-acceptance.py --mutation-verify -> PASS: R395 exact acceptance (42 mutations rejected)",
+        "test:python3 scripts/test/lib/check-compliance-low-residuals.py --mutation-verify -> PASS: R383 low-severity compliance hardening & allowlist (25 mutations rejected)",
+        "test:python3 scripts/test/lib/check-ci-parity.py --mutation-verify -> PASS: R414 CI parity, 241 behavior traces; 2 mutations rejected",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> No markdownlint violations on added/modified active-documentation lines.",
+        "test:git diff --check -> exit 0",
+        "test:live kubectl api-resources diff -> one nonexistent name (compliancereports.aquasecurity.github.io) removed; live platform Apps manage 9 cluster-scoped kinds, all in the new whitelist (orchestrator)"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "scope_check",
+      "summary": "Not verified in this worktree (owned by orchestrator): (1) portal vitest/tsc checks (portal/node_modules is absent in this worktree); (2) live kubectl api-resources diff for inferred CRD plural names in argocd-server-rbac.yaml (velero.io/* and aquasecurity.github.io/{sbomreports,clustersbomreports}) and external-chart cluster-scoped kinds in AppProject/platform (PriorityClass, IngressClass, ClusterIssuer; external chart tarballs are not local); (3) live cluster server-side apply, kubectl auth can-i matrix, portal sync/rollback trial, and Trivy RBAC rescan."
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "ArgoCD privilege split Stage 1 changes, exact acceptance updates, R420 mutation-verified regression check, documentation, and changelogs are complete and verified offline; live cluster trial, kubectl api-resources diff, and portal test execution remain for the orchestrator."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within Stage 1 scope: argocd-server is read-only outside argoproj.io with zero wildcards or secrets, AppProject/platform restricts cluster scope to 12 exact kinds with tenants empty, argocd-application-controller KSV044/KSV046 is explicitly accepted under D-OWN-ARGO-STAGED, and R420 rejects 16 mutations."
+    }
+  ]
+}

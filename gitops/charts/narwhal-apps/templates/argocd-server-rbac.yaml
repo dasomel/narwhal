@@ -7,9 +7,15 @@ metadata:
     app.kubernetes.io/name: argocd-server
     app.kubernetes.io/part-of: argocd
 rules:
-  # D1: keep Argo CD's resource-tree discovery while excluding API subresources;
-  # the upstream wildcard grants nodes/proxy. The escape hatch is to add a named
-  # resource to its API group as platform UI coverage grows.
+  # D-ARGO-SERVER-RO (Stage 1 of D-OWN-ARGO-STAGED): keep Argo CD UI and Narwhal portal
+  # read-only resource-tree discovery and pod log access while removing cluster-wide
+  # secrets (KSV041), workload delete/patch, pods delete, jobs create (KSV048), and
+  # CRD-group '*' resource wildcards (KSV046). Also excludes nodes/proxy and pods/exec.
+  # Cost: Argo CD UI live-Secret view, pod delete/restart, and CronJob-to-Job trigger
+  # are disabled (portal only calls /applications GET, /sync, and /rollback); new CRDs
+  # must be added explicitly by plural resource name.
+  # Escape hatch: add the needed explicit resource/verb here and sync idp-apps (or
+  # server-side apply this file directly; 13-argocd.sh applies this exact file).
   - apiGroups: [""]
     resources:
       - bindings
@@ -24,7 +30,6 @@ rules:
       - pods
       - replicationcontrollers
       - resourcequotas
-      - secrets
       - serviceaccounts
       - services
     verbs: [get, list, watch]
@@ -38,10 +43,10 @@ rules:
     resources: [horizontalpodautoscalers]
     verbs: [get, list, watch]
   - apiGroups: [networking.k8s.io]
-    resources: [ingresses, ingressclasses, networkpolicies]
+    resources: [ingressclasses, ingresses, networkpolicies]
     verbs: [get, list, watch]
   - apiGroups: [policy]
-    resources: [ poddisruptionbudgets ]
+    resources: [poddisruptionbudgets]
     verbs: [get, list, watch]
   - apiGroups: [rbac.authorization.k8s.io]
     resources: [clusterrolebindings, clusterroles, rolebindings, roles]
@@ -52,48 +57,236 @@ rules:
   - apiGroups: [apiextensions.k8s.io]
     resources: [customresourcedefinitions]
     verbs: [get, list, watch]
+  - apiGroups: [admissionregistration.k8s.io]
+    resources: [mutatingwebhookconfigurations, validatingwebhookconfigurations]
+    verbs: [get, list, watch]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+  - apiGroups: [scheduling.k8s.io]
+    resources: [priorityclasses]
+    verbs: [get, list, watch]
   - apiGroups: [argoproj.io]
-    resources: [applications, applications/finalizers, applicationsets, appprojects, workflows]
+    resources: [applications, applications/finalizers, applicationsets, appprojects]
     verbs: [get, list, watch]
-  # D1: custom resources in these explicit groups belong in the application tree.
-  # Cost: future resources in these groups are readable too. Escape hatch: replace a
-  # group's wildcard with named resources if its API later adds sensitive content.
-  - apiGroups:
-      - apisix.apache.org
-      - aquasecurity.github.io
-      - cert-manager.io
-      - cilium.io
-      - grafana.integreatly.org
-      - k8s.keycloak.org
-      - kyverno.io
-      - metallb.io
-      - monitoring.coreos.com
-      - postgresql.cnpg.io
-      - security.istio.io
-    resources: ["*"]
+  # Explicit platform CRD plural resource names (replaces resources: ["*"] to clear KSV046).
+  # Derived from repo live-API exports (velero-server-rbac.yaml, narwhal-portal-k8s.yaml,
+  # chaos-mesh-rbac.yaml, kong CRDs); velero.io plurals and trivy sbomreports/clustersbomreports
+  # are inferred and flagged for live `kubectl api-resources` diff.
+  - apiGroups: [acme.cert-manager.io]
+    resources: [challenges, orders]
     verbs: [get, list, watch]
-  # Upstream app actions need mutation on Argo CD objects; these grants cannot
-  # reach Kubernetes workload objects or their subresources.
+  - apiGroups: [apisix.apache.org]
+    resources:
+      - apisixclusterconfigs
+      - apisixconsumers
+      - apisixglobalrules
+      - apisixpluginconfigs
+      - apisixroutes
+      - apisixtlses
+      - apisixupstreams
+    verbs: [get, list, watch]
+  - apiGroups: [aquasecurity.github.io]
+    resources:
+      - clustercompliancereports
+      - clusterconfigauditreports
+      - clusterinfraassessmentreports
+      - clusterrbacassessmentreports
+      - clustersbomreports
+      - clustervulnerabilityreports
+      - configauditreports
+      - exposedsecretreports
+      - infraassessmentreports
+      - rbacassessmentreports
+      - sbomreports
+      - vulnerabilityreports
+    verbs: [get, list, watch]
+  - apiGroups: [cert-manager.io]
+    resources: [certificaterequests, certificates, clusterissuers, issuers]
+    verbs: [get, list, watch]
+  - apiGroups: [chaos-mesh.org]
+    resources:
+      - awschaos
+      - azurechaos
+      - blockchaos
+      - dnschaos
+      - gcpchaos
+      - httpchaos
+      - iochaos
+      - jvmchaos
+      - kernelchaos
+      - networkchaos
+      - physicalmachinechaos
+      - physicalmachines
+      - podchaos
+      - podhttpchaos
+      - podiochaos
+      - podnetworkchaos
+      - remoteclusters
+      - schedules
+      - statuschecks
+      - stresschaos
+      - timechaos
+      - workflownodes
+      - workflows
+    verbs: [get, list, watch]
+  - apiGroups: [cilium.io]
+    resources:
+      - ciliumcidrgroups
+      - ciliumclusterwideenvoyconfigs
+      - ciliumclusterwidenetworkpolicies
+      - ciliumendpoints
+      - ciliumenvoyconfigs
+      - ciliumgatewayclassconfigs
+      - ciliumidentities
+      - ciliuml2announcementpolicies
+      - ciliumloadbalancerippools
+      - ciliumnetworkpolicies
+      - ciliumnodeconfigs
+      - ciliumnodes
+      - ciliumpodippools
+    verbs: [get, list, watch]
+  - apiGroups: [collectors.grafana.com]
+    resources: [alloys]
+    verbs: [get, list, watch]
+  - apiGroups: [configuration.konghq.com]
+    resources:
+      - ingressclassparameterses
+      - kongclusterplugins
+      - kongconsumergroups
+      - kongconsumers
+      - kongcustomentities
+      - kongingresses
+      - konglicenses
+      - kongplugins
+      - kongupstreampolicies
+      - kongvaults
+      - tcpingresses
+      - udpingresses
+    verbs: [get, list, watch]
+  - apiGroups: [extensions.istio.io]
+    resources: [trafficextensions, wasmplugins]
+    verbs: [get, list, watch]
+  - apiGroups: [frrk8s.metallb.io]
+    resources: [bgpsessionstates, frrconfigurations, frrk8sconfigurations, frrnodestates]
+    verbs: [get, list, watch]
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [gatewayclasses, gateways, grpcroutes, httproutes, referencegrants]
+    verbs: [get, list, watch]
+  - apiGroups: [k8s.keycloak.org]
+    resources: [keycloakrealmimports, keycloaks]
+    verbs: [get, list, watch]
+  - apiGroups: [kyverno.io]
+    resources:
+      - cleanuppolicies
+      - clustercleanuppolicies
+      - clusterpolicies
+      - globalcontextentries
+      - policies
+      - policyexceptions
+      - updaterequests
+    verbs: [get, list, watch]
+  - apiGroups: [metallb.io]
+    resources:
+      - bfdprofiles
+      - bgpadvertisements
+      - bgppeers
+      - communities
+      - configurationstates
+      - ipaddresspools
+      - l2advertisements
+      - servicebgpstatuses
+      - servicel2statuses
+    verbs: [get, list, watch]
+  - apiGroups: [monitoring.coreos.com]
+    resources:
+      - alertmanagerconfigs
+      - alertmanagers
+      - podmonitors
+      - probes
+      - prometheusagents
+      - prometheuses
+      - prometheusrules
+      - scrapeconfigs
+      - servicemonitors
+      - thanosrulers
+    verbs: [get, list, watch]
+  - apiGroups: [networking.istio.io]
+    resources:
+      - destinationrules
+      - envoyfilters
+      - gateways
+      - proxyconfigs
+      - serviceentries
+      - sidecars
+      - virtualservices
+      - workloadentries
+      - workloadgroups
+    verbs: [get, list, watch]
+  - apiGroups: [policies.kyverno.io]
+    resources:
+      - deletingpolicies
+      - generatingpolicies
+      - imagevalidatingpolicies
+      - mutatingpolicies
+      - namespaceddeletingpolicies
+      - namespacedgeneratingpolicies
+      - namespacedimagevalidatingpolicies
+      - namespacedmutatingpolicies
+      - namespacedvalidatingpolicies
+      - policyexceptions
+      - validatingpolicies
+    verbs: [get, list, watch]
+  - apiGroups: [postgresql.cnpg.io]
+    resources:
+      - backups
+      - clusterimagecatalogs
+      - clusters
+      - databases
+      - failoverquorums
+      - imagecatalogs
+      - poolers
+      - publications
+      - scheduledbackups
+      - subscriptions
+    verbs: [get, list, watch]
+  - apiGroups: [reports.kyverno.io]
+    resources: [clusterephemeralreports, ephemeralreports]
+    verbs: [get, list, watch]
+  - apiGroups: [security.istio.io]
+    resources: [authorizationpolicies, peerauthentications, requestauthentications]
+    verbs: [get, list, watch]
+  - apiGroups: [telemetry.istio.io]
+    resources: [telemetries]
+    verbs: [get, list, watch]
+  - apiGroups: [velero.io]
+    resources:
+      - backuprepositories
+      - backups
+      - backupstoragelocations
+      - datadownloads
+      - datauploads
+      - deletebackuprequests
+      - downloadrequests
+      - podvolumebackups
+      - podvolumerestores
+      - restores
+      - schedules
+      - serverstatusrequests
+      - volumesnapshotlocations
+    verbs: [get, list, watch]
+  - apiGroups: [wgpolicyk8s.io]
+    resources: [clusterpolicyreports, policyreports]
+    verbs: [get, list, watch]
+  # Argo CD app lifecycle mutations (sync, rollback, app delete/patch) stay on argoproj.io
+  # objects only; they cannot reach Kubernetes workloads, secrets, or node subresources.
   - apiGroups: [argoproj.io]
     resources: [applications, applications/finalizers, applicationsets]
     verbs: [delete, patch]
-  # UI resource actions (restart = patch, delete pod/workload) on the objects Argo CD
-  # shows; upstream grants delete/patch on `*`, which also reaches node subresources.
-  - apiGroups: [apps]
-    resources: [daemonsets, deployments, replicasets, statefulsets]
-    verbs: [delete, patch]
-  - apiGroups: [""]
-    resources: [pods]
-    verbs: [delete]
-  - apiGroups: [""]
-    resources: [events]
-    verbs: [list]
+  # Pod logs viewer in Argo CD UI.
   - apiGroups: [""]
     resources: [pods/log]
     verbs: [get]
-  - apiGroups: [batch]
-    resources: [jobs]
-    verbs: [create]
-  - apiGroups: [argoproj.io]
-    resources: [workflows]
-    verbs: [create]

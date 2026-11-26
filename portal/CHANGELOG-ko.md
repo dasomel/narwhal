@@ -13,6 +13,9 @@
 
 - **CSI NFS Config Audit 수용 범위 축소 (R417):** controller KSV012/KSV020은 실측한 root 소유 0755 공유 CSI 소켓을 근거로 수용하고, sidecar 수정 후 KSV001은 privileged SYS_ADMIN nfs 컨테이너만 남으므로 두 워크로드에서 수용한다. KSV021과 KSV125는 조치 대상으로 남긴다.
 - **Falco `leastPrivileged: true` 전환에 따른 Config Audit 수용 범위 갱신 (`D-FALCO-LEAST-PRIV`, R421):** `security-system/DaemonSet/falco`에서 해소된 `KSV001`, `KSV003`, `KSV017`(`allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, `privileged: true` 제거로 해결)을 빼고, 차트 `falco-9.2.1`이 `driver.modernEbpf.leastPrivileged: true`일 때 컨테이너·Kubernetes 메타데이터용 `/host/proc` `ptrace` 읽기가 containerd 기본 AppArmor에 차단되지 않도록 렌더링하는 `container.apparmor.security.beta.kubernetes.io/falco: unconfined`(`KSV002`) 및 4개 커널 트레이싱 capability(`KSV022`: `BPF, SYS_RESOURCE, PERFMON, SYS_PTRACE`)를 기존 `KSV012`, `KSV020`, `KSV021`, `KSV023`, `KSV106`, `KSV121`과 함께 수용하며 `src/lib/i18n.ts`의 기존 `D-falco-rofs` 사유 원문을 보존한 채 `D-FALCO-LEAST-PRIV` 근거를 덧붙였다.
+### 변경
+
+- **ArgoCD 권한 분리 1단계 RBAC 수용 규칙 갱신 (`D-OWN-ARGO-STAGED`):** `D-ARGO-SERVER-RO`로 해소된 `ClusterRole/argocd-server`(`KSV041`, `KSV046`, `KSV048`) 수용 규칙을 제거하고, 14개 차트와 플랫폼 역할의 ClusterRole/ClusterRoleBinding을 조정하는 `ClusterRole/argocd-application-controller`에 대해 `KSV044`/`KSV046` 정확 수용을 추가했다(제한 시 `escalate`/KSV050 또는 동일 말단 권한 필요; 설계안 C로 재검토 예정).
 
 ## [1.1.32] - 2026-11-26
 

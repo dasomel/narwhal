@@ -864,20 +864,19 @@
       "reviewedAt": "2026-11-23"
     },
     {
-      "id": "rbac:cluster:ClusterRole:argocd-server:accept",
+      "id": "rbac:cluster:ClusterRole:argocd-application-controller:accept",
       "scope": "cluster",
       "namespace": "",
       "kind": "ClusterRole",
-      "name": "argocd-server",
+      "name": "argocd-application-controller",
       "checks": [
-        "KSV041",
-        "KSV046",
-        "KSV048"
+        "KSV044",
+        "KSV046"
       ],
       "class": "accept",
-      "reasonKey": "compliance.acceptedReason.rbacArgocdServer",
-      "owner": "narwhal / argocd v3.4.4 (gitops/charts/narwhal-apps/templates/argocd-server-rbac.yaml)",
-      "reviewedAt": "2026-11-23"
+      "reasonKey": "compliance.acceptedReason.rbacArgocdApplicationController",
+      "owner": "narwhal / argocd v3.4.4 (scripts/cluster/13-argocd.sh)",
+      "reviewedAt": "2026-11-27"
     },
     {
       "id": "rbac:devtools:Role:narwhal-portal-jobs:accept",

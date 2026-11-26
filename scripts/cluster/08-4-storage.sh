@@ -400,6 +400,9 @@ injector:
     rollingUpdate:
       maxSurge: 0
       maxUnavailable: 1
+  # D-PSB-UID: same uid/gid as gitops/charts/narwhal-apps/templates/openbao.yaml (CIS 5.7.3 KSV020/KSV021)
+  uid: 10100
+  gid: 10100
   resources:
     requests:
       cpu: 25m

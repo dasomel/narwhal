@@ -92,6 +92,9 @@ resources:
   limits:
     memory: 512Mi
 securityContext:
+  # D-PSB-UID: mirrors gitops/charts/narwhal-apps/templates/headlamp.yaml (CIS 5.7.3 KSV020/KSV021 need > 10000)
+  runAsUser: 10100
+  runAsGroup: 10100
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
   capabilities:
@@ -126,7 +129,8 @@ initContainers:
       allowPrivilegeEscalation: false
       readOnlyRootFilesystem: true
       runAsNonRoot: true
-      runAsUser: 100
+      runAsUser: 10100
+      runAsGroup: 10100
       capabilities:
         drop:
           - ALL

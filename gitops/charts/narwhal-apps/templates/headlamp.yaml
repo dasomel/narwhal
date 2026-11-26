@@ -53,7 +53,12 @@ spec:
         # Trivy KSV001/003/012/030/104: allowPrivilegeEscalation false, drop ALL caps,
         # seccomp RuntimeDefault, readOnlyRootFilesystem true. Deep-merges with chart
         # default (runAsNonRoot: true, privileged: false), satisfying KSV012/014.
+        # D-PSB-UID (2026-11-26, CIS 5.7.3 KSV020/KSV021 require > 10000): the image's headlamp user is
+        # 100:101 but the process only reads world-readable /headlamp files and writes the chart's
+        # headlamp-tmp emptyDir (0777), so a numeric 10100 is safe. Escape hatch: revert to 100/101.
         securityContext:
+          runAsUser: 10100
+          runAsGroup: 10100
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities:
@@ -66,12 +71,13 @@ spec:
             image: ghcr.io/headlamp-k8s/headlamp:v0.46.0
             command: ['sh', '-c', 'cat /etc/ssl/certs/ca-certificates.crt /narwhal-ca/ca.crt > /combined/ca-certificates.crt']
             # Same image as the main container (verified uid=100 non-root live) — safe to
-            # force runAsNonRoot here too (Trivy flagged this initContainer separately).
+            # force runAsNonRoot here too; UID/GID match the main container (D-PSB-UID) (Trivy flagged this initContainer separately).
             securityContext:
               allowPrivilegeEscalation: false
               readOnlyRootFilesystem: true
               runAsNonRoot: true
-              runAsUser: 100
+              runAsUser: 10100
+              runAsGroup: 10100
               capabilities:
                 drop:
                   - ALL

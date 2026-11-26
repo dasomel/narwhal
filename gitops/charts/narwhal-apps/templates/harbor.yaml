@@ -41,6 +41,9 @@ spec:
             # with key 'password' copied from narwhal-db-credentials/harbor-password.
             existingSecret: harbor-db-credentials
             coreDatabase: harbor
+        # D-PSB-UID (2026-11-26): nginx/portal stay at UID 10000 (CIS 5.7.3 KSV020/KSV021 accepted upstream). Chart
+        # 1.19.1 hardcodes the pod runAsUser 10000 and its only knob, containerSecurityContext, is ONE value shared by
+        # core/jobservice/registry/redis, whose PVC data is owned by 10000/999: never set runAsUser/runAsGroup there (R410).
         persistence:
           enabled: true
           persistentVolumeClaim:

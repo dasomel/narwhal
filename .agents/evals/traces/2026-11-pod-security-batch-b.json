@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-pod-security-batch-b-20261126",
+  "task": "Pod-security Batch B: run the stateless OpenBao agent injector and Headlamp with UID/GID > 10000 (CIS 5.7.3 KSV020/KSV021); Harbor nginx/portal evaluated and left unchanged",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-pod-security-batch-b.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/harbor.yaml",
+      "gitops/charts/narwhal-apps/templates/headlamp.yaml",
+      "gitops/charts/narwhal-apps/templates/openbao.yaml",
+      "scripts/cluster/08-3-security.sh",
+      "scripts/cluster/08-4-storage.sh",
+      "scripts/test/lib/check-pod-security-batch-b.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Stateless workloads only (owner request 2026-11-25; an independent critic rejected accepting KSV020/021): Harbor nginx/portal, OpenBao agent injector, Headlamp. The OpenBao server, Harbor core/jobservice/registry/redis and every acceptance rule are out of scope. The live cluster was read-only for this lane."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live read-only measurement on the local cluster: Headlamp container and ca-bundle init run runAsUser 100 (GID 101 for the container, none for the init container); the injector pod runs 100:1000 with fsGroup 1000. helm template of the pinned charts shows Harbor 1.19.1 hardcodes the pod runAsUser 10000 in the nginx and portal templates and only exposes the shared containerSecurityContext.",
+      "evidence": [
+        "test:kubectl exec id in devtools/headlamp -> uid=100(headlamp) gid=101(headlamp); storage/openbao-agent-injector -> uid=100(vault) gid=1000(vault) (2026-11-26)",
+        "test:helm template harbor 1.19.1 -> templates/nginx/deployment.yaml and portal/deployment.yaml hardcode securityContext runAsUser 10000; containerSecurityContext is shared by core, jobservice, registry and redis"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "openbao.yaml injector.uid/gid 10100 and the matching 08-4-storage.sh values heredoc; headlamp.yaml main container and ca-bundle init runAsUser/runAsGroup 10100 and the matching 08-3-security.sh heredoc (D-PSB-UID). The Headlamp image only reads world-readable files and writes emptyDirs (headlamp-tmp, combined-certs) and the injector keeps its TLS in memory with a read-only root filesystem, so a numeric UID is tolerated. Harbor is left unchanged with a comment, and R410 forbids a shared containerSecurityContext UID there."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static regression suite, R410 and helm template renders of the changed releases on the author host. The live rollout is NOT done by this lane; the orchestrator performs it.",
+      "summary": "R410 pins the values in both GitOps and bootstrap blocks and rejects removal mutations; the full static suite passes.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-pod-security-batch-b.py --mutation-verify -> PASS: R410 (17 mutations rejected)",
+        "test:helm template openbao 0.28.3 and headlamp 0.46.0 with both the GitOps and the bootstrap values -> injector pod 10100/10100 fsGroup 10100 while the server stays 100/1000; Headlamp container and ca-bundle 10100/10100",
+        "test:make test -> passed 516   failed 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Values are in GitOps and bootstrap and pinned by R410 within the stated scope. Live behavior (pods Ready, webhook injection, Headlamp login) is not verified by this lane and remains for the orchestrator's pre-merge trial."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the stated scope: manifests, bootstrap and static checks. Harbor nginx/portal intentionally not changed."
+    }
+  ]
+}

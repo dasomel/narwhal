@@ -116,6 +116,8 @@ networking:
 apiServer:
   certSANs:${CERT_SANS}
   extraArgs:
+    # D-R416-ORDER: kubelet CA trust is applied by 03-cni-install after serving
+    # TLS verifies. Cost: bootstrap uses fallback TLS. Escape: stage 3 rollback.
     # CIS 1.2.18 — disable the profiling (pprof) endpoint; not needed in prod, removes a
     # debug/DoS surface. (Live cluster also patched on all masters.) NOTE: when enabling
     # the OIDC args below, merge them into THIS extraArgs list (one key only).
@@ -181,6 +183,10 @@ etcd:
         value: "http://0.0.0.0:2381"
 controllerManager:
   extraArgs:
+    # D-R416-ROTATE: pin the v1.35 default for CIS 1.3.6 without changing behavior.
+    # Joins inherit it. Cost: revisit on gate removal. Escape: remove the pin.
+    - name: feature-gates
+      value: "RotateKubeletServerCertificate=true"
     # D1: CIS 1.3.1 explicit upstream default; cost: retains up to 12500 terminated
     # pods (no retention change). Escape: change after measuring API/etcd load.
     - name: terminated-pod-gc-threshold

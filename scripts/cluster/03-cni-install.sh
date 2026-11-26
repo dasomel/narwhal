@@ -189,6 +189,7 @@ if [[ -f "${serving_state}/bootstrap-pending" ]]; then
   bash "${scripts}/cluster/install-kubelet-csr-approver.sh"
   yq -e 'select(.kind == "KubeletConfiguration").serverTLSBootstrap == true' /tmp/kubeadm-config.yaml >/dev/null
   bash "${scripts}/ops/apply-kubelet-serving-tls.sh" --kubeconfig "${KUBECONFIG}" --local "$(hostname)"
+  bash "${scripts}/ops/apply-kubelet-serving-tls.sh" --kubeconfig "${KUBECONFIG}" --local "$(hostname)" --control-plane
   # D2: checkpoint before a join file becomes visible. An interrupted
   # publication can retry even if a second node has already joined.
   mv "${serving_state}/bootstrap-pending" "${serving_state}/join-pending"

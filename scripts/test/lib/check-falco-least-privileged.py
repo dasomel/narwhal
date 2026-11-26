@@ -53,13 +53,13 @@ EXPECTED_FALCO_CHECKS = ["KSV002", "KSV012", "KSV020", "KSV021", "KSV022", "KSV0
 FORBIDDEN_FALCO_CHECKS = ("KSV001", "KSV003", "KSV004", "KSV014", "KSV017", "KSV030", "KSV104", "KSV118")
 REASON_KEY = "compliance.acceptedReason.falcoAccept"
 ORIG_EN_PREFIX = (
-    "Falco's privileged modern_ebpf mode is accepted after the initialization permission errors "
+    "Falco ran privileged modern_ebpf until 2026-11-26 because of the initialization permission errors "
     "recorded in falco.yaml D-falco-rofs. The chart’s driver.modernEbpf.leastPrivileged path "
-    "remains untested and is the follow-up."
+    "was verified live on 2026-11-27 and is now used."
 )
 ORIG_KO_PREFIX = (
-    "falco.yaml D-falco-rofs에 기록된 초기화 권한 오류로 privileged modern_ebpf 모드를 수용합니다. "
-    "차트의 driver.modernEbpf.leastPrivileged 경로는 미검증 상태이며 후속 검증 대상입니다."
+    "falco.yaml D-falco-rofs에 기록된 초기화 권한 오류로 2026-11-26까지 privileged modern_ebpf로 운영했습니다. "
+    "차트의 driver.modernEbpf.leastPrivileged 경로는 2026-11-27 라이브 검증 후 사용 중입니다."
 )
 
 

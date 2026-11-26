@@ -3606,7 +3606,7 @@ PYEOF'
   check R412 "Kubelet serving TLS: pinned chart/image, exact names and node /32s excluding VIPs, scoped RBAC, staged rollout" \
     python3 scripts/test/lib/check-kubelet-serving-tls.py --mutation-verify
   # 2026-11-26: live bring-up with an NFS vmdk that outlived master-1 (stale lock, old PVs, sealed OpenBao)
-  check R413 "NFS vmdk outliving master-1: stale .lck removed only when no running vmx names it, orphan written disk aborts in the trigger and up.sh (shared size bound and NARWHAL_NFS_REUSE_DISK escape hatch), 08-4 fails on an initialized sealed OpenBao without its key; 24 mutations caught" \
+  check R413 "NFS vmdk outliving master-1: stale .lck removed only when no running vmx names it, orphan written disk aborts in the trigger and up.sh (shared size bound and NARWHAL_NFS_REUSE_DISK escape hatch), 08-4 fails on an initialized sealed OpenBao without its key; 25 mutations caught" \
     python3 scripts/test/lib/check-nfs-disk-reuse-guards.py --mutation-verify
 }
 

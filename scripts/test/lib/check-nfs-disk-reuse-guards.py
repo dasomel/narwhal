@@ -42,12 +42,14 @@ REQUIRED = [
   ("up", "$((nfs_cap_gb * 256 * 1024 + 64 * 1024 * 1024))", "up.sh uses the same size bound"),
   ("up", "LC_ALL=C grep -a -o -E '^RW [0-9]+'", "up.sh reads capacity from the descriptor"),
   ("up", 'nfs_size=$(wc -c < "${nfs_vmdk}"', "portable size (no GNU/BSD stat split)"),
-  ("storage", "if key_read=$(kubectl get secret openbao-init -n storage -o jsonpath='{.data.unseal_keys_b64}' 2>&1); then", "one key read keeps its error"),
-  ("storage", '*) echo "ERROR: cannot read Secret storage/openbao-init: ${key_read}" >&2; exit 1 ;;', "API error exits as such, never as missing key"),
+  ("storage", "if key_read=$(kubectl get secret openbao-init -n storage -o jsonpath='{.data.unseal_keys_b64}' 2>\"${key_err_file}\"); then", "one key read, stderr kept apart from the value"),
+  ("up", "''|*[!0-9]*) echo \"ERROR: NARWHAL_NFS_DISK_GB must be an integer >= 0", "up.sh rejects a non-integer disk size by name"),
+  ("storage", '*) echo "ERROR: cannot read Secret storage/openbao-init: ${key_err}" >&2; exit 1 ;;', "API error exits as such, never as missing key"),
   ("storage", "*NotFound*)", "absent Secret is told apart from API errors"),
   ("storage", "is initialized and sealed, and storage/openbao-init has no unseal_keys_b64", "present-without-key is reported"),
 ]
 FORBIDDEN = [
+  ("storage", "-o jsonpath='{.data.unseal_keys_b64}' 2>&1", "key read must not merge stderr into the value"),
   ("storage", 'echo "WARN: OpenBao initialized but unseal key not found in openbao-init secret"', "missing key must not be WARN-only"),
 ]
 

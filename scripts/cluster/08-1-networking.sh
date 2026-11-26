@@ -33,6 +33,8 @@ for attempt in 1 2 3 4 5; do
     --set speaker.tolerations[0].key=node-role.kubernetes.io/control-plane \
     --set speaker.tolerations[0].operator=Exists \
     --set speaker.tolerations[0].effect=NoSchedule \
+    --set speaker.securityContext.runAsUser=0 \
+    --set speaker.securityContext.runAsGroup=10100 \
     --set speaker.securityContext.seccompProfile.type=RuntimeDefault \
     --set speaker.resources.requests.cpu=50m \
     --set speaker.resources.requests.memory=64Mi \

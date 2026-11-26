@@ -343,6 +343,9 @@ spec:
     # D-PSA-BATCH-C: keep in sync with the same block in 02-init-cluster.sh (R411).
     securityContext:
       allowPrivilegeEscalation: false
+      # D1 (KSV021): UID 0 retains owner-read access to the 0600 kubeconfig.
+      runAsUser: 0
+      runAsGroup: 10100
       capabilities:
         drop:
         - ALL

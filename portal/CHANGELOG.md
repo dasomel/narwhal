@@ -9,7 +9,7 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
-- **Accept node-agent pod-security findings only with measured, exact (namespace, kind, name, checks) rules:** `metallb-speaker` (KSV009, KSV012, KSV020, KSV021, KSV022), `chaos-daemon` / `nfs-quota-agent` (KSV004), `falco` (KSV004, KSV030, KSV104), `istio-cni-node` / `ztunnel` (KSV001), `cilium` (KSV003, KSV004, KSV024, KSV025), `cilium-envoy` (KSV001, KSV012, KSV020, KSV021, KSV024, KSV025), `csi-nfs-node` (KSV012, KSV020, KSV021) and the kube-vip static Pod (KSV012, KSV020, KSV021). Every reason carries the live measurement (`CapEff`, `Seccomp`, host path ownership, node LSM list) from 2026-11-26. `cilium` KSV001/KSV012/KSV020/KSV021/KSV030/KSV104, `cilium-envoy` KSV030/KSV104, `ztunnel` KSV030/KSV104, `csi-nfs-node` KSV001 and `storage/node-agent` KSV004 stay actionable. Takes effect with the next portal release.
+- **Narrow Batch C node-agent Config Audit acceptances:** Falco KSV004/KSV030/KSV104, Cilium agent and Envoy KSV025, and Envoy, MetalLB speaker, kube-vip and CSI NFS node KSV021 stay actionable when reported. KSV001 reasons for Istio CNI, ztunnel and Cilium Envoy record the measured SYS_ADMIN and the chart behavior. The rule changes take effect with the next portal release.
 
 ## [1.1.30] - 2026-11-26
 

@@ -30,6 +30,12 @@ spec:
               cpu: 200m
               memory: 128Mi
           securityContext:
+            # D2 (KSV021): change only the primary GID. Speaker keeps its image UID 0 for NET_RAW.
+            # Verify memberlist and L2 announcements after rollout. Remove runAsUser/runAsGroup to revert.
+            # runAsUser 0 MUST accompany runAsGroup: a pod-level group without a user makes containerd fail
+            # the sandbox ("user group is specified without user"); measured live 2026-11-26, speaker down 32 min.
+            runAsUser: 0
+            runAsGroup: 10100
             seccompProfile:
               type: RuntimeDefault
           tolerations:

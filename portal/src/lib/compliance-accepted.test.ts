@@ -517,16 +517,15 @@ describe("allowlist integrity and docs parity", () => {
 describe("node-agent acceptances (pod-security Batch C, measured 2026-11-26)", () => {
   // [namespace, kind, name, newly accepted checks, a check that must stay actionable]
   const cases = [
-    ["platform-system", "DaemonSet", "metallb-speaker", ["KSV009", "KSV012", "KSV020", "KSV021", "KSV022"], "KSV119"],
+    ["platform-system", "DaemonSet", "metallb-speaker", ["KSV009", "KSV012", "KSV020", "KSV022"], "KSV119"],
     ["chaos-testing", "DaemonSet", "chaos-daemon", ["KSV004"], "KSV014"],
     ["nfs-quota-agent", "DaemonSet", "nfs-quota-agent", ["KSV004"], "KSV030"],
-    ["security-system", "DaemonSet", "falco", ["KSV004", "KSV030", "KSV104"], "KSV014"],
     ["istio-system", "DaemonSet", "istio-cni-node", ["KSV001"], "KSV030"],
     ["istio-system", "DaemonSet", "ztunnel", ["KSV001"], "KSV030"],
-    ["kube-system", "DaemonSet", "cilium", ["KSV003", "KSV004", "KSV024", "KSV025"], "KSV012"],
-    ["kube-system", "DaemonSet", "cilium-envoy", ["KSV001", "KSV012", "KSV020", "KSV021", "KSV024", "KSV025"], "KSV030"],
-    ["kube-system", "DaemonSet", "csi-nfs-node", ["KSV012", "KSV020", "KSV021"], "KSV001"],
-    ["kube-system", "Pod", "kube-vip-narwhal-master-1", ["KSV012", "KSV020", "KSV021"], "KSV001"],
+    ["kube-system", "DaemonSet", "cilium", ["KSV003", "KSV004", "KSV024"], "KSV012"],
+    ["kube-system", "DaemonSet", "cilium-envoy", ["KSV001", "KSV012", "KSV020", "KSV024"], "KSV030"],
+    ["kube-system", "DaemonSet", "csi-nfs-node", ["KSV012", "KSV020"], "KSV001"],
+    ["kube-system", "Pod", "kube-vip-narwhal-master-1", ["KSV012", "KSV020"], "KSV001"],
   ] as const
 
   it.each(cases)("accepts exactly the verified checks for %s/%s/%s", (ns, kind, name, checks, stillActionable) => {
@@ -550,13 +549,31 @@ describe("node-agent acceptances (pod-security Batch C, measured 2026-11-26)", (
       ["kube-system", "DaemonSet", "cilium-envoy", "KSV104"],
       ["istio-system", "DaemonSet", "ztunnel", "KSV104"],
       ["storage", "DaemonSet", "node-agent", "KSV004"],
+      ["security-system", "DaemonSet", "falco", "KSV004"],
+      ["security-system", "DaemonSet", "falco", "KSV030"],
+      ["security-system", "DaemonSet", "falco", "KSV104"],
+      ["kube-system", "DaemonSet", "cilium", "KSV025"],
+      ["kube-system", "DaemonSet", "cilium-envoy", "KSV025"],
+      ["kube-system", "DaemonSet", "cilium-envoy", "KSV021"],
+      ["platform-system", "DaemonSet", "metallb-speaker", "KSV021"],
+      ["kube-system", "Pod", "kube-vip-narwhal-master-1", "KSV021"],
+      ["kube-system", "DaemonSet", "csi-nfs-node", "KSV021"],
     ] as const) expect(matchConfigAuditException(ns, kind, name, check, []), `${name} ${check}`).toBeNull()
   })
 
   it("writes the measured facts into the reasons", () => {
     expect(matchConfigAuditException("platform-system", "DaemonSet", "metallb-speaker", "KSV022", [])?.reason).toContain("CapEff 0000000000002000")
-    expect(matchConfigAuditException("security-system", "DaemonSet", "falco", "KSV030", [])?.reason).toContain("Seccomp 0")
-    expect(matchConfigAuditException("kube-system", "DaemonSet", "cilium", "KSV025", [])?.reason).toContain("no SELinux")
+    expect(matchConfigAuditException("kube-system", "DaemonSet", "cilium", "KSV004", [])?.reason).toContain("mount-bpf-fs")
     expect(matchConfigAuditException("kube-system", "Pod", "kube-vip-narwhal-master-1", "KSV012", [])?.reason).toContain("0600 root:root")
+  })
+
+  it.each([
+    ["istio-system", "istio-cni-node", "0000000000283002", "scanner reads it as unset"],
+    ["istio-system", "ztunnel", "0000000000203000", "hardcodes allowPrivilegeEscalation: true"],
+    ["kube-system", "cilium-envoy", "0000000000201000", "scanner reads it as unset"],
+  ])("records the measured SYS_ADMIN and chart behavior for %s/%s KSV001", (ns, name, capEff, chartBehavior) => {
+    const rule = matchConfigAuditException(ns, "DaemonSet", name, "KSV001", [])
+    expect(rule?.reason).toContain(`CapEff ${capEff}`)
+    expect(rule?.reason).toContain(chartBehavior)
   })
 })

@@ -389,6 +389,10 @@ spec:
     # 02-join-control-plane.sh (R411). Escape hatch: delete drop/allowPrivilegeEscalation and the pod-level block.
     securityContext:
       allowPrivilegeEscalation: false
+      # D1 (KSV021): UID 0 owns the 0600 kubeconfig and uses its owner-read bit.
+      # A separate primary GID clears the finding. Remove runAsGroup to revert the GID.
+      runAsUser: 0
+      runAsGroup: 10100
       capabilities:
         drop:
         - ALL

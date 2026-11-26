@@ -9,7 +9,7 @@
 
 ## [Unreleased]
 
-- **노드 에이전트 pod-security 항목은 실측한 정확 일치 (namespace, kind, name, checks) 규칙으로만 수용:** `metallb-speaker`(KSV009, KSV012, KSV020, KSV021, KSV022), `chaos-daemon`/`nfs-quota-agent`(KSV004), `falco`(KSV004, KSV030, KSV104), `istio-cni-node`/`ztunnel`(KSV001), `cilium`(KSV003, KSV004, KSV024, KSV025), `cilium-envoy`(KSV001, KSV012, KSV020, KSV021, KSV024, KSV025), `csi-nfs-node`(KSV012, KSV020, KSV021), kube-vip 정적 Pod(KSV012, KSV020, KSV021). 모든 사유에 2026-11-26 라이브 실측값(`CapEff`, `Seccomp`, 호스트 경로 소유권, 노드 LSM 목록)을 적었다. `cilium` KSV001/KSV012/KSV020/KSV021/KSV030/KSV104, `cilium-envoy` KSV030/KSV104, `ztunnel` KSV030/KSV104, `csi-nfs-node` KSV001, `storage/node-agent` KSV004는 조치 필요로 남긴다. 다음 포털 릴리스부터 적용된다.
+- **Batch C 노드 에이전트 Config Audit 수용 범위 축소:** Falco KSV004/KSV030/KSV104, Cilium 에이전트·Envoy KSV025, Envoy·MetalLB speaker·kube-vip·CSI NFS 노드 KSV021은 보고서에 나오면 조치 대상으로 표시된다. Istio CNI·ztunnel·Cilium Envoy의 KSV001 사유에는 SYS_ADMIN 실측과 차트 동작을 기록했다. 다음 포털 릴리스부터 적용된다.
 
 ## [1.1.30] - 2026-11-26
 

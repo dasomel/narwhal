@@ -61,7 +61,9 @@ def namespaces(root):
                 else:
                     problems.append(f"{path.relative_to(root)}: Namespace YAML failed to parse ({exc})")
             continue
-        if mentions_namespace and not any(
+        # Only Go templates get the text fallback: a plain YAML file that names `kind: Namespace`
+        # as data (e.g. an AppProject clusterResourceWhitelist entry) declares no namespace.
+        if mentions_namespace and "{{" in source and not any(
             isinstance(doc, dict) and doc.get("kind") == "Namespace"
             for doc in documents
         ):
@@ -223,6 +225,20 @@ def main():
             )
             if run(fixture) == 0:
                 print("mutation check failed to detect changed current PSA label", file=sys.stderr)
+                return 1
+        # A plain AppProject listing Namespace in clusterResourceWhitelist must not be inventoried.
+        whitelist_doc = (
+            "apiVersion: argoproj.io/v1alpha1\nkind: AppProject\nmetadata:\n  name: platform\n"
+            "spec:\n  clusterResourceWhitelist:\n    - group: \"\"\n      kind: Namespace\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            probe = Path(tmp)
+            (probe / "gitops").mkdir(parents=True)
+            (probe / "gitops/project.yaml").write_text(whitelist_doc)
+            (probe / SECURITY_SCRIPT).parent.mkdir(parents=True)
+            (probe / SECURITY_SCRIPT).write_text("")
+            if "platform" in namespaces(probe)[0]:
+                print("AppProject whitelist entry was inventoried as a namespace", file=sys.stderr)
                 return 1
         print("PASS: mutation detected")
     print(f"PASS: {len(inventory)} namespaces checked; {len(warnings)} proposed/current gaps warned")

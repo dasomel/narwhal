@@ -13,9 +13,6 @@ English | [한국어](CHANGELOG-ko.md)
 
 - **Narrow CSI NFS Config Audit acceptances (R417):** controller KSV012/KSV020 now cite the measured root-owned 0755 shared CSI socket, and KSV001 is accepted for both workloads because only the privileged SYS_ADMIN nfs container still fails it after the sidecar fix. KSV021 and KSV125 remain actionable.
 - **Narrow Falco Config Audit acceptance for `leastPrivileged: true` (`D-FALCO-LEAST-PRIV`, R421):** `security-system/DaemonSet/falco` removes `KSV001`, `KSV003`, and `KSV017` (now resolved by `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`, and removing `privileged: true`) and accepts `KSV002` (chart `falco-9.2.1` renders `container.apparmor.security.beta.kubernetes.io/falco: unconfined` when `driver.modernEbpf.leastPrivileged: true` so containerd AppArmor does not block `/host/proc` `ptrace` reads for container and Kubernetes metadata) and `KSV022` (`capabilities.add: [BPF, SYS_RESOURCE, PERFMON, SYS_PTRACE]`) alongside the retained `KSV012`, `KSV020`, `KSV021`, `KSV023`, `KSV106`, and `KSV121` checks, keeping the original `D-falco-rofs` caveat text and appending the `D-FALCO-LEAST-PRIV` rationale in `src/lib/i18n.ts`.
-### Changed
-
-- **Narrow CSI NFS Config Audit acceptances (R417):** controller KSV012/KSV020 now cite the measured root-owned 0755 shared CSI socket, and KSV001 is accepted for both workloads because only the privileged SYS_ADMIN nfs container still fails it after the sidecar fix. KSV021 and KSV125 remain actionable.
 - **ArgoCD RBAC acceptance updated for Stage 1 privilege split (`D-OWN-ARGO-STAGED`):** removed `ClusterRole/argocd-server` (`KSV041`, `KSV046`, `KSV048` fixed by `D-ARGO-SERVER-RO`) and added exact `KSV044`/`KSV046` acceptance for `ClusterRole/argocd-application-controller` (reconciles ClusterRoles/Bindings for 14 charts and platform roles; bounded role requires `escalate`/KSV050 or identical leaf rights; revisit with design option C).
 
 ## [1.1.32] - 2026-11-26

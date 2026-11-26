@@ -3597,6 +3597,9 @@ PYEOF'
     python3 scripts/test/lib/check-rbac-istio-reader-alloy-logs.py istio-reader --mutation-verify
   check R408 "k8s-monitoring alloy-logs ClusterRole keeps the 9 upstream rules with only configmaps (no secrets, no wildcard) via collectors.alloy-logs.rbac.rules, identical in the GitOps Application and 08-2-monitoring.sh, clusterRules left at chart default; 15 mutations caught, chart pins re-diff guard (D-ALLOY-RBAC)" \
     python3 scripts/test/lib/check-rbac-istio-reader-alloy-logs.py alloy-logs --mutation-verify
+  # 2026-11-26: pod-security Batch B (CIS 5.7.3 KSV020/KSV021): stateless OpenBao injector and Headlamp move to UID/GID 10100
+  check R410 "Pod-security Batch B: OpenBao injector uid/gid and Headlamp (main + ca-bundle) runAsUser/runAsGroup 10100 in GitOps and bootstrap, server keeps its PVC UID, Harbor takes no shared containerSecurityContext UID; 19 mutations caught" \
+    python3 scripts/test/lib/check-pod-security-batch-b.py --mutation-verify
 }
 
 #=========================================

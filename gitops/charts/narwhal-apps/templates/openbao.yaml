@@ -149,6 +149,12 @@ spec:
             rollingUpdate:
               maxSurge: 0
               maxUnavailable: 1
+          # D-PSB-UID (2026-11-26, CIS 5.7.3 KSV020/KSV021 require > 10000): the injector is stateless (webhook
+          # TLS is generated in memory, root filesystem read-only), so the chart's uid/gid keys (pod
+          # runAsUser/runAsGroup/fsGroup, default 100/1000) move to 10100. The server keeps its PVC UID 100.
+          # Escape hatch: remove uid/gid to return to the chart default.
+          uid: 10100
+          gid: 10100
           resources:
             requests:
               cpu: 25m

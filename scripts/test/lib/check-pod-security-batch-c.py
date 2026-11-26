@@ -9,7 +9,8 @@
    pod-level seccompProfile RuntimeDefault and a container context that drops ALL, adds exactly NET_ADMIN and NET_RAW,
    sets allowPrivilegeEscalation false, and keeps UID 0 with a GID above 10000. The container must neither
    be privileged nor override pod seccomp with Unconfined.
-3. The exact Batch C acceptances removed after review must stay actionable.
+3. Removed Batch C acceptances stay actionable. Retained UID 0 and Falco
+   privileged-mode acceptances must carry the reviewed reasons.
 --mutation-verify proves each broken variant is rejected.
 """
 
@@ -37,12 +38,21 @@ FILES = {
 
 REMOVED_ACCEPTANCES = {
     ("security-system", "DaemonSet", "falco"): ("KSV004", "KSV030", "KSV104"),
-    ("kube-system", "DaemonSet", "cilium"): ("KSV025",),
+    ("kube-system", "DaemonSet", "cilium"): ("KSV003", "KSV004", "KSV025"),
     ("kube-system", "DaemonSet", "cilium-envoy"): ("KSV021", "KSV025"),
     ("platform-system", "DaemonSet", "metallb-speaker"): ("KSV021",),
     ("kube-system", "Pod", "kube-vip-narwhal-master-1"): ("KSV021",),
     ("kube-system", "DaemonSet", "csi-nfs-node"): ("KSV021",),
 }
+
+# D1: Explicit UID 0 triggers KSV105. Keep the two narrow exceptions with their
+# capability evidence while the agents need root. Remove the guards with a verified rootless path.
+ROOT_ACCEPTANCES = {
+    ("platform-system", "DaemonSet", "metallb-speaker"): "compliance.acceptedReason.metallbSpeakerHost",
+    ("kube-system", "Pod", "kube-vip-narwhal-master-1"): "compliance.acceptedReason.verifiedkubeVipHost",
+}
+FALCO = ("security-system", "DaemonSet", "falco")
+FALCO_CAVEAT_KEY = "compliance.acceptedReason.falcoAccept"
 
 
 def rule_target(rule: dict) -> tuple[str, str, str]:
@@ -108,11 +118,21 @@ def check(texts: dict[str, str]) -> list[str]:
         for flag in ("--set speaker.securityContext.runAsUser=0", "--set speaker.securityContext.runAsGroup=10100"):
             if flag not in texts["net-boot"]:
                 errors.append(f"08-1-networking.sh must pass {flag}")
+    root_acceptances = set()
     for rule in json.loads(texts["rules"])["configAudit"]:
         target = rule_target(rule)
         for check_id in REMOVED_ACCEPTANCES.get(target, ()):
             if check_id in rule["checks"]:
                 errors.append(f"{'/'.join(target)} must leave {check_id} actionable")
+        if target in ROOT_ACCEPTANCES and "KSV105" in rule["checks"]:
+            if rule["reasonKey"] == ROOT_ACCEPTANCES[target] and rule["scope"] == "namespace" and rule["class"] == "accept":
+                root_acceptances.add(target)
+            else:
+                errors.append(f"{'/'.join(target)} KSV105 must use the exact reviewed acceptance")
+        if target == FALCO and "KSV017" in rule["checks"] and rule["reasonKey"] != FALCO_CAVEAT_KEY:
+            errors.append("Falco KSV017 acceptance must carry the leastPrivileged caveat")
+    for target in sorted(ROOT_ACCEPTANCES.keys() - root_acceptances):
+        errors.append(f"{'/'.join(target)} must accept KSV105 with its reviewed reason key")
 
     if "check R411 " not in texts["reg"] or "check-pod-security-batch-c.py --mutation-verify" not in texts["reg"]:
         errors.append("scripts/test/regression-check-kakao.sh must wire R411 with --mutation-verify")
@@ -177,6 +197,30 @@ def main() -> int:
                     print(f"FAIL: mutation not rejected: {expected}", file=sys.stderr)
                     return 1
                 acceptance_mutations += 1
+        for target in ROOT_ACCEPTANCES:
+            rules = json.loads(texts["rules"])
+            rule = next(rule for rule in rules["configAudit"] if rule_target(rule) == target and "KSV105" in rule["checks"])
+            rule["checks"].remove("KSV105")
+            expected = f"{'/'.join(target)} must accept KSV105 with its reviewed reason key"
+            if expected not in check({**texts, "rules": json.dumps(rules)}):
+                print(f"FAIL: mutation not rejected: {expected}", file=sys.stderr)
+                return 1
+            acceptance_mutations += 1
+
+        for target in (*ROOT_ACCEPTANCES, FALCO):
+            rules = json.loads(texts["rules"])
+            check_id = "KSV017" if target == FALCO else "KSV105"
+            rule = next(
+                (rule for rule in rules["configAudit"] if rule_target(rule) == target and check_id in rule["checks"]),
+                None,
+            )
+            if rule is None:
+                continue
+            rule["reasonKey"] = "compliance.acceptedReason.verifiedciliumHost"
+            if not check({**texts, "rules": json.dumps(rules)}):
+                print(f"FAIL: mutation not rejected: wrong reason key for {'/'.join(target)} {check_id}", file=sys.stderr)
+                return 1
+            acceptance_mutations += 1
         print(f"PASS: R411 pod-security Batch C ({len(MUTATIONS) + acceptance_mutations} mutations rejected)")
         return 0
     print("PASS: R411 pod-security Batch C")

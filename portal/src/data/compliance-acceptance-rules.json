@@ -532,8 +532,6 @@
       "kind": "DaemonSet",
       "name": "cilium",
       "checks": [
-        "KSV003",
-        "KSV004",
         "KSV005",
         "KSV009",
         "KSV017",
@@ -695,6 +693,7 @@
         "KSV020",
         "KSV022",
         "KSV023",
+        "KSV105",
         "KSV106",
         "KSV119"
       ],
@@ -802,7 +801,8 @@
         "KSV009",
         "KSV012",
         "KSV020",
-        "KSV022"
+        "KSV022",
+        "KSV105"
       ],
       "class": "accept",
       "reasonKey": "compliance.acceptedReason.metallbSpeakerHost",

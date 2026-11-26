@@ -3601,7 +3601,7 @@ PYEOF'
   check R410 "Pod-security Batch B: OpenBao injector uid/gid and Headlamp (main + ca-bundle) runAsUser/runAsGroup 10100 in GitOps and bootstrap, server keeps its PVC UID, Harbor takes no shared containerSecurityContext UID, OpenBao and Headlamp bootstrap chart pins match GitOps; 21 mutations caught" \
     python3 scripts/test/lib/check-pod-security-batch-b.py --mutation-verify
   # 2026-11-26: pod-security Batch C (CIS 5.2.6/5.2.9/5.2.10/5.7.2/5.7.3): istio-cni seccomp RuntimeDefault, kube-vip static Pod drop ALL + seccomp
-  check R411 "Pod-security Batch C: istio-cni seccomp in GitOps and bootstrap, kube-vip static Pod UID/GID and restricted container context, and removed acceptances stay actionable" \
+  check R411 "Pod-security Batch C: istio-cni seccomp, kube-vip static Pod context, MetalLB speaker UID/GID, and exact node-agent acceptance checks and reasons" \
     python3 scripts/test/lib/check-pod-security-batch-c.py --mutation-verify
 }
 

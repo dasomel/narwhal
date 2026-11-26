@@ -18,6 +18,7 @@
       "portal/src/lib/i18n.ts",
       "scripts/cluster/13-argocd.sh",
       "scripts/test/lib/check-argocd-privilege-split-stage1.py",
+      "scripts/test/lib/check-workload-psa-profile.py",
       "scripts/test/regression-check-kakao.sh"
     ]
   },

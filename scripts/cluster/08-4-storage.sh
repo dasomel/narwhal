@@ -475,15 +475,19 @@ if [ "${OPENBAO_INITIALIZED}" = "True" ]; then
   if [ "${OPENBAO_SEALED}" = "true" ]; then
     echo "OpenBao is sealed — retrieving unseal key from openbao-init secret..."
     # One read, its error kept: an API error must not look like "no key" (and then fail the run below),
-    # and NotFound must be told apart from a Secret that exists without the key.
+    # and NotFound must be told apart from a Secret that exists without the key. stderr goes to its own
+    # file so a kubectl warning on a successful read cannot corrupt the value being decoded.
     UNSEAL_KEY=""
-    if key_read=$(kubectl get secret openbao-init -n storage -o jsonpath='{.data.unseal_keys_b64}' 2>&1); then
+    key_err_file=$(mktemp)
+    if key_read=$(kubectl get secret openbao-init -n storage -o jsonpath='{.data.unseal_keys_b64}' 2>"${key_err_file}"); then
       key_state="present"
       UNSEAL_KEY=$(printf '%s' "${key_read}" | base64 -d 2>/dev/null || echo "")
+      rm -f "${key_err_file}"
     else
-      case "${key_read}" in
+      key_err=$(cat "${key_err_file}"); rm -f "${key_err_file}"
+      case "${key_err}" in
         *NotFound*) key_state="absent" ;;
-        *) echo "ERROR: cannot read Secret storage/openbao-init: ${key_read}" >&2; exit 1 ;;
+        *) echo "ERROR: cannot read Secret storage/openbao-init: ${key_err}" >&2; exit 1 ;;
       esac
     fi
     if [ -n "${UNSEAL_KEY}" ]; then

@@ -223,6 +223,11 @@ check_macos_local_network_privacy
 # 5 minutes for a join command that never comes, on every attempt. Keep the size bound in sync.
 nfs_vmdk=".vagrant/narwhal-nfs/narwhal-nfs.vmdk"
 nfs_disk_gb="${NARWHAL_NFS_DISK_GB:-200}"
+# Same rule as the Vagrantfile (integer >= 0); otherwise the arithmetic below fails with an opaque
+# "unbound variable" under set -u instead of naming the variable.
+case "${nfs_disk_gb}" in
+  ''|*[!0-9]*) echo "ERROR: NARWHAL_NFS_DISK_GB must be an integer >= 0 (got '${nfs_disk_gb}')" >&2; exit 1 ;;
+esac
 # vm_state prints the second word of `vagrant status`, so "not created" arrives as "not".
 nfs_m1_state=$(vm_state master-1)
 if [ "${nfs_disk_gb}" != "0" ] && [ -f "${nfs_vmdk}" ] \

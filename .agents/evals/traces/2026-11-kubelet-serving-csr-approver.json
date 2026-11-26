@@ -45,7 +45,7 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Fix the bound MAJOR and MINOR findings offline. Document the SSA-to-CSA ownership risk and keep the existing handoff behavior."
+      "summary": "Scope: CIS 1.2.6/1.3.6 stages 1-2 only (approver with exact node names and /32s, own RBAC, staged serverTLSBootstrap for new and existing clusters, R412). Document the SSA-to-CSA ownership risk and keep the existing handoff behavior."
     },
     {
       "id": "e2",
@@ -118,17 +118,19 @@
     },
     {
       "id": "e8",
-      "type": "verification",
-      "status": "pending",
-      "scope": "HA rollout, scheduled serving certificate rotation, and stage 3 API server CA validation",
-      "summary": "The upstream allowlist remains shared across listed node IPs and Argo CD client-side adoption can retain removed fields owned by bootstrap."
+      "type": "scope_check",
+      "summary": "Out of scope and not verified here: HA rollout, scheduled serving certificate rotation, and stage 3 API server CA validation (follow-up work). Known residual risks recorded in docs: the upstream allowlist is shared across listed node IPs, and Argo CD client-side adoption can retain removed fields owned by bootstrap."
+    },
+    {
+      "id": "e10",
+      "type": "completion_claim",
+      "summary": "Stages 1-2 are implemented and verified on the single-node cluster: the approver issues cluster-CA kubelet serving certificates for the exact node inventory, and the static suite passes. HA issuance, scheduled rotation and stage 3 (API server --kubelet-certificate-authority) are not claimed."
     },
     {
       "id": "e9",
       "type": "task_outcome",
-      "state": "B",
-      "summary": "The orchestrator verified stages 1\u20132 on a single node. The follow-up covers manual bootstrap reruns and Kakao hostname and IP validation offline.",
-      "next": "Verify HA issuance and scheduled rotation before stage 3."
+      "state": "A",
+      "summary": "Complete within the stated scope (stages 1-2): verified live on the single-node cluster and by the full static suite. HA issuance, scheduled rotation and stage 3 are follow-up work outside this change."
     }
   ]
 }

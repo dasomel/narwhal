@@ -236,28 +236,41 @@ def check_gitops_inventory(bootstrap, nodes):
     *) return 1 ;;
   esac
 }
-''' + prefix + '\nprintf "\\n%s\\n" "$KUBELET_CSR_NODES"\n'
+''' + prefix + '\nprintf "\\n%s\\n%s\\n" "$KUBELET_CSR_NODES" "$KUBELET_CSR_TOPOLOGY"\n'
     env = os.environ.copy()
-    env.pop("KUBELET_CSR_NODES", None)
-    application = json.dumps({"spec": {"source": {"helm": {"valuesObject": {"kubeletCsrNodes": nodes}}}}})
+    for name in ("KUBELET_CSR_NODES", "NARWHAL_TOPOLOGY"):
+        env.pop(name, None)
+
+    def app(values):
+        return json.dumps({"spec": {"source": {"helm": {"valuesObject": values}}}})
+
+    application = app({"kubeletCsrNodes": nodes, "kubeletCsrTopology": "single"})
     explicit_nodes = {"narwhal-master-1": "192.168.56.11"}
-    for live, supplied, expected in (
-        (application, None, nodes), (application, explicit_nodes, explicit_nodes),
-        ("", None, None), ("{}", None, None),
+    # (live, supplied nodes, supplied topology, expected nodes, expected topology)
+    for live, supplied, topology, expected, expected_topology in (
+        (application, None, None, nodes, "single"),
+        (application, explicit_nodes, "ha", explicit_nodes, "ha"),
+        (application, explicit_nodes, None, explicit_nodes, "single"),
+        (app({"kubeletCsrNodes": nodes}), None, None, nodes, "ha"),
+        (app({"kubeletCsrNodes": nodes, "kubeletCsrTopology": "triple"}), None, None, None, "kubeletCsrTopology"),
+        ("", None, None, None, "KUBELET_CSR_NODES"), ("{}", None, None, None, "KUBELET_CSR_NODES"),
     ):
         case_env = {**env, "LIVE_APPLICATION": live}
         if supplied is not None:
             case_env["KUBELET_CSR_NODES"] = json.dumps(supplied)
+        if topology is not None:
+            case_env["NARWHAL_TOPOLOGY"] = topology
         result = subprocess.run(
             ["bash", "-c", harness], text=True, capture_output=True,
             env=case_env,
         )
-        assert ("read idp-apps" in result.stderr) == (supplied is None), result.stderr
+        assert ("read idp-apps" in result.stderr) == (supplied is None or topology is None), result.stderr
         if expected is not None:
             assert result.returncode == 0, result.stderr
-            assert json.loads(result.stdout.splitlines()[-1]) == expected
+            out = result.stdout.splitlines()
+            assert json.loads(out[-2]) == expected and out[-1] == expected_topology, result.stdout
         else:
-            assert result.returncode != 0 and "KUBELET_CSR_NODES" in result.stderr, result.stderr
+            assert result.returncode != 0 and expected_topology in result.stderr, result.stderr
 
 
 def ordered(text, *parts):
@@ -333,6 +346,7 @@ def verify_mutations(files, fixtures):
         (KAKAO, "sys.argv[3:6]", "sys.argv[5:6]"),
         (KAKAO, '"${actual_hostname}" != "${expected_hostname}"', '"${actual_hostname}" != "${actual_hostname}"'),
         (GITOPS, 'if [[ -z "${KUBELET_CSR_NODES+x}" ]]; then', 'if false; then'),
+        (GITOPS, 'if [[ -z "${KUBELET_CSR_TOPOLOGY}" && -n "${LIVE_IDP_APPS}" ]]; then', 'if false; then'),
         (IMAGES, REF, IMAGE),
         (DIGESTS, DIGEST, "sha256:" + "0" * 64),
         (GENERATOR, REF, IMAGE),

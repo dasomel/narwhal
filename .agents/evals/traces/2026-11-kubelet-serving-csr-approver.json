@@ -78,12 +78,13 @@
       "status": "passed",
       "scope": "Offline regression and inventory",
       "evidence": [
-        "test:python3 scripts/test/lib/check-kubelet-serving-tls.py --mutation-verify -> PASS, 19 mutations rejected",
+        "test:python3 scripts/test/lib/check-kubelet-serving-tls.py --mutation-verify -> PASS, 22 mutations rejected",
         "test:python3 scripts/test/lib/check-kubelet-authz-baseline.py --mutation-verify -> PASS, 8 mutations rejected",
         "test:python3 scripts/test/lib/check-compliance-scan-coverage.py --mutation-verify -> PASS, 35 mutations rejected",
         "test:python3 scripts/test/lib/check-single-node-topology.py -> PASS, Vagrant single/HA and staged publication",
         "test:python3 scripts/test/lib/check-sbom-inventory-completeness.py --mutation-verify and check-license-policy.py -> PASS, 105 license rows",
-        "test:bash scripts/ci/check-version-consistency.sh -> all checked versions are consistent"
+        "test:bash scripts/ci/check-version-consistency.sh -> all checked versions are consistent",
+        "test:make test on the final head -> passed 519   failed 0"
       ]
     },
     {
@@ -93,7 +94,7 @@
       "scope": "Offline manifest, shell, and SSH option verification",
       "evidence": [
         "test:helm template against vendored chart and local packaged bootstrap harness -> identical manifests for Vagrant single/HA and stubbed Kakao HA, exact /32s and custom RBAC",
-        "test:generated SBOM components from local fixture -> Apache-2.0 for the image and Helm package",
+        "test:generated SBOM components from local fixture -> MIT for the image and Helm package (gh api repos/postfinance/kubelet-csr-approver/license -> MIT, orchestrator 2026-11-26)",
         "test:bash -n and shellcheck -x --severity=warning -> all 13 shell scripts in the branch diff passed",
         "test:ruby -c Vagrantfile, helm lint narwhal-apps and git diff --check -> PASS",
         "test:mocked dry-run under /bin/bash -> repeatable ProxyJump/IdentitiesOnly options forwarded to both nodes with no writes",
@@ -104,7 +105,7 @@
       "id": "e7",
       "type": "verification",
       "status": "passed",
-      "scope": "Single-node stages 1–2 on fb50d343, measured by the orchestrator on 2026-11-26",
+      "scope": "Single-node stages 1\u20132 on fb50d343, measured by the orchestrator on 2026-11-26",
       "evidence": [
         "test:Gitea chart 1.2.16 published and idp-apps patched with kubeletCsrTopology=single and kubeletCsrNodes={\"narwhal-master-1\":\"192.168.56.10\"}; child Application Synced/Healthy",
         "test:approver pod image digest sha256:3a09df2f9e1e628863fccbe5479e63b11bbc1f411c82134ee975778e1a25b5e6; approver log showed no forbidden or error entries",
@@ -124,8 +125,8 @@
       "id": "e9",
       "type": "task_outcome",
       "state": "B",
-      "summary": "The orchestrator verified stages 1–2 on a single node. The follow-up covers manual bootstrap reruns and Kakao hostname and IP validation offline.",
-      "next": "Confirm the upstream SPDX license via GitHub API. Verify HA issuance and scheduled rotation before stage 3."
+      "summary": "The orchestrator verified stages 1\u20132 on a single node. The follow-up covers manual bootstrap reruns and Kakao hostname and IP validation offline.",
+      "next": "Verify HA issuance and scheduled rotation before stage 3."
     }
   ]
 }

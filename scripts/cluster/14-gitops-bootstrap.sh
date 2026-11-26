@@ -21,16 +21,29 @@ for i in {1..30}; do
   sleep 10
 done
 
-# D-CSR-RERUN: reuse the live inventory on manual reruns. Cost: one API read.
+# D-CSR-RERUN: reuse the live inventory and topology on manual reruns. Cost: one API read.
 # To bootstrap without a live inventory, pass KUBELET_CSR_NODES explicitly.
+LIVE_IDP_APPS=""
+if [[ -z "${KUBELET_CSR_NODES+x}" || -z "${NARWHAL_TOPOLOGY:-}" ]]; then
+  LIVE_IDP_APPS="$(kubectl -n devtools get application idp-apps --ignore-not-found -o json || true)"
+fi
 if [[ -z "${KUBELET_CSR_NODES+x}" ]]; then
-  if ! KUBELET_CSR_NODES="$(kubectl -n devtools get application idp-apps --ignore-not-found -o json |
+  if ! KUBELET_CSR_NODES="$(printf '%s' "${LIVE_IDP_APPS}" |
     jq -ce '.spec.source.helm.valuesObject.kubeletCsrNodes | select(type == "object" and length > 0)')"; then
     echo "ERROR: set KUBELET_CSR_NODES explicitly when no node inventory can be read from idp-apps." >&2
     exit 1
   fi
 fi
 : "${KUBELET_CSR_NODES:?missing provisioned node inventory}"
+KUBELET_CSR_TOPOLOGY="${NARWHAL_TOPOLOGY:-}"
+if [[ -z "${KUBELET_CSR_TOPOLOGY}" && -n "${LIVE_IDP_APPS}" ]]; then
+  KUBELET_CSR_TOPOLOGY="$(printf '%s' "${LIVE_IDP_APPS}" | jq -r '.spec.source.helm.valuesObject.kubeletCsrTopology // empty')"
+fi
+KUBELET_CSR_TOPOLOGY="${KUBELET_CSR_TOPOLOGY:-ha}"
+if [[ "${KUBELET_CSR_TOPOLOGY}" != single && "${KUBELET_CSR_TOPOLOGY}" != ha ]]; then
+  echo "ERROR: unexpected kubeletCsrTopology ${KUBELET_CSR_TOPOLOGY}" >&2
+  exit 1
+fi
 
 GITEA_URL="http://gitea-http.devtools.svc.cluster.local:3000"
 GITEA_ADMIN_USER="gitea-admin"
@@ -525,7 +538,7 @@ spec:
         # MetalLB gets re-created and the APISIX gateway flips back to LoadBalancer.
         provider: ${PROVIDER:-vagrant}
         podNetworkCidr: ${APISIX_ADMIN_CIDR_RESOLVED}
-        kubeletCsrTopology: ${NARWHAL_TOPOLOGY:-ha}
+        kubeletCsrTopology: ${KUBELET_CSR_TOPOLOGY}
         kubeletCsrNodes: ${KUBELET_CSR_NODES}
   destination:
     server: https://kubernetes.default.svc

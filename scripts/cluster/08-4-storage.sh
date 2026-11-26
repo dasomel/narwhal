@@ -674,10 +674,14 @@ nodeAgent:
     limits:
       cpu: 500m
       memory: 512Mi
-  privileged: true
   # D-node-agent-rofs (KSV014): mirrors gitops/charts/narwhal-apps/templates/velero.yaml.
+  # D-NODE-AGENT-DROP-ALL: measured kopia backup/restore succeeds with CapEff zero.
+  # Cost: a future uploader needing capabilities will fail backups. Escape hatch: add only
+  # capabilities proven necessary by a backup/restore trial.
   containerSecurityContext:
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
   extraVolumes:
     - name: node-agent-home
       emptyDir: {}

@@ -404,18 +404,16 @@
       "name": "node-agent",
       "checks": [
         "KSV001",
-        "KSV003",
         "KSV012",
         "KSV020",
         "KSV021",
         "KSV023",
-        "KSV105",
-        "KSV106"
+        "KSV105"
       ],
       "class": "accept",
       "reasonKey": "compliance.acceptedReason.veleroNodeAgentAccept",
       "owner": "velero 12.0.3 / v1.18.1 (gitops/charts/narwhal-apps/templates/velero.yaml)",
-      "reviewedAt": "2026-11-23"
+      "reviewedAt": "2026-11-26"
     },
     {
       "id": "cfg:storage:CronJob:openbao-snapshot:accept",

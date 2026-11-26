@@ -97,11 +97,48 @@ if [ "${live_fs_group_policy}" = "File" ]; then
   echo "Deleted nfs.csi.k8s.io CSIDriver with immutable fsGroupPolicy=File before upgrade"
 fi
 
+# D-CSI-NFS-CPU-LIMIT: 100m limits are 10x each chart container's 10m CPU request, bounding CPU
+# without changing requests; live throttling must be measured after rollout. Escape hatch:
+# adjust a limit only after a live load check, keeping the per-container value explicit.
+# D-CSI-NFS-POSTRENDER: Helm 4 resolves --post-renderer as an installed postrenderer/v1 plugin
+# name, so install this plugin before upgrade. Cost: plugin state on the node. Escape hatch:
+# remove this install block and --post-renderer flag together.
+csi_nfs_plugin_dir=/home/vagrant/scripts/cluster/lib/helm-plugins/csi-nfs-postrender
+csi_nfs_plugin_name=csi-nfs-postrender
+csi_nfs_plugins_dir="$(helm env | sed -n 's/^HELM_PLUGINS="\(.*\)"$/\1/p')"
+[ -n "${csi_nfs_plugins_dir}" ] || { echo "ERROR: could not determine Helm plugin directory" >&2; exit 1; }
+csi_nfs_installed_plugin="${csi_nfs_plugins_dir}/${csi_nfs_plugin_name}"
+csi_nfs_source_dir="$(cd "${csi_nfs_plugin_dir}" && pwd -P)"
+if helm plugin list | awk -v name="${csi_nfs_plugin_name}" '$1 == name { found=1 } END { exit !found }'; then
+  # A dev-mode install is a symlink; if its target moved, reinstall instead of failing.
+  csi_nfs_installed_dir="$(cd "${csi_nfs_installed_plugin}" 2>/dev/null && pwd -P || true)"
+  if [ "${csi_nfs_installed_dir}" != "${csi_nfs_source_dir}" ]; then
+    helm plugin uninstall "${csi_nfs_plugin_name}"
+    helm plugin install "${csi_nfs_plugin_dir}"
+  fi
+else
+  # Helm does not list a dev-mode plugin whose symlink target is gone, but the link
+  # still blocks a fresh install ("file exists"); remove only such a dangling link.
+  if [ -L "${csi_nfs_installed_plugin}" ] && [ ! -e "${csi_nfs_installed_plugin}" ]; then
+    rm -f "${csi_nfs_installed_plugin}"
+  fi
+  helm plugin install "${csi_nfs_plugin_dir}"
+fi
+
 helm upgrade --install csi-driver-nfs "$(chart csi-driver-nfs)" \
   --namespace kube-system \
   --version "${CSI_DRIVER_NFS_VERSION}" \
   --set controller.replicas=1 \
-  --set feature.enableFSGroupPolicy=false
+  --set feature.enableFSGroupPolicy=false \
+  --set controller.resources.csiProvisioner.limits.cpu=100m \
+  --set controller.resources.csiResizer.limits.cpu=100m \
+  --set controller.resources.csiSnapshotter.limits.cpu=100m \
+  --set controller.resources.livenessProbe.limits.cpu=100m \
+  --set controller.resources.nfs.limits.cpu=100m \
+  --set node.resources.livenessProbe.limits.cpu=100m \
+  --set node.resources.nodeDriverRegistrar.limits.cpu=100m \
+  --set node.resources.nfs.limits.cpu=100m \
+  --post-renderer csi-nfs-postrender
 
 live_fs_group_policy="$(kubectl get csidriver nfs.csi.k8s.io -o jsonpath='{.spec.fsGroupPolicy}' 2>/dev/null || true)"
 if [ "${live_fs_group_policy}" = "File" ]; then

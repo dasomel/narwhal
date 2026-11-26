@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+- **Narrow CSI NFS Config Audit acceptances (R417):** controller KSV012/KSV020 now cite the measured root-owned 0755 shared CSI socket, and KSV001 is accepted for both workloads because only the privileged SYS_ADMIN nfs container still fails it after the sidecar fix. KSV021 and KSV125 remain actionable.
+
 ## [1.1.32] - 2026-11-26
 
 ### Changed

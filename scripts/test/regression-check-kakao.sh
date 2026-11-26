@@ -2915,7 +2915,7 @@ assert not re.search(r'StrictHostKeyChecking=no\b.*UserKnownHostsFile=/dev/null|
   # Kubernetes default (ReadWriteOnceWithFSType) cannot chown this NFS CSI volume because
   # the StorageClass does not set fstype; keep the install compatible with Helm 4.
   check R185 "NFS CSI uses Helm 4-compatible feature flag and relies on no NFS fsType (narwhal#224)" \
-    python3 -c 'from pathlib import Path; addon=Path("scripts/cluster/04-addons.sh").read_text(); sc=addon.split("# Create StorageClass",1)[1]; assert "--set feature.enableFSGroupPolicy=false" in addon and "--post-renderer" not in addon and "ReadWriteOnceWithFSType" in addon and "sets no fstype parameter" in addon and "fsType" not in sc and "fstype:" not in sc'
+    python3 -c 'import re; from pathlib import Path; addon=Path("scripts/cluster/04-addons.sh").read_text(); sc=addon.split("# Create StorageClass",1)[1]; assert "--set feature.enableFSGroupPolicy=false" in addon and re.search(r"--post-renderer csi-nfs-postrender\s*$", addon, re.M) and not re.search(r"--post-renderer[ =]+[\"\x27]?[./~\x24]", addon) and "ReadWriteOnceWithFSType" in addon and "sets no fstype parameter" in addon and "fsType" not in sc and "fstype:" not in sc'
   check_not R185b "nfs-csi StorageClass has no mountPermissions (narwhal#224)" \
     grep -qE '^[[:space:]]*mountPermissions:' scripts/cluster/04-addons.sh
   check R185c "NFS server installs per-PV permission convergence (narwhal#224)" \
@@ -3613,6 +3613,8 @@ PYEOF'
     python3 scripts/test/lib/check-ci-parity.py --mutation-verify
   check R416 "Control-plane kubelet TLS: explicit rotation gate, verify every serving cert before API server CA enforcement, persist and roll back" \
     python3 scripts/test/lib/check-kubelet-serving-tls-control-plane.py --mutation-verify
+  check R417 "CSI NFS bootstrap post-render hardens sidecars, adds CPU limits, preserves nfs context, and fails closed; mutation checks" \
+    python3 scripts/test/lib/check-csi-nfs-hardening.py --mutation-verify
 }
 
 #=========================================

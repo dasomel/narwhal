@@ -1200,7 +1200,7 @@ def run_cli_tests(root: Path) -> None:
             "#!/usr/bin/env bash\n"
             "for (( i=1; i<=$#; i++ )); do\n"
             "  if [ \"${!i}\" = \"get\" ]; then\n"
-            "    echo '{\"controller\":{\"replicas\":1},\"feature\":{\"enableFSGroupPolicy\":false}}'\n"
+            "    echo '{\"controller\":{\"replicas\":1,\"resources\":{\"csiProvisioner\":{\"limits\":{\"cpu\":\"100m\"}},\"csiResizer\":{\"limits\":{\"cpu\":\"100m\"}},\"csiSnapshotter\":{\"limits\":{\"cpu\":\"100m\"}},\"livenessProbe\":{\"limits\":{\"cpu\":\"100m\"}},\"nfs\":{\"limits\":{\"cpu\":\"100m\"}}}},\"feature\":{\"enableFSGroupPolicy\":false},\"node\":{\"resources\":{\"livenessProbe\":{\"limits\":{\"cpu\":\"100m\"}},\"nodeDriverRegistrar\":{\"limits\":{\"cpu\":\"100m\"}},\"nfs\":{\"limits\":{\"cpu\":\"100m\"}}}}}'\n"
             "    exit 0\n"
             "  fi\n"
             "done\n"

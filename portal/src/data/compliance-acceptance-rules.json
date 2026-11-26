@@ -707,6 +707,7 @@
       "kind": "DaemonSet",
       "name": "csi-nfs-node",
       "checks": [
+        "KSV001",
         "KSV005",
         "KSV009",
         "KSV012",
@@ -729,9 +730,12 @@
       "kind": "ReplicaSet",
       "name": "csi-nfs-controller",
       "checks": [
+        "KSV001",
         "KSV005",
         "KSV009",
+        "KSV012",
         "KSV017",
+        "KSV020",
         "KSV022",
         "KSV023",
         "KSV037",
@@ -740,7 +744,7 @@
       "class": "accept",
       "reasonKey": "compliance.acceptedReason.verifiedcsiNfsHost",
       "owner": "csi-driver-nfs 4.13.2 (scripts/cluster/04-addons.sh)",
-      "reviewedAt": "2026-11-23"
+      "reviewedAt": "2026-11-26"
     },
     {
       "id": "configAudit:monitoring:DaemonSet:prometheus-stack-prometheus-node-exporter:verified",

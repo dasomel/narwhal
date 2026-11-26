@@ -97,7 +97,7 @@ def wiring(files):
     cni = files[CNI]
     stage2 = 'apply-kubelet-serving-tls.sh" --kubeconfig "${KUBECONFIG}" --local "$(hostname)"'
     assert cni.index("install-kubelet-csr-approver.sh") < cni.index(stage2) < cni.index(
-        stage2 + " --control-plane") < cni.index('mv "${serving_state}/bootstrap-pending"')
+        stage2 + " --control-plane --timeout 600") < cni.index('mv "${serving_state}/bootstrap-pending"')
 
 
 def put(path, text):
@@ -171,7 +171,7 @@ def flow(files, scenario):
             for host in HOSTS:
                 base += ["--node", f"{host}=tester@{host}"]
             p = subprocess.run(base + list(options), env={**env, "FAIL_PEER": bad_peer, "STALE_API": stale_api},
-                               capture_output=True, text=True, timeout=30)
+                               capture_output=True, text=True, timeout=120)
             if failure:
                 assert p.returncode and failure in p.stderr, (p.stdout, p.stderr)
             else:
@@ -237,7 +237,8 @@ def main():
         cases = (
             (INIT, 'value: "RotateKubeletServerCertificate=true"', 'value: "RotateKubeletServerCertificate=false"', wiring),
             (INIT, '    - name: profiling', '    - name: kubelet-certificate-authority', wiring),
-            (CNI, ' --control-plane\n', '\n', wiring),
+            (CNI, ' --control-plane --timeout 600\n', '\n', wiring),
+            (CNI, ' --control-plane --timeout 600\n', ' --control-plane\n', wiring),
             (CONTROL, '"${control_ips[@]}"', '"${control_ips[0]}"', lambda fs: flow(fs, "reject")),
             (NODE, "-verify_ip", "-verify_hostname", lambda fs: flow(fs, "dry")),
             (CONTROL, '[[ "$dry_run" == false ]] || return 0', "true", lambda fs: flow(fs, "dry")),

@@ -67,6 +67,43 @@ VIP=$(cd "${TF_DIR}" && tofu output -raw master_lb_vip)
 APISIX_LB_IP=$(cd "${TF_DIR}" && tofu output -raw worker_lb_vip)
 BASTION_PRIVATE_IP=$(cd "${TF_DIR}" && tofu output -raw bastion_private_ip)
 SUBNET_CIDR=$(cd "${TF_DIR}" && tofu output -raw subnet_cidr)
+VPC_CIDR=$(cd "${TF_DIR}" && tofu output -raw vpc_cidr)
+MASTER_IPS_JSON=$(cd "${TF_DIR}" && tofu output -json master_private_ips)
+WORKER_IPS_JSON=$(cd "${TF_DIR}" && tofu output -json worker_private_ips)
+# D-CSR-EXACT-IPS: the node subnet also contains load balancer VIPs.
+# Cost: new nodes must appear in OpenTofu state before provisioning.
+# Escape hatch: use a separate kubelet-serving signer CA.
+KUBELET_CSR_NODES=$(python3 - "${SUBNET_CIDR}" "${VPC_CIDR}" \
+  "${VIP}" "${APISIX_LB_IP}" "${BASTION_PRIVATE_IP}" "${MASTER_IPS_JSON}" "${WORKER_IPS_JSON}" <<'PY'
+import ipaddress
+import json
+import sys
+
+try:
+    subnet, vpc = map(ipaddress.IPv4Network, sys.argv[1:3])
+    private = tuple(map(ipaddress.IPv4Network, ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")))
+    if not any(vpc.subnet_of(block) for block in private) or not subnet.subnet_of(vpc):
+        raise ValueError("node subnet must be inside a private RFC 1918 VPC")
+    reserved = {subnet.network_address, subnet.broadcast_address}
+    reserved.update(map(ipaddress.IPv4Address, sys.argv[3:6]))
+    nodes = {}
+    for output_name, raw in zip(("master_private_ips", "worker_private_ips"), sys.argv[6:]):
+        addresses = json.loads(raw)
+        if not isinstance(addresses, list) or not addresses:
+            raise ValueError(f"missing node IPs in {output_name}")
+        for address in addresses:
+            if not isinstance(address, str):
+                raise ValueError("expected an IPv4 string in the node inventory")
+            ip = ipaddress.IPv4Address(address)
+            if ip not in subnet or ip in reserved:
+                raise ValueError(f"node IP {ip} is outside the node subnet, reserved or duplicated")
+            reserved.add(ip)
+            nodes["host-" + address.replace(".", "-")] = address
+    print(json.dumps(nodes, separators=(",", ":")))
+except ValueError as error:
+    sys.exit(f"ERROR: kubelet CSR inventory: {error}")
+PY
+)
 # The bootstrap registry runs on the bastion (04-bootstrap-registry.sh needs a
 # container runtime, and a cluster node has only ctr).
 AIRGAP_REGISTRY="${AIRGAP_REGISTRY:-${BASTION_PRIVATE_IP}:5000}"
@@ -97,9 +134,9 @@ for ip in json.load(sys.stdin): print(ip)'; }
 
 MASTERS=(); WORKERS=()
 while IFS= read -r _i; do [ -n "${_i}" ] && MASTERS+=("${_i}"); done \
-  < <(read_ips "$(cd "${TF_DIR}" && tofu output -json master_private_ips)")
+  < <(read_ips "${MASTER_IPS_JSON}")
 while IFS= read -r _i; do [ -n "${_i}" ] && WORKERS+=("${_i}"); done \
-  < <(read_ips "$(cd "${TF_DIR}" && tofu output -json worker_private_ips)")
+  < <(read_ips "${WORKER_IPS_JSON}")
 MASTER1="${MASTERS[0]}"
 ALL_NODES=("${MASTERS[@]}" "${WORKERS[@]}")
 
@@ -146,6 +183,7 @@ MASTER_HOSTNAME=${MASTER_HOSTNAME} \
 NFS_SERVER_IP=${MASTER1} \
 NFS_DATA_DEVICE=${NFS_DATA_DEVICE} \
 HOST_NETWORK_CIDR=${SUBNET_CIDR} \
+KUBELET_CSR_NODES='${KUBELET_CSR_NODES}' \
 APISIX_ADMIN_CIDR=${APISIX_ADMIN_CIDR:-} \
 AIRGAP=${AIRGAP} \
 AIRGAP_REGISTRY=${AIRGAP_REGISTRY} \
@@ -342,8 +380,22 @@ stage_mirror() {
 }
 
 stage_init() {
+  local ip expected_hostname actual_hostname
   log "init: nfs-server, kubeadm init, CNI on master-1 (${MASTER1})"
   if stage_done "${MASTER1}" init; then note "skip (done)"; return 0; fi
+  # D-CSR-HOSTNAME: verify the names the approver will allow. Cost: one SSH read
+  # per additional node. Correct the node hostname before retrying on mismatch.
+  for ip in "${ALL_NODES[@]}"; do
+    expected_hostname="host-${ip//./-}"
+    actual_hostname="${MASTER_HOSTNAME}"
+    if [[ "${ip}" != "${MASTER1}" ]]; then
+      actual_hostname="$(ssh_node "${ip}" hostname | tr -d '\r')" || return 1
+    fi
+    if [[ "${actual_hostname}" != "${expected_hostname}" ]]; then
+      echo "ERROR: kubelet CSR inventory: node ${ip} reports hostname ${actual_hostname}, expected ${expected_hostname}" >&2
+      return 1
+    fi
+  done
   if run_scripts "${MASTER1}" init \
        cluster/01-nfs-server.sh cluster/02-init-cluster.sh cluster/03-cni-install.sh; then
     mark_done "${MASTER1}" init; note "ok"

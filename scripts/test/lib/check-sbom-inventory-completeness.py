@@ -61,7 +61,7 @@ def load_images(root=ROOT):
             if line.strip() and not line.lstrip().startswith("#")}
 
 
-def load_image_inventory(root=ROOT):
+def load_license_inventory(root=ROOT):
     return {row[0].strip() for row in csv.reader(
         (line for line in (root / "scripts/airgap/lib/component-licenses.tsv").read_text().splitlines()
          if line.strip() and not line.lstrip().startswith("#")), delimiter="\t") if row}
@@ -93,11 +93,12 @@ def load_binaries(root=ROOT):
     return set(rows)
 
 
-def evaluate(images, image_inventory, charts, binaries, unknown):
+def evaluate(images, license_inventory, charts, binaries, unknown):
     failures = []
+    chart_inventory = {key.removeprefix("helm/") for key in license_inventory if key.startswith("helm/")}
     classes = {
-        "image": (images, image_inventory),
-        "chart": (charts, set()),
+        "image": (images, license_inventory),
+        "chart": (charts, chart_inventory),
         "binary": (binaries, set()),
     }
     for kind, (artifacts, inventory) in classes.items():
@@ -136,15 +137,16 @@ def main(root=ROOT, unknown=None, argv=None):
     unknown = UNKNOWN_REVIEW if unknown is None else unknown
     argv = sys.argv[1:] if argv is None else argv
     images = load_images(root)
-    image_inventory = load_image_inventory(root)
+    license_inventory = load_license_inventory(root)
     charts = load_charts(root)
     binaries = load_binaries(root)
-    failures = evaluate(images, image_inventory, charts, binaries, unknown)
+    failures = evaluate(images, license_inventory, charts, binaries, unknown)
     if "--mutation-verify" in argv:
         cases = [
-            evaluate(images, image_inventory - {next(iter(images & image_inventory))}, charts, binaries, unknown),
-            evaluate(images, image_inventory, charts | {"mutation-unlisted@1.0.0"}, binaries, unknown),
-            evaluate(images, image_inventory, charts, binaries,
+            evaluate(images, license_inventory - {next(iter(images & license_inventory))}, charts, binaries, unknown),
+            evaluate(images, license_inventory - {"helm/kubelet-csr-approver@1.2.16"}, charts, binaries, unknown),
+            evaluate(images, license_inventory, charts | {"mutation-unlisted@1.0.0"}, binaries, unknown),
+            evaluate(images, license_inventory, charts, binaries,
                      {**unknown, ("binary", next(iter(binaries))): ("", "supply-chain")}),
         ]
         if not all(cases):
@@ -155,7 +157,7 @@ def main(root=ROOT, unknown=None, argv=None):
             copy_loader_inputs(root, test_root)
             inventory_path = test_root / "scripts/airgap/lib/component-licenses.tsv"
             inventory_lines = inventory_path.read_text().splitlines()
-            image_inventory_key = next(iter(images & image_inventory))
+            image_inventory_key = next(iter(images & license_inventory))
             inventory_path.write_text("\n".join(
                 line for line in inventory_lines
                 if not (line.strip() and not line.lstrip().startswith("#") and

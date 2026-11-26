@@ -3603,6 +3603,8 @@ PYEOF'
   # 2026-11-26: pod-security Batch C (CIS 5.2.6/5.2.9/5.2.10/5.7.2/5.7.3): istio-cni seccomp RuntimeDefault, kube-vip static Pod drop ALL + seccomp
   check R411 "Pod-security Batch C: istio-cni seccomp, kube-vip static Pod context, MetalLB speaker UID/GID, and exact node-agent acceptance checks and reasons" \
     python3 scripts/test/lib/check-pod-security-batch-c.py --mutation-verify
+  check R412 "Kubelet serving TLS: pinned chart/image, exact names and node /32s excluding VIPs, scoped RBAC, staged rollout" \
+    python3 scripts/test/lib/check-kubelet-serving-tls.py --mutation-verify
 }
 
 #=========================================

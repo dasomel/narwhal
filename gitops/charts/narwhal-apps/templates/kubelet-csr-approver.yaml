@@ -1,0 +1,140 @@
+{{- $kakao := eq .Values.provider "kakao" }}
+{{- $nodes := .Values.kubeletCsrNodes }}
+{{- if and $kakao (not $nodes) }}
+{{- fail "kubeletCsrNodes requires the Kakao node IPs from OpenTofu state" }}
+{{- end }}
+{{- if $nodes }}
+{{- $names := list }}
+{{- $prefixes := list }}
+{{- $octet := "(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])" }}
+{{- range $name, $ip := $nodes }}
+{{- if not (and (regexMatch (printf "^(%s\\.){3}%s$" $octet $octet) $ip) (regexMatch "^(10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.)" $ip)) }}
+{{- fail (printf "kubeletCsrNodes: %s must have an RFC 1918 IPv4 address" $name) }}
+{{- end }}
+{{- if not (ternary (eq $name (printf "host-%s" (replace "." "-" $ip))) (regexMatch "^narwhal-(master|worker)-[1-9][0-9]*$" $name) $kakao) }}
+{{- fail (printf "kubeletCsrNodes: unexpected node name %s" $name) }}
+{{- end }}
+{{- $names = append $names (regexQuoteMeta $name) }}
+{{- $prefixes = append $prefixes (printf "%s/32" $ip) }}
+{{- end }}
+{{- if ne (len $prefixes) (len (uniq $prefixes)) }}
+{{- fail "kubeletCsrNodes contains duplicate IPs" }}
+{{- end }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kubelet-csr-approver
+  namespace: devtools
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: http://gitea-http.devtools.svc.cluster.local:3000/api/packages/gitea-admin/helm
+    chart: kubelet-csr-approver
+    targetRevision: 1.2.16
+    helm:
+      skipTests: true
+      valuesObject:
+        # D-CSR-EXACT-IPS: the VIP and load balancers share the nodes' subnet.
+        # Cost: adding a node requires its IP in the list.
+        # Escape hatch: use a separate kubelet-serving signer CA.
+        providerRegex: {{ printf "^(%s)$" (join "|" $names) | quote }}
+        providerIpPrefixes: {{ $prefixes | toJson }}
+        # Vagrant uses host /etc/hosts and Kakao provisions DNS for ingress
+        # names. Neither publishes node DNS records to pods.
+        bypassDnsResolution: true
+        allowedDnsNames: 1
+        replicas: {{ if eq .Values.kubeletCsrTopology "ha" }}2{{ else }}1{{ end }}
+        image:
+          repository: ghcr.io/postfinance/kubelet-csr-approver
+          tag: v1.2.16@sha256:3a09df2f9e1e628863fccbe5479e63b11bbc1f411c82134ee975778e1a25b5e6
+          pullPolicy: IfNotPresent
+        nodeSelector:
+          node-role.kubernetes.io/control-plane: ""
+        tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+            effect: NoSchedule
+        securityContext:
+          runAsUser: 65532
+          runAsGroup: 65532
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
+          readOnlyRootFilesystem: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 128Mi
+        rbac:
+          manage: false
+        serviceAccount:
+          name: kubelet-csr-approver
+        extraObjects:
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRole
+            metadata:
+              name: kubelet-csr-approver
+            rules:
+              - apiGroups: [certificates.k8s.io]
+                resources: [certificatesigningrequests]
+                verbs: [get, list, watch]
+              - apiGroups: [certificates.k8s.io]
+                resources: [certificatesigningrequests/approval]
+                verbs: [update]
+              - apiGroups: [certificates.k8s.io]
+                resources: [signers]
+                resourceNames: [kubernetes.io/kubelet-serving]
+                verbs: [approve]
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRoleBinding
+            metadata:
+              name: kubelet-csr-approver
+            roleRef:
+              apiGroup: rbac.authorization.k8s.io
+              kind: ClusterRole
+              name: kubelet-csr-approver
+            subjects:
+              - kind: ServiceAccount
+                name: kubelet-csr-approver
+                namespace: kube-system
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: Role
+            metadata:
+              name: kubelet-csr-approver
+              namespace: kube-system
+            rules:
+              - apiGroups: [coordination.k8s.io]
+                resources: [leases]
+                verbs: [create, get, update]
+              - apiGroups: [""]
+                resources: [events]
+                verbs: [create]
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: RoleBinding
+            metadata:
+              name: kubelet-csr-approver
+              namespace: kube-system
+            roleRef:
+              apiGroup: rbac.authorization.k8s.io
+              kind: Role
+              name: kubelet-csr-approver
+            subjects:
+              - kind: ServiceAccount
+                name: kubelet-csr-approver
+                namespace: kube-system
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+{{- end }}

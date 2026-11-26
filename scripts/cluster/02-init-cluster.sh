@@ -220,6 +220,7 @@ authentication:
 authorization:
   mode: Webhook
 readOnlyPort: 0
+serverTLSBootstrap: true
 EOF
 
 # D-SINGLE-NODE-PODS: all platform pods share one kubelet; default 110 is too small.
@@ -260,7 +261,14 @@ else
   fi
 
   # Initialize cluster (skip kube-proxy for Cilium replacement, upload certs for HA)
-  sudo kubeadm init --config=/tmp/kubeadm-config.yaml --skip-phases=addon/kube-proxy --upload-certs
+  # D2: the desired render above also describes post-CNI kubelets. The first
+  # kubelet needs its self-signed fallback until the pod-network approver is up.
+  # Cost: a second config and restart. Escape hatch: the ops script can roll back.
+  install -d -m 700 /var/lib/narwhal/kubelet-serving-tls
+  touch /var/lib/narwhal/kubelet-serving-tls/bootstrap-pending
+  yq 'del(select(.kind == "KubeletConfiguration").serverTLSBootstrap)' \
+    /tmp/kubeadm-config.yaml > /tmp/kubeadm-initial-config.yaml
+  sudo kubeadm init --config=/tmp/kubeadm-initial-config.yaml --skip-phases=addon/kube-proxy --upload-certs
 fi
 
 # Bound the apiserver's heap before anything else lands on this node. kubeadm gives it no
@@ -431,8 +439,14 @@ fi  # end kube-vip block (Vagrant only)
 # latency that kubeadm's client rate limiter hits a context deadline during the heavier
 # upload-certs API calls. The local endpoint is fast and avoids the kube-vip round-trip.
 LOCAL_KUBECONFIG=/home/vagrant/.kube/config-local
-kubeadm token create --print-join-command --kubeconfig "${LOCAL_KUBECONFIG}" > /home/vagrant/join-command.sh
-chmod +x /home/vagrant/join-command.sh
+JOIN_SUFFIX=""
+serving_state=/var/lib/narwhal/kubelet-serving-tls
+if [[ -f "${serving_state}/bootstrap-pending" || -f "${serving_state}/join-pending" ]]; then
+  # 03-cni-install publishes these after the first node is serving a signed cert.
+  JOIN_SUFFIX=.pending
+fi
+kubeadm token create --print-join-command --kubeconfig "${LOCAL_KUBECONFIG}" > "/home/vagrant/join-command.sh${JOIN_SUFFIX}"
+chmod +x "/home/vagrant/join-command.sh${JOIN_SUFFIX}"
 
 # Generate join command for additional control plane nodes.
 #
@@ -447,8 +461,8 @@ chmod +x /home/vagrant/join-command.sh
 CERT_KEY=$(sudo kubeadm init phase upload-certs --upload-certs \
   --config=/tmp/kubeadm-config.yaml --kubeconfig "${LOCAL_KUBECONFIG}" | tail -1)
 JOIN_CMD=$(kubeadm token create --print-join-command --kubeconfig "${LOCAL_KUBECONFIG}")
-echo "${JOIN_CMD} --control-plane --certificate-key ${CERT_KEY} --ignore-preflight-errors=all" > /home/vagrant/join-control-plane.sh
-chmod +x /home/vagrant/join-control-plane.sh
+echo "${JOIN_CMD} --control-plane --certificate-key ${CERT_KEY} --ignore-preflight-errors=all" > "/home/vagrant/join-control-plane.sh${JOIN_SUFFIX}"
+chmod +x "/home/vagrant/join-control-plane.sh${JOIN_SUFFIX}"
 
 # Harden node file permissions (CIS 1.1.9, 1.1.12, 4.1.1, 4.1.7, 4.1.9).
 # Non-fatal: failures must not block provisioning.
@@ -461,5 +475,5 @@ if [ -f "${HARDEN_SCRIPT}" ]; then
 fi
 
 echo "=== Cluster Initialization Done ==="
-echo "Worker join command: /home/vagrant/join-command.sh"
-echo "Control plane join command: /home/vagrant/join-control-plane.sh"
+echo "Worker join command: /home/vagrant/join-command.sh${JOIN_SUFFIX}"
+echo "Control plane join command: /home/vagrant/join-control-plane.sh${JOIN_SUFFIX}"

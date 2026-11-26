@@ -1,4 +1,4 @@
-# Image repository -> upstream source -> SPDX license, for the airgap bundle SBOM.
+# Image repository or helm/name@version -> upstream source -> SPDX license, for the airgap bundle SBOM.
 #
 # WHY THIS FILE EXISTS: the bundle redistributes ~100 container images. A normal
 # install pulls them from their own registries, which is not redistribution; the
@@ -6,11 +6,9 @@
 # question from "what do we depend on" to "what are we distributing, and under
 # what terms" — and the answer is not uniformly Apache-2.0.
 #
-# NOT GUESSED. Every row was resolved from the upstream repository's own license
-# via `gh api repos/<owner>/<repo>/license`; the handful GitHub cannot classify
-# were read out of the upstream LICENSE/COPYING file and carry a note. Guessing a
-# license here would be worse than leaving it blank, because a wrong SPDX id in an
-# SBOM is repeated downstream as fact.
+# NOT GUESSED. Resolve each row from the upstream repository's own license via
+# `gh api repos/<owner>/<repo>/license`. Rows using source notices or other
+# upstream metadata carry a note, including any pending API confirmation.
 #
 # Refresh with: scripts/airgap/lib/refresh-component-licenses.sh
 # (re-resolves every row from upstream; overrides below are preserved by hand)
@@ -30,7 +28,7 @@
 #   MPL-2.0     openbao, vault-k8s. File-level copyleft: modified files stay MPL.
 #   GPL-2.0     busybox, frr. Source-offer obligation on distribution.
 #
-# image repository	upstream source	SPDX license	note
+# component key	upstream source	SPDX license	note
 apache/apisix	apache/apisix	Apache-2.0	
 apache/apisix-ingress-controller	apache/apisix-ingress-controller	Apache-2.0	
 busybox	busybox/busybox	GPL-2.0-only	upstream is git.busybox.net, not GitHub
@@ -78,6 +76,8 @@ ghcr.io/headlamp-k8s/headlamp	kubernetes-sigs/headlamp	Apache-2.0
 ghcr.io/jkroepke/kube-webhook-certgen	jkroepke/kube-webhook-certgen	Apache-2.0	
 ghcr.io/kube-vip/kube-vip	kube-vip/kube-vip	Apache-2.0	
 ghcr.io/kyverno/readiness-checker	kyverno/kyverno	Apache-2.0	
+ghcr.io/postfinance/kubelet-csr-approver	postfinance/kubelet-csr-approver	MIT	gh api repos/postfinance/kubelet-csr-approver/license -> MIT (LICENSE, 2026-11-26); some source files carry Apache-2.0 headers
+helm/kubelet-csr-approver@1.2.16	postfinance/kubelet-csr-approver	MIT	Upstream source declared in Chart.yaml; gh api repos/postfinance/kubelet-csr-approver/license -> MIT (LICENSE, 2026-11-26); some source files carry Apache-2.0 headers
 kong	Kong/kong	Apache-2.0	
 mirror.gcr.io/aquasec/trivy	aquasecurity/trivy	Apache-2.0	
 mirror.gcr.io/aquasec/trivy-operator	aquasecurity/trivy-operator	Apache-2.0	

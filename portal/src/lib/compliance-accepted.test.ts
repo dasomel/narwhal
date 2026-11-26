@@ -524,7 +524,8 @@ describe("node-agent acceptances (pod-security Batch C, measured 2026-11-26)", (
     ["istio-system", "DaemonSet", "ztunnel", ["KSV001"], "KSV030"],
     ["kube-system", "DaemonSet", "cilium", ["KSV024"], "KSV012"],
     ["kube-system", "DaemonSet", "cilium-envoy", ["KSV001", "KSV012", "KSV020", "KSV024"], "KSV030"],
-    ["kube-system", "DaemonSet", "csi-nfs-node", ["KSV012", "KSV020"], "KSV001"],
+    ["kube-system", "DaemonSet", "csi-nfs-node", ["KSV001", "KSV012", "KSV020"], "KSV021"],
+    ["kube-system", "ReplicaSet", "csi-nfs-controller", ["KSV001", "KSV012", "KSV020"], "KSV021"],
     ["kube-system", "Pod", "kube-vip-narwhal-master-1", ["KSV012", "KSV020", "KSV105"], "KSV001"],
   ] as const
 

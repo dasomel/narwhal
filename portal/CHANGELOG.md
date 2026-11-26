@@ -15,6 +15,7 @@ English | [한국어](CHANGELOG-ko.md)
 
 - **Velero node-agent Config Audit acceptance narrowed:** `storage/node-agent` no longer has KSV003/KSV106 accepted; it now drops all capabilities (#831). The accepted reason records the measured backup and restore.
 - **OSS versions list includes kubelet-csr-approver 1.2.16** (#825).
+- **Narrow CSI NFS Config Audit acceptances (R417):** controller KSV012/KSV020 now cite the measured root-owned 0755 shared CSI socket, and KSV001 is accepted for both workloads because only the privileged SYS_ADMIN nfs container still fails it after the sidecar fix. KSV021 and KSV125 remain actionable.
 
 ## [1.1.31] - 2026-11-26
 

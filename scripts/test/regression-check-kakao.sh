@@ -3613,6 +3613,8 @@ PYEOF'
     python3 scripts/test/lib/check-ci-parity.py --mutation-verify
   check R416 "Control-plane kubelet TLS: explicit rotation gate, verify every serving cert before API server CA enforcement, persist and roll back" \
     python3 scripts/test/lib/check-kubelet-serving-tls-control-plane.py --mutation-verify
+  check R417 "CSI NFS bootstrap post-render hardens sidecars, adds CPU limits, preserves nfs context, and fails closed; mutation checks" \
+    python3 scripts/test/lib/check-csi-nfs-hardening.py --mutation-verify
 }
 
 #=========================================

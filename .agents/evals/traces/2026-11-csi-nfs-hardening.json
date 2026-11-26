@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-csi-nfs-hardening-20261126",
+  "task": "Harden bootstrap CSI NFS sidecars and CPU limits; retain only exact measured CIS exceptions.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-csi-nfs-hardening.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/compliance-accepted.test.ts",
+      "portal/src/lib/i18n.ts",
+      "scripts/cluster/04-addons.sh",
+      "scripts/cluster/lib/helm-plugins/csi-nfs-postrender/csi-nfs-postrender.sh",
+      "scripts/cluster/lib/helm-plugins/csi-nfs-postrender/plugin.yaml",
+      "scripts/test/lib/check-csi-nfs-hardening.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope is the bootstrap-only csi-driver-nfs 4.13.2 release, exact portal Config Audit rules/reasons, R417, and corresponding documentation. No GitOps Application, cluster operation, network access, or commit was used. Live rollout and throttle measurements were outside this sandbox and remain unverified."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "reviewed": true,
+      "provenance": [
+        "Owner supplied live single-node measurements from 2026-11-26: root NFS plugin created a root:root 0755 CSI socket in the shared socket-dir; controller non-root sidecars cannot connect; NFS mount plugin is privileged with SYS_ADMIN; controller workingMountDir is /tmp.",
+        "Owner supplied actionable KSV findings and existing exact accepted checks for csi-nfs-node and csi-nfs-controller.",
+        "Inspected offline chart copy .review/charts/csi-driver-nfs, including 4.13.2 values and hardcoded template security contexts."
+      ],
+      "summary": "Measured socket ownership/mode and privileged mount requirement justify only the retained UID/connectivity and privileged mount exceptions. KSV125 remains actionable because registry trust is a separate decision."
+    },
+    {
+      "id": "e3",
+      "type": "reproduction",
+      "summary": "Initial R417 only invoked the renderer script directly, so it did not exercise Helm plugin resolution. Owner reproduced the fresh-install failure on Helm v4.2.1: `helm upgrade --post-renderer /tmp/csi-nfs-postrender.sh` failed with `plugin: {Name:/tmp/csi-nfs-postrender.sh Type:postrenderer/v1} not found`. Owner verified the v4 plugin.yaml format and named-plugin render on v4.3.2; the test environment uses HELM_DATA_HOME and HELM_PLUGINS under one temporary root."
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Bootstrap now installs/reconciles the `csi-nfs-postrender` postrenderer/v1 plugin from the scripts tree before upgrade and passes its plugin name to Helm 4. Plugin metadata and script live in scripts/cluster/lib/helm-plugins/csi-nfs-postrender. The original sidecar and 100m CPU hardening is retained."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Offline Helm render, post-render, R417 mutations, shell syntax/lint, and CI parity",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-csi-nfs-hardening.py --mutation-verify -> PASS: R417 Helm 4 plugin render, exact contexts, CPU limits, and fail-closed post-renderer",
+        "test:R417 installed plugin into isolated HELM_DATA_HOME/HELM_PLUGINS and ran helm template --post-renderer csi-nfs-postrender; asserted exact sidecar contexts/limits and unchanged nfs containers",
+        "test:R417 rejected plugin.yaml type mutation, renderer path in 04-addons.sh, missing plugin install block, and direct-script missing-container input",
+        "test:bash -n scripts/cluster/04-addons.sh scripts/cluster/lib/helm-plugins/csi-nfs-postrender/csi-nfs-postrender.sh scripts/test/regression-check-kakao.sh -> exit 0",
+        "test:shellcheck -S warning scripts/cluster/04-addons.sh scripts/cluster/lib/helm-plugins/csi-nfs-postrender/csi-nfs-postrender.sh scripts/test/regression-check-kakao.sh -> exit 0",
+        "test:python3 scripts/test/lib/check-ci-parity.py -> PASS: portal snapshot and 241 behavior traces",
+        "test:git diff --check -> exit 0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "scope_check",
+      "summary": "Not verified: live Helm upgrade/readiness, Trivy success status, CPU throttling after workload, and live cluster behavior. No cluster or network was used."
+    },
+    {
+      "id": "e9",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live single-node cluster (orchestrator, 2026-11-26, Helm v4.2.1)",
+      "summary": "Bootstrap install block and Helm 4 post-renderer plugin applied on master-1.",
+      "evidence": [
+        "test:first attempt with --post-renderer <path> -> Helm 4 error 'plugin ... postrenderer/v1 not found' (defect reproduced; release stayed at revision 1)",
+        "test:branch install block run twice -> plugin csi-nfs-postrender installed, second run idempotent; helm revision 3 deployed",
+        "test:csi-nfs-controller 4 sidecars and csi-nfs-node 2 sidecars -> allowPrivilegeEscalation false, readOnlyRootFilesystem true, cpu limit 100m; both nfs containers unchanged except cpu limit 100m; pods 5/5 and 3/3 Running, 0 restarts",
+        "test:nfs-csi PVC bound, non-root pod wrote and read a file, namespace deleted; CSI pod cgroups nr_throttled at most 4 of 170 periods; test-sso 144/0"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "Source, acceptance, R417, changelog, and trace changes are complete. Helm 4 plugin rendering and requested static checks passed. Live rollout and throttle measurements remain unverified."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Completed the authorized source changes and exact acceptance updates; live operational confirmation is outside the verified scope."
+    }
+  ]
+}

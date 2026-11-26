@@ -15,6 +15,7 @@
 
 - **Velero node-agent Config Audit 수용 범위 축소:** `storage/node-agent`의 KSV003/KSV106 수용을 제거했다. 이제 모든 capability를 제거한다(#831). 수용 사유에 실측한 백업·복원 결과를 기록했다.
 - **OSS 버전 목록에 kubelet-csr-approver 1.2.16 추가** (#825).
+- **CSI NFS Config Audit 수용 범위 축소 (R417):** controller KSV012/KSV020은 실측한 root 소유 0755 공유 CSI 소켓을 근거로 수용하고, sidecar 수정 후 KSV001은 privileged SYS_ADMIN nfs 컨테이너만 남으므로 두 워크로드에서 수용한다. KSV021과 KSV125는 조치 대상으로 남긴다.
 
 ## [1.1.31] - 2026-11-26
 

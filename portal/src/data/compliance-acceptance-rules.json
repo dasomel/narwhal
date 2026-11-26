@@ -451,14 +451,55 @@
       "kind": "ReplicaSet",
       "name": "seaweedfs-s3",
       "checks": [
-        "KSV011",
-        "KSV020",
-        "KSV021"
+        "KSV011"
       ],
       "class": "accept",
       "reasonKey": "compliance.acceptedReason.seaweedfsS3",
       "owner": "seaweedfs 4.34.0 (gitops/charts/narwhal-apps/templates/seaweedfs.yaml)",
-      "reviewedAt": "2026-11-23"
+      "reviewedAt": "2026-11-26"
+    },
+    {
+      "id": "cfg:storage:StatefulSet:seaweedfs-filer:accept",
+      "scope": "namespace",
+      "namespace": "storage",
+      "kind": "StatefulSet",
+      "name": "seaweedfs-filer",
+      "checks": [
+        "KSV011"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.seaweedfsStateful",
+      "owner": "seaweedfs 4.34.0 (gitops/charts/narwhal-apps/templates/seaweedfs.yaml)",
+      "reviewedAt": "2026-11-26"
+    },
+    {
+      "id": "cfg:storage:StatefulSet:seaweedfs-master:accept",
+      "scope": "namespace",
+      "namespace": "storage",
+      "kind": "StatefulSet",
+      "name": "seaweedfs-master",
+      "checks": [
+        "KSV011"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.seaweedfsStateful",
+      "owner": "seaweedfs 4.34.0 (gitops/charts/narwhal-apps/templates/seaweedfs.yaml)",
+      "reviewedAt": "2026-11-26"
+    },
+    {
+      "id": "cfg:storage:StatefulSet:seaweedfs-volume:accept",
+      "scope": "namespace",
+      "namespace": "storage",
+      "kind": "StatefulSet",
+      "name": "seaweedfs-volume",
+      "checks": [
+        "KSV011",
+        "KSV023"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.seaweedfsHostPath",
+      "owner": "SeaweedFS volume data (D-OWN-POD; gitops/charts/narwhal-apps/templates/seaweedfs.yaml)",
+      "reviewedAt": "2026-11-26"
     },
     {
       "id": "cfg:storage:ReplicaSet:velero:accept",
@@ -488,38 +529,6 @@
       "class": "accept",
       "reasonKey": "compliance.acceptedReason.veleroUiUid",
       "owner": "velero-ui 0.14.0 / v0.10.1 (gitops/charts/narwhal-apps/templates/velero-ui.yaml)",
-      "reviewedAt": "2026-11-23"
-    },
-    {
-      "id": "cfg:storage:StatefulSet:seaweedfs-filer:accept",
-      "scope": "namespace",
-      "namespace": "storage",
-      "kind": "StatefulSet",
-      "name": "seaweedfs-filer",
-      "checks": [
-        "KSV011",
-        "KSV020",
-        "KSV021"
-      ],
-      "class": "accept",
-      "reasonKey": "compliance.acceptedReason.seaweedfsStateful",
-      "owner": "seaweedfs 4.34.0 (gitops/charts/narwhal-apps/templates/seaweedfs.yaml)",
-      "reviewedAt": "2026-11-23"
-    },
-    {
-      "id": "cfg:storage:StatefulSet:seaweedfs-master:accept",
-      "scope": "namespace",
-      "namespace": "storage",
-      "kind": "StatefulSet",
-      "name": "seaweedfs-master",
-      "checks": [
-        "KSV011",
-        "KSV020",
-        "KSV021"
-      ],
-      "class": "accept",
-      "reasonKey": "compliance.acceptedReason.seaweedfsStateful",
-      "owner": "seaweedfs 4.34.0 (gitops/charts/narwhal-apps/templates/seaweedfs.yaml)",
       "reviewedAt": "2026-11-23"
     },
     {

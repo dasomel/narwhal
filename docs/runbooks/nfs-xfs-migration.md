@@ -189,9 +189,8 @@ timer is the only thing that makes a fresh PV directory writable to an arbitrary
 
 Preconditions (the align script prints each of them in its dry run):
 
-- SeaweedFS runs as non-root: the GitOps change in this PR (`runAsUser`/`runAsGroup`/`fsGroup`
-  1000 for master and filer, logs on `emptyDir`; uid verified as the `seaweed` user of
-  `chrislusf/seaweedfs:4.34`). The chart overrides the image entrypoint, so without it the pods
+- SeaweedFS runs as non-root: the GitOps change (`runAsUser`/`runAsGroup`/`fsGroup`
+  10100 for master and filer, logs on `emptyDir`). The chart overrides the image entrypoint, so without it the pods
   stay uid 0.
 - `kubectl get csidriver nfs.csi.k8s.io -o jsonpath='{.spec.fsGroupPolicy}'` is not `File`. The
   chart default (`feature.enableFSGroupPolicy=true`) renders `File`, so a cluster installed before
@@ -214,25 +213,39 @@ Preconditions (the align script prints each of them in its dry run):
 
 Steps, in this order:
 
-1. Merge the GitOps PR. Kakao is unaffected until step 3, because the cluster syncs from Gitea.
+Before switching the SeaweedFS volume server from root to UID 10100, stop it and run once on
+the node labelled `narwhal.io/seaweedfs-volume=true`:
+
+```bash
+kubectl -n storage scale statefulset/seaweedfs-volume --replicas=0
+sudo chown -R 10100:10100 /ssd/object_store
+```
+
+The all-node prerequisite creates and owns an empty directory only; it never recursively changes
+existing object files. Preserve the label and verify the S3 endpoint after the rollout because
+Velero uses SeaweedFS as its backup storage location.
+
+1. Before changing the desired UID, stop both consumers (`kubectl -n storage scale statefulset/seaweedfs-master statefulset/seaweedfs-filer --replicas=0`). Keep the GitOps sync paused for this Application until the align step is complete; otherwise self-heal can restart them early.
 2. On the NFS server (`master-1`), as root (the script refuses otherwise; once the share root is
    `0750 nobody:nogroup` an unprivileged user cannot traverse it): dry run
    `sudo bash scripts/cluster/nfs-root-squash-align.sh` and read the plan (exit 3 means a PV was
    skipped, exit 4 that a PV directory could not be read: resolve either first), then
    `sudo bash scripts/cluster/nfs-root-squash-align.sh --apply`. It chowns only
-   root-owned entries to the workload identity (SeaweedFS `1000:1000` from the reviewed map, the
+   root-owned entries to the workload identity (SeaweedFS `10100:10100` from the reviewed map, the
    rest from the bound pod's `securityContext`), makes namespace directories `nobody:nogroup`
-   and the share root `nobody:nogroup 0750`. It never edits `/etc/exports`. The SeaweedFS pods are
-   still uid 0 here; root bypasses permissions under `no_root_squash`, so this cannot break them.
-3. Stage and roll out: run `scripts/cluster/14-gitops-bootstrap.sh`. The filer and master restart as
-   uid 1000. Race: until they stop, the old root processes keep creating uid-0 files (master raft
-   snapshot `0600`, filer leveldb `.ldb`/`MANIFEST`, flush on shutdown), and the new pods hit
-   `EACCES` on them. So, immediately after the rollout, re-run
-   `sudo bash scripts/cluster/nfs-root-squash-align.sh --apply` (the running-consumer guard passes because the
-   pod uid now equals the target), then delete the master and filer pods if either is in
-   CrashLoopBackOff (`kubectl -n storage delete pod seaweedfs-master-0 seaweedfs-filer-0`).
+   and the share root `nobody:nogroup 0750`. It never edits `/etc/exports`. Both consumers remain
+   stopped throughout ownership alignment.
+   Moving an existing cluster from uid 1000 to 10100: the align script chowns root-owned entries
+   only, so it leaves the 1000-owned master raft (`m9333/log`, `conf`, `state` are `0600`) and filer
+   leveldb in place, and the 10100 pods then crash on `EACCES` (2026-11-27 trial). With both
+   consumers stopped, re-own the PV contents explicitly, keeping the `nobody` PV root directory:
+   `sudo find /srv/nfs/k8s/storage/data-storage-seaweedfs-master-0 /srv/nfs/k8s/storage/data-filer-seaweedfs-filer-0 -mindepth 1 -exec chown 10100:10100 {} +`
+   (take the paths from each PV's `volumeAttributes.subDir`), then confirm
+   `sudo find <both dirs> -mindepth 1 ! -user 10100` prints nothing.
+3. Merge/sync the GitOps UID change (or run the matching bootstrap install). The filer and master
+   start as uid 10100. If either fails, inspect the exact PV ownership before restarting it.
 4. Verify: filer and master Ready, `kubectl -n storage exec seaweedfs-filer-0 -- id -u` and the
-   master print `1000`, and S3 works (the Loki pod is the canary).
+   master print `10100`, and S3 works (the Loki pod is the canary).
 5. Switch the export. WARNING: `01-nfs-server.sh` rewrites `/etc/exports` wholesale (and restarts
    `nfs-kernel-server`, a short stall; mounts are `hard`, so clients wait and recover). Back it up
    and take the live CIDRs from it first; the script also installs the timer:

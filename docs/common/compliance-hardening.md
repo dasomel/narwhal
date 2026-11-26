@@ -335,7 +335,7 @@ sudo exportfs -ra
 ```bash
 # Success criterion: no root-owned entry (uid 0 or gid 0) is left inside the PV directories,
 # except PVs the script reported as skipped/UNRESOLVED (exit code 3). Files owned by a
-# workload's own non-root uid (for example 1000:1000 for SeaweedFS) are CORRECT and must NOT be
+# workload's own non-root uid (for example SeaweedFS platform UID/GID 10100:10100) are CORRECT and must NOT be
 # changed to nobody:nogroup; only the share root and the namespace directories are nobody:nogroup.
 sudo find "${NFS_SHARE_PATH}" -uid 0 -print
 sudo find "${NFS_SHARE_PATH}" -gid 0 -print
@@ -515,11 +515,12 @@ Matching is exact: `database/Pod/narwhal-db-1` and the Deployment-owned `databas
 | storage | DaemonSet/node-agent | KSV001, KSV012, KSV020, KSV021, KSV023, KSV105 | accept | Requires UID 0 and /var/lib/kubelet hostPath mounts for kopia fs-backup; measured backup and restore completed with all capabilities dropped |
 | storage | CronJob/openbao-snapshot | KSV020, KSV021 | accept | openbao-backup.yaml keeps UID 100 for the snapshot writer and holder sharing the same PVC files |
 | storage | ReplicaSet/openbao-snapshot-holder | KSV020, KSV021 | accept | openbao-backup.yaml keeps UID 100 for the snapshot writer and holder sharing the same PVC files |
-| storage | ReplicaSet/seaweedfs-s3 | KSV011, KSV020, KSV021 | accept | Omits CPU limit to prevent S3 upload throttling (D-sw-qos) and uses seaweed UID/GID 1000 |
+| storage | ReplicaSet/seaweedfs-s3 | KSV011 | accept | Omits CPU limit to prevent S3 upload throttling (D-sw-qos) |
+| storage | StatefulSet/seaweedfs-filer | KSV011 | accept | Omits CPU limit to prevent upload throttling (D-sw-qos) |
+| storage | StatefulSet/seaweedfs-master | KSV011 | accept | Omits CPU limit to prevent upload throttling (D-sw-qos) |
+| storage | StatefulSet/seaweedfs-volume | KSV011, KSV023 | accept | Runs SeaweedFS volume as 10100:10100 under D-OWN-POD and retains hostPath /ssd/object_store for the node-local data path of the S3-compatible Velero backup store (KSV023); omits CPU limit to prevent upload throttling (D-sw-qos, KSV011) |
 | storage | ReplicaSet/velero | KSV020, KSV021 | accept | Runs as numeric cnb UID 1002 / GID 1000 for /home/cnb ownership in velero:v1.18.1 (runAsNonRoot: true enabled; UID/GID <= 10000) |
 | storage | ReplicaSet/velero-ui | KSV020, KSV021 | accept | Uses upstream node image UID/GID 1000 |
-| storage | StatefulSet/seaweedfs-filer | KSV011, KSV020, KSV021 | accept | Omits CPU limit to prevent upload throttling (D-sw-qos) and uses seaweed UID/GID 1000 |
-| storage | StatefulSet/seaweedfs-master | KSV011, KSV020, KSV021 | accept | Omits CPU limit to prevent upload throttling (D-sw-qos) and uses seaweed UID/GID 1000 |
 | kube-system | DaemonSet/cilium | KSV005, KSV009, KSV017, KSV022, KSV023, KSV024, KSV106, KSV119, KSV120, KSV121 | accept | Cilium configures the host eBPF datapath and network namespaces using host networking, BPF/CNI mounts and network/kernel capabilities. The hostPorts 9879 and 4244 equal their containerPorts with hostNetwork enabled (KSV024). |
 | kube-system | DaemonSet/cilium-envoy | KSV001, KSV005, KSV009, KSV012, KSV020, KSV022, KSV023, KSV024, KSV106 | accept | Cilium Envoy uses host networking and BPF/socket mounts to integrate with the host datapath. On 2026-11-26 UID 0 held CapEff 0000000000201000 (NET_ADMIN, SYS_ADMIN) (KSV012, KSV020). The hostPort 9964 equals its containerPort with hostNetwork enabled (KSV024). The chart exposes no allowPrivilegeEscalation value, and the scanner flags the unset field (KSV001). |
 | istio-system | DaemonSet/istio-cni-node | KSV001, KSV005, KSV012, KSV020, KSV021, KSV022, KSV023, KSV105, KSV106, KSV119, KSV121 | accept | Istio CNI installs host CNI binaries and configuration and enters Pod network namespaces. CapEff 0000000000283002 measured on 2026-11-26 includes SYS_ADMIN. The chart exposes no allowPrivilegeEscalation value, and the scanner flags the unset field (KSV001). |

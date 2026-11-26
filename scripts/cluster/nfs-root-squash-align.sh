@@ -26,7 +26,7 @@
 # other than the target, since chowning would lock that process out. Consumers running as
 # the target uid, or as root (no_root_squash today: root bypasses permissions, so a chown
 # cannot break it), are safe. This is why SeaweedFS can be chowned while its root pods run;
-# they then restart as uid 1000 from the GitOps change.
+# they then restart as uid 10100 from the GitOps change.
 set -euo pipefail
 
 NFS_SHARE_PATH="${NFS_SHARE_PATH:-/srv/nfs/k8s}"
@@ -34,11 +34,11 @@ KUBECTL="${KUBECTL:-sudo kubectl}"
 APPLY=false
 
 # D-sw-static: SeaweedFS pods have no securityContext until the GitOps change that
-# sets uid 1000 (verified image user `seaweed`) is synced, so their identity cannot be read
+# sets uid 10100 is synced, so their identity cannot be read
 # from the live pod yet. Format: "<namespace>/<pvc>=<uid>:<gid>".
 STATIC_TARGETS=(
-  "storage/data-filer-seaweedfs-filer-0=1000:1000"
-  "storage/data-storage-seaweedfs-master-0=1000:1000"
+  "storage/data-filer-seaweedfs-filer-0=10100:10100"
+  "storage/data-storage-seaweedfs-master-0=10100:10100"
 )
 
 case "${1:-}" in

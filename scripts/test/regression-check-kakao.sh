@@ -2915,7 +2915,7 @@ assert not re.search(r'StrictHostKeyChecking=no\b.*UserKnownHostsFile=/dev/null|
   # Kubernetes default (ReadWriteOnceWithFSType) cannot chown this NFS CSI volume because
   # the StorageClass does not set fstype; keep the install compatible with Helm 4.
   check R185 "NFS CSI uses Helm 4-compatible feature flag and relies on no NFS fsType (narwhal#224)" \
-    python3 -c 'from pathlib import Path; addon=Path("scripts/cluster/04-addons.sh").read_text(); sc=addon.split("# Create StorageClass",1)[1]; assert "--set feature.enableFSGroupPolicy=false" in addon and "--post-renderer" not in addon and "ReadWriteOnceWithFSType" in addon and "sets no fstype parameter" in addon and "fsType" not in sc and "fstype:" not in sc'
+    python3 -c 'import re; from pathlib import Path; addon=Path("scripts/cluster/04-addons.sh").read_text(); sc=addon.split("# Create StorageClass",1)[1]; assert "--set feature.enableFSGroupPolicy=false" in addon and re.search(r"--post-renderer csi-nfs-postrender\s*$", addon, re.M) and not re.search(r"--post-renderer[ =]+[./~\x24]", addon) and "ReadWriteOnceWithFSType" in addon and "sets no fstype parameter" in addon and "fsType" not in sc and "fstype:" not in sc'
   check_not R185b "nfs-csi StorageClass has no mountPermissions (narwhal#224)" \
     grep -qE '^[[:space:]]*mountPermissions:' scripts/cluster/04-addons.sh
   check R185c "NFS server installs per-PV permission convergence (narwhal#224)" \

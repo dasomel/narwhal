@@ -104,6 +104,13 @@ spec:
         # D-MON-QOS-LOKI: loki-sc-rules sidecar (chart top-level `sidecar.resources`, applies to the
         # single-binary pod) used ~72Mi; same BestEffort problem. Request ~= use, limit ~2.5x.
         # CPU limit 100m added to satisfy Trivy KSV011 on sidecar.
+        # D-LOKI-RBAC (KSV041): no Secret in the repo carries `loki_rule`, and chart 18.4.0 hardcodes
+        # `resources: ["configmaps", "secrets"]` in templates/backend/clusterrole.yaml whenever
+        # sidecar.rules.enabled is true. Restrict the sidecar to RESOURCE=configmap and replace
+        # loki-clusterrole in-release via rbac.useExistingRole + extraObjects so loki-sc-rules stays
+        # running without cluster-wide Secret read. Cost: Secret-backed loki_rule objects are not
+        # watched; re-audit on chart upgrade (pinned by R418). Escape hatch: remove sidecar.rules,
+        # rbac.useExistingRole and extraObjects.
         sidecar:
           resources:
             requests:
@@ -112,6 +119,22 @@ spec:
             limits:
               cpu: 100m
               memory: 192Mi
+          rules:
+            resource: configmap
+        rbac:
+          useExistingRole: loki-clusterrole
+        extraObjects:
+          - apiVersion: rbac.authorization.k8s.io/v1
+            kind: ClusterRole
+            metadata:
+              name: loki-clusterrole
+              labels:
+                app.kubernetes.io/name: loki
+                app.kubernetes.io/instance: loki
+            rules:
+              - apiGroups: [""]
+                resources: ["configmaps"]
+                verbs: ["get", "watch", "list"]
         read:
           replicas: 0
         write:

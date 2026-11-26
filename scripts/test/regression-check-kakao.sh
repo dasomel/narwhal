@@ -3615,6 +3615,9 @@ PYEOF'
     python3 scripts/test/lib/check-kubelet-serving-tls-control-plane.py --mutation-verify
   check R417 "CSI NFS bootstrap post-render hardens sidecars, adds CPU limits, preserves nfs context, and fails closed; mutation checks" \
     python3 scripts/test/lib/check-csi-nfs-hardening.py --mutation-verify
+  # 2026-11-26: monitoring RBAC secrets access (CIS 5.1.2 KSV041): loki, grafana sidecars configmap-only + kube-state-metrics without secrets collector
+  check R418 "Monitoring RBAC secrets access removed (CIS 5.1.2 KSV041): loki-clusterrole and prometheus-stack-grafana-clusterrole narrowed to configmaps with sidecar RESOURCE=configmap, prometheus-stack-kube-state-metrics drops the secrets collector across GitOps and 08-2-monitoring.sh; 23 mutations caught (D-LOKI-RBAC, D-GRAFANA-RBAC, D-KSM-RBAC)" \
+    python3 scripts/test/lib/check-rbac-monitoring-secrets.py --mutation-verify
 }
 
 #=========================================

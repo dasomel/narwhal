@@ -160,7 +160,9 @@ MUT_ALLOY: list[tuple[str, str, str, str]] = [
     ("gitops verb widened", "kmon", 'resources: ["podlogs"]\n                  verbs: ["get", "list", "watch"]\n',
      'resources: ["podlogs"]\n                  verbs: ["get", "list", "watch", "delete"]\n'),
     ("gitops clusterRules overridden", "kmon", "            rbac:\n              rules:\n", "            rbac:\n              clusterRules: []\n              rules:\n"),
-    ("bootstrap secrets added back", "mon-boot", '      resources: ["configmaps"]\n', '      resources: ["configmaps", "secrets"]\n'),
+    # Anchored on the alloy-logs events rule: the Loki block (R418) also has a configmaps-only rule.
+    ("bootstrap secrets added back", "mon-boot", 'resources: ["events"]\n          verbs: ["get", "list", "watch"]\n        - apiGroups: [""]\n          resources: ["configmaps"]\n',
+     'resources: ["events"]\n          verbs: ["get", "list", "watch"]\n        - apiGroups: [""]\n          resources: ["configmaps", "secrets"]\n'),
     ("bootstrap rbac block dropped", "mon-boot", "    rbac:\n      rules:\n", "    noRbac:\n      rules:\n"),
     ("bootstrap events rule dropped", "mon-boot", '      resources: ["events"]\n', '      resources: ["eventz"]\n'),
     ("bootstrap values file not consumed", "mon-boot", "    -f /tmp/k8s-monitoring-values.yaml; then", "    -f /tmp/other-values.yaml; then"),

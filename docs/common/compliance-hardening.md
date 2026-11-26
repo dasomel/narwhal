@@ -411,6 +411,28 @@ functionality or reverses an intentional trade-off.
 4. **Broad RBAC / secret access / wildcards** (CIS 5.1.2, 5.1.3, 5.1.6) — required by
    operators (ArgoCD, Keycloak Operator, cert-manager, etc.).
 
+### Monitoring sidecar and kube-state-metrics Secret reads (CIS 5.1.2/KSV041, R418)
+
+`loki-clusterrole`, `prometheus-stack-grafana-clusterrole` and
+`prometheus-stack-kube-state-metrics` no longer grant cluster-wide Secret reads.
+No Secret in the repository carries the `loki_rule`, `grafana_dashboard` or
+`grafana_datasource` sidecar labels, and nothing queries `kube_secret_*` series.
+The Loki rules sidecar and the Grafana dashboard and datasource sidecars watch
+ConfigMaps only (`D-LOKI-RBAC`, `D-GRAFANA-RBAC`). Both charts hardcode
+`configmaps` plus `secrets` in their ClusterRole while a sidecar is enabled, so
+the release replaces it with a same-named ConfigMap-only ClusterRole
+(`rbac.useExistingRole` / `rbac.useExistingClusterRole` plus `extraObjects`).
+kube-state-metrics keeps its default collectors except `secrets` (`D-KSM-RBAC`).
+GitOps (`loki.yaml`, `prometheus-stack.yaml`) and bootstrap (`08-2-monitoring.sh`)
+render the same rules; R418 pins them. A Secret-backed rule, dashboard or
+datasource is no longer picked up; use a ConfigMap.
+
+Live on the single-node cluster (2026-11-26): both Applications Synced/Healthy,
+the three ClusterRoles have no Secret rule, the Loki, Grafana and
+kube-state-metrics pods run without restarts or `forbidden` log lines,
+`up{job="kube-state-metrics"}` is 1, and all 31 labelled dashboard ConfigMaps
+load in Grafana.
+
 ### Adding or updating allowlist entries
 
 Every exception in `portal/src/data/compliance-acceptance-rules.json` (loaded and validated by `portal/src/lib/compliance-acceptance.ts` / `portal/src/lib/compliance-accepted.ts`) is fail-closed by exact `(scope, namespace, kind, name, checkID)` with required `id`, `reason`, `owner`, and `reviewedAt` metadata — no namespace-blanket (`SYSTEM_NAMESPACES`), substring (`UPSTREAM_RBAC_ROLE_PATTERNS`), prefix (`system:`/`kubeadm:`), or check-less role acceptance exists. Any unlisted check, unlisted workload/role, or unknown/mismatched kind remains actionable, unused rules are surfaced in `ComplianceSummary` and the Compliance UI, and report rows are marked accepted only when every failing check is present in `checks[]`, accounted for by the per-severity `summary` totals, and accepted. The allowlist currently holds **48 Config Audit rules across 48 workloads**, **47 RBAC rules**, and **4 Infra rules**.

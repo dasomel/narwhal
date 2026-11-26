@@ -202,9 +202,9 @@ describe("kube-bench CIS test records", () => {
       configAuditItems: [
         {
           metadata: {
-            namespace: "security-system",
-            name: "daemonset-falco",
-            labels: { "trivy-operator.resource.kind": "DaemonSet", "trivy-operator.resource.name": "falco" },
+            namespace: "chaos-testing",
+            name: "daemonset-chaos-daemon",
+            labels: { "trivy-operator.resource.kind": "DaemonSet", "trivy-operator.resource.name": "chaos-daemon" },
           },
           report: {
             summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 },
@@ -269,7 +269,7 @@ describe("kube-bench CIS test records", () => {
       })
     }
 
-    // Trivy accepted failure (5.2.2 falco) with kube-bench WARN stays failed (accepted)
+    // Trivy accepted failure (5.2.2 chaos-daemon; Falco no longer runs privileged since D-FALCO-LEAST-PRIV) with kube-bench WARN stays failed (accepted)
     expect(byId.get("5.2.2")).toMatchObject({
       evaluationState: "failed",
       accepted: true,
@@ -780,7 +780,7 @@ describe("kube-bench CIS test records", () => {
         report: { summary: { criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0 }, checks: [] },
       }],
       configAuditItems: [{
-        metadata: { namespace: "security-system", name: "daemonset-falco", labels: { "trivy-operator.resource.kind": "DaemonSet", "trivy-operator.resource.name": "falco" } },
+        metadata: { namespace: "chaos-testing", name: "daemonset-chaos-daemon", labels: { "trivy-operator.resource.kind": "DaemonSet", "trivy-operator.resource.name": "chaos-daemon" } },
         report: { summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 }, checks: [{ checkID: "KSV017", success: false, severity: "HIGH", title: "Privileged" }] },
       }],
     })
@@ -829,7 +829,7 @@ describe("kube-bench CIS test records", () => {
       const configAuditItems: unknown[] = []
       if (nextRand() < 0.5) {
         configAuditItems.push({
-          metadata: { namespace: "security-system", name: "daemonset-falco", labels: { "trivy-operator.resource.kind": "DaemonSet", "trivy-operator.resource.name": "falco" } },
+          metadata: { namespace: "chaos-testing", name: "daemonset-chaos-daemon", labels: { "trivy-operator.resource.kind": "DaemonSet", "trivy-operator.resource.name": "chaos-daemon" } },
           report: { summary: { criticalCount: 0, highCount: 1, mediumCount: 0, lowCount: 0 }, checks: [{ checkID: "KSV017", success: false, severity: "HIGH", title: "Privileged" }] },
         })
       }

@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-falco-least-privileged-20261126",
+  "task": "Switch Falco modern_ebpf from privileged=true to leastPrivileged=true with explicit capabilities, RuntimeDefault seccomp, allowPrivilegeEscalation=false, readOnlyRootFilesystem=true, and narrow the Falco CIS acceptance rules.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-falco-least-privileged.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "gitops/charts/narwhal-apps/templates/falco.yaml",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/compliance-accepted.test.ts",
+      "portal/src/lib/compliance-evidence.test.ts",
+      "portal/src/lib/compliance.test.ts",
+      "portal/src/lib/i18n.ts",
+      "scripts/test/lib/check-falco-least-privileged.py",
+      "scripts/test/lib/check-round4-compliance-hardening.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Not verified: HA/Kakao nodes and kernel upgrades (BTF/capability behaviour). Live single-node checks are in e10."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "reviewed": true,
+      "provenance": [
+        "Pulled upstream chart falco-9.2.1.tgz from https://falcosecurity.github.io/charts into .review/charts and inspected templates/pod-template.tpl and values.yaml.",
+        "Research report .review/research-l4.md section 2 (D-FALCO-LEAST-PRIV) and prior live measurement of privileged CapEff 000001ffffffffff and D-falco-rofs."
+      ],
+      "summary": "Chart falco-9.2.1 templates/pod-template.tpl replaces the computed container securityContext when containerSecurityContext is non-empty and adds pod annotation container.apparmor.security.beta.kubernetes.io/falco: unconfined when driver.modernEbpf.leastPrivileged is true."
+    },
+    {
+      "id": "e3",
+      "type": "reproduction",
+      "summary": "Before the change, falco.yaml ran with driver.modernEbpf.leastPrivileged=false and containerSecurityContext.privileged=true (CapEff 000001ffffffffff), leaving KSV001, KSV003, KSV004, KSV017, KSV030, and KSV104 failing on DaemonSet/falco.",
+      "evidence": [
+        "test:helm template falco .review/charts/falco with previous falco.yaml values -> container securityContext {privileged: true, readOnlyRootFilesystem: true}, no pod seccompProfile",
+        "test:trivy config on previous rendered DaemonSet/falco -> KSV001, KSV003, KSV004, KSV017, KSV030, KSV104 failing"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Set driver.modernEbpf.leastPrivileged=true, podSecurityContext.seccompProfile.type=RuntimeDefault, and containerSecurityContext with allowPrivilegeEscalation=false, readOnlyRootFilesystem=true, capabilities.drop=[ALL], capabilities.add=[BPF, SYS_RESOURCE, PERFMON, SYS_PTRACE] in falco.yaml (D-FALCO-LEAST-PRIV). Narrowed cfg:security-system:DaemonSet:falco:accept in compliance-acceptance-rules.json by removing KSV001, KSV003, KSV017 and adding KSV002 and KSV022 with preserved+appended en/ko reasons and docs table parity. Updated R371 and added R421."
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "R421 and R371 mutation checks with offline falco-9.2.1 helm template render and trivy config scan, R291/R358/R411/R395/R383/R414 checks, portal vitest & tsc, shellcheck, markdownlint",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-falco-least-privileged.py --mutation-verify -> PASS: R421 Falco least-privileged modern_ebpf + helm render verified (falco) (21 mutations rejected)",
+        "test:python3 scripts/test/lib/check-round4-compliance-hardening.py --mutation-verify -> PASS: R371 round-4 compliance hardening + offline helm renders SKIPPED (no chart bundle) (15 mutations rejected)",
+        "test:trivy config --skip-check-update on helm-rendered DaemonSet/falco -> KSV001, KSV003, KSV004, KSV014, KSV017, KSV030, KSV104, KSV118 PASS; remaining workload checks KSV002, KSV012, KSV020, KSV021, KSV022, KSV023, KSV106, KSV121 match acceptance rule",
+        "test:bash -n scripts/test/regression-check-kakao.sh && shellcheck -S warning scripts/test/regression-check-kakao.sh -> exit 0",
+        "test:python3 scripts/test/lib/check-ci-parity.py --mutation-verify -> PASS: R414 CI parity, 25 behavior traces; 2 mutations rejected",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> No markdownlint violations on added/modified active-documentation lines.",
+        "test:portal vitest run src/lib/compliance-accepted.test.ts src/lib/compliance-evidence.test.ts src/lib/compliance.test.ts -> 3 passed (106 tests); bash scripts/harness-rules.sh -> OK"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "scope_check",
+      "summary": "Not verified: HA/Kakao nodes and kernel upgrades (BTF/capability behaviour). Live single-node checks are in e10."
+    },
+    {
+      "id": "e7",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Static regression suite checks R421, R371, R291, R358, R411, R395, R383, R414 and portal unit tests",
+      "summary": "All Falco, Batch C, and portal compliance static regression checks and mutation tests pass.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-falco-least-privileged.py --mutation-verify -> PASS (21 mutations rejected)",
+        "test:python3 scripts/test/lib/check-falco.py --mutation-verify -> PASS (69 mutations caught)",
+        "test:python3 scripts/test/lib/check-pod-security-batch-c.py --mutation-verify -> PASS (32 mutations rejected)",
+        "test:python3 scripts/test/lib/check-portal-exact-acceptance.py --mutation-verify -> PASS (42 mutations rejected)",
+        "test:python3 scripts/test/lib/check-compliance-low-residuals.py --mutation-verify -> PASS (25 mutations rejected)"
+      ]
+    },
+    {
+      "id": "e10",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live single-node cluster (orchestrator, 2026-11-26/27)",
+      "summary": "Branch falco.yaml pushed to Gitea and synced.",
+      "evidence": [
+        "test:DaemonSet falco container securityContext -> allowPrivilegeEscalation false, add [BPF, SYS_RESOURCE, PERFMON, SYS_PTRACE], drop [ALL], readOnlyRootFilesystem true, no privileged; pod 1/1 Running, 0 restarts",
+        "test:falco process /proc status -> CapEff 000000c001080000, NoNewPrivs 1, Seccomp 2; 0 error/Operation not permitted lines in 3 min; Application Synced/Healthy",
+        "test:35 events in 15 min all carry k8s.ns.name/k8s.pod.name/container.image.repository, incl. 'Read sensitive file untrusted' from a probe pod; Loki hourly count of the pre-existing kube-vip 'Packet socket created' rule steady at ~1194/h before and after (no new noise)"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "Falco least-privileged modern_ebpf configuration (D-FALCO-LEAST-PRIV), narrowed Config Audit acceptance (KSV001/KSV003/KSV017 removed, KSV002/KSV022 added with preserved+appended bilingual reason), documentation, changelogs, R371 update, and R421 regression check with offline Helm render verification are complete. Live cluster verification is scoped to the orchestrator trial."
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within requested author-lane scope: falco.yaml renders the least-privileged modern_ebpf context against chart 9.2.1, fixed KSV checks are removed from the acceptance list, KSV002/KSV022 are documented and accepted, and R371/R421 pass with mutation verification."
+    }
+  ]
+}

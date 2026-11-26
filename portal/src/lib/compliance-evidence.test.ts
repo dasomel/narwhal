@@ -79,7 +79,7 @@ it.each([false, true])("G1 failure evidence wins over mixed positive evidence an
 
 it("G1 underlying failure keeps the existing accepted split and resolves absent CCR controls", async () => {
   const routes = setup(["AVD-KSV-0017"])
-  routes[prefix + "configauditreports"] = { items: [report("KSV017", false, "DaemonSet", "security-system", "falco")] }
+  routes[prefix + "configauditreports"] = { items: [report("KSV017", false, "DaemonSet", "nfs-quota-agent", "nfs-quota-agent")] }
   const ccr = routes[prefix + "clustercompliancereports"] as { items: Array<{ status: { detailReport: { results: unknown[] } } }> }
   ccr.items[0].status.detailReport.results = []
   expect((await getComplianceFrameworkDetail("experiment"))!.controls[0]).toMatchObject({ evaluationState: "failed", accepted: true, acceptedFailCount: 1 })

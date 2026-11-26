@@ -351,12 +351,11 @@
       "kind": "DaemonSet",
       "name": "falco",
       "checks": [
-        "KSV001",
-        "KSV003",
+        "KSV002",
         "KSV012",
-        "KSV017",
         "KSV020",
         "KSV021",
+        "KSV022",
         "KSV023",
         "KSV106",
         "KSV121"

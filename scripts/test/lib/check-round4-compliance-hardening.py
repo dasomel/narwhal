@@ -3,8 +3,10 @@
 
 Pins:
 1. security-system/falco (falco.yaml; GitOps-only, no Phase 2 bootstrap install):
-   containerSecurityContext sets BOTH privileged=true and readOnlyRootFilesystem=true
-   (because setting containerSecurityContext replaces the chart's computed context).
+   driver.modernEbpf.leastPrivileged=true, podSecurityContext.seccompProfile.type=RuntimeDefault,
+   and containerSecurityContext with allowPrivilegeEscalation=false, readOnlyRootFilesystem=true,
+   capabilities.drop=[ALL], capabilities.add=[BPF, SYS_RESOURCE, PERFMON, SYS_PTRACE], and no
+   privileged override (D-FALCO-LEAST-PRIV + D-falco-rofs).
 2. storage/velero node-agent (velero.yaml & 08-4-storage.sh):
    nodeAgent.containerSecurityContext is exactly readOnlyRootFilesystem=true and
    capabilities.drop=[ALL], with no privileged override, and emptyDirs
@@ -73,14 +75,28 @@ def _find_chart(root: Path, filename: str) -> Path | None:
 
 def _verify_falco(falco_yaml: str, sec_sh: str) -> None:
     vals = _app_values(falco_yaml)
+    driver = vals.get("driver") or {}
+    assert (driver.get("modernEbpf") or {}).get("leastPrivileged") is True, (
+        "falco.yaml: driver.modernEbpf.leastPrivileged must be true"
+    )
+    psc = vals.get("podSecurityContext") or {}
+    assert psc.get("seccompProfile") == {"type": "RuntimeDefault"}, (
+        "falco.yaml: podSecurityContext.seccompProfile must be {type: RuntimeDefault}"
+    )
     csc = vals.get("containerSecurityContext") or {}
-    assert csc.get("privileged") is True, (
-        "falco.yaml: containerSecurityContext.privileged must be true "
-        "(overriding containerSecurityContext drops chart-computed privileged)"
+    assert "privileged" not in csc, (
+        "falco.yaml: containerSecurityContext must not set privileged under leastPrivileged"
+    )
+    assert csc.get("allowPrivilegeEscalation") is False, (
+        "falco.yaml: containerSecurityContext.allowPrivilegeEscalation must be false"
     )
     assert csc.get("readOnlyRootFilesystem") is True, (
         "falco.yaml: containerSecurityContext.readOnlyRootFilesystem must be true"
     )
+    assert csc.get("capabilities") == {
+        "drop": ["ALL"],
+        "add": ["BPF", "SYS_RESOURCE", "PERFMON", "SYS_PTRACE"],
+    }, "falco.yaml: containerSecurityContext.capabilities must drop ALL and add [BPF, SYS_RESOURCE, PERFMON, SYS_PTRACE]"
     assert "falco" not in sec_sh.lower(), "08-3-security.sh must not install a parallel bootstrap Falco"
 
 
@@ -166,9 +182,19 @@ def verify_helm_renders(root: Path) -> bool:
             capture_output=True, text=True, check=True,
         ).stdout
     falco_ds = yaml.safe_load(out)
-    fc = falco_ds["spec"]["template"]["spec"]["containers"][0]
-    assert fc["securityContext"].get("privileged") is True, "falco render: privileged missing"
-    assert fc["securityContext"].get("readOnlyRootFilesystem") is True, "falco render: ro-rootfs missing"
+    fpspec = falco_ds["spec"]["template"]["spec"]
+    assert fpspec.get("securityContext") == {"seccompProfile": {"type": "RuntimeDefault"}}, (
+        "falco render: pod seccompProfile.type must be RuntimeDefault"
+    )
+    fc = fpspec["containers"][0]
+    assert fc["securityContext"] == {
+        "allowPrivilegeEscalation": False,
+        "readOnlyRootFilesystem": True,
+        "capabilities": {
+            "drop": ["ALL"],
+            "add": ["BPF", "SYS_RESOURCE", "PERFMON", "SYS_PTRACE"],
+        },
+    }, f"falco render: unexpected securityContext {fc['securityContext']}"
     assert any(m.get("mountPath") == "/root/.falco" for m in fc.get("volumeMounts") or []), (
         "falco render: /root/.falco volumeMount missing"
     )
@@ -231,13 +257,13 @@ def mutation_verify(root: Path) -> int:
     mutations = [
         (
             "falco_yaml",
-            "        containerSecurityContext:\n          privileged: true\n          readOnlyRootFilesystem: true",
-            "        containerSecurityContext:\n          readOnlyRootFilesystem: true",
+            "            leastPrivileged: true",
+            "            leastPrivileged: false",
         ),
         (
             "falco_yaml",
-            "        containerSecurityContext:\n          privileged: true\n          readOnlyRootFilesystem: true",
-            "        containerSecurityContext:\n          privileged: true\n          readOnlyRootFilesystem: false",
+            "        containerSecurityContext:\n          allowPrivilegeEscalation: false\n          readOnlyRootFilesystem: true",
+            "        containerSecurityContext:\n          allowPrivilegeEscalation: false\n          readOnlyRootFilesystem: false",
         ),
         (
             "velero_yaml",

@@ -49,6 +49,8 @@
       "evidence": [
         "test:crane digest ghcr.io/dasomel/narwhal-portal:1.1.32 -> sha256:f6ef8f25d59c2f2e61f078f6fe9e741c9c234f6b3b482172ad27636f1ac3d85a at 2026-11-26T14:10:27Z after publish run 45835248384; cosign verify --key scripts/airgap/keys/cosign.pub -> verified (orchestrator)",
         "test:make test -> passed 523   failed 0",
+        "test:make validate, check-version-consistency.sh, gen-oss-versions.mjs --check -> exit 0",
+        "test:make test -> passed 523   failed 0",
         "test:make validate, check-version-consistency.sh, gen-oss-versions.mjs --check -> exit 0"
       ]
     },

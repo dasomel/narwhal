@@ -68,13 +68,13 @@ The portal reasons use the 2026-11-26 process and host observations. Pre-merge t
 | `kube-system/cilium-envoy` KSV021 | candidate fix: `envoy.podSecurityContext.runAsGroup` above 10000 (rendered by the reviewer). Apply through the same Cilium upgrade path and verify the datapath. |
 | `kube-system/csi-nfs-node` KSV021 | Chart 4.13.2 ignores `node.securityContext`. Measure the liveness socket permissions and test a chart change or post-render with node volume registration, mount and probe checks. |
 
-**Trials on 2026-11-26**
+#### Trials on 2026-11-26
 
 - **kube-vip:** On `narwhal-master-1`, the process ran with UID 0, GID 10100, CapEff `0x3000` (NET_ADMIN and NET_RAW only), NoNewPrivs 1, and Seccomp 2. The VIP address was present, its `/readyz` returned HTTP 200, and the `plndr-cp-lock` Lease renewed.
 - **MetalLB speaker:** The first trial set only `runAsGroup: 10100`. Containerd failed to create the sandbox with `user group "10100" is specified without user`. After recovery, a second trial explicitly set `runAsUser: 0` alongside `runAsGroup: 10100`. The speaker was Ready, the LoadBalancer IP was retained, and `test-sso` recorded 144 passes and 0 failures.
 - **Istio CNI:** Chart 1.30.1 rendered RuntimeDefault for the unprivileged `install-cni` container. Live verification still needs an ArgoCD sync of `devtools/istio-cni`, a mesh enrollment check, and a node-restart recovery check.
 
-**Apply kube-vip to existing nodes**
+#### Apply kube-vip to existing nodes
 
 Apply on one control-plane node at a time. On a multi-node control plane, start with a node that does not currently hold the Lease.
 

@@ -105,12 +105,18 @@ def check(texts: dict[str, str]) -> list[str]:
 
     if "check R410 " not in texts["reg"] or "check-pod-security-batch-b.py --mutation-verify" not in texts["reg"]:
         errors.append("scripts/test/regression-check-kakao.sh must wire R410 with --mutation-verify")
+    # The uid/gid keys were verified against these chart versions; a bump must re-render (review MINOR, 2026-11-26).
+    for key, ver in (("openbao", "0.28.3"), ("headlamp", "0.46.0")):
+        if not re.search(rf"^\s*targetRevision:\s*{re.escape(ver)}\s*$", texts[key], re.M):
+            errors.append(f"{key}.yaml targetRevision changed from {ver}: re-render and re-verify the uid/gid keys")
     return errors
 
 
 MUTATIONS: list[tuple[str, str, str, str]] = [
+    ("openbao chart bumped without re-verify", "openbao", "targetRevision: 0.28.3", "targetRevision: 0.29.0"),
+    ("headlamp chart bumped without re-verify", "headlamp", "targetRevision: 0.46.0", "targetRevision: 0.47.0"),
     ("openbao injector uid dropped", "openbao", "          uid: 10100\n", ""),
-    ("openbao injector gid invented", "openbao", "          gid: 10100\n", "          gid: 1000\n"),
+    ("openbao injector gid left at chart default", "openbao", "          gid: 10100\n", "          gid: 1000\n"),
     ("openbao server UID moved with it", "openbao", "          updateStrategyType: OnDelete\n", "          updateStrategyType: OnDelete\n          uid: 10100\n"),
     ("openbao injector readOnlyRootFilesystem dropped", "openbao", "              readOnlyRootFilesystem: true\n              capabilities:\n                drop:\n                  - ALL\n        ui:", "              capabilities:\n                drop:\n                  - ALL\n        ui:"),
     ("openbao bootstrap injector uid dropped", "openbao-boot", "  uid: 10100\n", ""),

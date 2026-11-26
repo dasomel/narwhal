@@ -42,18 +42,19 @@
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Static regression suite, R410 and helm template renders of the changed releases on the author host. The live rollout is NOT done by this lane; the orchestrator performs it.",
+      "scope": "Static checks plus a pre-merge live trial on the local cluster (branch files pushed to Gitea).",
       "summary": "R410 pins the values in both GitOps and bootstrap blocks and rejects removal mutations; the full static suite passes.",
       "evidence": [
-        "test:python3 scripts/test/lib/check-pod-security-batch-b.py --mutation-verify -> PASS: R410 (17 mutations rejected)",
+        "test:python3 scripts/test/lib/check-pod-security-batch-b.py --mutation-verify -> PASS: R410 (19 mutations rejected)",
         "test:helm template openbao 0.28.3 and headlamp 0.46.0 with both the GitOps and the bootstrap values -> injector pod 10100/10100 fsGroup 10100 while the server stays 100/1000; Headlamp container and ca-bundle 10100/10100",
-        "test:make test -> passed 516   failed 0"
+        "test:live trial 2026-11-26: openbao and headlamp Synced/Healthy; new injector pod uid=10100 gid=10100, 0 restarts; server-side dry-run of an annotated pod -> vault-agent-init + vault-agent injected; openbao-0 still uid 100 gid 1000, 0 restarts, Initialized true, Sealed false; new headlamp pod uid=10100 gid=10100, https://headlamp.local.narwhal.internal/ -> 200, /config returns the OIDC cluster, 0 error/permission/config log lines; test-sso PASS 144 FAIL 0",
+        "test:make test (rebased on main 61a66f95) -> passed 518   failed 0"
       ]
     },
     {
       "id": "e5",
       "type": "completion_claim",
-      "summary": "Values are in GitOps and bootstrap and pinned by R410 within the stated scope. Live behavior (pods Ready, webhook injection, Headlamp login) is not verified by this lane and remains for the orchestrator's pre-merge trial."
+      "summary": "OpenBao injector and Headlamp run with UID/GID 10100 in GitOps and bootstrap, pinned by R410 (with chart-version guards); the pre-merge live trial confirmed both workloads, injection and OpenBao health. Harbor is intentionally unchanged."
     },
     {
       "id": "e6",

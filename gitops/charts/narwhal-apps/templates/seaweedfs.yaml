@@ -24,11 +24,11 @@ spec:
         # D-sw-nonroot: master and filer keep state on nfs-csi PVCs, so they must survive a
         # root_squash export (uid 0 -> nobody; narwhal#224). The chart overrides the image
         # entrypoint, so they ran as root (the image USER) and left uid-0 files. They now
-        # run as the image's `seaweed` user (uid/gid 1000, verified in chrislusf/seaweedfs:4.34
-        # /etc/passwd). fsGroup is inert on NFS (nfs.csi.k8s.io sets no fsGroupPolicy), so
-        # existing data must be chowned first: scripts/cluster/nfs-root-squash-align.sh.
+        # run as platform UID/GID 10100. fsGroup is inert on NFS (nfs.csi.k8s.io sets no
+        # fsGroupPolicy), so align existing data first with scripts/cluster/nfs-root-squash-align.sh.
         # Logs move from root-owned hostPath to emptyDir (fsGroup applies there; hostPath is
-        # root:root 0755 and unwritable by uid 1000). Escape hatch: revert this block.
+        # root:root 0755). D-OWN-POD keeps volume hostPath and owns it as 10100; existing data
+        # needs the documented one-time node chown before rollout. Escape hatch: revert this block.
         # D-sw-qos (2026-11-06): all four components had `resources: {}` = BestEffort
         # (oom_score_adj 1000), so a node-level OOM during a Velero backup killed weed
         # (filer, 4 restarts) before anything else, S3 returned 500 and every PVB failed. Requests
@@ -45,9 +45,9 @@ spec:
           podSecurityContext:
             enabled: true
             runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
-            fsGroup: 1000
+            runAsUser: 10100
+            runAsGroup: 10100
+            fsGroup: 10100
             fsGroupChangePolicy: OnRootMismatch
           logs:
             type: emptyDir
@@ -105,6 +105,11 @@ spec:
               memory: 64Mi
             limits:
               memory: 512Mi
+          podSecurityContext:
+            enabled: true
+            runAsNonRoot: true
+            runAsUser: 10100
+            runAsGroup: 10100
           extraVolumes: |
             - name: tmp
               emptyDir: {}
@@ -126,9 +131,9 @@ spec:
           podSecurityContext:
             enabled: true
             runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
-            fsGroup: 1000
+            runAsUser: 10100
+            runAsGroup: 10100
+            fsGroup: 10100
             fsGroupChangePolicy: OnRootMismatch
           logs:
             type: emptyDir
@@ -175,9 +180,9 @@ spec:
           podSecurityContext:
             enabled: true
             runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
-            fsGroup: 1000
+            runAsUser: 10100
+            runAsGroup: 10100
+            fsGroup: 10100
             fsGroupChangePolicy: OnRootMismatch
           logs:
             type: emptyDir

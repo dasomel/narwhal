@@ -44,6 +44,13 @@ ensure_s3_identities || { echo "ERROR: cannot ensure the SeaweedFS S3 identities
 # makes the PodVolumeBackup Cancel and hang the Backup); it is NOT protected by Velero.
 cat > /tmp/seaweedfs-values.yaml <<'EOF'
 master:
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 10100
+    runAsGroup: 10100
+    fsGroup: 10100
+    fsGroupChangePolicy: OnRootMismatch
   resources:
     requests:
       cpu: 25m
@@ -66,6 +73,11 @@ master:
     seccompProfile:
       type: RuntimeDefault
 volume:
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 10100
+    runAsGroup: 10100
   resources:
     requests:
       cpu: 25m
@@ -88,6 +100,13 @@ volume:
     seccompProfile:
       type: RuntimeDefault
 filer:
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 10100
+    runAsGroup: 10100
+    fsGroup: 10100
+    fsGroupChangePolicy: OnRootMismatch
   resources:
     requests:
       cpu: 50m
@@ -110,6 +129,13 @@ filer:
     seccompProfile:
       type: RuntimeDefault
 s3:
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 10100
+    runAsGroup: 10100
+    fsGroup: 10100
+    fsGroupChangePolicy: OnRootMismatch
   resources:
     requests:
       cpu: 25m
@@ -149,14 +175,19 @@ for attempt in 1 2 3 4 5; do
     --set master.data.storageClass=nfs-csi \
     --set master.podSecurityContext.enabled=true \
     --set master.podSecurityContext.runAsNonRoot=true \
-    --set master.podSecurityContext.runAsUser=1000 \
-    --set master.podSecurityContext.runAsGroup=1000 \
-    --set master.podSecurityContext.fsGroup=1000 \
+    --set master.podSecurityContext.runAsUser=10100 \
+    --set master.podSecurityContext.runAsGroup=10100 \
+    --set master.podSecurityContext.fsGroup=10100 \
+    --set master.podSecurityContext.fsGroupChangePolicy=OnRootMismatch \
     --set master.podSecurityContext.fsGroupChangePolicy=OnRootMismatch \
     --set master.logs.type=emptyDir \
     --set-string 'master.podAnnotations.backup\.velero\.io/backup-volumes-excludes=data-storage' \
     --set volume.enabled=true \
     --set volume.replicas=1 \
+    --set volume.podSecurityContext.enabled=true \
+    --set volume.podSecurityContext.runAsNonRoot=true \
+    --set volume.podSecurityContext.runAsUser=10100 \
+    --set volume.podSecurityContext.runAsGroup=10100 \
     --set-string 'volume.nodeSelector=narwhal.io/seaweedfs-volume: "true"' \
     --set volume.data.type=persistentVolumeClaim \
     --set volume.data.size=50Gi \
@@ -168,9 +199,10 @@ for attempt in 1 2 3 4 5; do
     --set filer.data.storageClass=nfs-csi \
     --set filer.podSecurityContext.enabled=true \
     --set filer.podSecurityContext.runAsNonRoot=true \
-    --set filer.podSecurityContext.runAsUser=1000 \
-    --set filer.podSecurityContext.runAsGroup=1000 \
-    --set filer.podSecurityContext.fsGroup=1000 \
+    --set filer.podSecurityContext.runAsUser=10100 \
+    --set filer.podSecurityContext.runAsGroup=10100 \
+    --set filer.podSecurityContext.fsGroup=10100 \
+    --set filer.podSecurityContext.fsGroupChangePolicy=OnRootMismatch \
     --set filer.podSecurityContext.fsGroupChangePolicy=OnRootMismatch \
     --set filer.logs.type=emptyDir \
     --set filer.s3.enabled=false \
@@ -179,9 +211,10 @@ for attempt in 1 2 3 4 5; do
     --set s3.existingConfigSecret=seaweedfs-s3-config \
     --set s3.podSecurityContext.enabled=true \
     --set s3.podSecurityContext.runAsNonRoot=true \
-    --set s3.podSecurityContext.runAsUser=1000 \
-    --set s3.podSecurityContext.runAsGroup=1000 \
-    --set s3.podSecurityContext.fsGroup=1000 \
+    --set s3.podSecurityContext.runAsUser=10100 \
+    --set s3.podSecurityContext.runAsGroup=10100 \
+    --set s3.podSecurityContext.fsGroup=10100 \
+    --set s3.podSecurityContext.fsGroupChangePolicy=OnRootMismatch \
     --set s3.podSecurityContext.fsGroupChangePolicy=OnRootMismatch \
     --set s3.logs.type=emptyDir; then
     SEAWEEDFS_OK=true; break

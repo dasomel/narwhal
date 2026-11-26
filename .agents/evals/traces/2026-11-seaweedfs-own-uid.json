@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-seaweedfs-own-uid-20261127",
+  "task": "Run SeaweedFS master/filer/volume/s3 as platform UID/GID 10100 (D-OWN-POD: keep the volume hostPath, own it as 10100), narrow the SeaweedFS CIS acceptance rules, and document the 1000->10100 ownership move.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-seaweedfs-own-uid.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      "docs/runbooks/nfs-xfs-migration.md",
+      "gitops/charts/narwhal-apps/templates/seaweedfs.yaml",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/i18n.ts",
+      "scripts/cluster/08-4-storage.sh",
+      "scripts/cluster/nfs-root-squash-align.sh",
+      "scripts/common/01-prerequisites.sh",
+      "scripts/test/lib/check-seaweedfs-nonroot.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Not verified: HA/Kakao topology and a fresh install (01-prerequisites empty /ssd/object_store path); live checks are single-node only (e5)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "First live trial (2026-11-26) left master in CrashLoopBackOff: master raft m9333/log,conf,state are 1000:1000 0600 on the NFS PV and nfs-root-squash-align.sh re-owns root-owned entries only; the trial's manual step searched PV dirs at -maxdepth 1 while they live at storage/<pvc> (depth 2).",
+      "evidence": [
+        "test:sudo find /srv/nfs/k8s/storage -maxdepth 3 -printf '%U:%G %m %P' -> data-storage-seaweedfs-master-0/m9333/{log,conf,state} 1000:1000 600",
+        "test:nfs-root-squash-align.sh dry run with uid-1000 consumers -> REFUSE: a Running consumer runs as a different non-root uid"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "seaweedfs.yaml and 08-4-storage.sh set runAsUser/runAsGroup/fsGroup 10100 (volume gains a podSecurityContext), nfs-root-squash-align.sh static targets 10100:10100, 01-prerequisites.sh prepares an empty /ssd/object_store owned 10100, acceptance narrowed to KSV011 (s3/filer/master) and KSV011+KSV023 (volume), runbook gains the explicit PV-content chown for existing clusters, R419 added, lessons-log row."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Static checks",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-seaweedfs-nonroot.py --mutation-verify -> PASS: R419 SeaweedFS ownership invariants; 6 mutations rejected",
+        "test:python3 scripts/test/lib/check-portal-exact-acceptance.py --mutation-verify -> PASS: R395 exact acceptance (42 mutations rejected)",
+        "test:portal vitest run compliance-accepted/compliance-evidence/compliance tests -> 3 files, 106 tests passed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live single-node cluster (orchestrator, 2026-11-27)",
+      "summary": "Sync paused, SeaweedFS scaled to 0, align --apply, explicit chown of /ssd/object_store and both PV contents, branch seaweedfs.yaml pushed to Gitea and synced.",
+      "evidence": [
+        "test:find /ssd/object_store and both PV dirs -mindepth 1 ! -user 10100 -> 0 entries",
+        "test:seaweedfs master/filer/volume/s3 pods 1/1 Running, 0 restarts, id -u/-g 10100/10100 in all four",
+        "test:velero backup+restore of a probe pod with fs-backup -> Completed/Completed, restored content sw-ok; BSL Available",
+        "test:CNPG narwhal-db ContinuousArchiving=True LastBackupSucceeded=True; Loki S3 errors only inside the 22:31 UTC stop window, 0 error lines afterwards",
+        "test:scripts/test/test-sso.sh -> PASS: 144 FAIL: 0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R419, R395 and portal compliance unit tests",
+      "summary": "SeaweedFS ownership invariants and exact-acceptance checks reject their mutations.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-seaweedfs-nonroot.py --mutation-verify -> PASS (6 mutations rejected)"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "SeaweedFS runs as 10100 with hostPath kept (D-OWN-POD), acceptance narrowed, the existing-cluster ownership move documented and exercised live, R419 added. Fresh install and HA are out of verified scope (e1)."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within scope: branch rendered and running live as 10100 with S3/Velero/CNPG/SSO verified; static checks pass."
+    }
+  ]
+}

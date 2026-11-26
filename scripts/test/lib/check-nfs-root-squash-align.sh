@@ -68,7 +68,7 @@ out="$(PATH="${tmp}/bin:${PATH}" FIXTURE_DIR="${tmp}" NFS_SHARE_PATH="${tmp}/sha
   bash "${root}/scripts/cluster/nfs-root-squash-align.sh" 2>&1)" && rc=0 || rc=$?
 
 fail() { echo "FAIL: $1" >&2; echo "${out}" >&2; exit 1; }
-grep -Fq "target 1000:1000 (static map)" <<<"${out}" || fail "seaweedfs static target"
+grep -Fq "target 10100:10100 (static map)" <<<"${out}" || fail "seaweedfs static target"
 grep -Fq "target 26:26 (from pod securityContext)" <<<"${out}" || fail "pod-derived target"
 grep -Fq "UNRESOLVED" <<<"${out}" || fail "unresolved PV must be reported"
 grep -Fq "REFUSE: a Running consumer runs as a different non-root uid: clash-b uid=1234" <<<"${out}" || fail "different-uid guard"

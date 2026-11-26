@@ -7,6 +7,15 @@ source /home/vagrant/scripts/common/lib-charts.sh
 
 echo "=== Prerequisites Installation ==="
 
+# D-OWN-POD: SeaweedFS volume uses node-local /ssd/object_store and UID/GID 10100.
+# Prepare the empty directory on every node; never recurse over existing object data here.
+sudo install -d -m 0750 /ssd/object_store
+if [ -z "$(sudo find /ssd/object_store -mindepth 1 -print -quit)" ]; then
+  sudo chown 10100:10100 /ssd/object_store
+else
+  echo "SeaweedFS object data already exists; preserving ownership for the operator migration step."
+fi
+
 #=========================================
 # Force apt to use IPv4
 #=========================================

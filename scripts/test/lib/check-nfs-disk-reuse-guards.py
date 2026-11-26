@@ -43,7 +43,9 @@ REQUIRED = [
   ("up", "LC_ALL=C grep -a -o -E '^RW [0-9]+'", "up.sh reads capacity from the descriptor"),
   ("up", 'nfs_size=$(wc -c < "${nfs_vmdk}"', "portable size (no GNU/BSD stat split)"),
   ("storage", "if key_read=$(kubectl get secret openbao-init -n storage -o jsonpath='{.data.unseal_keys_b64}' 2>\"${key_err_file}\"); then", "one key read, stderr kept apart from the value"),
-  ("up", "''|*[!0-9]*) echo \"ERROR: NARWHAL_NFS_DISK_GB must be an integer >= 0", "up.sh rejects a non-integer disk size by name"),
+  ("up", "''|*[!0-9]*|0?*) echo \"ERROR: NARWHAL_NFS_DISK_GB must be a decimal integer >= 0 without leading zeros", "up.sh rejects a non-canonical disk size by name (no octal reading)"),
+  ("up", 'nfs_disk_gb="${NARWHAL_NFS_DISK_GB-200}"', "set-but-empty size is rejected, not defaulted"),
+  ("storage", 'case "${key_err}" in', "the NotFound/API-error split reads kubectl's stderr"),
   ("storage", '*) echo "ERROR: cannot read Secret storage/openbao-init: ${key_err}" >&2; exit 1 ;;', "API error exits as such, never as missing key"),
   ("storage", "*NotFound*)", "absent Secret is told apart from API errors"),
   ("storage", "is initialized and sealed, and storage/openbao-init has no unseal_keys_b64", "present-without-key is reported"),
@@ -79,6 +81,10 @@ def main() -> int:
     caught = 0
     mutations = [(k, frag, "") for k, frag, _ in REQUIRED]
     mutations.append(("storage", "re-run Phase 2.\" >&2\n      exit 1", "re-run Phase 2.\" >&2\n      true"))
+    # FORBIDDEN entries get their own mutation: restoring the merged stderr read must fail the check.
+    # Keeps every REQUIRED fragment intact, so only the FORBIDDEN entry can catch it.
+    mutations.append(("storage", "    UNSEAL_KEY=\"\"\n    key_err_file=",
+                      "    UNSEAL_KEY=\"\"\n    dbg=$(kubectl get secret openbao-init -n storage -o jsonpath='{.data.unseal_keys_b64}' 2>&1)\n    key_err_file="))
     mutations.append(("storage", "      exit 1\n    fi\n  else\n    echo \"OpenBao already unsealed",
                       "      echo \"WARN: OpenBao initialized but unseal key not found in openbao-init secret\"\n    fi\n  else\n    echo \"OpenBao already unsealed"))
     for key, frag, repl in mutations:

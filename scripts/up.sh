@@ -222,11 +222,14 @@ check_macos_local_network_privacy
 # touched. Without it only master-1's `vagrant up` aborts (|| true below) and every other VM then waits
 # 5 minutes for a join command that never comes, on every attempt. Keep the size bound in sync.
 nfs_vmdk=".vagrant/narwhal-nfs/narwhal-nfs.vmdk"
-nfs_disk_gb="${NARWHAL_NFS_DISK_GB:-200}"
-# Same rule as the Vagrantfile (integer >= 0); otherwise the arithmetic below fails with an opaque
-# "unbound variable" under set -u instead of naming the variable.
+# Unset means 200; set-but-empty is rejected, as the Vagrantfile's Integer() does.
+nfs_disk_gb="${NARWHAL_NFS_DISK_GB-200}"
+# Canonical decimal only ("0" or no leading zero). Bash arithmetic reads "08"/"010" as octal ("value too
+# great for base" or a different number), and Ruby's Integer() in the Vagrantfile also reads a leading
+# zero as octal and accepts "1_000" or " 200"; anything the two could read differently is refused here
+# by name instead of being compared with a silently different value.
 case "${nfs_disk_gb}" in
-  ''|*[!0-9]*) echo "ERROR: NARWHAL_NFS_DISK_GB must be an integer >= 0 (got '${nfs_disk_gb}')" >&2; exit 1 ;;
+  ''|*[!0-9]*|0?*) echo "ERROR: NARWHAL_NFS_DISK_GB must be a decimal integer >= 0 without leading zeros (got '${nfs_disk_gb}')" >&2; exit 1 ;;
 esac
 # vm_state prints the second word of `vagrant status`, so "not created" arrives as "not".
 nfs_m1_state=$(vm_state master-1)

@@ -25,7 +25,7 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Scope is ArgoCD privilege split Stage 1 (D-OWN-ARGO-STAGED): argocd-server read-only ClusterRole (single source for GitOps and 13-argocd.sh bootstrap), AppProject/platform exact clusterResourceWhitelist (tenants empty), exact ClusterRole/argocd-application-controller KSV044/KSV046 acceptance (removing argocd-server), R420 with --mutation-verify, docs, and changelogs. ClusterRole/argocd-application-controller itself, dex, namespaced devtools Roles, live cluster mutations, and git commits/pushes are excluded."
+      "summary": "Not verified: HA/Kakao clusters and Argo CD UI resource actions by a human operator (pod delete/restart are intentionally removed). Live single-node checks are in e9."
     },
     {
       "id": "e2",
@@ -78,7 +78,19 @@
     {
       "id": "e6",
       "type": "scope_check",
-      "summary": "Not verified in this worktree (owned by orchestrator): (1) portal vitest/tsc checks (portal/node_modules is absent in this worktree); (2) live kubectl api-resources diff for inferred CRD plural names in argocd-server-rbac.yaml (velero.io/* and aquasecurity.github.io/{sbomreports,clustersbomreports}) and external-chart cluster-scoped kinds in AppProject/platform (PriorityClass, IngressClass, ClusterIssuer; external chart tarballs are not local); (3) live cluster server-side apply, kubectl auth can-i matrix, portal sync/rollback trial, and Trivy RBAC rescan."
+      "summary": "Not verified: HA/Kakao clusters and Argo CD UI resource actions by a human operator (pod delete/restart are intentionally removed). Live single-node checks are in e9."
+    },
+    {
+      "id": "e9",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live single-node cluster (orchestrator, 2026-11-27)",
+      "summary": "Branch argocd-server-rbac.yaml and argocd-projects.yaml pushed to Gitea and synced.",
+      "evidence": [
+        "test:ClusterRole argocd-server -> 0 rules naming secrets; AppProject platform clusterResourceWhitelist -> 12 kinds",
+        "test:kubectl auth can-i as devtools:argocd-server before -> get secrets -A yes, delete pods yes, patch deployments yes, create jobs yes; after -> all no; get pods/log, get pods -A, patch applications, get clustercompliancereports, get ciliumnetworkpolicies stay yes",
+        "test:all 56 Applications hard-refreshed -> 0 not Synced/Healthy, 0 'not permitted in project' in controller logs, 0 forbidden in argocd-server logs; test-sso 144/0"
+      ]
     },
     {
       "id": "e7",

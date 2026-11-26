@@ -9,6 +9,13 @@
 
 ## [Unreleased]
 
+## [1.1.32] - 2026-11-26
+
+### 변경
+
+- **Velero node-agent Config Audit 수용 범위 축소:** `storage/node-agent`의 KSV003/KSV106 수용을 제거했다. 이제 모든 capability를 제거한다(#831). 수용 사유에 실측한 백업·복원 결과를 기록했다.
+- **OSS 버전 목록에 kubelet-csr-approver 1.2.16 추가** (#825).
+
 ## [1.1.31] - 2026-11-26
 
 ### 변경
@@ -1010,7 +1017,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.31...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.32...HEAD
+[1.1.32]: https://github.com/dasomel/narwhal/compare/portal/v1.1.31...portal/v1.1.32
 [1.1.31]: https://github.com/dasomel/narwhal/compare/portal/v1.1.30...portal/v1.1.31
 [1.1.30]: https://github.com/dasomel/narwhal/compare/portal/v1.1.29...portal/v1.1.30
 [1.1.29]: https://github.com/dasomel/narwhal/compare/portal/v1.1.28...portal/v1.1.29

@@ -6,7 +6,8 @@ Pins:
    containerSecurityContext sets BOTH privileged=true and readOnlyRootFilesystem=true
    (because setting containerSecurityContext replaces the chart's computed context).
 2. storage/velero node-agent (velero.yaml & 08-4-storage.sh):
-   nodeAgent.containerSecurityContext.readOnlyRootFilesystem=true with emptyDirs
+   nodeAgent.containerSecurityContext is exactly readOnlyRootFilesystem=true and
+   capabilities.drop=[ALL], with no privileged override, and emptyDirs
    node-agent-home (/root) and tmp (/tmp), preserving podSecurityContext.runAsNonRoot=false.
 3. nfs-quota-agent (05-nfs-quota-agent.sh; no GitOps Application owner):
    HELM_ARGS passes podSecurityContext.seccompProfile.type=RuntimeDefault,
@@ -91,6 +92,11 @@ def _verify_node_agent_values(na: dict, label: str) -> None:
     assert csc.get("readOnlyRootFilesystem") is True, (
         f"{label} nodeAgent.containerSecurityContext.readOnlyRootFilesystem must be true"
     )
+    assert csc.get("capabilities") == {"drop": ["ALL"]}, (
+        f"{label} nodeAgent.containerSecurityContext.capabilities must drop ALL"
+    )
+    assert "privileged" not in csc, f"{label} nodeAgent must not set privileged"
+    assert "privileged" not in na, f"{label} nodeAgent must not set the ignored privileged value"
     vols = {
         v["name"]: v for v in (na.get("extraVolumes") or [])
         if isinstance(v, dict) and "name" in v
@@ -186,7 +192,10 @@ def verify_helm_renders(root: Path) -> bool:
         nspec = nds["spec"]["template"]["spec"]
         assert nspec["securityContext"]["runAsNonRoot"] is False, f"{label} node-agent render runAsNonRoot"
         nc = nspec["containers"][0]
-        assert nc["securityContext"]["readOnlyRootFilesystem"] is True, f"{label} node-agent render ro-rootfs"
+        assert nc["securityContext"] == {
+            "readOnlyRootFilesystem": True,
+            "capabilities": {"drop": ["ALL"]},
+        }, f"{label} node-agent render securityContext: {nc['securityContext']}"
         vols = {v["name"]: v for v in nspec["volumes"]}
         assert vols.get("node-agent-home", {}).get("emptyDir") == {}, f"{label} node-agent render home vol"
         assert vols.get("tmp", {}).get("emptyDir") == {}, f"{label} node-agent render tmp vol"
@@ -235,6 +244,16 @@ def mutation_verify(root: Path) -> int:
             "          containerSecurityContext:\n            readOnlyRootFilesystem: true",
             "          containerSecurityContext:\n            readOnlyRootFilesystem: false",
         ),
+        (
+            "velero_yaml",
+            "              drop: [\"ALL\"]",
+            "              drop: [\"NET_RAW\"]",
+        ),
+        (
+            "velero_yaml",
+            "          containerSecurityContext:\n            readOnlyRootFilesystem: true",
+            "          privileged: true\n          containerSecurityContext:\n            readOnlyRootFilesystem: true",
+        ),
         ("velero_yaml", "mountPath: /root", "mountPath: /var/root"),
         (
             "velero_yaml",
@@ -245,6 +264,16 @@ def mutation_verify(root: Path) -> int:
             "storage_sh",
             "  containerSecurityContext:\n    readOnlyRootFilesystem: true",
             "  containerSecurityContext:\n    readOnlyRootFilesystem: false",
+        ),
+        (
+            "storage_sh",
+            "      drop: [\"ALL\"]",
+            "      drop: [\"NET_RAW\"]",
+        ),
+        (
+            "storage_sh",
+            "  containerSecurityContext:\n    readOnlyRootFilesystem: true",
+            "  privileged: true\n  containerSecurityContext:\n    readOnlyRootFilesystem: true",
         ),
         ("storage_sh", "mountPath: /root", "mountPath: /var/root"),
         (

@@ -136,14 +136,17 @@ spec:
           # (*-kopia-maintain-job-*) cannot be labelled in 1.18 (fixed label list), so they stay flagged.
           extraArgs:
             - --node-agent-configmap=velero-node-agent-config
-          # REQUIRED: kopia/restic이 hostPath volume 백업을 위해 privileged 필요
-          # Kyverno disallow-privileged-containers 정책에서 velero nodeAgent 예외 처리됨
-          privileged: true
           # D-node-agent-rofs (KSV014): read-only root with a writable home and /tmp. node-agent runs
           # as root, so kopia's repository config goes to /root/udmrepo. Escape hatch: remove the
-          # three keys below.
+          # readOnlyRootFilesystem and the two emptyDir mounts below.
+          # D-NODE-AGENT-DROP-ALL: measured backup/restore succeeds with node-agent CapEff zero; the kopia
+          # data copy runs in per-volume data-path Pods (UID 0, chart-default capabilities), not here.
+          # Cost: a future uploader needing capabilities will fail backups. Escape hatch: add only
+          # capabilities proven necessary by a backup/restore trial.
           containerSecurityContext:
             readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           extraVolumes:
             - name: node-agent-home
               emptyDir: {}

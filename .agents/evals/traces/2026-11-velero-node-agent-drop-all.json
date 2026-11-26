@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-velero-node-agent-drop-all-20261126",
+  "task": "Remove all capabilities from Velero node-agent and resolve the measured CIS acceptances.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-velero-node-agent-drop-all.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      "gitops/charts/narwhal-apps/templates/velero.yaml",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/compliance-accepted.test.ts",
+      "portal/src/lib/i18n.ts",
+      "scripts/cluster/08-4-storage.sh",
+      "scripts/test/lib/check-round4-compliance-hardening.py"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scope is Velero node-agent only: GitOps/bootstrap context, its CIS acceptance list and reason, R371 assertions, changelogs, compliance-hardening evidence, and the mistake lesson. No other components or cluster operations are included."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "reviewed": true,
+      "provenance": [
+        "Owner supplied live single-node measurements from 2026-11-26: Velero chart 12.0.3 / Velero 1.18, kopia uploader, container CapEff 0000000000000000 after drop ALL, backup and restore Completed with uid/gid 1234 and modes 0600/0700 preserved.",
+        "Owner supplied chart inspection: nodeAgent.privileged is ignored; the live container was not privileged.",
+        "Offline chart copy at .review/charts/velero; chart template rendered locally for both values sources."
+      ],
+      "summary": "Measured fs-backup and restore succeeded with no added capabilities. KSV003 and KSV106 can be removed from this exact acceptance; remaining accepted checks are retained. The data copy runs in per-volume data-path Pods, not in node-agent."
+    },
+    {
+      "id": "e8",
+      "type": "reproduction",
+      "summary": "Before the change the live node-agent ran as root with the containerd default capability set and the chart ignored nodeAgent.privileged.",
+      "evidence": [
+        "test:live DaemonSet storage/node-agent container securityContext -> {readOnlyRootFilesystem: true}; node-agent CapEff 00000000a80425fb (orchestrator, 2026-11-26)",
+        "test:Trivy configauditreport storage/daemonset-node-agent -> KSV003, KSV004, KSV106 failing"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "GitOps and bootstrap now set nodeAgent.containerSecurityContext to readOnlyRootFilesystem true and capabilities.drop [ALL], remove the ineffective privileged value and false comment, and record D-NODE-AGENT-DROP-ALL with measured rationale, cost, and escape hatch. R371 pins the exact values and rendered context and rejects capability/privileged mutations. KSV003/KSV106 were removed; bilingual acceptance reason and portal test were updated."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "R371 mutation check, exact offline Velero render, shell and Markdown checks",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-round4-compliance-hardening.py --mutation-verify -> PASS: R371 round-4 compliance hardening + offline helm renders SKIPPED (no chart bundle) (15 mutations rejected)",
+        "test:helm template velero against .review/charts/velero with GitOps values -> PASS: rendered securityContext exactly {'readOnlyRootFilesystem': True, 'capabilities': {'drop': ['ALL']}}; privileged absent",
+        "test:helm template velero against .review/charts/velero with 08-4 bootstrap values -> PASS: rendered securityContext exactly {'readOnlyRootFilesystem': True, 'capabilities': {'drop': ['ALL']}}; privileged absent",
+        "test:bash -n scripts/cluster/08-4-storage.sh -> exit 0",
+        "test:shellcheck -S warning scripts/cluster/08-4-storage.sh -> exit 0",
+        "test:python3 scripts/ci/markdownlint-changed.py --base origin/main -> Changed active Markdown files: 21; No markdownlint violations on added/modified active-documentation lines.",
+        "test:git diff --check -> exit 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "scope_check",
+      "summary": "Not verified: NFS-backed PVC backups under the new node-agent context (to be checked live after merge with a schedule-based backup), the integrated R371 chart-bundle render (no airgap bundle locally; the Velero render was checked separately). The author lane could not run portal checks; the orchestrator ran them (e9)."
+    },
+    {
+      "id": "e9",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Live trial on the single-node cluster plus static checks (orchestrator)",
+      "summary": "Zero-capability node-agent backs up and restores; static checks pass.",
+      "evidence": [
+        "test:drop ALL, no added capabilities -> node-agent CapEff 0000000000000000 (data copy ran in a per-volume data-path Pod, UID 0, privileged false, chart-default capabilities); kopia fs-backup Completed, restore Completed, content and uid/gid 1234 modes 0600/0700 preserved",
+        "test:python3 scripts/test/lib/check-round4-compliance-hardening.py --mutation-verify -> PASS, 15 mutations rejected",
+        "test:portal tsc --noEmit -> 0; vitest src/lib/compliance-accepted.test.ts -> 53 passed"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The authorized configuration, acceptance, documentation, and regression changes are complete. The exact GitOps and bootstrap Velero render was verified against the provided offline chart; live evidence is the owner-supplied measured trial, not a new measurement by this worktree."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the requested scope: both configuration paths render the measured zero-capability context, the dead privileged setting is removed, KSV003/KSV106 are actionable, and R371 rejects 15 mutations."
+    }
+  ]
+}

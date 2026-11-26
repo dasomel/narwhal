@@ -10,6 +10,7 @@
 ## [Unreleased]
 
 - **CI 전용 포털 버전 스냅샷 및 행동 trace 검사를 `make test`에 포함 (R414).** 정적 검사에서 `node portal/scripts/gen-oss-versions.mjs --check`와 버전 일관성 trace를 제외한 모든 체크인 행동 trace를 baseline gate로 평가한다. 버전 trace는 CI에서 최신 일관성 증거를 바인딩하므로 제외한다. `completion_claim` 누락과 생성 JSON 불일치 변이를 검증한다.
+- **Velero node-agent의 모든 capability 제거 (CIS 5.2.x, KSV003/KSV106):** 차트가 무시하는 `nodeAgent.privileged` 값을 제거하고 GitOps와 부트스트랩의 `containerSecurityContext.capabilities.drop: [ALL]`을 설정했다. node-agent 컨테이너가 CapEff 0인 상태에서 kopia 파일시스템 백업과 복원이 완료됐고 uid/gid 및 파일 모드가 보존됨을 실측했다(데이터 복사는 차트 기본 capability를 가진 볼륨별 data-path Pod에서 실행된다). 향후 uploader가 capability를 요구하면 새 백업·복원 실측 후 예외를 재평가해야 한다.
 - R410이 OpenBao와 Headlamp의 부트스트랩 Helm 차트 버전이 GitOps에 고정된 버전과 다르면 실패하도록 수정했다.
 - **노드 에이전트 Pod 보안 강화 (Batch C, R411):** Istio CNI는 GitOps와 부트스트랩에서 RuntimeDefault seccomp를 설정한다. kube-vip 정적 Pod 생성 경로 두 곳은 UID 0과 기본 GID 10100을 지정하고, 모든 capability를 드롭한 뒤 NET_ADMIN/NET_RAW만 추가하며, 권한 상승을 끄고 Pod seccomp를 RuntimeDefault로 설정한다. MetalLB 0.16.1은 GitOps와 부트스트랩에서 speaker GID 10100과 `runAsUser: 0`을 명시해 containerd 샌드박스 생성 요건을 충족한다. kube-vip와 MetalLB는 병합 전 라이브 시험을 통과했고, Istio CNI는 차트 렌더로 검증했다. 시험 결과와 기존 노드의 kube-vip 적용 절차는 컴플라이언스 강화 문서에 기록했다.
 - **kubelet 서빙 인증서의 클러스터 CA 서명을 단계적으로 적용 (CIS 1.2.6/1.3.6, R412).** Cilium 이후 고정 버전의 PostFinance 승인기를 배포하고 프로비저닝에서 받은 정확한 노드 이름과 사설 `/32` 주소를 사용한다. 리더 선출과 이벤트 권한은 `kube-system`으로 제한한다. 노드가 실제 제공하는 인증서를 클러스터 CA와 발급된 CSR로 검증한 뒤, 이후 조인에 사용할 kubeadm 설정을 게시한다. 기존 클러스터에는 운영 절차로 적용한다. API 서버 CA 강제 검증과 메트릭 수집기의 엄격한 TLS 검증은 후속 단계다.

@@ -60,7 +60,8 @@
       "evidence": [
         "test:apply rc=0 -> healthy narwhal-master-1, kubeadm-config: patched ClusterConfiguration; new apiserver pod Ready with both flags and the admission mount",
         "test:Trivy infraassessmentreport pod-kube-apiserver-narwhal-master-1 regenerated after the restart -> AVD-KCV-0010 success true; KCV0001/KCV0012 still false (accepted)",
-        "test:apiserver_request_total code=429 for events -> none; events still recorded; narwhal-platform and idp-apps Synced/Healthy; event write rate before change 24603 writes in ~29h"
+        "test:apiserver_request_total code=429 for events -> none; events still recorded; narwhal-platform and idp-apps Synced/Healthy; event write rate before change 24603 writes in ~29h",
+        "test:second --apply on the already-applied node (D-ERL-CFG review fix) -> healthy narwhal-master-1 backup=none, kubeadm-config: already up to date, apiserver pod uid unchanged"
       ]
     },
     {
@@ -70,7 +71,7 @@
       "scope": "R422, R403, R395, kubelet-authz-baseline, portal compliance tests",
       "summary": "New and touched checks reject their mutations.",
       "evidence": [
-        "test:python3 scripts/test/lib/check-apiserver-eventratelimit.py --mutation-verify -> R422 PASS: 16 mutations rejected",
+        "test:python3 scripts/test/lib/check-apiserver-eventratelimit.py --mutation-verify -> R422 PASS: 17 mutations rejected",
         "test:python3 scripts/test/lib/check-control-plane-flags.py --mutation-verify -> R403 PASS",
         "test:python3 scripts/test/lib/check-portal-exact-acceptance.py --mutation-verify -> PASS: R395 exact acceptance (42 mutations rejected)",
         "test:python3 scripts/test/lib/check-kubelet-authz-baseline.py --mutation-verify -> exit 0",

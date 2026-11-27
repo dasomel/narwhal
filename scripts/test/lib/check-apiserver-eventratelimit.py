@@ -371,6 +371,36 @@ def check_ops(files, scenario='all'):
             assert (res.returncode != 0) == fail, f'rc={res.returncode}\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}'
             return res
 
+        if scenario == 'config_refusal':
+            admission = root / 'one/etc/kubernetes/admission/admission-config.yaml'
+            admission.parent.mkdir(parents=True)
+            admission.write_text('node-local config\n')
+            already_applied = root / 'already-applied.yaml'
+            subprocess.run(['python3', str(ops_copy.parent / 'lib/apiserver-admission.py'), 'render', str(manifests['one']), str(already_applied)], check=True)
+            manifests['one'].write_text(already_applied.read_text())
+            already_manifest = manifests['one'].read_bytes()
+            already_config = admission.read_bytes()
+            r = run(nodes=('one=user@one',), extra=('--apply',), fail=True)
+            assert 'refusing: ' in r.stderr and 'differs from the shipped config' in r.stderr, r.stderr
+            assert manifests['one'].read_bytes() == already_manifest
+            assert admission.read_bytes() == already_config
+
+            manifests['two'].write_text(MANIFEST_NODERESTRICTION)
+            admission_two = root / 'two/etc/kubernetes/admission/admission-config.yaml'
+            admission_two.parent.mkdir(parents=True)
+            admission_two.write_text('node-local config\n')
+            manifest_two = manifests['two'].read_bytes()
+            r = run(nodes=('two=user@two',), extra=('--apply',), fail=True)
+            assert 'refusing: ' in r.stderr and 'differs from the shipped config' in r.stderr, r.stderr
+            assert manifests['two'].read_bytes() == manifest_two
+            assert admission_two.read_text() == 'node-local config\n'
+
+            admission.unlink()
+            r = run(nodes=('one=user@one',), extra=('--apply',))
+            assert admission.read_text() == files[ADMISSION_CFG]
+            assert manifests['one'].read_bytes() == already_manifest
+            return
+
         # 1. Dry-run by default: prints diff, zero remote/cluster writes.
         if scenario in ('all', 'dry'):
             r = run()
@@ -506,6 +536,7 @@ def main():
     files = {name: (ROOT / name).read_text() for name in FILES}
     check_static(files)
     check_ops(files, 'all')
+    check_ops(files, 'config_refusal')
 
     if '--mutation-verify' in sys.argv:
         mutations = [
@@ -526,6 +557,14 @@ def main():
             ('accept unexpected plugins in helper', HELPER, "raise AssertionError(f'unexpected enable-admission-plugins value: {val}')", 'pass', lambda fs: check_ops(fs, 'refuse')),
             ('skip semantic equality in helper verify', HELPER, "assert after == expected, 'candidate changes fields outside the EventRateLimit edit'", 'assert True', lambda fs: check_ops(fs, 'apply')),
         ]
+        mutations.append((
+            'remove differing admission-config refusal', OPS,
+            '  if [[ -f "$admission_file" ]] && ! cmp -s "$adm_tmp" "$admission_file"; then\n'
+            '    # D-ERL-CFG: preserve node-local config that differs from the shipped source; reason: replacing it can break recovery, cost: require review/update of the shipped file, escape: update scripts/ops/lib/admission-config.yaml.\n'
+            '    echo "refusing: $admission_file differs from the shipped config; review and update scripts/ops/lib/admission-config.yaml" >&2\n'
+            '    return 3\n'
+            '  fi\n',
+            '', lambda fs: check_ops(fs, 'config_refusal')))
         for name, fname, old, new, runner in mutations:
             assert old in files[fname], f'mutation anchor missing for {name}'
             mutated = {**files, fname: files[fname].replace(old, new, 1)}

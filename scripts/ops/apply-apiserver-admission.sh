@@ -68,7 +68,12 @@ install_admission() {
   printf '%s' "$cfg_b64" | base64 -d > "$adm_tmp"
   chown root:root "$adm_tmp"
   chmod 600 "$adm_tmp"
-  if [[ ! -f "$admission_file" ]] || ! cmp -s "$adm_tmp" "$admission_file"; then
+  if [[ -f "$admission_file" ]] && ! cmp -s "$adm_tmp" "$admission_file"; then
+    # D-ERL-CFG: preserve node-local config that differs from the shipped source; reason: replacing it can break recovery, cost: require review/update of the shipped file, escape: update scripts/ops/lib/admission-config.yaml.
+    echo "refusing: $admission_file differs from the shipped config; review and update scripts/ops/lib/admission-config.yaml" >&2
+    return 3
+  fi
+  if [[ ! -f "$admission_file" ]]; then
     mv -f "$adm_tmp" "$admission_file"
     adm_tmp=""
   else

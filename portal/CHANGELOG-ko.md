@@ -9,6 +9,12 @@
 
 ## [Unreleased]
 
+## [1.1.34] - 2026-11-27
+
+### 변경
+
+- **SeaweedFS Config Audit 수용 범위 축소 (`D-OWN-POD`, R419):** master·filer·s3는 플랫폼 UID/GID 10100으로 실행되므로 `KSV020`/`KSV021`을 빼고 `KSV011`(CPU limit 없음, `D-sw-qos`)만 남긴다. root로 실행되던 volume 서버는 `KSV011`과 `KSV023`(오너 결정으로 유지한 `/ssd/object_store` hostPath)에 대한 정확 수용 규칙을 따로 갖는다. (#845)
+
 ## [1.1.33] - 2026-11-27
 
 ### 변경
@@ -1025,7 +1031,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.33...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.34...HEAD
+[1.1.34]: https://github.com/dasomel/narwhal/compare/portal/v1.1.33...portal/v1.1.34
 [1.1.33]: https://github.com/dasomel/narwhal/compare/portal/v1.1.32...portal/v1.1.33
 [1.1.32]: https://github.com/dasomel/narwhal/compare/portal/v1.1.31...portal/v1.1.32
 [1.1.31]: https://github.com/dasomel/narwhal/compare/portal/v1.1.30...portal/v1.1.31

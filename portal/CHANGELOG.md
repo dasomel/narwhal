@@ -9,6 +9,12 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+## [1.1.34] - 2026-11-27
+
+### Changed
+
+- **SeaweedFS Config Audit acceptance narrowed for UID 10100 (`D-OWN-POD`, R419):** master, filer and s3 drop `KSV020`/`KSV021` (they now run as platform UID/GID 10100) and keep only `KSV011` (no CPU limit, `D-sw-qos`); the volume server, which used to run as root, gets its own exact rule for `KSV011` and `KSV023` (the `/ssd/object_store` hostPath kept by owner decision). (#845)
+
 ## [1.1.33] - 2026-11-27
 
 ### Changed
@@ -1071,7 +1077,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.33...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.34...HEAD
+[1.1.34]: https://github.com/dasomel/narwhal/compare/portal/v1.1.33...portal/v1.1.34
 [1.1.33]: https://github.com/dasomel/narwhal/compare/portal/v1.1.32...portal/v1.1.33
 [1.1.32]: https://github.com/dasomel/narwhal/compare/portal/v1.1.31...portal/v1.1.32
 [1.1.31]: https://github.com/dasomel/narwhal/compare/portal/v1.1.30...portal/v1.1.31

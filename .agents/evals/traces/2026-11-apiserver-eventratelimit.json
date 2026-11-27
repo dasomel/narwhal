@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-apiserver-eventratelimit-20261127",
+  "task": "Enable the kube-apiserver EventRateLimit admission plugin (CIS 1.2.10 / Trivy AVD-KCV-0010) for fresh installs, joins and existing clusters; keep KCV0001/KCV0012 accepted with corrected reasons.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-apiserver-eventratelimit.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/lib/i18n.ts",
+      "scripts/cloud/distribute-join-kakao.sh",
+      "scripts/cluster/02-init-cluster.sh",
+      "scripts/cluster/02-join-control-plane.sh",
+      "scripts/ops/apply-apiserver-admission.sh",
+      "scripts/ops/lib/admission-config.yaml",
+      "scripts/ops/lib/apiserver-admission.py",
+      "scripts/test/lib/check-apiserver-eventratelimit.py",
+      "scripts/test/lib/check-kubelet-authz-baseline.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Not verified: HA/Kakao join path and a fresh install on a live cluster; live checks are single-node only (e5)."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "reviewed": true,
+      "provenance": [
+        "agy gemini-4-neon-high research lane: kubernetes v1.35.7 pkg/kubeapiserver/options/plugins.go, plugin/pkg/admission/eventratelimit, aquasecurity/trivy-checks apiserver_*.rego, pkg/kubeapiserver/options/authentication.go, RKE2 and GKE CIS guides"
+      ],
+      "summary": "EventRateLimit is still registered in v1.35.7 (alpha config v1alpha1) and fails apiserver start on a missing or invalid config; Trivy KCV0001 matches the literal --anonymous-auth=false and --authentication-config cannot be combined with --oidc-* flags; AlwaysPullImages makes the in-cluster registry a start dependency."
+    },
+    {
+      "id": "e3",
+      "type": "reproduction",
+      "summary": "Before the change the live apiserver ran --enable-admission-plugins=NodeRestriction and Trivy reported AVD-KCV-0010 failing on kube-system/Pod/kube-apiserver-narwhal-master-1.",
+      "evidence": [
+        "test:scripts/ops/apply-apiserver-admission.sh dry-run against narwhal-master-1 -> diff only --enable-admission-plugins, --admission-control-config-file and the admission volume/volumeMount; kubeadm-config diff the same"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "02-init-cluster.sh writes /etc/kubernetes/admission/admission-config.yaml (Server 500/1000, Namespace 50/100 cache 2000; D-ERL) and sets NodeRestriction,EventRateLimit + admission-control-config-file + read-only volume; joins fetch the file (Vagrant and Kakao); scripts/ops/apply-apiserver-admission.sh rolls existing clusters node by node with backups outside the manifests dir, rollback on timeout and a resourceVersion-guarded kubeadm-config patch; R422 added; KCV0012 reason text corrected (no longer says NodeRestriction is the only plugin); kubelet-authz-baseline mutation updated to the new plugin value."
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live single-node cluster (orchestrator, 2026-11-27)",
+      "summary": "apply-apiserver-admission.sh --apply on narwhal-master-1.",
+      "evidence": [
+        "test:apply rc=0 -> healthy narwhal-master-1, kubeadm-config: patched ClusterConfiguration; new apiserver pod Ready with both flags and the admission mount",
+        "test:Trivy infraassessmentreport pod-kube-apiserver-narwhal-master-1 regenerated after the restart -> AVD-KCV-0010 success true; KCV0001/KCV0012 still false (accepted)",
+        "test:apiserver_request_total code=429 for events -> none; events still recorded; narwhal-platform and idp-apps Synced/Healthy; event write rate before change 24603 writes in ~29h",
+        "test:second --apply on the already-applied node (D-ERL-CFG review fix) -> healthy narwhal-master-1 backup=none, kubeadm-config: already up to date, apiserver pod uid unchanged"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R422, R403, R395, kubelet-authz-baseline, portal compliance tests",
+      "summary": "New and touched checks reject their mutations.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-apiserver-eventratelimit.py --mutation-verify -> R422 PASS: 17 mutations rejected",
+        "test:python3 scripts/test/lib/check-control-plane-flags.py --mutation-verify -> R403 PASS",
+        "test:python3 scripts/test/lib/check-portal-exact-acceptance.py --mutation-verify -> PASS: R395 exact acceptance (42 mutations rejected)",
+        "test:python3 scripts/test/lib/check-kubelet-authz-baseline.py --mutation-verify -> exit 0",
+        "test:portal vitest compliance-accepted/compliance-evidence/compliance/kube-bench -> 4 files, 131 tests passed"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "EventRateLimit enabled for fresh installs, joins and the live cluster with an ops script for existing clusters; KCV0010 passes live; KCV0001/KCV0012 stay accepted with corrected reasons. HA/Kakao and fresh install out of verified scope (e1)."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within scope: live apiserver runs EventRateLimit, Trivy KCV0010 passes, static checks pass."
+    }
+  ]
+}

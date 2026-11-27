@@ -9,6 +9,10 @@
 
 ## [Unreleased]
 
+### 변경
+
+- **EventRateLimit 활성화(CIS 1.2.10)에 맞춘 KCV0012 수용 사유 갱신:** AlwaysPullImages 사유에서 "활성화된 어드미션 플러그인은 NodeRestriction뿐"이라는 문장을 NodeRestriction과 EventRateLimit으로 고치고, Harbor 자신의 재기동과 격리 클러스터에 대한 RKE2·GKE CIS 안내를 근거로 덧붙였다.
+
 ## [1.1.34] - 2026-11-27
 
 ### 변경

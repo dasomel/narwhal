@@ -110,6 +110,19 @@ fi
 # that master-1 generated (encryption must be identical across all apiservers).
 #=========================================
 sudo mkdir -p /etc/kubernetes/enc /etc/kubernetes/audit /var/log/kubernetes/audit
+sudo install -d -o root -g root -m 700 /etc/kubernetes/admission
+if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
+  [[ -f /tmp/admission-config.yaml ]] && sudo install -o root -g root -m 600 /tmp/admission-config.yaml /etc/kubernetes/admission/admission-config.yaml
+else
+  for i in $(seq 1 $MAX_RETRIES); do
+    if (umask 077; sshpass -p "vagrant" scp -o StrictHostKeyChecking=no "vagrant@${MASTER1_IP}:/home/vagrant/admission-config.yaml" /tmp/admission-config.yaml 2>/dev/null); then
+      sudo install -o root -g root -m 600 /tmp/admission-config.yaml /etc/kubernetes/admission/admission-config.yaml
+      break
+    fi
+    sleep $RETRY_INTERVAL
+  done
+fi
+[[ -f /etc/kubernetes/admission/admission-config.yaml ]] || { echo "ERROR: admission-config.yaml unavailable" >&2; exit 1; }
 if [ "${PROVIDER:-vagrant}" = "kakao" ]; then
   echo "PROVIDER=kakao: expecting pre-staged /tmp/encryption-config.yaml (operator-supplied)"
   [[ -f /tmp/encryption-config.yaml ]] && (umask 077; sudo install -o root -g root -m 600 /tmp/encryption-config.yaml /etc/kubernetes/enc/encryption-config.yaml)

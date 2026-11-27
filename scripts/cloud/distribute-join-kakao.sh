@@ -74,7 +74,7 @@ ssh_node() {
 echo "=== Collecting join artifacts from master-1 (${MASTER1}) ==="
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
-for f in join-control-plane.sh join-command.sh encryption-config.yaml; do
+for f in join-control-plane.sh join-command.sh encryption-config.yaml admission-config.yaml; do
   # sudo cat, not scp: the files are owned by vagrant with mode 600.
   if ! ssh_node "${MASTER1}" "sudo cat /home/vagrant/${f}" > "${tmp}/${f}" 2>/dev/null || [ ! -s "${tmp}/${f}" ]; then
     echo "ERROR: ${f} missing or empty on master-1 — has 02-init-cluster.sh finished?" >&2
@@ -178,6 +178,7 @@ for ip in "${MASTERS[@]:1}"; do
   echo "=== control-plane ${ip} ==="
   place "${ip}" join-control-plane.sh /tmp/join-control-plane.sh
   place "${ip}" encryption-config.yaml /tmp/encryption-config.yaml
+  place "${ip}" admission-config.yaml /tmp/admission-config.yaml
   if [ "${OIDC_CA_REQUIRED}" = "true" ]; then
     place "${ip}" oidc-ca.crt /tmp/oidc-ca.crt
   fi

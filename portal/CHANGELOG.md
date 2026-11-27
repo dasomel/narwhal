@@ -9,6 +9,10 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Changed
+
+- **KCV0012 acceptance reason updated for EventRateLimit (CIS 1.2.10):** the AlwaysPullImages reason no longer says NodeRestriction is the only enabled admission plugin; it now names NodeRestriction and EventRateLimit and cites Harbor's own restart and the RKE2/GKE CIS guidance for isolated clusters.
+
 ## [1.1.34] - 2026-11-27
 
 ### Changed

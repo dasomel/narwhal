@@ -117,7 +117,7 @@ document those baselines.
 The configuration now explicitly sets `authentication.anonymous.enabled:false`,
 webhook authentication and authorization, and `readOnlyPort:0`. It also explicitly
 sets apiserver `--authorization-mode=Node,RBAC` and
-`--enable-admission-plugins=NodeRestriction`. `protectKernelDefaults` (CIS 4.2.6)
+`--enable-admission-plugins=NodeRestriction,EventRateLimit` (EventRateLimit since 2026-11-27, CIS 1.2.10). `protectKernelDefaults` (CIS 4.2.6)
 and `tlsCipherSuites` (CIS 4.2.13) remain open. CIS 4.2.12 uses
 `serverTLSBootstrap` in the post-CNI kubelet configuration. The first kubelet
 uses its fallback certificate for initial startup. Bootstrap verifies the signed
@@ -621,7 +621,7 @@ Bindings without all four guarantees (including `kubeadm:cluster-admins`, `kubea
 | kube-system | Pod/kube-controller-manager-narwhal-master-1 | KCV0039 | accept | bind-address=0.0.0.0 permits off-node Prometheus scraping; secure ports 10257/10259 use kubeadm authentication/authorization kubeconfigs. No node firewall isolation is claimed. |
 | kube-system | Pod/kube-scheduler-narwhal-master-1 | KCV0041 | accept | bind-address=0.0.0.0 permits off-node Prometheus scraping; secure ports 10257/10259 use kubeadm authentication/authorization kubeconfigs. No node firewall isolation is claimed. |
 | kube-system | Pod/kube-apiserver-narwhal-master-1 | KCV0001 | accept | API server health probes use unauthenticated HTTPS /livez and /readyz. kubeadm join also uses anonymous access to kube-public cluster-info through the kubeadm:bootstrap-signer-clusterinfo RoleBinding. |
-| kube-system | Pod/kube-apiserver-narwhal-master-1 | KCV0012 | accept | NodeRestriction is the only explicitly enabled admission plugin. The air-gapped cluster uses its in-cluster registry and 111 of 120 observed containers use IfNotPresent. AlwaysPullImages would make their starts depend on registry availability. |
+| kube-system | Pod/kube-apiserver-narwhal-master-1 | KCV0012 | accept | The explicitly enabled admission plugins are NodeRestriction and EventRateLimit. The air-gapped cluster uses its in-cluster registry and 111 of 120 observed containers use IfNotPresent. AlwaysPullImages would make their starts depend on registry availability, including Harbor's own restart (RKE2 and GKE CIS guidance treat it as unsuitable for isolated clusters). |
 
 ## Node collector & CIS 1.1.9 / 1.1.12 resolution
 
@@ -681,8 +681,7 @@ restarts on all 3 masters:
   join scripts log a `WARN` that CNI file permissions (CIS 1.1.9) remain unhardened until
   re-run and still harden the remaining node files. This wiring has NOT been validated by
   a clean install on a live cluster yet.
-- **`--anonymous-auth=false`**, `EventRateLimit` —
-  apiserver hardening (test probes first).
+- **`--anonymous-auth=false`** — kept accepted (KCV0001). Trivy matches the literal flag only, so path-limited anonymous access through `--authentication-config` still fails the check, and on 1.35 that file cannot be combined with the `--oidc-*` flags the cluster uses. Revisit if OIDC moves to `AuthenticationConfiguration.jwt`.
 - Portal/Valkey `readOnlyRootFilesystem` (CIS 5.7.3 / KSV014) — Next.js writes cache/tmp
   at runtime; needs writable `emptyDir` mounts before enabling.
 
@@ -894,7 +893,7 @@ contains this resource identity for Pod reports, not the host node name.
 | 1.3.7 / kube-bench + Trivy KCV0039 | `controllerManager.extraArgs` intentionally binds 0.0.0.0 for off-node Prometheus. Secure-port authentication/authorization is retained; no firewall isolation is asserted. See Risk-accepted exceptions item 1. | `scripts/cluster/02-init-cluster.sh` |
 | 1.4.2 / kube-bench + Trivy KCV0041 | `scheduler.extraArgs` intentionally binds 0.0.0.0 for off-node Prometheus. The measured scheduler command includes authentication/authorization kubeconfigs. See Risk-accepted exceptions item 1. | `scripts/cluster/02-init-cluster.sh` |
 | 1.2.1 / Trivy KCV0001 | D-OWN-CP accepts only `kube-system/Pod/kube-apiserver-narwhal-master-1`. Observed HTTPS `/livez` and `/readyz` probes are unauthenticated, and the `kubeadm:bootstrap-signer-clusterinfo` RoleBinding in `kube-public` binds `system:anonymous` for kubeadm join discovery. | `scripts/cluster/02-init-cluster.sh` |
-| 1.2.12 / Trivy KCV0012 | D-OWN-CP accepts only the same API server Pod. Measured admission flags explicitly enable only NodeRestriction. Of 120 observed containers, 111 use `IfNotPresent`. Requiring image pulls on startup would add a dependency on the in-cluster registry in air-gapped deployments. | `scripts/cluster/02-init-cluster.sh` |
+| 1.2.12 / Trivy KCV0012 | D-OWN-CP accepts only the same API server Pod. Admission flags explicitly enable NodeRestriction and EventRateLimit (CIS 1.2.10, 2026-11-27). Of 120 observed containers, 111 use `IfNotPresent`. Requiring image pulls on startup would add a dependency on the in-cluster registry in air-gapped deployments, including Harbor's own restart; CIS 1.2.11 is a Manual control and the RKE2 and GKE CIS guides treat it as unsuitable for isolated clusters. | `scripts/cluster/02-init-cluster.sh` |
 | 5.7.3 / Trivy KSV020, KSV021 | D-OWN-POD accepts only `database/Pod/narwhal-db-1` (26:26, including PostgreSQL data ownership) and the Deployment-owned pooler ReplicaSet (998:996, set by the operator with no securityContext in the Pooler template). | `gitops/resources/narwhal-db.yaml`, `scripts/cluster/07-cnpg.sh` |
 
 The D-OWN-CP and D-OWN-POD rules were reviewed on 2026-11-26. The supplied kube-bench triage records both 1.2.1 and 1.2.12 as WARN, so the decision adds only Trivy rules for these controls. Revisit the exact rules if authenticated health and discovery or a registry outage rehearsal makes the respective hardening feasible.
@@ -907,7 +906,7 @@ These controls remain actionable. The single-node trial verified kubelet serving
 | --- | --- | --- |
 | 1.2.6 kubelet-certificate-authority / AVD-KCV-0006 | Enforcing CA validation against a self-signed kubelet serving certificate breaks API server access to that kubelet. | Stage 3 verifies every registered kubelet from each control plane before enabling the CA flag. Verified on the single-node cluster on 2026-11-26: the flag is in the manifest and kubeadm-config, `logs`/`exec`/`port-forward`/node proxy work, and Trivy now passes AVD-KCV-0006. HA is not yet verified. |
 | 1.3.6 RotateKubeletServerCertificate / AVD-KCV-0038 | On the single-node cluster (2026-11-26), Trivy flagged the absent gate argument. The v1.35.7 controller-manager help reported the beta gate defaults to true, and kube-bench already passed. | Stage 3 makes the existing default explicit. On the single-node cluster (2026-11-26) Trivy now passes AVD-KCV-0038. Initial issuance was verified on one node in stages 1–2. Scheduled rotation remains open. |
-| 1.2.10 EventRateLimit | Enabling the plugin without admission configuration/budgets can fail API startup or discard operational events. | Define admission configuration volume/file and per-user/namespace/server budgets; measure event rates and stage saturation/recovery testing. |
+| 1.2.10 EventRateLimit / AVD-KCV-0010 | Event writes above configured budgets receive HTTP 429. | Fixed for fresh installs and joins: `EventRateLimit` with root-owned 0600 config, server 500/1000 and namespace 50/100 (cache 2000). Existing-cluster rollout: `scripts/ops/apply-apiserver-admission.sh --kubeconfig FILE --node NAME=USER@HOST` (dry-run); review then pass `--apply`. |
 | 4.2.6 protect-kernel-defaults | Kubelet can refuse startup when required kernel values differ; the earlier hardening was removed for this reason. | Persist and verify on every node, including old base-marker nodes: vm.overcommit_memory=1, vm.panic_on_oom=0, kernel.panic=10, kernel.panic_on_oops=1, kernel.keys.root_maxkeys=1000000, kernel.keys.root_maxbytes=25000000; reboot-test first, then staged kubelet restart with rollback. |
 
 ### Kubelet serving TLS rollout

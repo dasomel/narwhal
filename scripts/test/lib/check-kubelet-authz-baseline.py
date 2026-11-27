@@ -170,7 +170,7 @@ def mutation_verify(init_text):
         ("kubelet authorization is Webhook", init_text.replace("mode: Webhook", "mode: AlwaysAllow", 1)),
         ("kubelet anonymous authentication is disabled", init_text.replace("enabled: false", "enabled: true", 1)),
         ("apiserver Node authorizer is enabled", init_text.replace('value: "Node,RBAC"', 'value: "RBAC"', 1)),
-        ("apiserver NodeRestriction admission plugin is enabled", init_text.replace('value: "NodeRestriction"', 'value: ""', 1)),
+        ("apiserver NodeRestriction admission plugin is enabled", init_text.replace('value: "NodeRestriction,EventRateLimit"', 'value: "EventRateLimit"', 1)),
         ("kubelet readOnlyPort is disabled", init_text.replace("readOnlyPort: 0", "readOnlyPort: 10255", 1)),
         ("init copy derived by more than the serverTLSBootstrap delete",
          init_text.replace(".serverTLSBootstrap)' \\\n", ".serverTLSBootstrap, .authentication)' \\\n", 1)),

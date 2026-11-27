@@ -53,6 +53,21 @@ done
 # persisted — re-provisions must NOT regenerate it or existing encrypted Secrets become
 # unreadable. The config is staged to /home/vagrant so joining masters fetch the SAME key.
 sudo mkdir -p /etc/kubernetes/enc /etc/kubernetes/audit /var/log/kubernetes/audit
+sudo install -d -o root -g root -m 700 /etc/kubernetes/admission
+cat <<'ERLEOF' | sudo tee /etc/kubernetes/admission/admission-config.yaml >/dev/null
+apiVersion: apiserver.config.k8s.io/v1
+kind: AdmissionConfiguration
+plugins:
+  - name: EventRateLimit
+    configuration:
+      apiVersion: eventratelimit.admission.k8s.io/v1alpha1
+      kind: Configuration
+      limits:
+        - {type: Server, qps: 500, burst: 1000}
+        - {type: Namespace, qps: 50, burst: 100, cacheSize: 2000}
+ERLEOF
+sudo chown root:root /etc/kubernetes/admission/admission-config.yaml
+sudo chmod 600 /etc/kubernetes/admission/admission-config.yaml
 if [[ ! -f /etc/kubernetes/enc/encryption-config.yaml ]]; then
   ENC_KEY=$(head -c 32 /dev/urandom | base64)
   (
@@ -102,6 +117,7 @@ AUDEOF
 (
   umask 077
   sudo install -o vagrant -g vagrant -m 600 /etc/kubernetes/enc/encryption-config.yaml /home/vagrant/encryption-config.yaml
+  sudo install -o vagrant -g vagrant -m 600 /etc/kubernetes/admission/admission-config.yaml /home/vagrant/admission-config.yaml
 )
 
 # Generate kubeadm config for HA setup
@@ -126,7 +142,11 @@ apiServer:
     - name: authorization-mode
       value: "Node,RBAC"
     - name: enable-admission-plugins
-      value: "NodeRestriction"
+      value: "NodeRestriction,EventRateLimit"
+    # D-ERL: bound API event writes at server and namespace scope. Cost: excess
+    # Event writes receive 429; escape hatch: tune these budgets after measuring.
+    - name: admission-control-config-file
+      value: /etc/kubernetes/admission/admission-config.yaml
     # CIS 1.2.30 — encrypt Secrets at rest; CIS 1.2.19-22 — API audit logging.
     # Referenced files are written below on master-1 and fetched by joining masters
     # (02-join-control-plane.sh) so all apiservers share the SAME encryption key.
@@ -146,6 +166,11 @@ apiServer:
     - name: enc
       hostPath: /etc/kubernetes/enc
       mountPath: /etc/kubernetes/enc
+      readOnly: true
+      pathType: DirectoryOrCreate
+    - name: admission
+      hostPath: /etc/kubernetes/admission
+      mountPath: /etc/kubernetes/admission
       readOnly: true
       pathType: DirectoryOrCreate
     - name: audit-policy

@@ -9,6 +9,8 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+- **Enable EventRateLimit admission (CIS 1.2.10 / AVD-KCV-0010, D-ERL):** configure server and namespace event budgets in kubeadm bootstrap and control-plane joins; add an existing-cluster rollout command. Event writes above budget return HTTP 429.
+
 - **Harden bootstrap CSI NFS sidecars (R417):** the 4.13.2 Helm install idempotently installs a Helm 4 `postrenderer/v1` plugin from the repo scripts before using its name in `--post-renderer`; the plugin fails closed while setting sidecar privilege escalation and read-only rootfs, and 100m CPU limits (10x existing 10m requests) for all containers. Exact controller/node acceptances cite the measured root-owned 0755 shared CSI socket and privileged SYS_ADMIN mount plugin. KSV125 remains actionable pending a separate registry-trust decision; existing clusters install the plugin and rerun the same Helm upgrade on master-1.
 
 - **Stop cluster-wide Secret reads by the Loki and Grafana sidecars and kube-state-metrics (CIS 5.1.2/KSV041, R418):** the sidecars watch ConfigMaps only and each chart's ClusterRole is replaced by a same-named ConfigMap-only role; kube-state-metrics drops only its `secrets` collector. Nothing in the repo used Secret-backed rules, dashboards, datasources or `kube_secret_*` metrics; verified live (31/31 dashboards load, kube-state-metrics up).

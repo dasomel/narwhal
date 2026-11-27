@@ -3623,6 +3623,9 @@ PYEOF'
   # 2026-11-26 (D-FALCO-LEAST-PRIV): Falco modern_ebpf switches from privileged=true to leastPrivileged=true with explicit 4 capabilities, RuntimeDefault seccomp, allowPrivilegeEscalation=false, and narrowed CIS acceptance
   check R421 "Falco least-privileged modern_ebpf (D-FALCO-LEAST-PRIV): leastPrivileged=true, pod RuntimeDefault seccomp, allowPrivilegeEscalation=false, readOnlyRootFilesystem=true, drop ALL + add [BPF, SYS_RESOURCE, PERFMON, SYS_PTRACE], offline chart 9.2.1 render (AppArmor unconfined annotation + mounts), and narrowed Config Audit acceptance (KSV001/KSV003/KSV017 removed, KSV002/KSV022 accepted with preserved+appended reason); 21 mutations caught" \
     python3 scripts/test/lib/check-falco-least-privileged.py --mutation-verify
+  # 2026-11-27 (D-ERL): CIS 1.2.10 / AVD-KCV-0010 EventRateLimit admission plugin, config staging, and existing-cluster rollout
+  check R422 "EventRateLimit API server admission (CIS 1.2.10 / AVD-KCV-0010, D-ERL)" \
+    python3 scripts/test/lib/check-apiserver-eventratelimit.py --mutation-verify
   # 2026-11-27: ArgoCD privilege split Stage 1 (D-OWN-ARGO-STAGED, D-ARGO-SERVER-RO, D-ARGO-PROJECT-WHITELIST)
   check R420 "ArgoCD privilege split Stage 1: read-only argocd-server (no secrets, no workload writes, no '*' resources), exact 12-kind AppProject/platform clusterResourceWhitelist with empty tenants, and exact argocd-application-controller KSV044/KSV046 acceptance; 16 mutations caught" \
     python3 scripts/test/lib/check-argocd-privilege-split-stage1.py --mutation-verify

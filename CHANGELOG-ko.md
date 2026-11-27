@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+- **EventRateLimit admission 활성화 (CIS 1.2.10 / AVD-KCV-0010, D-ERL):** kubeadm 초기화와 control-plane 조인에 서버/네임스페이스 이벤트 한도를 설정하고 기존 클러스터 적용 명령을 추가했습니다. 한도를 넘는 Event 쓰기는 HTTP 429를 반환합니다.
+
 - **부트스트랩 CSI NFS sidecar 강화 (R417):** 4.13.2 Helm 설치 전에 저장소 스크립트의 Helm 4 `postrenderer/v1` 플러그인을 멱등 설치하고 `--post-renderer`에는 플러그인 이름을 전달한다. 플러그인은 sidecar 권한 상승 방지·지정한 읽기 전용 루트 파일 시스템을 fail-closed로 적용하고 모든 컨테이너 CPU limit을 기존 10m 요청의 10배인 100m로 설정한다. controller/node의 정확한 수용 근거는 실측한 root:root 0755 공유 CSI 소켓과 privileged SYS_ADMIN 마운트 플러그인이다. 레지스트리 신뢰 별도 결정 전까지 KSV125는 조치 대상으로 남기며, 기존 클러스터는 master-1에서 플러그인 설치와 같은 Helm upgrade를 실행해 반영한다.
 
 - **Loki·Grafana 사이드카와 kube-state-metrics의 클러스터 전체 Secret 읽기 제거 (CIS 5.1.2/KSV041, R418):** 사이드카는 ConfigMap만 감시하고 각 차트의 ClusterRole을 같은 이름의 ConfigMap 전용 role로 교체했다. kube-state-metrics는 `secrets` collector만 뺐다. 저장소에 Secret 기반 rule·dashboard·datasource나 `kube_secret_*` 메트릭 사용이 없었고, 라이브에서 확인했다(대시보드 31/31 로드, kube-state-metrics up).

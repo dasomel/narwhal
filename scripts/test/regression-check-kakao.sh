@@ -3642,8 +3642,11 @@ PYEOF'
   check R426 "Control-plane static Pod securityContext patches (kube-scheduler/controller-manager/apiserver KSV001/003/004 fixed, etcd untouched under D-CP-ETCD-DEFER with etcd:etcd 0700 preserved, --component selection, node-side crictl+healthz check, pre-restore logs capture, KSV012/020/021 exact-accepted plus isolated kube-apiserver KSV022 NET_BIND_SERVICE file-capability rule) and CIS 4.2.6 kubelet protectKernelDefaults + sysctl ordering (lane-c)" \
     python3 scripts/test/lib/check-control-plane-static-pods-and-kubelet-defaults.py --mutation-verify
   # R427 (lane KC): Keycloak 26.5.7 Secret permissions belong in iam Roles, not ClusterRoles.
-  check R427 "Keycloak operator Secret RBAC narrowed to iam while pinned non-Secret rules remain; 2 mutations rejected (lane KC)" \
+  check R427 "Keycloak operator Secret RBAC narrowed to iam while pinned non-Secret rules remain; 6 mutations rejected (lane KC)" \
     python3 scripts/test/lib/check-keycloak-operator-rbac.py --mutation-verify
+  # 2026-11-28 (lane E1, D-CIS-E1-*): stateless UID/GID > 10000 remediation (R427 is pending in another PR).
+  check R428 "CIS 5.7.3 stateless UID/GID > 10000 (ArgoCD 6 stateless workloads, metrics-server, keycloak-operator, waypoint parametersRef 10100:10100; Grafana runAsGroup 10100 keeping UID/fsGroup 472; csi-nfs postrender 0:10100 + KSV105; exact istiod KSV020/021 and ztunnel KSV030/104 acceptances) (lane-e1)" \
+    python3 scripts/test/lib/check-cis-e1-stateless-uid.py --mutation-verify
 }
 
 #=========================================

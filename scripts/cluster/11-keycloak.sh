@@ -143,6 +143,12 @@ if [ -n "${OPERATOR_CONTAINER}" ]; then
   "spec": {
     "template": {
       "spec": {
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 10100,
+          "runAsGroup": 10100,
+          "fsGroup": 10100
+        },
         "volumes": [
           {
             "name": "tmp",
@@ -155,7 +161,8 @@ if [ -n "${OPERATOR_CONTAINER}" ]; then
             "securityContext": {
               "allowPrivilegeEscalation": false,
               "runAsNonRoot": true,
-              "runAsUser": 1000,
+              "runAsUser": 10100,
+              "runAsGroup": 10100,
               "readOnlyRootFilesystem": true,
               "capabilities": {
                 "drop": ["ALL"]

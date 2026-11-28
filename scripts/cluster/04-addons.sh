@@ -54,7 +54,14 @@ kubectl apply -f "$(manifest metrics-server.yaml)"
 # - probes: default timeoutSeconds=1/failureThreshold=3 causes liveness flapping under
 #   load -> restarts -> metrics.k8s.io APIService MissingEndpoints -> kubectl top & portal
 #   show 0% CPU/mem. Give it more slack.
+# D-CIS-E1-METRICS-SERVER-UID (CIS 5.7.3 KSV020/KSV021): move stateless metrics-server
+# from upstream UID 1000 (no runAsGroup) to 10100:10100 inside the same D10 patch
+# (single rollout). Secure port is 10250 (>1024); /tmp is emptyDir. Escape hatch: revert
+# these three JSON ops to runAsUser 1000.
 kubectl patch deployment metrics-server -n kube-system --type='json' -p='[
+  {"op": "add",     "path": "/spec/template/spec/securityContext", "value": {"runAsNonRoot": true, "runAsUser": 10100, "runAsGroup": 10100, "fsGroup": 10100}},
+  {"op": "replace", "path": "/spec/template/spec/containers/0/securityContext/runAsUser", "value": 10100},
+  {"op": "add",     "path": "/spec/template/spec/containers/0/securityContext/runAsGroup", "value": 10100},
   {"op": "add",     "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"},
   {"op": "replace", "path": "/spec/template/spec/containers/0/livenessProbe/timeoutSeconds", "value": 5},
   {"op": "replace", "path": "/spec/template/spec/containers/0/livenessProbe/failureThreshold", "value": 5},

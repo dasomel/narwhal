@@ -172,7 +172,7 @@ def _assert_operator_hardened(pod_spec: dict, container: dict, where: str) -> No
     sc = container.get("securityContext") or {}
     assert sc.get("readOnlyRootFilesystem") is True, f"{where}: readOnlyRootFilesystem must be true"
     assert sc.get("allowPrivilegeEscalation") is False, f"{where}: allowPrivilegeEscalation must be false"
-    assert sc.get("runAsNonRoot") is True and sc.get("runAsUser") == 1000, f"{where}: non-root uid 1000"
+    assert sc.get("runAsNonRoot") is True and sc.get("runAsUser") == 10100 and sc.get("runAsGroup") == 10100, f"{where}: non-root 10100:10100"
     assert "ALL" in ((sc.get("capabilities") or {}).get("drop") or []), f"{where}: drop ALL"
     assert (sc.get("seccompProfile") or {}).get("type") == "RuntimeDefault", f"{where}: RuntimeDefault"
 

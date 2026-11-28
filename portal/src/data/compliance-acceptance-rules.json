@@ -949,6 +949,64 @@
       "reasonKey": "compliance.acceptedReason.chaosManagerChartLimits",
       "owner": "chaos-mesh 2.8.3 (gitops/charts/narwhal-apps/templates/chaos-mesh.yaml)",
       "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:istio-system:ReplicaSet:istiod:upstream",
+      "scope": "namespace",
+      "namespace": "istio-system",
+      "kind": "ReplicaSet",
+      "name": "istiod",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "upstream",
+      "reasonKey": "compliance.acceptedReason.istiodUid1337",
+      "owner": "istiod 1.30.1 (gitops/charts/narwhal-apps/templates/istiod.yaml, scripts/cluster/09-istio-ambient.sh)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:istio-system:DaemonSet:ztunnel:upstream",
+      "scope": "namespace",
+      "namespace": "istio-system",
+      "kind": "DaemonSet",
+      "name": "ztunnel",
+      "checks": [
+        "KSV030",
+        "KSV104"
+      ],
+      "class": "upstream",
+      "reasonKey": "compliance.acceptedReason.ztunnelSeccompUpstream",
+      "owner": "ztunnel 1.30.1 (gitops/charts/narwhal-apps/templates/ztunnel.yaml, scripts/cluster/09-istio-ambient.sh)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:kube-system:DaemonSet:csi-nfs-node:ksv105-accept",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "DaemonSet",
+      "name": "csi-nfs-node",
+      "checks": [
+        "KSV105"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.csiNfsNodeRunAsUser0",
+      "owner": "csi-driver-nfs 4.13.2 (scripts/cluster/04-addons.sh, scripts/cluster/lib/helm-plugins/csi-nfs-postrender/csi-nfs-postrender.sh)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:kube-system:ReplicaSet:csi-nfs-controller:ksv105-accept",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "ReplicaSet",
+      "name": "csi-nfs-controller",
+      "checks": [
+        "KSV105"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.csiNfsControllerRunAsUser0",
+      "owner": "csi-driver-nfs 4.13.2 (scripts/cluster/04-addons.sh, scripts/cluster/lib/helm-plugins/csi-nfs-postrender/csi-nfs-postrender.sh)",
+      "reviewedAt": "2026-11-28"
     }
   ],
   "rbac": [

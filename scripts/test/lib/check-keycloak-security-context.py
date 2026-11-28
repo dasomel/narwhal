@@ -86,7 +86,7 @@ raise AssertionError(f"unexpected kubectl args: {args}")
 '''
 
 
-def _assert_container_sc(sc: dict, where: str, errs: list[str], require_ro_rootfs: bool = False) -> None:
+def _assert_container_sc(sc: dict, where: str, errs: list[str], require_ro_rootfs: bool = False, uid: int = 1000, gid: int | None = None) -> None:
     if not isinstance(sc, dict):
         errs.append(f"{where}: securityContext missing")
         return
@@ -94,8 +94,10 @@ def _assert_container_sc(sc: dict, where: str, errs: list[str], require_ro_rootf
         errs.append(f"{where}: securityContext.allowPrivilegeEscalation must be false")
     if sc.get("runAsNonRoot") is not True:
         errs.append(f"{where}: securityContext.runAsNonRoot must be true")
-    if sc.get("runAsUser") != 1000:
-        errs.append(f"{where}: securityContext.runAsUser must be 1000")
+    if sc.get("runAsUser") != uid:
+        errs.append(f"{where}: securityContext.runAsUser must be {uid}")
+    if gid is not None and sc.get("runAsGroup") != gid:
+        errs.append(f"{where}: securityContext.runAsGroup must be {gid}")
     if "ALL" not in ((sc.get("capabilities") or {}).get("drop") or []):
         errs.append(f"{where}: securityContext.capabilities.drop must include ALL")
     if (sc.get("seccompProfile") or {}).get("type") != "RuntimeDefault":
@@ -153,8 +155,11 @@ def check(sh_text: str, cr_text: str, run_stub: bool = True) -> list[str]:
         patch_json = m_patch.group(1).replace("${OPERATOR_CONTAINER}", "keycloak-operator")
         patch_obj = json.loads(patch_json)
         patch_spec = patch_obj["spec"]["template"]["spec"]
+        pod_sc = patch_spec.get("securityContext") or {}
+        if pod_sc.get("runAsNonRoot") is not True or pod_sc.get("runAsUser") != 10100 or pod_sc.get("runAsGroup") != 10100 or pod_sc.get("fsGroup") != 10100:
+            errs.append(f"11-keycloak.sh:keycloak-operator pod securityContext must be 10100:10100/fsGroup 10100, got {pod_sc!r}")
         op_c = patch_spec["containers"][0]
-        _assert_container_sc(op_c.get("securityContext"), "11-keycloak.sh:keycloak-operator", errs, require_ro_rootfs=True)
+        _assert_container_sc(op_c.get("securityContext"), "11-keycloak.sh:keycloak-operator", errs, require_ro_rootfs=True, uid=10100, gid=10100)
         _assert_tmp_mount(patch_spec, op_c, "11-keycloak.sh:keycloak-operator", errs)
         if (op_c.get("livenessProbe") or {}).get("httpGet", {}).get("path") != "/q/health/ready":
             errs.append("11-keycloak.sh: keycloak-operator livenessProbe path must remain /q/health/ready")
@@ -209,7 +214,7 @@ def check(sh_text: str, cr_text: str, run_stub: bool = True) -> list[str]:
                 if res_spec["containers"][0] != {"name": "istio-proxy", "image": "istio/proxyv2:1.30.1"}:
                     errs.append("11-keycloak.sh operator patch touched sidecar container")
                 op_res = res_spec["containers"][1]
-                _assert_container_sc(op_res.get("securityContext"), "stub-result:keycloak-operator", errs, require_ro_rootfs=True)
+                _assert_container_sc(op_res.get("securityContext"), "stub-result:keycloak-operator", errs, require_ro_rootfs=True, uid=10100, gid=10100)
                 _assert_tmp_mount(res_spec, op_res, "stub-result:keycloak-operator", errs)
 
             sf.write_text(json.dumps(dep_existing_vol))
@@ -221,7 +226,7 @@ def check(sh_text: str, cr_text: str, run_stub: bool = True) -> list[str]:
                 errs.append(f"11-keycloak.sh operator patch failed with pre-existing volumes: {proc2.stderr}")
             else:
                 res2_spec = json.loads(sf.read_text())["spec"]["template"]["spec"]
-                _assert_container_sc(res2_spec["containers"][0].get("securityContext"), "stub-existing-vol:keycloak-operator", errs, require_ro_rootfs=True)
+                _assert_container_sc(res2_spec["containers"][0].get("securityContext"), "stub-existing-vol:keycloak-operator", errs, require_ro_rootfs=True, uid=10100, gid=10100)
                 _assert_tmp_mount(res2_spec, res2_spec["containers"][0], "stub-existing-vol:keycloak-operator", errs)
                 if [v["name"] for v in res2_spec["volumes"]] != ["tmp", "extra"]:
                     errs.append(f"11-keycloak.sh operator patch clobbered/duplicated volumes: {res2_spec['volumes']}")

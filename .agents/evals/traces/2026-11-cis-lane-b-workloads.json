@@ -1,0 +1,82 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cis-lane-b-20261128",
+  "task": "Resolve the remaining CIS findings on chaos-controller-manager, the cis-bench CronJob and narwhal-db-1 by fix or exact acceptance.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-cis-lane-b-workloads.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "gitops/charts/narwhal-apps/templates/chaos-mesh.yaml",
+      "gitops/resources/narwhal-db.yaml",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/i18n.ts",
+      "scripts/test/lib/check-compliance-low-residuals.py",
+      "scripts/test/lib/check-workload-exact-acceptance.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Not verified: HA/Kakao. CNPG KSV036 relies on the CNPG 1.29 docs; no CNPG upgrade attempted."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live Trivy reports (2026-11-28) listed chaos-controller-manager KSV001/003/004, cis-bench KSV010/012/022/023 (+KSV020/021) and narwhal-db-1 KSV036 as actionable.",
+      "evidence": [
+        "test:kubectl get configauditreports -A -o json filtered by the portal acceptance rules -> scratchpad actionable-inventory.txt"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Exact acceptances: chaos-controller-manager ReplicaSets KSV001/003/004 (chart 2.8.3 exposes no container securityContext), cis-bench CronJob KSV010/012/020/021/022/023 (kube-bench stays root), narwhal-db-1 KSV036 as its own rule (CNPG 1.29.1 instance manager needs the token; automount override arrives in 1.31). R423 check added; docs and changelogs."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live single-node cluster (orchestrator, 2026-11-28)",
+      "summary": "Non-root kube-bench variants tried live and rejected.",
+      "evidence": [
+        "test:cis-bench as UID 10100 + runAsGroup 10100 -> recorder exit 1",
+        "test:cis-bench as UID 10100 without DAC_READ_SEARCH -> record status error 'scanner failed'",
+        "test:cis-bench as UID 10100 with DAC_READ_SEARCH -> record status error",
+        "test:cis-bench as UID 1000 with DAC_READ_SEARCH -> record status error (the earlier complete record at 02:17 was the scheduled root run)",
+        "test:cis-bench restored to root (main renderer) -> manual job complete, totals pass 77 fail 4 warn 44"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R423, R395, R383, R401, portal compliance tests",
+      "summary": "Acceptance and renderer checks pass.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-workload-exact-acceptance.py --mutation-verify -> PASS: R423 lane-B exact workload acceptance (3 mutations rejected)",
+        "test:python3 scripts/test/lib/check-portal-exact-acceptance.py --mutation-verify -> PASS: R395 exact acceptance (42 mutations rejected)",
+        "test:python3 scripts/test/lib/check-compliance-low-residuals.py --mutation-verify -> PASS: R383",
+        "test:python3 scripts/test/lib/check-cis-benchmark.py --mutation-verify -> PASS: R401 (34 mutations rejected)",
+        "test:portal vitest compliance-accepted/compliance/compliance-evidence -> 108 passed"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Lane B findings are exactly accepted with measured or cited reasons; kube-bench stays root after four failed non-root live trials. HA/Kakao out of scope (e1)."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within scope: acceptance rules, docs and checks consistent; live cis-bench verified on the main renderer."
+    }
+  ]
+}

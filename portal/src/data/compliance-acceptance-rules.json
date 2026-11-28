@@ -787,6 +787,20 @@
       "reviewedAt": "2026-11-26"
     },
     {
+      "id": "cfg:database:Pod:narwhal-db-1:ksv036-accept",
+      "scope": "namespace",
+      "namespace": "database",
+      "kind": "Pod",
+      "name": "narwhal-db-1",
+      "checks": [
+        "KSV036"
+      ],
+      "class": "upstream",
+      "reasonKey": "compliance.acceptedReason.cnpgServiceAccountToken",
+      "owner": "CloudNativePG 1.29.1 (gitops/resources/narwhal-db.yaml)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
       "id": "cfg:database:ReplicaSet:narwhal-db-pooler-rw:accept",
       "scope": "namespace",
       "namespace": "database",
@@ -818,6 +832,41 @@
       "reasonKey": "compliance.acceptedReason.metallbSpeakerHost",
       "owner": "metallb 0.16.1 (gitops/charts/narwhal-apps/templates/metallb.yaml)",
       "reviewedAt": "2026-11-26"
+    },
+    {
+      "id": "cfg:security-system:CronJob:cis-bench-974178c0082e:accept",
+      "scope": "namespace",
+      "namespace": "security-system",
+      "kind": "CronJob",
+      "name": "cis-bench-974178c0082e",
+      "checks": [
+        "KSV010",
+        "KSV012",
+        "KSV020",
+        "KSV021",
+        "KSV022",
+        "KSV023"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.kubeBenchHostAudit",
+      "owner": "kube-bench v0.16.0 (scripts/ops/render-cis-benchmark.py)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:chaos-testing:ReplicaSet:chaos-controller-manager:accept",
+      "scope": "namespace",
+      "namespace": "chaos-testing",
+      "kind": "ReplicaSet",
+      "name": "chaos-controller-manager",
+      "checks": [
+        "KSV001",
+        "KSV003",
+        "KSV004"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.chaosManagerChartLimits",
+      "owner": "chaos-mesh 2.8.3 (gitops/charts/narwhal-apps/templates/chaos-mesh.yaml)",
+      "reviewedAt": "2026-11-28"
     }
   ],
   "rbac": [

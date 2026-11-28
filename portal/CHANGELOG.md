@@ -11,6 +11,10 @@ English | [한국어](CHANGELOG-ko.md)
 
 ### Changed
 
+- Added exact Config Audit exceptions for the measured kube-bench CronJob and observed Chaos Mesh ReplicaSet, and documented why the pinned CNPG 1.29.1 database Pod retains its API token mount (R423). Other generated workload identities remain actionable.
+
+### Changed
+
 - **KCV0012 acceptance reason updated for EventRateLimit (CIS 1.2.10):** the AlwaysPullImages reason no longer says NodeRestriction is the only enabled admission plugin; it now names NodeRestriction and EventRateLimit and cites Harbor's own restart and the RKE2/GKE CIS guidance for isolated clusters.
 
 ## [1.1.34] - 2026-11-27

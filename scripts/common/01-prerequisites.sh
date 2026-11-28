@@ -526,6 +526,16 @@ net.ipv4.ip_forward                 = 1
 SYSEOF
 sudo sysctl --system >/dev/null 2>&1 || true
 
+# D-CILIUM-BPFFS-SELINUX: Cilium runs with bpf.autoMount.enabled=false (no privileged
+# mount-bpf-fs init container). systemd mounts /sys/fs/bpf itself as an API file system and
+# refuses a sys-fs-bpf.mount unit for it (measured on systemd 259, 2026-11-28), so only verify.
+# Cost: depends on systemd's built-in mount; escape hatch: re-enable bpf.autoMount.enabled=true.
+if ! findmnt -rn -t bpf -T /sys/fs/bpf >/dev/null 2>&1; then
+  echo "ERROR: /sys/fs/bpf is not mounted as type bpf (systemd mounts it at boot)" >&2
+  exit 1
+fi
+echo "  bpffs: $(findmnt -rn -o TARGET,FSTYPE,PROPAGATION -t bpf -T /sys/fs/bpf)"
+
 echo "  ip_forward=$(cat /proc/sys/net/ipv4/ip_forward)" \
      "bridge-nf-call-iptables=$(cat /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null || echo NA)"
 

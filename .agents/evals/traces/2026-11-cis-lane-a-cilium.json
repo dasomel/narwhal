@@ -1,0 +1,82 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cis-lane-a-cilium-20261128",
+  "task": "Harden Cilium 1.19.4 (agent, envoy, operator, hubble-ui) and settle CoreDNS findings for CIS 5.2.x/5.7.x, with an existing-cluster reconcile path.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-cis-lane-a-cilium.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/compliance-accepted.test.ts",
+      "portal/src/lib/compliance.test.ts",
+      "portal/src/lib/i18n.ts",
+      "scripts/cluster/03-cni-install.sh",
+      "scripts/common/01-prerequisites.sh",
+      "scripts/ops/reconcile-cilium-hardening.sh",
+      "scripts/test/lib/check-cilium-coredns-hardening.py",
+      "scripts/test/lib/check-compliance-low-residuals.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Not verified: node reboot with bpf.autoMount=false (relies on systemd mounting /sys/fs/bpf as an API file system), HA/Kakao, fresh install."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live inventory 2026-11-28 listed cilium KSV001/003/004/012/104, cilium-envoy KSV104, cilium-operator KSV009/012/024, hubble-ui KSV003/004/012/104 and coredns KSV012/022/104 as actionable.",
+      "evidence": [
+        "test:kubectl get configauditreports -n kube-system filtered by acceptance rules -> scratchpad actionable-inventory.txt"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "03-cni-install.sh sets bpf.autoMount=false (no privileged mount-bpf-fs init), RuntimeDefault seccomp and seLinuxOptions null for agent and envoy, envoy bpf-maps hostPath, hubble-ui non-root + drop ALL, operator 10100:10100; exact acceptances for what the chart or datapath needs; CoreDNS accepted (kubeadm addon). scripts/ops/reconcile-cilium-hardening.sh merges the hardening overlay onto helm get values (D-CILIUM-RECONCILE-BASE) and only verifies bpffs (D-CILIUM-BPFFS-UNIT: systemd refuses a sys-fs-bpf.mount for the API file system)."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live single-node cluster (orchestrator, 2026-11-28)",
+      "summary": "reconcile-cilium-hardening.sh --dry-run then --apply on master-1 (helm revision 1 -> 2).",
+      "evidence": [
+        "test:dry-run diff -> only the hardening overlay; routingMode/tunnelProtocol preserved",
+        "test:after --apply -> cilium, cilium-envoy, cilium-operator, hubble-ui Running with 0 restarts; cilium-dbg status OK; agent log 0 error lines; initContainers config, mount-cgroup, apply-sysctl-overwrites, clean-cilium-state, install-cni-binaries (no mount-bpf-fs); operator securityContext 10100:10100 RuntimeDefault",
+        "test:scripts/test/test-sso.sh -> PASS: 144 FAIL: 0",
+        "test:Trivy configauditreports after the rollout match the offline render prediction",
+        "test:systemctl enable --now sys-fs-bpf.mount -> 'Cannot create mount unit for API file system /sys/fs/bpf. Refusing.' (systemd 259); unit removed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R425 (lane A), R395, R383, R411, R376, portal compliance tests",
+      "summary": "Checks pass after the orchestrator fixes.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-cilium-coredns-hardening.py --mutation-verify -> PASS: R425 Cilium & CoreDNS hardening (31 mutations rejected)",
+        "test:portal vitest compliance-accepted/compliance/compliance-evidence -> 111 passed"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Cilium hardening live on the single-node cluster with a values-preserving reconcile script; remaining Cilium/CoreDNS findings exactly accepted. Reboot behaviour of bpffs is inferred, not tested (e1)."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within scope: live rollout verified, checks pass."
+    }
+  ]
+}

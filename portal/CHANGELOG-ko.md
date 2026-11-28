@@ -19,6 +19,7 @@
 
 ### 변경
 
+- **Cilium 1.19.4 하드닝 및 CoreDNS kubeadm 애드온 Config Audit 수용 규칙 갱신 (R425):** `kube-system/DaemonSet/cilium`에서 `KSV017`을 제거하고 `KSV001`/`KSV012`/`KSV020`/`KSV021`을 추가했으며(차트 `1.19.4` 템플릿 미렌더링 및 cgroup·sysctl·bpffs·CNI용 UID/GID 0 필요), `kube-system/DaemonSet/cilium-envoy`에 `runAsGroup: 10100`과 함께 `runAsUser: 0`을 명시함에 따라 `KSV105`를 추가했다. 또한 `kube-system/ReplicaSet/cilium-operator`(`KSV009`/`KSV024`, `cluster-pool` IPAM hostNetwork 및 연동 `hostPort 9234`), `kube-system/ReplicaSet/hubble-ui`(`KSV020`/`KSV021`, 차트 `1001:1001`), `kube-system/ReplicaSet/coredns`(`KSV012`/`KSV020`/`KSV021`/`KSV022`/`KSV030`/`KSV104`, kubeadm 업그레이드 덮어쓰기 및 포트 53 `NET_BIND_SERVICE`) 정확 수용 규칙을 추가했다.
 - **EventRateLimit 활성화(CIS 1.2.10)에 맞춘 KCV0012 수용 사유 갱신:** AlwaysPullImages 사유에서 "활성화된 어드미션 플러그인은 NodeRestriction뿐"이라는 문장을 NodeRestriction과 EventRateLimit으로 고치고, Harbor 자신의 재기동과 격리 클러스터에 대한 RKE2·GKE CIS 안내를 근거로 덧붙였다.
 
 ## [1.1.34] - 2026-11-27

@@ -536,7 +536,23 @@ if ! findmnt -rn -t bpf -T /sys/fs/bpf >/dev/null 2>&1; then
 fi
 echo "  bpffs: $(findmnt -rn -o TARGET,FSTYPE,PROPAGATION -t bpf -T /sys/fs/bpf)"
 
+# D-KUBELET-KERNEL-DEFAULTS (CIS 4.2.6): persist and verify the 6 kernel sysctls kubelet
+# requires when protectKernelDefaults=true BEFORE kubelet is ever started by kubeadm init/join.
+KUBELET_KERNEL_LIB="${STAGE_DIR:-/home/vagrant}/scripts/common/lib-kubelet-kernel-defaults.sh"
+if [ ! -r "${KUBELET_KERNEL_LIB}" ]; then
+  KUBELET_KERNEL_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-kubelet-kernel-defaults.sh"
+fi
+if [ ! -r "${KUBELET_KERNEL_LIB}" ]; then
+  echo "ERROR: lib-kubelet-kernel-defaults.sh not readable at ${KUBELET_KERNEL_LIB}" >&2
+  exit 1
+fi
+# shellcheck source=scripts/common/lib-kubelet-kernel-defaults.sh
+source "${KUBELET_KERNEL_LIB}"
+ensure_kubelet_kernel_defaults
+
 echo "  ip_forward=$(cat /proc/sys/net/ipv4/ip_forward)" \
-     "bridge-nf-call-iptables=$(cat /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null || echo NA)"
+     "bridge-nf-call-iptables=$(cat /proc/sys/net/bridge/bridge-nf-call-iptables 2>/dev/null || echo NA)" \
+     "overcommit_memory=$(cat /proc/sys/vm/overcommit_memory)" \
+     "kernel.panic=$(cat /proc/sys/kernel/panic)"
 
 echo "=== Prerequisites Done ==="

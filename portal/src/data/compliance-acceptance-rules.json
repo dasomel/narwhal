@@ -684,13 +684,18 @@
       "name": "etcd-narwhal-master-1",
       "checks": [
         "KSV009",
+        "KSV012",
+        "KSV020",
+        "KSV021",
+        "KSV022",
         "KSV023",
-        "KSV024"
+        "KSV024",
+        "KSV106"
       ],
       "class": "accept",
-      "reasonKey": "compliance.acceptedReason.verifiedkubeadmHost",
+      "reasonKey": "compliance.acceptedReason.verifiedkubeadmEtcdHost",
       "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh, scripts/cluster/02-init-cluster.sh)",
-      "reviewedAt": "2026-11-23"
+      "reviewedAt": "2026-11-28"
     },
     {
       "id": "configAudit:kube-system:Pod:kube-apiserver-narwhal-master-1:verified",
@@ -700,13 +705,16 @@
       "name": "kube-apiserver-narwhal-master-1",
       "checks": [
         "KSV009",
+        "KSV012",
+        "KSV020",
+        "KSV021",
         "KSV023",
         "KSV024"
       ],
       "class": "accept",
       "reasonKey": "compliance.acceptedReason.verifiedkubeadmHost",
       "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh, scripts/cluster/02-init-cluster.sh)",
-      "reviewedAt": "2026-11-23"
+      "reviewedAt": "2026-11-28"
     },
     {
       "id": "configAudit:kube-system:Pod:kube-controller-manager-narwhal-master-1:verified",
@@ -716,13 +724,16 @@
       "name": "kube-controller-manager-narwhal-master-1",
       "checks": [
         "KSV009",
+        "KSV012",
+        "KSV020",
+        "KSV021",
         "KSV023",
         "KSV024"
       ],
       "class": "accept",
       "reasonKey": "compliance.acceptedReason.verifiedkubeadmHost",
       "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh, scripts/cluster/02-init-cluster.sh)",
-      "reviewedAt": "2026-11-23"
+      "reviewedAt": "2026-11-28"
     },
     {
       "id": "configAudit:kube-system:Pod:kube-scheduler-narwhal-master-1:verified",
@@ -732,13 +743,16 @@
       "name": "kube-scheduler-narwhal-master-1",
       "checks": [
         "KSV009",
+        "KSV012",
+        "KSV020",
+        "KSV021",
         "KSV023",
         "KSV024"
       ],
       "class": "accept",
       "reasonKey": "compliance.acceptedReason.verifiedkubeadmHost",
       "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh, scripts/cluster/02-init-cluster.sh)",
-      "reviewedAt": "2026-11-23"
+      "reviewedAt": "2026-11-28"
     },
     {
       "id": "configAudit:kube-system:Pod:kube-vip-narwhal-master-1:verified",

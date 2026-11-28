@@ -115,6 +115,21 @@ fi
 
 echo "Node name: ${NODE_NAME}, Node IP: ${NODE_IP}"
 
+# D-KUBELET-KERNEL-DEFAULTS (CIS 4.2.6): persist and verify the 6 required sysctls BEFORE
+# kubeadm join starts kubelet with protectKernelDefaults=true from kube-system/kubelet-config
+# (guards Kakao nodes whose base sentinel skipped the updated 01-prerequisites.sh).
+KUBELET_KERNEL_LIB="${STAGE_DIR:-/home/vagrant}/scripts/common/lib-kubelet-kernel-defaults.sh"
+if [[ ! -r "${KUBELET_KERNEL_LIB}" ]]; then
+  KUBELET_KERNEL_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../common" 2>/dev/null && pwd || true)/lib-kubelet-kernel-defaults.sh"
+fi
+if [[ ! -r "${KUBELET_KERNEL_LIB}" ]]; then
+  echo "ERROR: lib-kubelet-kernel-defaults.sh not readable at ${KUBELET_KERNEL_LIB}" >&2
+  exit 1
+fi
+# shellcheck source=scripts/common/lib-kubelet-kernel-defaults.sh
+source "${KUBELET_KERNEL_LIB}"
+ensure_kubelet_kernel_defaults
+
 # Join cluster with explicit node-name to prevent VMware NAT interface hostname
 sudo bash /tmp/join-command.sh --node-name "${NODE_NAME}"
 

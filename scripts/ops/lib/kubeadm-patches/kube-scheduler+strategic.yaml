@@ -1,0 +1,21 @@
+# D-CP-STATIC-POD-SC (CIS 5.2.6/5.2.9/5.2.10, KSV001/KSV003/KSV004):
+# Drop all Linux capabilities and disable privilege escalation on kube-scheduler.
+# kube-scheduler binds port 10259 (>1024) and reads root-owned scheduler.conf as UID 0.
+# Cost: KSV012/020/021 stay accepted until kubeadm RootlessControlPlane is GA.
+# Escape hatch: remove /etc/kubernetes/patches/kube-scheduler+strategic.yaml and re-run kubeadm/ops rollback.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-scheduler
+  namespace: kube-system
+spec:
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: kube-scheduler
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL

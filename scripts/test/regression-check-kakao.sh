@@ -3638,6 +3638,9 @@ PYEOF'
   # 2026-11-28 (D-CILIUM-BPFFS-SELINUX, D-CILIUM-HARDENING): Cilium 1.19.4 bpffs/seLinux/seccomp/UID hardening and CoreDNS kubeadm acceptance (lane A)
   check R425 "Cilium 1.19.4 hardening (systemd-mounted bpffs verified + bpf.autoMount=false, envoy bpf-maps/RuntimeDefault/runAsGroup 10100, operator 10100:10100, hubble-ui drop ALL/seccomp/runAsNonRoot) and exact Cilium/CoreDNS acceptance" \
     python3 scripts/test/lib/check-cilium-coredns-hardening.py --mutation-verify
+  # 2026-11-28 (lane-c, D-CP-STATIC-POD-SC, D-CP-ETCD-DAC, D-KUBELET-KERNEL-DEFAULTS): control-plane static Pod kubeadm patches + CIS 4.2.6 protectKernelDefaults
+  check R423 "Control-plane static Pod securityContext patches (KSV001/003/004 fixed, etcd DAC_OVERRIDE + etcd:etcd 0700 preserved, KSV012/020/021 + etcd KSV022/106 exact-accepted) and CIS 4.2.6 kubelet protectKernelDefaults + sysctl ordering (lane-c)" \
+    python3 scripts/test/lib/check-control-plane-static-pods-and-kubelet-defaults.py --mutation-verify
 }
 
 #=========================================

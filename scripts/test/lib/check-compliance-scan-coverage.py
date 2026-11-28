@@ -627,10 +627,9 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
     if "default-deny" in net1_name.lower():
         errors.append(f"KISA-NET-01 name must not claim default-deny when only KSV038 selector check runs: {net1_name!r}")
 
-    # 5. D1: kernel defaults and cipher suites stay deferred. R412 owns the serving bootstrap order.
-    #    and verify_node_file_hardening must emit WARN (not PASS, not FAIL) for CIS 4.2.6/4.2.12/4.2.13
-    if "95-kubelet-kernel-defaults.conf" in texts["prereq"]:
-        errors.append("01-prerequisites.sh must not persist 95-kubelet-kernel-defaults.conf while CIS 4.2.6 is deferred (D1)")
+    # 5. D1: tlsCipherSuites stays deferred. R412 owns serving TLS bootstrap order;
+    #    R423 (Lane C) owns CIS 4.2.6 protectKernelDefaults + 95-kubelet-kernel-defaults.conf.
+    #    verify_node_file_hardening must still emit WARN (not PASS, not FAIL) for CIS 4.2.6/4.2.12/4.2.13.
     kubeadm_m = re.search(r"(?ms)^cat <<EOF > /tmp/kubeadm-config\.yaml\s*\n(.*?)^EOF\s*$", texts["init"])
     if not kubeadm_m:
         errors.append("02-init-cluster.sh kubeadm-config heredoc missing")
@@ -641,8 +640,6 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
         if not kc:
             errors.append("02-init-cluster.sh missing KubeletConfiguration")
         else:
-            if kc.get("protectKernelDefaults") is True:
-                errors.append("02-init-cluster.sh must NOT enable protectKernelDefaults: true (D1 deferred gap)")
             if kc.get("tlsCipherSuites"):
                 errors.append("02-init-cluster.sh must NOT set tlsCipherSuites before TLS-consumer rollout testing (D1)")
 
@@ -696,7 +693,7 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
         "SYSTEM_NAMESPACES",
         "accepted/system",
         "raw failure counts rise now",
-        "4.2.6 and 4.2.13 remain open. 4.2.12 rollout is in progress.",
+        "4.2.13 remains open. 4.2.6 and 4.2.12 rollouts are in progress.",
     ):
         if needle not in scan_cov_body:
             errors.append(f"docs/common/compliance-hardening.md ## Scan coverage missing {needle!r}")
@@ -732,8 +729,6 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("re-introduce KCV0004 in KISA-ETCD-01", "kisa", "id: AVD-KCV-0042", "id: AVD-KCV-0004"),
     ("drop KSV111 from KISA-RBAC-01", "kisa", "          - id: AVD-KSV-0111\n", ""),
     ("re-claim default-deny in KISA-NET-01", "kisa", "name: NetworkPolicy 셀렉터 적용 점검", "name: Ingress default-deny NetworkPolicy 적용"),
-    ("re-introduce 95-kubelet-kernel-defaults.conf in 01-prerequisites", "prereq", "net.ipv4.ip_forward                 = 1\n", "net.ipv4.ip_forward                 = 1\n# 95-kubelet-kernel-defaults.conf\n"),
-    ("re-introduce protectKernelDefaults in 02-init-cluster", "init", "readOnlyPort: 0\n", "readOnlyPort: 0\nprotectKernelDefaults: true\n"),
     ("re-introduce tlsCipherSuites in 02-init-cluster", "init", "readOnlyPort: 0\n", "readOnlyPort: 0\ntlsCipherSuites:\n  - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n"),
     ("turn verify-cluster kubelet known-gap WARN into FAIL", "verify", 'warn "CIS 4.2.6/4.2.12/4.2.13 kubelet hardening known gap', 'fail "CIS 4.2.6/4.2.12/4.2.13 kubelet hardening known gap'),
     ("drop PKI *.crt hardening", "harden", "-name '*.crt' -o -name '*.key'", "-name '*.key'"),

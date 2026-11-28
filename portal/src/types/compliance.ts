@@ -112,6 +112,8 @@ export interface RbacAuditDetail extends RbacAuditRow {
 export interface InfraAuditRow {
   node: string
   summary: CheckSummary
+  // D1: expose report coverage so empty and failure-free rows differ; one count is the smallest API cost, and missing cached counts conservatively render as unevaluated until refresh.
+  checksCount?: number
   /** Actionable (non-accepted) failing check counts for this node. */
   actionableSummary?: CheckSummary
   /** Accepted failing check counts for this node (covered by ACCEPTED_INFRA_RULES). */

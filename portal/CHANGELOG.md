@@ -11,6 +11,10 @@ English | [한국어](CHANGELOG-ko.md)
 
 ### Changed
 
+- **Clarify Infra Audit evidence:** report rows with zero checks now say “Not evaluated”; failure-free reports retain “No failure recorded” with a caveat about unset and inapplicable checks and links to kube-bench and `verify-cluster.sh` evidence.
+
+### Changed
+
 - Added exact Config Audit exceptions for the measured kube-bench CronJob and observed Chaos Mesh ReplicaSet, and documented why the pinned CNPG 1.29.1 database Pod retains its API token mount (R423). Other generated workload identities remain actionable.
 - **Add exact ClusterRole acceptances for Lane D (CIS 5.1.2/5.1.3):** six exact roles plus KSV046 on istiod, with bilingual technical reasons; the RBAC table summary now reflects 52 rules.
 

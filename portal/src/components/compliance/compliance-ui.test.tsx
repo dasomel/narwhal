@@ -1153,8 +1153,13 @@ it("G5 old-shape object renders unknown in grid, summary SSR and framework detai
 
 it("H5/H1: empty failure lists never say All checks passed or 모든 검사 통과 and infra surfaces point to verify-cluster.sh", async () => {
   const zero = { Critical: 0, High: 0, Medium: 0, Low: 0 }
-  const cleanInfraRow: InfraAuditRow = { node: "narwhal-master-1", summary: zero, actionableSummary: zero, acceptedSummary: zero, accepted: false }
+  const cleanInfraRow: InfraAuditRow = { node: "narwhal-master-1", summary: zero, checksCount: 0, actionableSummary: zero, acceptedSummary: zero, accepted: false }
   const cleanInfraDetail: InfraAuditDetail = { ...cleanInfraRow, checks: [] }
+  const passedInfraRow: InfraAuditRow = { ...cleanInfraRow, checksCount: 1 }
+  const passedInfraDetail: InfraAuditDetail = {
+    ...passedInfraRow,
+    checks: [{ id: "KCV0092", title: "Cipher suites", severity: "Medium", success: true, accepted: false }],
+  }
   const cleanConfigDetail: ConfigAuditDetail = { namespace: "dev", kind: "Deployment", name: "app", summary: zero, accepted: false, checks: [] }
   const cleanRbacDetail: RbacAuditDetail = { namespace: "dev", kind: "Role", name: "reader", summary: zero, accepted: false, checks: [] }
 
@@ -1164,13 +1169,15 @@ it("H5/H1: empty failure lists never say All checks passed or 모든 검사 통�
 
     vi.mocked(useQuery).mockReturnValue({ data: [cleanInfraRow], isLoading: false, isError: false, refetch: vi.fn() } as never)
     const infraListHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><InfraAuditList /></LocaleProvider>)
-    expect(infraListHtml).not.toContain(forbidden)
+    expect(infraListHtml).toContain(locale === "ko" ? "미평가" : "Not evaluated")
+    expect(infraListHtml).not.toContain(expectedNoFail)
     expect(infraListHtml).not.toContain("Clean")
     expect(infraListHtml).toContain("scripts/test/verify-cluster.sh")
 
     vi.mocked(useQuery).mockReturnValue({ data: cleanInfraDetail, isLoading: false, isError: false, refetch: vi.fn() } as never)
     const infraPanelHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><ExpandedInfraPanel node="narwhal-master-1" /></LocaleProvider>)
-    expect(infraPanelHtml).toContain(expectedNoFail)
+    expect(infraPanelHtml).toContain(locale === "ko" ? "미평가" : "Not evaluated")
+    expect(infraPanelHtml).not.toContain(expectedNoFail)
     expect(infraPanelHtml).toContain("scripts/test/verify-cluster.sh")
     expect(infraPanelHtml).not.toContain(forbidden)
 
@@ -1190,9 +1197,25 @@ it("H5/H1: empty failure lists never say All checks passed or 모든 검사 통�
     mockGetRbacAuditDetail.mockResolvedValue(cleanRbacDetail)
 
     const infraPageHtml = renderToStaticMarkup(await InfraAuditDetailPage({ params: Promise.resolve({ node: "narwhal-master-1" }) }))
-    expect(infraPageHtml).toContain(expectedNoFail)
+    expect(infraPageHtml).toContain(locale === "ko" ? "미평가" : "Not evaluated")
+    expect(infraPageHtml).not.toContain(expectedNoFail)
     expect(infraPageHtml).toContain("scripts/test/verify-cluster.sh")
     expect(infraPageHtml).not.toContain(forbidden)
+
+    vi.mocked(useQuery).mockReturnValue({ data: [passedInfraRow], isLoading: false, isError: false, refetch: vi.fn() } as never)
+    const passedListHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><InfraAuditList /></LocaleProvider>)
+    expect(passedListHtml).toContain(expectedNoFail)
+    expect(passedListHtml).not.toContain(locale === "ko" ? "미평가" : "Not evaluated")
+
+    vi.mocked(useQuery).mockReturnValue({ data: passedInfraDetail, isLoading: false, isError: false, refetch: vi.fn() } as never)
+    const passedPanelHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><ExpandedInfraPanel node="narwhal-master-1" /></LocaleProvider>)
+    expect(passedPanelHtml).toContain(expectedNoFail)
+    expect(passedPanelHtml).toContain("scripts/test/verify-cluster.sh")
+
+    mockGetInfraAuditDetail.mockResolvedValue(passedInfraDetail)
+    const passedPageHtml = renderToStaticMarkup(await InfraAuditDetailPage({ params: Promise.resolve({ node: "narwhal-master-1" }) }))
+    expect(passedPageHtml).toContain(expectedNoFail)
+    expect(passedPageHtml).toContain("scripts/test/verify-cluster.sh")
 
     const cfgPageHtml = renderToStaticMarkup(
       await ConfigAuditDetailPage({

@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-portal-infra-evidence-wording-20261128",
+  "task": "Stop the Compliance infra views from presenting unevaluated or non-evidential Trivy infra results as 'no failure recorded'.",
+  "changeContext": {
+    "paths": [
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/app/(dashboard)/compliance/infra-audit/[node]/page.tsx",
+      "portal/src/components/compliance/compliance-ui.test.tsx",
+      "portal/src/components/compliance/infra-audit-list.tsx",
+      "portal/src/lib/compliance.ts",
+      "portal/src/lib/i18n.ts",
+      "portal/src/types/compliance.ts",
+      ".agents/evals/traces/2026-11-portal-infra-evidence-wording.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Not changed: the Frameworks tab labels that still describe Trivy as failure-only (compliance.framework.* keys); follow-up."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live 2026-11-28 (trivy-operator 0.36.1, recordFailedChecksOnly=false): node ClusterInfraAssessmentReport had 0 checks since 2026-11-22 yet showed 'No failure recorded'; KCV0083 protectKernelDefaults passed while kube-bench 4.2.6 failed; etcd pod report passed apiserver-only KCV0001/KCV0012.",
+      "evidence": [
+        "test:kubectl get clusterinfraassessmentreports node-narwhal-master-1 -> checks 0 (created 2026-11-22); after delete and rescan -> 89 checks, 0 failed",
+        "test:kube-bench record 4.2.6 FAIL vs Trivy AVD-KCV-0083 success true"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Infra list and detail show 'Not evaluated' for reports with zero checks; the infra caveat names the real limits (zero checks = not evaluated, unset settings and non-applicable checks pass); the Config Audit/RBAC hint no longer claims Trivy records failures only."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "portal compliance tests",
+      "summary": "Zero-check and no-failure cases covered in both locales.",
+      "evidence": [
+        "test:vitest compliance-ui/compliance/compliance-evidence/compliance-accepted -> 126 passed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Infra views distinguish not evaluated from no failure recorded and state why Trivy infra passes are not evidence; Frameworks wording left for follow-up (e1)."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within scope: UI and texts changed, tests pass."
+    }
+  ]
+}

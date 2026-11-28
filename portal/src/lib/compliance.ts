@@ -681,6 +681,7 @@ function classifyInfraAuditItem(item: RawAuditReport): {
     row: {
       node,
       summary,
+      checksCount: item.report.checks?.length ?? 0,
       actionableSummary,
       acceptedSummary,
       accepted,

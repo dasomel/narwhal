@@ -112,6 +112,12 @@ Apply on one control-plane node at a time. On a multi-node control plane, start 
 
 The revised acceptances take effect with a portal release.
 
+### Cilium Gateway API and Alloy operator Secret RBAC (2026-11-28, D-CA-CILIUM-GW-OFF, R430)
+
+`scripts/cluster/03-cni-install.sh` and `scripts/ops/reconcile-cilium-hardening.sh` disable both `gatewayAPI.enabled` and `tls.secretSync.enabled`. Chart 1.19.4 renders the cilium-operator ClusterRole `secrets` rule when Gateway API is enabled; `tls.secretSync.enabled` also defaults true for chart versions >=1.17. The earlier `gatewayAPI.secretsNamespace.sync=false` did not remove that rule. The live inventory measured 0 HTTPRoutes/GRPCRoutes, only Istio waypoint Gateways, no Cilium TLS/Secret references, and 0 Secrets in `cilium-secrets`; after rollout the cilium-operator ClusterRole had 0 `secrets` rules, the Cilium GatewayClass was gone, cilium-dbg was healthy, and test-sso returned 144/0. Cost: Cilium Gateway API is unavailable; escape hatch: enable it only with a separately reviewed RBAC design.
+
+`ClusterRole/k8s-monitoring-alloy-operator` has an exact KSV041 acceptance. A live 2026-11-28 trial with `namespaces: [monitoring]` and `rbac.createClusterRoles: false` made `monitoring/k8s-monitoring-alloy-logs` Irreconcilable: the operator was forbidden to get `ClusterRole/k8s-monitoring-alloy-logs` (`.review/alloy-operator-namespaced-trial.log`). The k8s-monitoring 4.2.0 Alloy instance chart creates this ClusterRole for cluster-wide discovery, so the operator must retain cluster-scoped RBAC. The acceptance is limited to `ClusterRole/k8s-monitoring-alloy-operator` KSV041; R430 pins this exact rule and rejects re-enabling either Cilium feature. The failed Alloy namespace restriction is reverted in bootstrap and GitOps.
+
 ## Kubelet API authentication and authorization (Narwhal#113)
 
 Before this change, `scripts/cluster/02-init-cluster.sh` omitted all these
@@ -661,6 +667,7 @@ security omissions remain actionable. This is snapshot verification, not a live 
 | cluster | ClusterRole/cnpg-cloudnative-pg | KSV041 | accept | CloudNativePG runs in platform-system and reconciles PostgreSQL Cluster resources in database. The measured cluster-wide Secret read supports cross-namespace reconciliation. |
 | cluster | ClusterRole/nfs-external-provisioner-role | KSV041 | accept | The NFS CSI provisioner reads PVC-referenced Secret credentials from workload namespaces when mounting dynamically provisioned NFS volumes. The measured rule is get-only. |
 | cluster | ClusterRole/prometheus-stack-kube-prom-operator | KSV041, KSV045 | accept | The kube-prometheus-stack operator reconciles Prometheus resources and referenced TLS/auth Secrets across monitored namespaces. The measured Secret rule uses wildcard verbs, and its separate wildcard resource rule triggers KSV045. |
+| cluster | ClusterRole/k8s-monitoring-alloy-operator | KSV041 | accept | In the 2026-11-28 live trial, reconciling Alloy CR monitoring/k8s-monitoring-alloy-logs failed with Irreconcilable because the operator was forbidden to get ClusterRole k8s-monitoring-alloy-logs. Evidence: .review/alloy-operator-namespaced-trial.log. The k8s-monitoring 4.2.0 Alloy instance chart creates a ClusterRole for cluster-wide discovery, so Alloy Operator 0.5.11 requires clusterroles get permission (KSV041). This acceptance applies only to this exact ClusterRole Secret rule. |
 
 ### RBAC bootstrap binding allowlist
 

@@ -1890,6 +1890,20 @@
       "reasonKey": "compliance.acceptedReason.prometheusOperatorClusterSecrets",
       "owner": "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml",
       "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:k8s-monitoring-alloy-operator:live-failure",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "k8s-monitoring-alloy-operator",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.alloyOperatorClusterRoleFailure",
+      "owner": "Alloy Operator 0.5.11 (gitops/charts/narwhal-apps/templates/k8s-monitoring.yaml; live trial 2026-11-28)",
+      "reviewedAt": "2026-11-28"
     }
   ],
   "infra": [

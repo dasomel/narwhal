@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+- **CIS 5.1.2 정확 RBAC 수용 (R430):** ClusterRole 접근 제거 시 2026-11-28 라이브 조정이 실패한 실측에 따라 `ClusterRole/k8s-monitoring-alloy-operator`의 KSV041만 수용한다.
+
 ### 변경
 
 - **Lane E1 무상태 UID/GID 조치에 따른 Config Audit 수용 규칙 갱신 (R428):** `istio-system/ReplicaSet/istiod`(`KSV020`/`KSV021`, 차트 `1.30.1` UID/GID 설정 미노출 및 `pilot:1.30.1` `1337:1337`)와 `istio-system/DaemonSet/ztunnel`(`KSV030`/`KSV104`, 차트 `1.30.1` `seccompProfile` 키 미노출 및 컨테이너 컨텍스트 하드코딩) `upstream` 정확 수용 규칙을 추가하고, `kube-system/DaemonSet/csi-nfs-node` 및 `kube-system/ReplicaSet/csi-nfs-controller`에 `KSV105` 정확 수용 규칙을 추가했다(`csi-nfs-postrender`가 `KSV021` 해소를 위해 Pod 수준 `runAsGroup: 10100`과 함께 containerd 요건상 `runAsUser: 0`을 명시). Config Audit 수용 목록은 이제 55개 워크로드 60개 규칙이다.

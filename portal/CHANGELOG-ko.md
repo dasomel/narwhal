@@ -9,24 +9,17 @@
 
 ## [Unreleased]
 
-### 변경
-
-- **Infra Audit 증거 문구 명확화:** 검사 수가 0인 보고서는 “미평가”로 표시하고, 실패 기록이 없는 보고서에는 미설정·비적용 검사의 한계와 kube-bench 및 `verify-cluster.sh` 증거 안내를 표시한다.
-- **컨트롤 플레인 exact acceptance (Lane C):** kube-apiserver v1.35.7 이미지 바이너리에서 `cap_net_bind_service=ep`를 실측해 `NET_BIND_SERVICE`만 유지한다. 2026-11-28 hardening patch가 etcd 시작을 막아 etcd exact acceptance에 KSV001/KSV003/KSV004를 포함하며 원인은 조사 중이다.
-
-### Changed
-
-- **Lane D 정확 ClusterRole 수용 추가 (CIS 5.1.2/5.1.3):** 역할 6개와 istiod의 KSV046을 기술 근거의 이중 언어 사유로 추가하고 RBAC 표 요약을 52개로 갱신했다.
+## [1.1.35] - 2026-11-28
 
 ### 변경
 
-- 측정된 kube-bench CronJob과 관측된 Chaos Mesh ReplicaSet의 Config Audit 정확 수용을 추가하고, 고정된 CNPG 1.29.1 DB 파드가 API 토큰 마운트를 유지해야 하는 이유를 기록했다(R423). 다른 생성 워크로드 이름은 계속 조치 대상으로 남는다.
-
-### 변경
-
-- **Cilium 1.19.4 하드닝 및 CoreDNS kubeadm 애드온 Config Audit 수용 규칙 갱신 (R425):** `kube-system/DaemonSet/cilium`에서 `KSV017`을 제거하고 `KSV001`/`KSV012`/`KSV020`/`KSV021`을 추가했으며(차트 `1.19.4` 템플릿 미렌더링 및 cgroup·sysctl·bpffs·CNI용 UID/GID 0 필요), `kube-system/DaemonSet/cilium-envoy`에 `runAsGroup: 10100`과 함께 `runAsUser: 0`을 명시함에 따라 `KSV105`를 추가했다. 또한 `kube-system/ReplicaSet/cilium-operator`(`KSV009`/`KSV024`, `cluster-pool` IPAM hostNetwork 및 연동 `hostPort 9234`), `kube-system/ReplicaSet/hubble-ui`(`KSV020`/`KSV021`, 차트 `1001:1001`), `kube-system/ReplicaSet/coredns`(`KSV012`/`KSV020`/`KSV021`/`KSV022`/`KSV030`/`KSV104`, kubeadm 업그레이드 덮어쓰기 및 포트 53 `NET_BIND_SERVICE`) 정확 수용 규칙을 추가했다.
-- **컨트롤플레인 정적 Pod Config Audit 수용 규칙 갱신 (`D-CP-STATIC-POD-SC`, `D-CP-ETCD-DEFER`, R426):** `etcd-narwhal-master-1`, `kube-apiserver-narwhal-master-1`, `kube-controller-manager-narwhal-master-1`, `kube-scheduler-narwhal-master-1`의 정확 규칙에 `KSV012`, `KSV020`, `KSV021`을 반영했다(kubeadm 1.35.7은 네 정적 Pod를 UID/GID 0으로 실행하며 비루트 전환은 알파 `RootlessControlPlane` 게이트가 필요하고, `runAsGroup` 단독 지정은 `runAsUser` 없이 containerd가 거부하며 `runAsUser: 0` 명시는 `KSV105`를 유발). `KSV001`, `KSV003`, `KSV004`는 `kube-apiserver`·`kube-controller-manager`·`kube-scheduler`에서 kubeadm 전략 패치로 해결한다. 라이브 Trivy에서 검출된 apiserver `KSV022`는 `getcap cap_net_bind_service=ep` 실측, 제거 시 EPERM으로 실패하는 `exec`, `NET_BIND_SERVICE`만 유지한 라이브 CapEff `0x400`에 따라 별도 exact rule로 수용한다. `etcd-narwhal-master-1`은 2026-11-28 라이브 시험에서 hardening patch 적용 후 시작이 막혀 KSV001/KSV003/KSV004를 기존 체크와 함께 정확 수용하며 원인은 조사 중이다.
-- **EventRateLimit 활성화(CIS 1.2.10)에 맞춘 KCV0012 수용 사유 갱신:** AlwaysPullImages 사유에서 "활성화된 어드미션 플러그인은 NodeRestriction뿐"이라는 문장을 NodeRestriction과 EventRateLimit으로 고치고, Harbor 자신의 재기동과 격리 클러스터에 대한 RKE2·GKE CIS 안내를 근거로 덧붙였다.
+- **EventRateLimit 활성화(CIS 1.2.10)에 맞춘 KCV0012 수용 사유 갱신:** AlwaysPullImages 사유에서 "활성화된 어드미션 플러그인은 NodeRestriction뿐"이라는 문장을 NodeRestriction과 EventRateLimit으로 고치고, Harbor 자신의 재기동과 격리 클러스터에 대한 RKE2·GKE CIS 안내를 근거로 덧붙였다. (#848)
+- **Lane D 정확 ClusterRole 수용 추가 (CIS 5.1.2/5.1.3):** 역할 6개와 istiod의 KSV046을 기술 근거의 이중 언어 사유로 추가하고 RBAC 표 요약을 52개로 갱신했다. (#849)
+- 측정된 kube-bench CronJob과 관측된 Chaos Mesh ReplicaSet의 Config Audit 정확 수용을 추가하고, 고정된 CNPG 1.29.1 DB 파드가 API 토큰 마운트를 유지해야 하는 이유를 기록했다(R423). 다른 생성 워크로드 이름은 계속 조치 대상으로 남는다. (#849)
+- **Cilium 1.19.4 하드닝 및 CoreDNS kubeadm 애드온 Config Audit 수용 규칙 갱신 (R425):** `kube-system/DaemonSet/cilium`에서 `KSV017`을 제거하고 `KSV001`/`KSV012`/`KSV020`/`KSV021`을 추가했으며(차트 `1.19.4` 템플릿 미렌더링 및 cgroup·sysctl·bpffs·CNI용 UID/GID 0 필요), `kube-system/DaemonSet/cilium-envoy`에 `runAsGroup: 10100`과 함께 `runAsUser: 0`을 명시함에 따라 `KSV105`를 추가했다. 또한 `kube-system/ReplicaSet/cilium-operator`(`KSV009`/`KSV024`, `cluster-pool` IPAM hostNetwork 및 연동 `hostPort 9234`), `kube-system/ReplicaSet/hubble-ui`(`KSV020`/`KSV021`, 차트 `1001:1001`), `kube-system/ReplicaSet/coredns`(`KSV012`/`KSV020`/`KSV021`/`KSV022`/`KSV030`/`KSV104`, kubeadm 업그레이드 덮어쓰기 및 포트 53 `NET_BIND_SERVICE`) 정확 수용 규칙을 추가했다. (#850)
+- **Infra Audit 증거 문구 명확화:** 검사 수가 0인 보고서는 “미평가”로 표시하고, 실패 기록이 없는 보고서에는 미설정·비적용 검사의 한계와 kube-bench 및 `verify-cluster.sh` 증거 안내를 표시한다. (#851)
+- **컨트롤 플레인 exact acceptance (Lane C):** kube-apiserver v1.35.7 이미지 바이너리에서 `cap_net_bind_service=ep`를 실측해 `NET_BIND_SERVICE`만 유지한다. 2026-11-28 hardening patch가 etcd 시작을 막아 etcd exact acceptance에 KSV001/KSV003/KSV004를 포함하며 원인은 조사 중이다. (#852)
+- **컨트롤플레인 정적 Pod Config Audit 수용 규칙 갱신 (`D-CP-STATIC-POD-SC`, `D-CP-ETCD-DEFER`, R426):** `etcd-narwhal-master-1`, `kube-apiserver-narwhal-master-1`, `kube-controller-manager-narwhal-master-1`, `kube-scheduler-narwhal-master-1`의 정확 규칙에 `KSV012`, `KSV020`, `KSV021`을 반영했다(kubeadm 1.35.7은 네 정적 Pod를 UID/GID 0으로 실행하며 비루트 전환은 알파 `RootlessControlPlane` 게이트가 필요하고, `runAsGroup` 단독 지정은 `runAsUser` 없이 containerd가 거부하며 `runAsUser: 0` 명시는 `KSV105`를 유발). `KSV001`, `KSV003`, `KSV004`는 `kube-apiserver`·`kube-controller-manager`·`kube-scheduler`에서 kubeadm 전략 패치로 해결한다. 라이브 Trivy에서 검출된 apiserver `KSV022`는 `getcap cap_net_bind_service=ep` 실측, 제거 시 EPERM으로 실패하는 `exec`, `NET_BIND_SERVICE`만 유지한 라이브 CapEff `0x400`에 따라 별도 exact rule로 수용한다. `etcd-narwhal-master-1`은 2026-11-28 라이브 시험에서 hardening patch 적용 후 시작이 막혀 KSV001/KSV003/KSV004를 기존 체크와 함께 정확 수용하며 원인은 조사 중이다. (#852)
 
 ## [1.1.34] - 2026-11-27
 
@@ -685,6 +678,7 @@ Next.js 16.4와 React 19.3.1 업데이트를 반영함. `portal/v1.1.0` 이후�
 게시되지 않았으므로, 이 섹션은 1.0.17 이후의 모든 변경을 다룸.
 
 ### 업그레이드 노트
+
 - **프로덕션은 이제 인증된 Valkey TLS를 요구함 (#205, 63603d6, 1.0.19 이후)**: 프로덕션에서
   `getValkey()` / `getLiveValkey()`(`src/lib/valkey.ts`)는 `VALKEY_URL=rediss://…`(TLS 스킴),
   `VALKEY_TLS=true`, `VALKEY_USERNAME`(전용 ACL 사용자, 문서에서는 `portal`), `VALKEY_PASSWORD`가
@@ -1050,7 +1044,8 @@ Portal의 첫 번째 공개 릴리스.
     매니페스트(`deploy/kaniko-build-job.yaml`).
   - 실시간 핫 모듈 교체(HMR) 및 컨테이너 파일 동기화를 위해 구성된 Skaffold 개발 프로필.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.34...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.35...HEAD
+[1.1.35]: https://github.com/dasomel/narwhal/compare/portal/v1.1.34...portal/v1.1.35
 [1.1.34]: https://github.com/dasomel/narwhal/compare/portal/v1.1.33...portal/v1.1.34
 [1.1.33]: https://github.com/dasomel/narwhal/compare/portal/v1.1.32...portal/v1.1.33
 [1.1.32]: https://github.com/dasomel/narwhal/compare/portal/v1.1.31...portal/v1.1.32

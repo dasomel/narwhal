@@ -108,6 +108,14 @@ kubectl apply -f "$(manifest keycloak-keycloakrealmimports.k8s.keycloak.org-v1.y
 # 2. Operator RBAC + Deployment (namespaced to iam)
 kubectl apply -n iam -f "$(manifest keycloak-kubernetes.yml)"
 
+# D-KC-RBAC-NARROW: both controllers watch only their own namespace, so keep
+# Secret access in iam Roles while preserving the upstream cluster-scoped rules.
+# Cost: reconciliation outside iam remains unsupported (as configured upstream).
+# Escape hatch: restore the pinned upstream RBAC manifest if a future controller
+# demonstrably needs cross-namespace Secrets, then document that scope explicitly.
+# Absolute path: Vagrant runs provisioners from /tmp/vagrant-shell, so BASH_SOURCE has no sibling.
+kubectl apply -n iam -f /home/vagrant/scripts/cluster/keycloak-operator-rbac.yaml
+
 # D-KC-OPERATOR-LIVENESS: upstream keycloak-kubernetes.yml probes /q/health/live for liveness,
 # which stays 200 even when the operator's controller informer dies after an API-server blip,
 # leaving iam/keycloak-operator NotReady (0/1) indefinitely without kubelet restarting it (#656).

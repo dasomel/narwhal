@@ -411,7 +411,11 @@ Stage 1 resolves the `argocd-server` ClusterRole findings (`KSV041`, `KSV046`, `
 
 ### Lane D: operator Secret and wildcard RBAC findings (2026-11-28)
 
-D-RBAC-LANE-D: six exact role/check acceptances below record measured live rules with documented platform functions. Four actionable roles were removed after review rejected their prior reasons; they remain findings until a version-pinned narrow mode is rendered and live-tested without breaking reconciliation. R424 pins the six exact targets and check sets. The technical reasons are role rules and repo resource placement, not a name or namespace pattern.
+D-RBAC-LANE-D: six exact role/check acceptances below record measured live rules with documented platform functions. Two actionable roles (Cilium operator and Alloy operator) remain findings. The two Keycloak controller findings were fixed in source by removing their Secret rules from the ClusterRoles and granting Secret operations only in `iam` (D-KC-RBAC-NARROW, R427); live reconciliation and Trivy confirmation remain pending. R424 pins the six exact targets and check sets. The technical reasons are role rules and repo resource placement, not a name or namespace pattern.
+
+### Keycloak Operator Secret RBAC (2026-11-28)
+
+`keycloak-k8s-resources` v26.5.7 `kubernetes.yml` sets both controller namespace selectors to `JOSDK_WATCH_CURRENT`. The main controller already has a namespaced `keycloak-operator-role` containing Secret operations. `scripts/cluster/keycloak-operator-rbac.yaml`, applied after the upstream manifest by `11-keycloak.sh`, preserves both ClusterRoles' non-Secret rules, omits their Secret rules, and adds an `iam` Role/RoleBinding for the RealmImport controller's Secret operations. The Operator RBAC is bootstrap-owned; no GitOps Application owns these resources. D-KC-RBAC-NARROW cost: reconciliation outside `iam` is unsupported, matching the pinned watch scope. Escape hatch: restore upstream Secret ClusterRole rules only if a measured need requires watching additional namespaces. R427 rejects mutations that re-add cluster-wide Secret rules. Live Keycloak and RealmImport reconciliation, Secret creation, operator logs, and Trivy KSV041 confirmation are pending.
 
 These failing controls are expected for this IDP platform. Changing them breaks
 functionality or reverses an intentional trade-off.
@@ -431,8 +435,9 @@ functionality or reverses an intentional trade-off.
    (hostPath to read node files), CSI/NFS, kube-system system pods. These cannot be
    hardened without breaking CNI / mesh / storage / scanning.
 3. **`kube-system` used by platform** (NSA 1.12) — the platform legitimately runs there.
-4. **Broad RBAC / secret access / wildcards** (CIS 5.1.2, 5.1.3, 5.1.6) — required by
-   operators (ArgoCD, Keycloak Operator, cert-manager, etc.).
+4. **Broad RBAC / secret access / wildcards** (CIS 5.1.2, 5.1.3, 5.1.6) — some
+   permissions remain required by operators (ArgoCD, cert-manager, etc.); Keycloak
+   Operator Secret access is now limited to `iam` as documented above.
 
 ### Monitoring sidecar and kube-state-metrics Secret reads (CIS 5.1.2/KSV041, R418)
 

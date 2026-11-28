@@ -979,7 +979,7 @@ describe("KISA-IMG-02 live evaluation", () => {
     return {
       pods: {
         status: "ok",
-        data: [{ metadata: { name: "portal-1", namespace: "devtools" }, spec: { containers: [{ image: "ghcr.io/dasomel/narwhal-portal:1.1.35" }] }, status: { phase: "Running" } }],
+        data: [{ metadata: { name: "portal-1", namespace: "devtools" }, spec: { containers: [{ image: "ghcr.io/dasomel/narwhal-portal:1.1.36" }] }, status: { phase: "Running" } }],
       },
       replicasets: {
         status: "ok",
@@ -1009,12 +1009,12 @@ describe("KISA-IMG-02 live evaluation", () => {
         {
           metadata: { name: "r1", namespace: "devtools" },
           scope: { kind: "ReplicaSet", name: "portal-old", namespace: "devtools" },
-          results: [{ policy: "verify-image-signatures", result: "fail", message: "failed to verify image ghcr.io/dasomel/narwhal-portal:1.1.35: no sig" }],
+          results: [{ policy: "verify-image-signatures", result: "fail", message: "failed to verify image ghcr.io/dasomel/narwhal-portal:1.1.36: no sig" }],
         },
         {
           metadata: { name: "r2", namespace: "devtools" },
           scope: { kind: "Pod", name: "deleted-pod", namespace: "devtools" },
-          results: [{ policy: "verify-image-signatures", result: "fail", message: "failed to verify image ghcr.io/dasomel/narwhal-portal:1.1.35: no sig" }],
+          results: [{ policy: "verify-image-signatures", result: "fail", message: "failed to verify image ghcr.io/dasomel/narwhal-portal:1.1.36: no sig" }],
         },
         {
           metadata: { name: "r3", namespace: "chaos-testing" },
@@ -1232,7 +1232,7 @@ describe("KISA-IMG-02 live evaluation", () => {
       data: [{
         metadata: { name: "r-active", namespace: "devtools" },
         scope: { kind: "Deployment", name: "narwhal-portal", namespace: "devtools" },
-        results: [{ policy: "verify-image-signatures", result: "fail", message: "failed to verify image ghcr.io/dasomel/narwhal-portal:1.1.35: bad sig" }],
+        results: [{ policy: "verify-image-signatures", result: "fail", message: "failed to verify image ghcr.io/dasomel/narwhal-portal:1.1.36: bad sig" }],
       }],
     })
     expect((await checkImg02()).status).toBe("fail")

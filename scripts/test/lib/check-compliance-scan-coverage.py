@@ -150,7 +150,7 @@ EXPECTED_SYSTEM_IMAGES = (
 MUST_NOT_EXCLUDE_IMAGES = (
     "registry.k8s.io/etcd:3.5.31-0",
     "registry.istio.io/release/proxyv2:1.30.1-distroless",
-    "ghcr.io/dasomel/narwhal-portal:1.1.35",
+    "ghcr.io/dasomel/narwhal-portal:1.1.36",
     "docker.io/alpine/k8s:1.31.4",
     "quay.io/cilium/tetragon:v1.0.0",
     "registry.k8s.io/sig-storage/hostpathplugin:v1.0.0",

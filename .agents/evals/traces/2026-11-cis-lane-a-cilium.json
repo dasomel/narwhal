@@ -60,10 +60,10 @@
       "id": "e5",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "R423 (lane A), R395, R383, R411, R376, portal compliance tests",
+      "scope": "R425 (lane A), R395, R383, R411, R376, portal compliance tests",
       "summary": "Checks pass after the orchestrator fixes.",
       "evidence": [
-        "test:python3 scripts/test/lib/check-cilium-coredns-hardening.py --mutation-verify -> PASS: R423 Cilium & CoreDNS hardening (31 mutations rejected)",
+        "test:python3 scripts/test/lib/check-cilium-coredns-hardening.py --mutation-verify -> PASS: R425 Cilium & CoreDNS hardening (31 mutations rejected)",
         "test:portal vitest compliance-accepted/compliance/compliance-evidence -> 111 passed"
       ]
     },

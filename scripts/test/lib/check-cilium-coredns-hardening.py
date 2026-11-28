@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R423: Cilium 1.19.4 workload hardening, bpffs mount, and exact Cilium/CoreDNS acceptances."""
+"""R425: Cilium 1.19.4 workload hardening, bpffs mount, and exact Cilium/CoreDNS acceptances."""
 
 from __future__ import annotations
 
@@ -172,7 +172,7 @@ def _make_dummy_chart_tgz(dest: Path) -> None:
 
 def _verify_ops_merge_behavior(ops_text: str) -> list[str]:
     if shutil.which("yq") is None:
-        return ["yq v4 is required for R423 ops merge behavioural test"]
+        return ["yq v4 is required for R425 ops merge behavioural test"]
 
     live_fixture = {
         "routingMode": "tunnel",
@@ -443,8 +443,8 @@ def check(texts: dict[str, str], *, render_helm: bool = False, run_ops_behavior:
         if workload not in texts["doc"]:
             errors.append(f"compliance-hardening.md missing {workload}")
 
-    if "check R423 " not in texts["reg"] or "check-cilium-coredns-hardening.py --mutation-verify" not in texts["reg"]:
-        errors.append("regression-check-kakao.sh must wire R423 with --mutation-verify")
+    if "check R425 " not in texts["reg"] or "check-cilium-coredns-hardening.py --mutation-verify" not in texts["reg"]:
+        errors.append("regression-check-kakao.sh must wire R425 with --mutation-verify")
 
     if render_helm:
         errors.extend(_verify_helm_render(cni))
@@ -479,7 +479,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("ops helper drops exact helm rollback command", "ops", '  helm rollback cilium ${PREV_REV} -n kube-system --wait', '  echo "rollback manually"'),
     ("drop i18n ciliumOperatorHost", "i18n", '"compliance.acceptedReason.ciliumOperatorHost"', '"compliance.acceptedReason.removed"'),
     ("drop i18n corednsKubeadm", "i18n", '"compliance.acceptedReason.corednsKubeadm"', '"compliance.acceptedReason.removed"'),
-    ("drop R423 wiring", "reg", "check R423 ", "check R9999 "),
+    ("drop R425 wiring", "reg", "check R425 ", "check R9999 "),
 ]
 
 
@@ -518,10 +518,10 @@ def main() -> int:
                 return 1
             json_mutations += 1
 
-        print(f"PASS: R423 Cilium & CoreDNS hardening ({len(MUTATIONS) + json_mutations} mutations rejected)")
+        print(f"PASS: R425 Cilium & CoreDNS hardening ({len(MUTATIONS) + json_mutations} mutations rejected)")
         return 0
 
-    print("PASS: R423 Cilium & CoreDNS hardening")
+    print("PASS: R425 Cilium & CoreDNS hardening")
     return 0
 
 

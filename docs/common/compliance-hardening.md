@@ -99,7 +99,7 @@ Apply on one control-plane node at a time. On a multi-node control plane, start 
    sudo mv /etc/kubernetes/.kube-vip.yaml.new /etc/kubernetes/manifests/kube-vip.yaml
    ```
 
-### Cilium family & CoreDNS hardening (2026-11-28, `D-CILIUM-BPFFS-SELINUX`, `D-CILIUM-HARDENING`, R423)
+### Cilium family & CoreDNS hardening (2026-11-28, `D-CILIUM-BPFFS-SELINUX`, `D-CILIUM-HARDENING`, R425)
 
 - **`scripts/common/01-prerequisites.sh` + `scripts/cluster/03-cni-install.sh` (`cilium 1.19.4`):**
   - `01-prerequisites.sh` verifies `findmnt -rn -t bpf -T /sys/fs/bpf` (systemd mounts `/sys/fs/bpf` itself as an API file system and refuses a `sys-fs-bpf.mount` unit for it, measured on systemd 259). `03-cni-install.sh` verifies host `bpffs` fail-closed before setting `bpf.autoMount.enabled=false`, removing the privileged `mount-bpf-fs` initContainer (`KSV003`, `KSV004`, `KSV017`). Because upstream `templates/cilium-envoy/daemonset.yaml` gates `bpf-maps` on `bpf.autoMount.enabled`, `03-cni-install.sh` also passes `envoy.extraHostPathMounts[0]` (`/sys/fs/bpf`, `HostToContainer`, `DirectoryOrCreate`).

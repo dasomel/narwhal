@@ -164,7 +164,12 @@ cmd = clean[0] if clean else ""
 if cmd == "get":
     kind = clean[1]
     if kind == "pods":
-        items = [] if state.get("replicas", 1) == 0 else [{"metadata": {"name": "prom-0"}}]
+        if "-A" in clean:
+            items = state.get("all_pods", [])
+        else:
+            if state.get("fail_pod_list"):
+                sys.exit(9)
+            items = [] if state.get("replicas", 1) == 0 else [{"metadata": {"name": "prom-0"}}]
         print(json.dumps({"items": items}))
         sys.exit(0)
     name = clean[2] if len(clean) > 2 else ""
@@ -217,6 +222,9 @@ remote_args = args[idx:]
 with log_path.open("a") as f:
     f.write("ssh " + " ".join(remote_args) + "\n")
 script_stdin = sys.stdin.read()
+state = __import__("json").loads(Path(os.environ["E2_STATE"]).read_text())
+if state.get("fail_chown") and "chown" in remote_args:
+    sys.exit(9)
 proc = subprocess.run(remote_args, input=script_stdin, text=True, capture_output=True)
 sys.stdout.write(proc.stdout)
 sys.stderr.write(proc.stderr)
@@ -250,12 +258,12 @@ sys.exit(0)
         kubeconfig.write_text("apiVersion: v1\nkind: Config\n", encoding="utf-8")
 
         nfs_share = td_path / "nfs"
-        pv_dir = nfs_share / "monitoring" / "prom-pvc-0"
+        pv_dir = nfs_share / "monitoring" / "prom-pvc-prometheus-prometheus-stack-kube-prom-prometheus-0"
         (pv_dir / "wal").mkdir(parents=True)
         (pv_dir / "wal" / "000001").write_text("tsdb", encoding="utf-8")
         (pv_dir / "lock").write_text("", encoding="utf-8")
 
-        def make_state(driver="nfs.csi.k8s.io", subdir="monitoring/prom-pvc-0", owned=True):
+        def make_state(driver="nfs.csi.k8s.io", subdir="monitoring/prom-pvc-prometheus-prometheus-stack-kube-prom-prometheus-0", owned=True):
             wl = {
                 "metadata": {
                     "name": "prometheus-prometheus-stack-kube-prom-prometheus",
@@ -264,6 +272,8 @@ sys.exit(0)
                 "spec": {
                     "replicas": 1,
                     "selector": {"matchLabels": {"app.kubernetes.io/name": "prometheus"}},
+                    "volumeClaimTemplates": [{"metadata": {"name": "prom-pvc"}}],
+                    "template": {"spec": {"volumes": []}},
                 },
             }
             return {
@@ -271,7 +281,7 @@ sys.exit(0)
                 "workload": wl,
                 "cr": {"spec": {"replicas": 1, "paused": False}},
                 "pvcs": {
-                    "prom-pvc-0": {"status": {"phase": "Bound"}, "spec": {"volumeName": "pv-prom-0"}},
+                    "prom-pvc-prometheus-prometheus-stack-kube-prom-prometheus-0": {"status": {"phase": "Bound"}, "spec": {"volumeName": "pv-prom-0"}},
                 },
                 "pvs": {
                     "pv-prom-0": {
@@ -281,6 +291,7 @@ sys.exit(0)
                         }
                     }
                 },
+                "all_pods": [],
             }
 
         def run_case(extra_args: list[str], state_obj: dict) -> tuple[subprocess.CompletedProcess, str, str]:
@@ -304,7 +315,7 @@ sys.exit(0)
                 "--nfs-share", str(nfs_share),
                 "--namespace", "monitoring",
                 "--workload", "statefulset/prometheus-prometheus-stack-kube-prom-prometheus",
-                "--pvc", "prom-pvc-0",
+                "--pvc", "prom-pvc-prometheus-prometheus-stack-kube-prom-prometheus-0",
                 "--target", target,
             ] + extra_args
             proc = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=20)
@@ -388,7 +399,7 @@ sys.exit(0)
                 "--nfs-share", str(nfs_share),
                 "--namespace", "monitoring",
                 "--workload", "statefulset/prometheus-prometheus-stack-kube-prom-prometheus",
-                "--pvc", "prom-pvc-0",
+                "--pvc", "prom-pvc-prometheus-prometheus-stack-kube-prom-prometheus-0",
                 "--target", "0:10100",
             ],
             env=env, capture_output=True, text=True, timeout=10,
@@ -396,9 +407,42 @@ sys.exit(0)
         if p.returncode == 0:
             errors.append("migrate-pv-ownership must refuse UID 0 target")
 
+        wrong = make_state()
+        wrong["workload"]["spec"]["volumeClaimTemplates"] = [{"metadata": {"name": "other"}}]
+        p, _, _ = run_case(["--operator-cr", "prometheus/prometheus-stack-kube-prom-prometheus"], wrong)
+        if p.returncode == 0 or "not mounted" not in p.stderr:
+            errors.append("migrate-pv-ownership must reject PVC not mounted by target workload")
+        other = make_state()
+        other["all_pods"] = [{"metadata": {"namespace": "other", "name": "consumer", "labels": {"app": "else"}}, "status": {"phase": "Running"}, "spec": {"volumes": [{"persistentVolumeClaim": {"claimName": "prom-pvc-prometheus-prometheus-stack-kube-prom-prometheus-0"}}]}}]
+        p, _, _ = run_case(["--operator-cr", "prometheus/prometheus-stack-kube-prom-prometheus"], other)
+        if p.returncode == 0 or "also mounted" not in p.stderr:
+            errors.append("migrate-pv-ownership must reject PVC mounted by another running pod")
+
+        before = make_state()
+        before["fail_pod_list"] = True
+        p, _, _ = run_case(["--operator-cr", "prometheus/prometheus-stack-kube-prom-prometheus", "--apply"], before)
+        if p.returncode == 0 or "replicas=1" not in p.stderr or "unpaused" not in p.stderr:
+            errors.append("pre-chown failure must restore replicas and unpause operator")
+        after = make_state()
+        after["fail_chown"] = True
+        p, _, _ = run_case(["--operator-cr", "prometheus/prometheus-stack-kube-prom-prometheus", "--apply"], after)
+        if p.returncode == 0 or "no automatic restart" not in p.stderr or "Manual rollback" not in p.stderr:
+            errors.append("post-chown failure must avoid restart and print rollback instructions")
+
+        accepted = make_state(subdir="monitoring/storage..old")
+        (nfs_share / "monitoring" / "storage..old").mkdir(parents=True, exist_ok=True)
+        p, _, _ = run_case(["--operator-cr", "prometheus/prometheus-stack-kube-prom-prometheus"], accepted)
+        if p.returncode != 0:
+            errors.append("subDir storage..old must be accepted")
+        rejected = make_state(subdir="a/../b")
+        p, _, _ = run_case(["--operator-cr", "prometheus/prometheus-stack-kube-prom-prometheus"], rejected)
+        if p.returncode == 0 or "unsafe" not in p.stderr:
+            errors.append("subDir path component .. must be rejected")
+
 
 def check(texts: dict[str, str], run_behavior: bool = True) -> list[str]:
     errors: list[str] = []
+    _check_other_mount_filter(texts, errors)
 
     # 1. Prometheus & Alertmanager securityContext (GitOps + bootstrap parity)
     prom_vals = _load_values_object(texts["prom_gitops"])
@@ -506,9 +550,40 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("migrate script removes -mindepth 1 on chown", "migrate", 'find "${DIR_REAL}" -xdev -mindepth 1 -exec chown -h "${T_PAIR}" -- {} +', 'find "${DIR_REAL}" -xdev -exec chown -h "${T_PAIR}" -- {} +'),
     ("migrate script removes non-NFS PV guard", "migrate", 'if [[ "${CSI_DRIVER}" != "nfs.csi.k8s.io" ]]; then', 'if [[ "${CSI_DRIVER}" == "never-match" ]]; then'),
     ("migrate script removes operator-owned guard", "migrate", 'if [[ -n "${OWNER_REF}" && -z "${OPERATOR_CR}" && "${ALLOW_OWNED}" == false ]]; then', 'if false; then'),
+    ("migrate script removes PVC ownership guard", "migrate", '[[ "${mounted}" == true ]] || die "PVC ${NAMESPACE}/${pvc} is not mounted by ${WORKLOAD_CANON}"', ': # removed'),
+    ("migrate jq filter uses the selector string as the pod", "migrate", '. as $p | select($p.metadata.namespace != $ns or ([ $selector | split(",")[] | split("=") as $pair | ($p.metadata.labels // {})[$pair[0]] == $pair[1] ]', 'select(.metadata.namespace != $ns or ([ $selector | split(",")[] | split("=") as $pair | .metadata.labels[$pair[0]] == $pair[1] ]'),
+    ("migrate script removes external pod mount guard", "migrate", '[[ -z "${other_mount}" ]] || die "PVC ${NAMESPACE}/${pvc} is also mounted by running pod outside ${WORKLOAD_CANON}: ${other_mount}"', ': # removed'),
+    ("migrate script removes pre-chown recovery", "migrate", 'if [[ "${CHOWN_STARTED}" == false ]]; then', 'if false; then'),
+    ("migrate script removes post-chown rollback report", "migrate", 'echo "Failure during/after chown; no automatic restart.', 'echo "Failure during/after chown; automatic restart.'),
+    ("migrate script accepts parent path component", "migrate", '*"/../"*', '*"/./"*'),
     ("R429 wiring dropped", "reg", "check R429 ", "check R9999 "),
 ]
 
+
+
+def _check_other_mount_filter(texts, errs):
+    """Run the script's real jq filter on realistic pod JSON (a bug here passed the stub fixtures)."""
+    import json as _json, re as _re, shutil as _sh, subprocess as _sp
+    if not _sh.which("jq"):
+        errs.append("jq not installed: cannot verify the external-mount filter"); return
+    m = _re.search(r"other_mount=\"\$\(printf '%s' \"\$\{ALL_PODS\}\" \| jq -r --arg ns \"\$\{NAMESPACE\}\" --arg pvc \"\$\{pvc\}\" --arg selector \"\$\{SELECTOR\}\" '(.*?)'\)\"", texts["migrate"])
+    if not m:
+        errs.append("migrate-pv-ownership.sh external-mount jq filter not found"); return
+    flt = m.group(1)
+    def pod(ns, name, labels, pvc):
+        return {"metadata": {"namespace": ns, "name": name, "labels": labels}, "status": {"phase": "Running"},
+                "spec": {"volumes": [{"name": "d", "persistentVolumeClaim": {"claimName": pvc}}]}}
+    pods = {"items": [pod("monitoring", "own-0", {"app": "x", "tier": "db"}, "data-own-0"),
+                      pod("monitoring", "intruder", {"app": "y"}, "data-own-0"),
+                      pod("other", "far", {"app": "x", "tier": "db"}, "data-own-0"),
+                      {"metadata": {"namespace": "monitoring", "name": "nolabels"}, "status": {"phase": "Running"}, "spec": {}}]}
+    try:
+        out = _sp.run(["jq", "-r", "--arg", "ns", "monitoring", "--arg", "pvc", "data-own-0", "--arg", "selector", "app=x,tier=db", flt],
+                      input=_json.dumps(pods), capture_output=True, text=True, check=True).stdout.split()
+    except _sp.CalledProcessError as exc:
+        errs.append(f"external-mount jq filter fails on realistic pod JSON: {exc.stderr.strip()[:160]}"); return
+    if sorted(out) != ["monitoring/intruder", "other/far"]:
+        errs.append(f"external-mount jq filter reported {out}, expected monitoring/intruder and other/far only")
 
 def main() -> int:
     texts = {k: p.read_text(encoding="utf-8") for k, p in FILES.items()}
@@ -522,7 +597,7 @@ def main() -> int:
             if old not in mutated[key]:
                 print(f"FAIL: mutation target not found for {name}", file=sys.stderr)
                 return 1
-            mutated[key] = mutated[key].replace(old, new, 1)
+            mutated[key] = mutated[key].replace(old, new)
             run_beh = key == "migrate"
             if not check(mutated, run_behavior=run_beh):
                 print(f"FAIL: mutation not rejected: {name}", file=sys.stderr)

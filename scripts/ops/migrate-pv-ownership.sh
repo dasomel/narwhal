@@ -35,8 +35,50 @@ ALLOW_OWNED=false
 NO_SCALE_BACK=false
 TIMEOUT=180
 APPLY=false
+PHASE="preflight"
+STOP_STARTED=false
+CHOWN_STARTED=false
 
-die() { echo "ERROR: $*" >&2; exit 1; }
+recover_failure() {
+  local status=$?
+  trap - ERR INT TERM
+  set +e
+  (( status == 0 )) && status=1
+  if [[ "${APPLY}" == true && "${STOP_STARTED}" == true ]]; then
+    if [[ "${CHOWN_STARTED}" == false ]]; then
+      echo "Interrupted during ${PHASE}; restoring original workload state (ownership untouched)." >&2
+      if [[ -n "${OPERATOR_CR}" && "${OPERATOR_MODE}" == "paused" ]]; then
+        kube -n "${NAMESPACE}" scale "${WORKLOAD_CANON}" --replicas="${ORIG_REPLICAS}" >&2
+        kube -n "${NAMESPACE}" patch "${OPERATOR_CR}" --type=merge -p '{"spec":{"paused":false}}' >&2
+        echo "Restored replicas=${ORIG_REPLICAS}; unpaused ${OPERATOR_CR}." >&2
+      elif [[ -n "${OPERATOR_CR}" && "${OPERATOR_MODE}" == "replicas" ]]; then
+        kube -n "${NAMESPACE}" patch "${OPERATOR_CR}" --type=merge -p "{\"spec\":{\"replicas\":${CR_ORIG_REPLICAS}}}" >&2
+        echo "Restored ${OPERATOR_CR} replicas=${CR_ORIG_REPLICAS}." >&2
+      else
+        kube -n "${NAMESPACE}" scale "${WORKLOAD_CANON}" --replicas="${ORIG_REPLICAS}" >&2
+        echo "Restored workload replicas=${ORIG_REPLICAS}." >&2
+      fi
+    else
+      local current_replicas="unknown" current_paused="n/a"
+      current_replicas="$(kube -n "${NAMESPACE}" get "${WORKLOAD_CANON}" -o json 2>/dev/null | jq -r '.spec.replicas // 1')"
+      if [[ -n "${OPERATOR_CR}" ]]; then
+        current_paused="$(kube -n "${NAMESPACE}" get "${OPERATOR_CR}" -o json 2>/dev/null | jq -r '.spec.paused // false')"
+      fi
+      echo "Failure during/after chown; no automatic restart. Current replicas=${current_replicas:-unknown}; operator paused=${current_paused}." >&2
+      echo "Manual rollback: re-own the PVC contents to ${ROLLBACK_TARGET:-<OLD_UID>:<OLD_GID>} using the printed rollback command; then restore replicas with: kubectl -n ${NAMESPACE} scale ${WORKLOAD_CANON} --replicas=${ORIG_REPLICAS}" >&2
+      if [[ -n "${OPERATOR_CR}" && "${OPERATOR_MODE}" == "paused" ]]; then
+        echo "If appropriate after ownership is consistent, unpause with: kubectl -n ${NAMESPACE} patch ${OPERATOR_CR} --type=merge -p '{\"spec\":{\"paused\":false}}'" >&2
+      elif [[ -n "${OPERATOR_CR}" ]]; then
+        echo "Restore operator replicas with: kubectl -n ${NAMESPACE} patch ${OPERATOR_CR} --type=merge -p '{\"spec\":{\"replicas\":${CR_ORIG_REPLICAS}}}'" >&2
+      fi
+      print_rollback >&2
+    fi
+  fi
+  exit "${status}"
+}
+trap recover_failure ERR INT TERM
+
+die() { echo "ERROR: $*" >&2; return 1; }
 
 usage() {
   cat <<'USAGE'
@@ -101,6 +143,7 @@ WORKLOAD_NAME="${WORKLOAD#*/}"
 case "${WORKLOAD_KIND}" in
   statefulset|sts) WORKLOAD_KIND="statefulset" ;;
   deployment|deploy) WORKLOAD_KIND="deployment" ;;
+  daemonset|ds) WORKLOAD_KIND="daemonset" ;;
   *) die "unsupported workload kind '${WORKLOAD_KIND}' (expected statefulset or deployment)" ;;
 esac
 WORKLOAD_CANON="${WORKLOAD_KIND}/${WORKLOAD_NAME}"
@@ -165,8 +208,9 @@ SHARE="$2"
 SUBDIR="$3"
 
 case "${SUBDIR}" in
-  ""|/*|*..*|*[$' \t\r\n']*) echo "ERROR: unsafe subDir '${SUBDIR}'" >&2; exit 1 ;;
+  ""|/*|*[$' \t\r\n']*) echo "ERROR: unsafe subDir '${SUBDIR}'" >&2; exit 1 ;;
 esac
+[[ "/${SUBDIR}/" != *"/../"* ]] || { echo "ERROR: unsafe subDir '${SUBDIR}'" >&2; exit 1; }
 SHARE_REAL="$(cd "${SHARE}" && pwd -P)"
 DIR="${SHARE_REAL}/${SUBDIR}"
 if [[ ! -d "${DIR}" ]]; then
@@ -259,6 +303,24 @@ fi
 SELECTOR="$(printf '%s' "${WL_JSON}" | jq -r '(.spec.selector.matchLabels // {}) | to_entries | map("\(.key)=\(.value)") | join(",")')"
 [[ -n "${SELECTOR}" ]] || die "could not determine matchLabels selector for ${NAMESPACE}/${WORKLOAD_CANON}"
 
+# Validate mounts before dry-run output or any cluster/filesystem change.
+TEMPLATE_NAMES="$(printf '%s' "${WL_JSON}" | jq -r '[.spec.volumeClaimTemplates[]?.metadata.name] | .[]')"
+VOLUME_CLAIMS="$(printf '%s' "${WL_JSON}" | jq -r '[.spec.template.spec.volumes[]?.persistentVolumeClaim.claimName // empty] | .[]')"
+ALL_PODS="$(kube get pods -A -o json)"
+for pvc in "${PVCS[@]}"; do
+  mounted=false
+  while IFS= read -r claim; do [[ "${claim}" == "${pvc}" ]] && mounted=true; done <<< "${VOLUME_CLAIMS}"
+  if [[ "${WORKLOAD_KIND}" == "statefulset" ]]; then
+    while IFS= read -r template; do
+      [[ -z "${template}" ]] && continue
+      if [[ "${pvc}" =~ ^${template}-${WORKLOAD_NAME}-([0-9]+)$ ]] && { (( BASH_REMATCH[1] < ORIG_REPLICAS )) || [[ "${mounted}" == true ]]; }; then mounted=true; fi
+    done <<< "${TEMPLATE_NAMES}"
+  fi
+  [[ "${mounted}" == true ]] || die "PVC ${NAMESPACE}/${pvc} is not mounted by ${WORKLOAD_CANON}"
+  other_mount="$(printf '%s' "${ALL_PODS}" | jq -r --arg ns "${NAMESPACE}" --arg pvc "${pvc}" --arg selector "${SELECTOR}" '[.items[]? | . as $p | select($p.metadata.namespace != $ns or ([ $selector | split(",")[] | split("=") as $pair | ($p.metadata.labels // {})[$pair[0]] == $pair[1] ] | all | not)) | select((.status.phase // "") == "Running") | select(any(.spec.volumes[]?; .persistentVolumeClaim.claimName == $pvc)) | "\(.metadata.namespace)/\(.metadata.name)"] | .[]')"
+  [[ -z "${other_mount}" ]] || die "PVC ${NAMESPACE}/${pvc} is also mounted by running pod outside ${WORKLOAD_CANON}: ${other_mount}"
+done
+
 CR_ORIG_REPLICAS=""
 if [[ -n "${OPERATOR_CR}" ]]; then
   CR_JSON="$(kube -n "${NAMESPACE}" get "${OPERATOR_CR}" -o json)"
@@ -288,7 +350,7 @@ for pvc in "${PVCS[@]}"; do
   if [[ -z "${SUBDIR}" ]]; then
     die "PV ${PV_NAME} (PVC ${NAMESPACE}/${pvc}) is missing spec.csi.volumeAttributes.subDir"
   fi
-  if [[ "${SUBDIR}" == /* || "${SUBDIR}" == *..* || ! "${SUBDIR}" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
+  if [[ "${SUBDIR}" == /* || "/${SUBDIR}/" == *"/../"* || ! "${SUBDIR}" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
     die "PV ${PV_NAME} has unsafe volumeAttributes.subDir='${SUBDIR}'"
   fi
 
@@ -380,6 +442,8 @@ if [[ "${APPLY}" == false ]]; then
 fi
 
 # 3. Apply: stop workload (pausing operator CR when specified)
+PHASE="stopping"
+STOP_STARTED=true
 if [[ -n "${OPERATOR_CR}" ]]; then
   if [[ "${OPERATOR_MODE}" == "paused" ]]; then
     echo "Pausing operator CR ${NAMESPACE}/${OPERATOR_CR}..."
@@ -411,6 +475,8 @@ while true; do
 done
 
 # 4. Chown PV contents on NFS server and verify
+CHOWN_STARTED=true
+PHASE="chown"
 for i in "${!PVCS[@]}"; do
   echo "Migrating ownership of ${NAMESPACE}/${PVCS[i]} (${RESOLVED_PVS[i]} -> ${RESOLVED_SUBDIRS[i]}) to ${TARGET}..."
   if ! VERIFY_OUT="$(run_nfs_helper chown "${NFS_SHARE_PATH}" "${RESOLVED_SUBDIRS[i]}" "${TARGET_UID}" "${TARGET_GID}")"; then
@@ -421,6 +487,7 @@ for i in "${!PVCS[@]}"; do
 done
 
 # 5. Scale back (unless --no-scale-back)
+PHASE="restart"
 if [[ "${NO_SCALE_BACK}" == true ]]; then
   echo "Leaving ${NAMESPACE}/${WORKLOAD_CANON} stopped (--no-scale-back)."
   echo "After syncing the updated UID (${TARGET}) manifest, start the workload:"

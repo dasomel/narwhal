@@ -61,8 +61,10 @@ for attempt in 1 2 3 4 5; do
     --set grafana.persistence.size=5Gi \
     --set prometheus.prometheusSpec.retention=7d \
     --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false \
+    --set-json 'prometheus.prometheusSpec.securityContext={"runAsNonRoot":true,"runAsUser":10100,"runAsGroup":10100,"fsGroup":10100,"seccompProfile":{"type":"RuntimeDefault"}}' \
     --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.storageClassName=nfs-csi \
     --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=10Gi \
+    --set-json 'alertmanager.alertmanagerSpec.securityContext={"runAsNonRoot":true,"runAsUser":10100,"runAsGroup":10100,"fsGroup":10100,"seccompProfile":{"type":"RuntimeDefault"}}' \
     --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.storageClassName=nfs-csi \
     --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.resources.requests.storage=5Gi \
     --set-json 'alertmanager.alertmanagerSpec.resources={"requests":{"cpu":"25m","memory":"64Mi"},"limits":{"cpu":"200m","memory":"256Mi"}}' \

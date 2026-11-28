@@ -251,8 +251,8 @@ describe("compliance accepted exceptions", () => {
 
     const harborCore = byName.get("harbor-core-99b8c7d6f")!
     expect(harborCore.accepted).toBe(false)
-    expect(harborCore.actionableSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 1 })
-    expect(harborCore.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 1 })
+    expect(harborCore.actionableSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
+    expect(harborCore.acceptedSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 2 })
 
     const portal = byName.get("narwhal-portal-74b459c658")!
     expect(portal.accepted).toBe(false)
@@ -414,10 +414,10 @@ describe("compliance accepted exceptions", () => {
     const summary = await getComplianceSummary()
     // Config audit:
     // - actionable: harbor-core and narwhal-portal KSV014 (High: 2)
-    // - low hygiene: harbor-core KSV011 (1) + narwhal-portal UID/GID (2) = 3.
+    // - low hygiene: harbor-core KSV011 (1) + harbor-core KSV020 (1) + narwhal-portal UID/GID (2) = 4.
     // - accepted: cilium KSV009 (High: 1); cilium KSV030 remains unaccepted LOW.
     expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 2, Medium: 0, Low: 0 })
-    expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 3 })
+    expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 4 })
     expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
 
     // RBAC:
@@ -1188,8 +1188,8 @@ describe("ReplicaSet filtering and exact Deployment ownership (narwhal#727)", ()
     expect(byName.get("harbor-core-99b8c7d6f")?.actionableSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })
 
     expect(byName.get("harbor-core-b569bd8dd")?.accepted).toBe(true)
-    expect(byName.get("harbor-core-b569bd8dd")?.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 1 })
-    expect(byName.get("harbor-core-b569bd8dd")?.acceptedSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 1 })
+    expect(byName.get("harbor-core-b569bd8dd")?.actionableSummary).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+    expect(byName.get("harbor-core-b569bd8dd")?.acceptedSummary).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 2 })
 
     expect(byName.get("harbor-core-abc12345")?.accepted).toBe(false)
 
@@ -2317,8 +2317,8 @@ describe("honest 3-state compliance, unaccepted LOW, RS reconciliation, and data
     expect(summary.scannedRbacObjects).toBe(2)
     expect(summary.scannedNodes).toBe(1)
     expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 2, Medium: 1, Low: 0 })
-    expect(summary.unacceptedLowConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 3 })
-    expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
+    expect(summary.unacceptedLowConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 2 })
+    expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 1 })
     expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 0 })
     expect(summary.droppedConfigAuditReports).toBe(1)
     expect(summary.droppedConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 2 })

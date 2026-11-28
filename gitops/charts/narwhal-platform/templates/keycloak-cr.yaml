@@ -62,10 +62,16 @@ spec:
       spec:
         containers:
           - name: keycloak
+            # D-E2-KC-GID (CIS 5.7.3 KSV021): drop root GID 0 (image default from /etc/passwd 1000:0)
+            # by pinning runAsGroup 10100 while keeping runAsUser 1000 (KSV020 accepted upstream:
+            # quay.io/keycloak/keycloak:26.5.7 owns /opt/keycloak as 1000:0 g+rwX and re-augments at
+            # start, so UID > 10000 without GID 0 fails EACCES). Cost: one pod rollout (stateless;
+            # state lives in CNPG). Escape hatch: remove runAsGroup to return to image GID 0.
             securityContext:
               allowPrivilegeEscalation: false
               runAsNonRoot: true
               runAsUser: 1000
+              runAsGroup: 10100
               capabilities:
                 drop:
                   - ALL

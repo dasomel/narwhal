@@ -95,6 +95,19 @@ spec:
                 memory: 64Mi
         prometheus:
           prometheusSpec:
+            # D-E2-PROM-UID (CIS 5.7.3 KSV020/KSV021): chart 86.2.3 defaults pod securityContext to
+            # 1000:2000 (fsGroup 2000); prometheus-operator v0.91.0 sets no container-level UID/GID on
+            # prometheus or config-reloader, so pod-level 10100:10100 moves all containers above 10000.
+            # Cost: existing clusters must re-own the nfs-csi TSDB PVC from 1000:2000 to 10100:10100
+            # via scripts/ops/migrate-pv-ownership.sh with Prometheus paused/scaled to 0 before sync.
+            # Escape hatch: revert this block and re-own the PVC back to 1000:2000.
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 10100
+              runAsGroup: 10100
+              fsGroup: 10100
+              seccompProfile:
+                type: RuntimeDefault
             podMetadata:
               labels:
                 istio.io/dataplane-mode: "none"
@@ -318,6 +331,17 @@ spec:
               type: RuntimeDefault
         alertmanager:
           alertmanagerSpec:
+            # D-E2-PROM-UID (CIS 5.7.3 KSV020/KSV021): move pod securityContext from chart 86.2.3
+            # default 1000:2000 to platform UID/GID 10100:10100. Cost: existing clusters must re-own
+            # the nfs-csi Alertmanager PVC via scripts/ops/migrate-pv-ownership.sh while paused/scaled
+            # to 0. Escape hatch: revert this block and re-own the PVC back to 1000:2000.
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 10100
+              runAsGroup: 10100
+              fsGroup: 10100
+              seccompProfile:
+                type: RuntimeDefault
             resources:
               requests:
                 cpu: 25m

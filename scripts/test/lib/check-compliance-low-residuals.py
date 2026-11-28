@@ -178,7 +178,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop i18n cnpgPostgresUid26", "i18n", '"compliance.acceptedReason.cnpgPostgresUid26"', '"compliance.acceptedReason.removed"'),
     ("drop i18n cnpgPoolerUid", "i18n", '"compliance.acceptedReason.cnpgPoolerUid"', '"compliance.acceptedReason.removed"'),
     ("drop i18n openbaoSnapshotUid", "i18n", '"compliance.acceptedReason.openbaoSnapshotUid"', '"compliance.acceptedReason.removed"'),
-    ("stale doc count", "doc", "60 Config Audit rules across 55 workloads", "45 Config Audit rules across 45 workloads"),
+    ("stale doc count", "doc", "68 Config Audit rules across 60 workloads", "45 Config Audit rules across 45 workloads"),
     ("false /etc/pgbouncer claim", "doc", "### Config Audit allowlist", "### Config Audit allowlist /etc/pgbouncer"),
     ("drop exact-match doc note", "doc", "Matching is exact: `database/Pod/narwhal-db-1`", "Matching is loose: `database/Pod/narwhal-db-1`"),
     ("drop R383 wiring", "reg", "check R383 ", "check R9999 "),

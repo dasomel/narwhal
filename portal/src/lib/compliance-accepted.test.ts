@@ -685,3 +685,48 @@ describe("control-plane static Pod acceptances (D-CP-STATIC-POD-SC / D-CP-ETCD-D
     expect(matchConfigAuditException("default", "Pod", pod, "KSV012", [])).toBeNull()
   })
 })
+
+describe("Lane E2/E3 stateful UID/GID and Harbor exact acceptances (R429)", () => {
+  it.each([
+    ["devtools", "ReplicaSet", "harbor-core-95b9f6d79", ["harbor-core"], "cfg:devtools:ReplicaSet:harbor-core:uid-accept"],
+    ["devtools", "ReplicaSet", "harbor-jobservice-76974c9758", ["harbor-jobservice"], "cfg:devtools:ReplicaSet:harbor-jobservice:uid-accept"],
+    ["devtools", "ReplicaSet", "harbor-registry-77f69d544f", ["harbor-registry"], "cfg:devtools:ReplicaSet:harbor-registry:uid-accept"],
+    ["devtools", "ReplicaSet", "harbor-nginx-56d4577878", ["harbor-nginx"], "cfg:devtools:ReplicaSet:harbor-nginx:accept"],
+    ["devtools", "ReplicaSet", "harbor-portal-865f577cc9", ["harbor-portal"], "cfg:devtools:ReplicaSet:harbor-portal:accept"],
+    ["devtools", "StatefulSet", "harbor-redis", [], "cfg:devtools:StatefulSet:harbor-redis:accept"],
+    ["storage", "StatefulSet", "openbao", [], "cfg:storage:StatefulSet:openbao:accept"],
+  ] as const)("accepts exact KSV020/KSV021 for %s/%s/%s and fails closed", (ns, kind, name, owners, expectedId) => {
+    for (const checkId of ["KSV020", "KSV021"]) {
+      const rule = matchConfigAuditException(ns, kind, name, checkId, [...owners])
+      expect(rule, `${name} ${checkId}`).toMatchObject({ ruleId: expectedId, reviewedAt: "2026-11-28" })
+    }
+    expect(matchConfigAuditException(ns, kind, name, "KSV014", [...owners])).toBeNull()
+    expect(matchConfigAuditException("default", kind, name, "KSV020", [...owners])).toBeNull()
+    if (kind === "ReplicaSet") {
+      expect(matchConfigAuditException(ns, kind, name, "KSV020", [])).toBeNull()
+    }
+  })
+
+  it("accepts only KSV020 on iam/StatefulSet/keycloak while keeping KSV021 (fixed by runAsGroup 10100) actionable", () => {
+    const ksv020 = matchConfigAuditException("iam", "StatefulSet", "keycloak", "KSV020", [])
+    expect(ksv020).toMatchObject({
+      ruleId: "cfg:iam:StatefulSet:keycloak:accept",
+      class: "upstream",
+      reviewedAt: "2026-11-28",
+    })
+    expect(ksv020?.reason).toContain("1000:0")
+    expect(ksv020?.reason).toContain("D-E2-KC-GID")
+    expect(matchConfigAuditException("iam", "StatefulSet", "keycloak", "KSV021", [])).toBeNull()
+    expect(matchConfigAuditException("iam", "ReplicaSet", "keycloak-operator-6995f5fdd6", "KSV020", ["keycloak-operator"])).toBeNull()
+  })
+
+  it("keeps fixed Prometheus and Alertmanager KSV020/KSV021 actionable", () => {
+    for (const name of [
+      "prometheus-prometheus-stack-kube-prom-prometheus",
+      "alertmanager-prometheus-stack-kube-prom-alertmanager",
+    ]) {
+      expect(matchConfigAuditException("monitoring", "StatefulSet", name, "KSV020", [])).toBeNull()
+      expect(matchConfigAuditException("monitoring", "StatefulSet", name, "KSV021", [])).toBeNull()
+    }
+  })
+})

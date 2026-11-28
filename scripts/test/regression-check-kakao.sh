@@ -3647,6 +3647,9 @@ PYEOF'
   # 2026-11-28 (lane E1, D-CIS-E1-*): stateless UID/GID > 10000 remediation (R427 is pending in another PR).
   check R428 "CIS 5.7.3 stateless UID/GID > 10000 (ArgoCD 6 stateless workloads, metrics-server, keycloak-operator, waypoint parametersRef 10100:10100; Grafana runAsGroup 10100 keeping UID/fsGroup 472; csi-nfs postrender 0:10100 + KSV105; exact istiod KSV020/021 and ztunnel KSV030/104 acceptances) (lane-e1)" \
     python3 scripts/test/lib/check-cis-e1-stateless-uid.py --mutation-verify
+  # R429 (lane E2): CIS 5.7.3 KSV020/KSV021 stateful UID/GID hardening (Prometheus/Alertmanager 10100:10100, Keycloak runAsGroup 10100), NFS PV ownership migration helper, and exact Harbor/OpenBao/Keycloak acceptances (R428 pending in another lane).
+  check R429 "CIS 5.7.3 stateful UID/GID hardening (Prometheus/Alertmanager 10100:10100, Keycloak runAsGroup 10100), migrate-pv-ownership.sh dry-run/apply/guards, and exact Harbor/OpenBao/Keycloak acceptances; 16 mutations rejected (lane E2)" \
+    python3 scripts/test/lib/check-cis-e2-stateful-uid.py --mutation-verify
 }
 
 #=========================================

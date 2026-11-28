@@ -12,6 +12,7 @@
 ### 변경
 
 - **Lane E1 무상태 UID/GID 조치에 따른 Config Audit 수용 규칙 갱신 (R428):** `istio-system/ReplicaSet/istiod`(`KSV020`/`KSV021`, 차트 `1.30.1` UID/GID 설정 미노출 및 `pilot:1.30.1` `1337:1337`)와 `istio-system/DaemonSet/ztunnel`(`KSV030`/`KSV104`, 차트 `1.30.1` `seccompProfile` 키 미노출 및 컨테이너 컨텍스트 하드코딩) `upstream` 정확 수용 규칙을 추가하고, `kube-system/DaemonSet/csi-nfs-node` 및 `kube-system/ReplicaSet/csi-nfs-controller`에 `KSV105` 정확 수용 규칙을 추가했다(`csi-nfs-postrender`가 `KSV021` 해소를 위해 Pod 수준 `runAsGroup: 10100`과 함께 containerd 요건상 `runAsUser: 0`을 명시). Config Audit 수용 목록은 이제 55개 워크로드 60개 규칙이다.
+- **Harbor·OpenBao 서버·Keycloak UID 1000 CIS 5.7.3 Config Audit 정확 수용 추가 (Lane E2/E3, R429):** Harbor 1.19.1 6개 워크로드(`harbor-core`/`jobservice`/`registry`/`nginx`/`portal`/`redis`, Pod `10000`/`999` 하드코딩 및 전역 `containerSecurityContext` 공유, `D-PSB-UID`/R410)에 기존 `KSV011`과 분리된 `KSV020`/`KSV021`(`upstream`), `storage/StatefulSet/openbao`에 `KSV020`/`KSV021`(`accept`, 차트 `0.28.3` `100:1000` Raft PVC·`OnDelete` Shamir seal), `iam/StatefulSet/keycloak`에 `KSV020` 단독(`upstream`, `KSV021`은 `runAsGroup: 10100`으로 수정, `D-E2-KC-GID`) 정확 수용 규칙을 추가했다. `10100:10100`으로 수정된 Prometheus·Alertmanager의 `KSV020`/`KSV021`은 미수용(조치 대상)을 유지한다. Config Audit 수용 표 요약을 64개 규칙 / 59개 워크로드로 갱신했다.
 
 ## [1.1.35] - 2026-11-28
 

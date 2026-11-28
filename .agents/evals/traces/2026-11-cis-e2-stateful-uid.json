@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cis-e2-stateful-uid-20261128",
+  "task": "CIS 5.7.3 KSV020/KSV021 on stateful workloads: move Prometheus and Alertmanager to 10100 with PV ownership migration, Keycloak GID 10100, exact acceptances for OpenBao, Harbor and Keycloak UID; R428 review follow-up.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-cis-e2-stateful-uid.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml",
+      "gitops/charts/narwhal-platform/templates/keycloak-cr.yaml",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/compliance-accepted.test.ts",
+      "portal/src/lib/compliance.test.ts",
+      "portal/src/lib/i18n.ts",
+      "scripts/cluster/08-2-monitoring.sh",
+      "scripts/cluster/11-keycloak.sh",
+      "scripts/ops/migrate-pv-ownership.sh",
+      "scripts/test/lib/check-cis-e1-stateless-uid.py",
+      "scripts/test/lib/check-cis-e2-stateful-uid.py",
+      "scripts/test/lib/check-compliance-low-residuals.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Not verified: fresh install (new PVCs are created by the 10100 pods), HA/Kakao. OpenBao and Harbor unchanged (accepted)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live inventory 2026-11-28 listed prometheus/alertmanager (chart 86.2.3 default 1000:2000), keycloak (1000:0), openbao (100:1000) and Harbor in CIS 5.7.3.",
+      "evidence": [
+        "test:Trivy configauditreports filtered by acceptance rules -> scratchpad actionable-inventory2.txt"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "prometheus-stack.yaml + 08-2-monitoring.sh set Prometheus/Alertmanager pod securityContext 10100:10100 fsGroup 10100 (D-E2-PROM-UID); keycloak-cr.yaml + 11-keycloak.sh runAsGroup 10100 (D-E2-KC-GID); scripts/ops/migrate-pv-ownership.sh (dry-run default, pauses operator CRs, chowns NFS PV contents only, verifies); exact acceptances OpenBao, Harbor x6, Keycloak KSV020; R429; R428 grafana mutations anchored and copyutil init UID asserted."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live single-node cluster (orchestrator, 2026-11-28)",
+      "summary": "Keycloak via Gitea push; Prometheus/Alertmanager via migrate-pv-ownership.sh with ArgoCD auto-sync paused, then Gitea push and unpause.",
+      "evidence": [
+        "test:keycloak-0 id -> uid=1000 gid=10100; Keycloak Ready=True; test-sso 144/0",
+        "test:migrate-pv-ownership.sh --apply for alertmanager and prometheus -> Migration complete (10100:10100)",
+        "test:pods after unpause -> alertmanager-0 and prometheus-0 2/2 Running 0 restarts, securityContext 10100:10100 fsGroup 10100",
+        "test:Prometheus tsdb -> 159656 head series, prometheus_tsdb_lowest_timestamp 2026-11-21T06:00:00, 31 blocks loaded; 0 permission/error lines; Alertmanager /api/v2/status ok",
+        "test:56 ArgoCD apps Synced/Healthy; scripts/test/test-sso.sh -> PASS: 144 FAIL: 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R429, R428, R395, R383, R410, keycloak security context, portal compliance tests",
+      "summary": "Checks pass after the rebase onto #856.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-cis-e2-stateful-uid.py --mutation-verify -> PASS: R429 (16 mutations rejected)",
+        "test:python3 scripts/test/lib/check-cis-e1-stateless-uid.py --mutation-verify -> PASS: R428 (18 mutations rejected)",
+        "test:portal vitest compliance-accepted/compliance/compliance-evidence -> 125 passed"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Prometheus/Alertmanager and the Keycloak GID moved live with data preserved; remaining stateful findings exactly accepted with measured reasons (e1)."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within scope."
+    }
+  ]
+}

@@ -9,20 +9,17 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
-- **Control-plane exact acceptance (Lane C):** retain only `NET_BIND_SERVICE` on kube-apiserver because its v1.35.7 image binary has measured `cap_net_bind_service=ep`. Exact etcd acceptance covers KSV001/KSV003/KSV004 after the 2026-11-28 hardening patch prevented startup; root cause remains under investigation.
+## [1.1.35] - 2026-11-28
 
 ### Changed
 
-- **Clarify Infra Audit evidence:** report rows with zero checks now say “Not evaluated”; failure-free reports retain “No failure recorded” with a caveat about unset and inapplicable checks and links to kube-bench and `verify-cluster.sh` evidence.
-
-- Added exact Config Audit exceptions for the measured kube-bench CronJob and observed Chaos Mesh ReplicaSet, and documented why the pinned CNPG 1.29.1 database Pod retains its API token mount (R423). Other generated workload identities remain actionable.
-- **Add exact ClusterRole acceptances for Lane D (CIS 5.1.2/5.1.3):** six exact roles plus KSV046 on istiod, with bilingual technical reasons; the RBAC table summary now reflects 52 rules.
-
-### Changed
-
-- **Update Config Audit acceptances for Cilium 1.19.4 hardening and CoreDNS kubeadm addon (R425):** remove `KSV017` and add `KSV001`/`KSV012`/`KSV020`/`KSV021` for `kube-system/DaemonSet/cilium` (chart `1.19.4` templates omit those fields and UID/GID 0 is required for host cgroup/sysctl/bpffs/CNI operations); add `KSV105` for `kube-system/DaemonSet/cilium-envoy` alongside `runAsGroup: 10100` (containerd requires explicit `runAsUser: 0`); add exact rules for `kube-system/ReplicaSet/cilium-operator` (`KSV009`/`KSV024`, `cluster-pool` IPAM hostNetwork + linked hostPort 9234), `kube-system/ReplicaSet/hubble-ui` (`KSV020`/`KSV021`, chart `1001:1001`), and `kube-system/ReplicaSet/coredns` (`KSV012`/`KSV020`/`KSV021`/`KSV022`/`KSV030`/`KSV104`, kubeadm-reconciled addon and port 53 `NET_BIND_SERVICE`).
-- **Control-plane static Pod Config Audit acceptances updated (`D-CP-STATIC-POD-SC`, `D-CP-ETCD-DEFER`, R426):** exact rules for `etcd-narwhal-master-1`, `kube-apiserver-narwhal-master-1`, `kube-controller-manager-narwhal-master-1`, and `kube-scheduler-narwhal-master-1` accept `KSV012`, `KSV020`, and `KSV021` (kubeadm 1.35.7 runs all four as UID/GID 0; non-root requires the alpha `RootlessControlPlane` gate, `runAsGroup` alone fails containerd without `runAsUser`, and explicit `runAsUser: 0` triggers `KSV105`). `KSV001`, `KSV003`, and `KSV004` are fixed by kubeadm strategic patches on the three components; the apiserver patch retains `NET_BIND_SERVICE` because the v1.35.7 binary has measured `cap_net_bind_service=ep`; live Trivy reports KSV022, accepted in a separate exact rule because dropping the file capability breaks `exec` with EPERM and live CapEff is `0x400`. The exact etcd rule accepts these three checks after its hardening patch prevented startup in the 2026-11-28 trial; root cause remains under investigation.
-- **KCV0012 acceptance reason updated for EventRateLimit (CIS 1.2.10):** the AlwaysPullImages reason no longer says NodeRestriction is the only enabled admission plugin; it now names NodeRestriction and EventRateLimit and cites Harbor's own restart and the RKE2/GKE CIS guidance for isolated clusters.
+- **KCV0012 acceptance reason updated for EventRateLimit (CIS 1.2.10):** the AlwaysPullImages reason no longer says NodeRestriction is the only enabled admission plugin; it now names NodeRestriction and EventRateLimit and cites Harbor's own restart and the RKE2/GKE CIS guidance for isolated clusters. (#848)
+- Added exact Config Audit exceptions for the measured kube-bench CronJob and observed Chaos Mesh ReplicaSet, and documented why the pinned CNPG 1.29.1 database Pod retains its API token mount (R423). Other generated workload identities remain actionable. (#849)
+- **Add exact ClusterRole acceptances for Lane D (CIS 5.1.2/5.1.3):** six exact roles plus KSV046 on istiod, with bilingual technical reasons; the RBAC table summary now reflects 52 rules. (#849)
+- **Update Config Audit acceptances for Cilium 1.19.4 hardening and CoreDNS kubeadm addon (R425):** remove `KSV017` and add `KSV001`/`KSV012`/`KSV020`/`KSV021` for `kube-system/DaemonSet/cilium` (chart `1.19.4` templates omit those fields and UID/GID 0 is required for host cgroup/sysctl/bpffs/CNI operations); add `KSV105` for `kube-system/DaemonSet/cilium-envoy` alongside `runAsGroup: 10100` (containerd requires explicit `runAsUser: 0`); add exact rules for `kube-system/ReplicaSet/cilium-operator` (`KSV009`/`KSV024`, `cluster-pool` IPAM hostNetwork + linked hostPort 9234), `kube-system/ReplicaSet/hubble-ui` (`KSV020`/`KSV021`, chart `1001:1001`), and `kube-system/ReplicaSet/coredns` (`KSV012`/`KSV020`/`KSV021`/`KSV022`/`KSV030`/`KSV104`, kubeadm-reconciled addon and port 53 `NET_BIND_SERVICE`). (#850)
+- **Clarify Infra Audit evidence:** report rows with zero checks now say “Not evaluated”; failure-free reports retain “No failure recorded” with a caveat about unset and inapplicable checks and links to kube-bench and `verify-cluster.sh` evidence. (#851)
+- **Control-plane exact acceptance (Lane C):** retain only `NET_BIND_SERVICE` on kube-apiserver because its v1.35.7 image binary has measured `cap_net_bind_service=ep`. Exact etcd acceptance covers KSV001/KSV003/KSV004 after the 2026-11-28 hardening patch prevented startup; root cause remains under investigation. (#852)
+- **Control-plane static Pod Config Audit acceptances updated (`D-CP-STATIC-POD-SC`, `D-CP-ETCD-DEFER`, R426):** exact rules for `etcd-narwhal-master-1`, `kube-apiserver-narwhal-master-1`, `kube-controller-manager-narwhal-master-1`, and `kube-scheduler-narwhal-master-1` accept `KSV012`, `KSV020`, and `KSV021` (kubeadm 1.35.7 runs all four as UID/GID 0; non-root requires the alpha `RootlessControlPlane` gate, `runAsGroup` alone fails containerd without `runAsUser`, and explicit `runAsUser: 0` triggers `KSV105`). `KSV001`, `KSV003`, and `KSV004` are fixed by kubeadm strategic patches on the three components; the apiserver patch retains `NET_BIND_SERVICE` because the v1.35.7 binary has measured `cap_net_bind_service=ep`; live Trivy reports KSV022, accepted in a separate exact rule because dropping the file capability breaks `exec` with EPERM and live CapEff is `0x400`. The exact etcd rule accepts these three checks after its hardening patch prevented startup in the 2026-11-28 trial; root cause remains under investigation. (#852)
 
 ## [1.1.34] - 2026-11-27
 
@@ -1092,7 +1089,8 @@ management dashboard built with Next.js 16 and React 19.
   - Skaffold development profile configured for live Hot Module Replacement (HMR) and container
     file syncing.
 
-[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.34...HEAD
+[Unreleased]: https://github.com/dasomel/narwhal/compare/portal/v1.1.35...HEAD
+[1.1.35]: https://github.com/dasomel/narwhal/compare/portal/v1.1.34...portal/v1.1.35
 [1.1.34]: https://github.com/dasomel/narwhal/compare/portal/v1.1.33...portal/v1.1.34
 [1.1.33]: https://github.com/dasomel/narwhal/compare/portal/v1.1.32...portal/v1.1.33
 [1.1.32]: https://github.com/dasomel/narwhal/compare/portal/v1.1.31...portal/v1.1.32

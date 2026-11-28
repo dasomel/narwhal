@@ -9,6 +9,8 @@
 
 ## [Unreleased]
 
+- **Keycloak Operator Secret RBAC 범위 축소 (D-KC-RBAC-NARROW, CIS 5.1.2 KSV041, R427):** 고정된 26.5.7의 Secret 외 ClusterRole 규칙은 보존하고, main controller의 기존 `iam` Secret Role을 유지하며 RealmImport Secret 작업용 `iam` Role을 추가했다. Bootstrap은 upstream manifest 적용 뒤 축소 manifest를 적용한다. GitOps는 Operator RBAC 객체를 소유하지 않는다. 라이브 조정과 Trivy 검증은 오케스트레이터가 수행해야 한다.
+
 - **워크로드 정확 수용과 kube-bench 비루트 실행 (R423 / lane B):** 고정된 CNPG v1.29.1에는 v1.31에서 추가된 토큰 자동 마운트 설정이 없어 정확한 DB 파드에 KSV036을 수용한다. kube-bench는 root로 유지한다. 라이브에서 시도한 비root 실행(UID 1000/10100, DAC_READ_SEARCH 유무, runAsGroup 10100)은 모두 스캔을 실패시켜, 정확한 CronJob 수용이 KSV010/012/020/021/022/023을 다룬다. 2.8.3 차트가 컨테이너 보안 설정을 노출하지 않는 Chaos Mesh controller-manager ReplicaSet의 세 체크도 수용한다.
 
 - **Lane D operator RBAC 수용 (CIS 5.1.2/5.1.3, R424):** 기술 근거가 확인된 ClusterRole 6개의 Secret·와일드카드 규칙만 portal, 이중 언어 사유와 컴플라이언스 표에 기록했다. 검토에서 사유가 불충분하다고 판정한 4개 역할은 acceptance에서 제거해 actionable 상태로 남겼다. 네임스페이스 축소는 라이브 조정 검증이 필요하다.

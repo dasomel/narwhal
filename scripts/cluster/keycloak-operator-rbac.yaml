@@ -1,0 +1,71 @@
+# D-KC-RBAC-NARROW: Keycloak 26.5.7 sets both controllers to JOSDK_WATCH_CURRENT.
+# Retain their non-Secret upstream ClusterRole rules, and scope Secret operations
+# to iam. Main-controller Secret access is already in keycloak-operator-role.
+# Cost: reconciling resources outside iam remains unsupported by upstream config.
+# Escape hatch: restore the pinned upstream ClusterRole Secret rules only if a
+# measured controller requirement expands beyond iam.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: keycloakrealmimportcontroller-cluster-role
+  labels:
+    app.kubernetes.io/name: keycloak-operator
+    app.kubernetes.io/version: 26.5.7
+rules:
+  - apiGroups: [k8s.keycloak.org]
+    resources: [keycloakrealmimports, keycloakrealmimports/status, keycloakrealmimports/finalizers]
+    verbs: [get, list, watch, patch, update, create, delete]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create, delete, get, list, patch, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: keycloakcontroller-cluster-role
+  labels:
+    app.kubernetes.io/name: keycloak-operator
+    app.kubernetes.io/version: 26.5.7
+rules:
+  - apiGroups: [k8s.keycloak.org]
+    resources: [keycloaks, keycloaks/status, keycloaks/finalizers]
+    verbs: [get, list, watch, patch, update, create, delete]
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [monitoring.coreos.com]
+    resources: [servicemonitors]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [create, delete, get, list, patch, update, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: keycloakrealmimportcontroller-secret-access
+  namespace: iam
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create, delete, get, list, patch, update, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keycloakrealmimportcontroller-secret-access
+  namespace: iam
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: keycloakrealmimportcontroller-secret-access
+subjects:
+  - kind: ServiceAccount
+    name: keycloak-operator
+    namespace: iam

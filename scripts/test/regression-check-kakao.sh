@@ -3641,6 +3641,9 @@ PYEOF'
   # 2026-11-28 (lane-c, D-CP-STATIC-POD-SC, D-CP-ETCD-DEFER, D-KUBELET-KERNEL-DEFAULTS): control-plane static Pod kubeadm patches (etcd untouched) + CIS 4.2.6 protectKernelDefaults
   check R426 "Control-plane static Pod securityContext patches (kube-scheduler/controller-manager/apiserver KSV001/003/004 fixed, etcd untouched under D-CP-ETCD-DEFER with etcd:etcd 0700 preserved, --component selection, node-side crictl+healthz check, pre-restore logs capture, KSV012/020/021 exact-accepted plus isolated kube-apiserver KSV022 NET_BIND_SERVICE file-capability rule) and CIS 4.2.6 kubelet protectKernelDefaults + sysctl ordering (lane-c)" \
     python3 scripts/test/lib/check-control-plane-static-pods-and-kubelet-defaults.py --mutation-verify
+  # R427 (lane KC): Keycloak 26.5.7 Secret permissions belong in iam Roles, not ClusterRoles.
+  check R427 "Keycloak operator Secret RBAC narrowed to iam while pinned non-Secret rules remain; 2 mutations rejected (lane KC)" \
+    python3 scripts/test/lib/check-keycloak-operator-rbac.py --mutation-verify
 }
 
 #=========================================

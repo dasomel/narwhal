@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-keycloak-rbac-narrow-20261128",
+  "task": "CIS 5.1.2 KSV041: remove cluster-wide Secret access from the Keycloak operator ClusterRoles and scope it to namespace iam.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-keycloak-operator-rbac-narrow.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "scripts/cluster/11-keycloak.sh",
+      "scripts/cluster/keycloak-operator-rbac.yaml",
+      "scripts/test/lib/check-keycloak-operator-rbac.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Not verified: KeycloakRealmImport reconciliation (no KeycloakRealmImport exists on the live cluster), fresh install, HA/Kakao."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "reviewed": true,
+      "provenance": [
+        "https://raw.githubusercontent.com/keycloak/keycloak-k8s-resources/26.5.7/kubernetes/kubernetes.yml"
+      ],
+      "summary": "Both controllers run with JOSDK_WATCH_CURRENT (own namespace only); upstream binds Secret rules through ClusterRoles."
+    },
+    {
+      "id": "e3",
+      "type": "reproduction",
+      "summary": "Live 2026-11-28: keycloakcontroller-cluster-role carried a cluster-wide secrets rule; Trivy KSV041 on both roles was actionable.",
+      "evidence": [
+        "test:kubectl get clusterrole keycloakcontroller-cluster-role -> 1 secrets rule"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "scripts/cluster/keycloak-operator-rbac.yaml re-declares both ClusterRoles without Secret rules and adds an iam Role/RoleBinding for the RealmImport controller; 11-keycloak.sh applies it after the pinned upstream manifest via the absolute /home/vagrant path (D-KC-RBAC-NARROW); R427."
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live single-node cluster (orchestrator, 2026-11-28)",
+      "summary": "kubectl apply of the narrowing manifest, operator restart.",
+      "evidence": [
+        "test:both ClusterRoles after apply -> 0 secrets rules",
+        "test:kubectl auth can-i list secrets --as=system:serviceaccount:iam:keycloak-operator -A -> no; -n iam -> yes",
+        "test:operator log after restart (400 lines) -> 0 forbidden, 0 ERROR; Keycloak keycloak Ready=True",
+        "test:scripts/test/test-sso.sh -> PASS: 144 FAIL: 0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R427, R424",
+      "summary": "Checks pass.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-keycloak-operator-rbac.py --mutation-verify -> PASS: R427 (6 mutations rejected)"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "Keycloak operator Secret access is namespace-scoped and live; RealmImport path untested for lack of an object (e1)."
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within scope."
+    }
+  ]
+}

@@ -283,6 +283,11 @@ ensure_kubelet_kernel_defaults
 echo "Executing control plane join..."
 # Append --apiserver-advertise-address to use correct network interface and --patches for
 # control-plane static Pod securityContext hardening (D-CP-STATIC-POD-SC).
+# LOCAL_IP is interpolated into a root shell command: accept only a dotted IPv4 address.
+if [[ ! "${LOCAL_IP}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+  echo "ERROR: refusing non-IPv4 LOCAL_IP for kubeadm join: ${LOCAL_IP}" >&2
+  exit 1
+fi
 sudo bash -c "$(cat /tmp/join-control-plane.sh) --apiserver-advertise-address=${LOCAL_IP} --patches=/etc/kubernetes/patches"
 
 # Same heap bound master-1 applies in 02-init-cluster.sh: this node renders its apiserver

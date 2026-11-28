@@ -168,7 +168,7 @@ describe("exact acceptance (D-P2-1/2/3)", () => {
       ["platform-system", "ReplicaSet", "apisix-ingress-controller-7c95479b49", "KSV021", ["apisix-ingress-controller"]],
       ["monitoring", "DaemonSet", "k8s-monitoring-alloy-logs", "KSV118", []],
       ["platform-system", "DaemonSet", "metallb-speaker", "KSV119", []],
-      ["istio-system", "DaemonSet", "ztunnel", "KSV030", []],
+      ["istio-system", "DaemonSet", "ztunnel", "KSV014", []],
       ["storage", "StatefulSet", "seaweedfs-volume", "KSV012", []],
     ] as const) expect(matchConfigAuditException(ns, kind, name, check, owners)).toBeNull()
     expect(matchConfigAuditException("storage", "ReplicaSet", "velero-dbc67d57", "KSV020", ["velero"])?.reason).toContain("1002")
@@ -541,14 +541,15 @@ describe("node-agent acceptances (pod-security Batch C, measured 2026-11-26)", (
     ["chaos-testing", "DaemonSet", "chaos-daemon", ["KSV004"], "KSV014"],
     ["nfs-quota-agent", "DaemonSet", "nfs-quota-agent", ["KSV004"], "KSV030"],
     ["istio-system", "DaemonSet", "istio-cni-node", ["KSV001"], "KSV030"],
-    ["istio-system", "DaemonSet", "ztunnel", ["KSV001"], "KSV030"],
+    ["istio-system", "DaemonSet", "ztunnel", ["KSV001", "KSV030", "KSV104"], "KSV014"],
+    ["istio-system", "ReplicaSet", "istiod", ["KSV020", "KSV021"], "KSV014"],
     ["kube-system", "DaemonSet", "cilium", ["KSV001", "KSV012", "KSV020", "KSV021", "KSV024"], "KSV017"],
     ["kube-system", "DaemonSet", "cilium-envoy", ["KSV001", "KSV012", "KSV020", "KSV024", "KSV105"], "KSV030"],
     ["kube-system", "ReplicaSet", "cilium-operator", ["KSV009", "KSV024"], "KSV012"],
     ["kube-system", "ReplicaSet", "hubble-ui", ["KSV020", "KSV021"], "KSV012"],
     ["kube-system", "ReplicaSet", "coredns", ["KSV012", "KSV020", "KSV021", "KSV022", "KSV030", "KSV104"], "KSV014"],
-    ["kube-system", "DaemonSet", "csi-nfs-node", ["KSV001", "KSV012", "KSV020"], "KSV021"],
-    ["kube-system", "ReplicaSet", "csi-nfs-controller", ["KSV001", "KSV012", "KSV020"], "KSV021"],
+    ["kube-system", "DaemonSet", "csi-nfs-node", ["KSV001", "KSV012", "KSV020", "KSV105"], "KSV021"],
+    ["kube-system", "ReplicaSet", "csi-nfs-controller", ["KSV001", "KSV012", "KSV020", "KSV105"], "KSV021"],
     ["kube-system", "Pod", "kube-vip-narwhal-master-1", ["KSV012", "KSV020", "KSV105"], "KSV001"],
   ] as const
 
@@ -577,7 +578,6 @@ describe("node-agent acceptances (pod-security Batch C, measured 2026-11-26)", (
       ["kube-system", "DaemonSet", "cilium", "KSV104"],
       ["kube-system", "DaemonSet", "cilium-envoy", "KSV030"],
       ["kube-system", "DaemonSet", "cilium-envoy", "KSV104"],
-      ["istio-system", "DaemonSet", "ztunnel", "KSV104"],
       ["storage", "DaemonSet", "node-agent", "KSV003"],
       ["storage", "DaemonSet", "node-agent", "KSV004"],
       ["storage", "DaemonSet", "node-agent", "KSV106"],

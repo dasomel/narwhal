@@ -172,6 +172,14 @@ spec:
                     requests:
                       storage: 10Gi
         grafana:
+          # D-CIS-E1-GRAFANA-GID (KSV021): keep UID 472 and fsGroup 472 for NFS PVC ownership
+          # (compliance.acceptedReason.grafanaUid472), while moving runAsGroup to 10100 across
+          # grafana and its sidecars (grafana:13.0.2 has no gid-472 files). Escape hatch: revert runAsGroup to 472.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 472
+            runAsGroup: 10100
+            fsGroup: 472
           resources:
             requests:
               cpu: 50m

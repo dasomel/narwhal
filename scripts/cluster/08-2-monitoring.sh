@@ -71,6 +71,7 @@ for attempt in 1 2 3 4 5; do
     --set-json 'kube-state-metrics.resources={"requests":{"cpu":"25m","memory":"64Mi"},"limits":{"cpu":"200m","memory":"256Mi"}}' \
     --set-json 'prometheusOperator.resources={"requests":{"cpu":"50m","memory":"128Mi"},"limits":{"cpu":"250m","memory":"256Mi"}}' \
     --set-json 'prometheusOperator.prometheusConfigReloader.resources={"requests":{"cpu":"10m","memory":"32Mi"},"limits":{"cpu":"100m","memory":"64Mi"}}' \
+    --set-json 'grafana.securityContext={"runAsNonRoot":true,"runAsUser":472,"runAsGroup":10100,"fsGroup":472}' \
     --set-json 'grafana.resources={"requests":{"cpu":"50m","memory":"128Mi"},"limits":{"cpu":"250m","memory":"512Mi"}}' \
     --set-json 'grafana.containerSecurityContext={"allowPrivilegeEscalation":false,"readOnlyRootFilesystem":true,"capabilities":{"drop":["ALL"]},"seccompProfile":{"type":"RuntimeDefault"}}' \
     --set-json 'grafana.extraEmptyDirMounts=[{"name":"tmp","mountPath":"/tmp"}]' \

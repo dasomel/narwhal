@@ -280,7 +280,31 @@ WAYPOINT_NAMESPACES=(
 echo "Deploying waypoint proxies for L7 telemetry..."
 for ns in "${WAYPOINT_NAMESPACES[@]}"; do
   if kubectl get namespace "${ns}" &>/dev/null; then
+    # D-CIS-E1-WAYPOINT-UID (CIS 5.7.3 KSV020/KSV021): istiod 1.30.1 files/waypoint.yaml
+    # hardcodes 1337:1337 with no Helm value; use Istio Gateway parametersRef to patch
+    # the generated waypoint Deployment to 10100:10100. Escape hatch: remove parametersRef.
     cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: waypoint-options
+  namespace: ${ns}
+data:
+  deployment: |
+    spec:
+      template:
+        spec:
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10100
+            runAsGroup: 10100
+            fsGroup: 10100
+          containers:
+            - name: istio-proxy
+              securityContext:
+                runAsUser: 10100
+                runAsGroup: 10100
+---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
@@ -290,6 +314,11 @@ metadata:
     istio.io/waypoint-for: service
 spec:
   gatewayClassName: istio-waypoint
+  infrastructure:
+    parametersRef:
+      group: ""
+      kind: ConfigMap
+      name: waypoint-options
   listeners:
     - name: mesh
       port: 15008

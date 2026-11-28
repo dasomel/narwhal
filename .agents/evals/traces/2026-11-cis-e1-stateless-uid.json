@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cis-e1-stateless-uid-20261128",
+  "task": "CIS 5.7.3 KSV020/KSV021: run stateless platform workloads as UID/GID 10100 (ArgoCD, metrics-server, keycloak-operator, waypoints), Grafana GID 10100, csi-nfs GID 10100; exact acceptances where the chart exposes nothing (istiod, ztunnel, csi-nfs KSV105).",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-cis-e1-stateless-uid.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/compliance-accepted.test.ts",
+      "portal/src/lib/i18n.ts",
+      "scripts/cluster/04-addons.sh",
+      "scripts/cluster/08-2-monitoring.sh",
+      "scripts/cluster/09-istio-ambient.sh",
+      "scripts/cluster/11-keycloak.sh",
+      "scripts/cluster/13-argocd.sh",
+      "scripts/cluster/lib/helm-plugins/csi-nfs-postrender/csi-nfs-postrender.sh",
+      "scripts/test/lib/check-cis-e1-stateless-uid.py",
+      "scripts/test/lib/check-compliance-low-residuals.py",
+      "scripts/test/lib/check-keycloak-security-context.py",
+      "scripts/test/lib/check-round3-compliance-hardening.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Not verified: fresh install with the changed bootstrap scripts, HA/Kakao. Stateful workloads (prometheus, alertmanager, keycloak, openbao, harbor) are out of scope (lane E2/E3)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live inventory 2026-11-28 (after portal 1.1.35) listed these workloads in CIS 5.7.3 with KSV020/KSV021.",
+      "evidence": [
+        "test:Trivy configauditreports filtered by acceptance rules -> scratchpad actionable-inventory2.txt"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "13-argocd.sh patch_uid_gid (6 workloads), 04-addons.sh metrics-server patch, 11-keycloak.sh operator patch, prometheus-stack Grafana runAsGroup (GitOps + 08-2), 09-istio-ambient.sh waypoint parametersRef ConfigMap, csi-nfs post-renderer pod runAsUser 0 + runAsGroup 10100; exact acceptances istiod KSV020/021, ztunnel KSV030/104, csi-nfs KSV105; R428."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live single-node cluster (orchestrator, 2026-11-28)",
+      "summary": "Applied per component with backups and restore paths.",
+      "evidence": [
+        "test:metrics-server patched to 10100 -> rollout ok, kubectl top nodes ok, v1beta1.metrics.k8s.io Available=True",
+        "test:keycloak-operator patched -> id uid=10100 gid=10100, Ready, 0 restarts, 0 error lines, Keycloak Ready=True",
+        "test:Grafana via Gitea push -> new pod 3/3 0 restarts, id uid=472 gid=10100, /var/lib/grafana write ok, /api/health database ok",
+        "test:ArgoCD 6 components patched in sequence -> all 1/1 Running 0 restarts, 56 apps Synced/Healthy, idp-apps sync Succeeded, 0 error lines",
+        "test:waypoints platform-system/monitoring/devtools -> runAsUser 10100, Programmed=True, istio_requests_total still reported",
+        "test:csi-nfs controller+node runAsUser 0 runAsGroup 10100 -> pods Running 0 restarts, PVC mount/write as UID 10100 ok, 0 permission errors",
+        "test:scripts/test/test-sso.sh after each step -> PASS: 144 FAIL: 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R428, R427, R395, R383, R376, R417, keycloak security context, portal compliance tests",
+      "summary": "Checks pass after rebase.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-cis-e1-stateless-uid.py --mutation-verify -> PASS: R428 (17 mutations rejected)",
+        "test:python3 scripts/test/lib/check-keycloak-operator-rbac.py --mutation-verify -> PASS: R427 (6 mutations rejected)"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Stateless workloads run with GID 10100 (UID 10100 where the image allows) live and in bootstrap/GitOps; remaining chart-fixed findings exactly accepted. Fresh install out of verified scope (e1)."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within scope."
+    }
+  ]
+}

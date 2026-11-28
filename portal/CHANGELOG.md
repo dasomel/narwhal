@@ -9,6 +9,10 @@ English | [한국어](CHANGELOG-ko.md)
 
 ## [Unreleased]
 
+### Changed
+
+- **Update Config Audit acceptances for Lane E1 stateless UID/GID remediation (R428):** add exact `upstream` rules for `istio-system/ReplicaSet/istiod` (`KSV020`/`KSV021`, chart `1.30.1` exposes no UID/GID fields and `pilot:1.30.1` runs as `1337:1337`) and `istio-system/DaemonSet/ztunnel` (`KSV030`/`KSV104`, chart `1.30.1` exposes no `seccompProfile` key and hardcodes container context), plus exact `KSV105` acceptances for `kube-system/DaemonSet/csi-nfs-node` and `kube-system/ReplicaSet/csi-nfs-controller` (`csi-nfs-postrender` sets pod-level `runAsGroup: 10100` alongside explicit `runAsUser: 0` because containerd rejects `runAsGroup` without `runAsUser`). Config Audit allowlist now holds 60 rules across 55 workloads.
+
 ## [1.1.35] - 2026-11-28
 
 ### Changed

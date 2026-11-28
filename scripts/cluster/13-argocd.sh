@@ -232,6 +232,27 @@ patch_init_resources deployment argocd-repo-server 0 10m 32Mi 100m 256Mi
 patch_init_resources deployment argocd-redis       0 10m 32Mi 100m 64Mi
 patch_init_resources deployment argocd-dex-server  0 10m 32Mi 100m 256Mi
 
+# D-CIS-E1-ARGOCD-UID (CIS 5.7.3 KSV020/KSV021): run the 6 stateless ArgoCD workloads
+# as UID/GID 10100 (all writable dirs are emptyDirs; argocd-redis stays valkey 999:999).
+# Cost: none at runtime; escape hatch: remove this block and re-apply argocd-install.yaml.
+echo "Setting UID/GID 10100 on stateless ArgoCD workloads..."
+patch_uid_gid() {
+  local kind="$1" name="$2" container="$3" init_container="${4:-}"
+  local init_json=""
+  if [ -n "${init_container}" ]; then
+    init_json=",\"initContainers\":[{\"name\":\"${init_container}\",\"securityContext\":{\"runAsNonRoot\":true,\"runAsUser\":10100,\"runAsGroup\":10100}}]"
+  fi
+  kubectl patch "$kind" "$name" -n devtools --type=strategic \
+    -p="{\"spec\":{\"template\":{\"spec\":{\"securityContext\":{\"runAsNonRoot\":true,\"runAsUser\":10100,\"runAsGroup\":10100,\"fsGroup\":10100},\"containers\":[{\"name\":\"${container}\",\"securityContext\":{\"runAsNonRoot\":true,\"runAsUser\":10100,\"runAsGroup\":10100}}]${init_json}}}}}"
+}
+
+patch_uid_gid statefulset argocd-application-controller    argocd-application-controller
+patch_uid_gid deployment  argocd-repo-server               argocd-repo-server               copyutil
+patch_uid_gid deployment  argocd-server                    argocd-server
+patch_uid_gid deployment  argocd-applicationset-controller argocd-applicationset-controller
+patch_uid_gid deployment  argocd-notifications-controller  argocd-notifications-controller
+patch_uid_gid deployment  argocd-dex-server                dex                              copyutil
+
 # Fix Istio ambient mesh + kubelet health probe conflict
 # In ambient mode, ztunnel intercepts ALL inbound pod traffic including kubelet probes.
 # Kubelet sends plain HTTP probes; ztunnel expects mTLS -> probe times out -> CrashLoopBackOff.

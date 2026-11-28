@@ -858,9 +858,44 @@ sys.exit('unexpected kubectl: ' + ' '.join(a))
                 assert 'protectKernelDefaults: false' in (root / h / 'var/lib/kubelet/config.yaml').read_text()
 
 
+def check_health_fail_closed(files):
+    """crictl_health must fail closed on CRI-only inspect data (review finding, D-CP-HEALTH-EXPECTED)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        helper = td / 'helper.py'
+        helper.write_text(files[HELPER_CP])
+        expected = td / 'expected.yaml'
+        expected.write_text("""apiVersion: v1
+kind: Pod
+metadata: {name: kube-apiserver, namespace: kube-system}
+spec:
+  securityContext: {seccompProfile: {type: RuntimeDefault}}
+  containers:
+  - name: kube-apiserver
+    command: [kube-apiserver]
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: {drop: [ALL], add: [NET_BIND_SERVICE]}
+""")
+        def run(cri_sc):
+            inspect = td / 'inspect.json'
+            inspect.write_text(json.dumps({'status': {'id': 'new', 'state': 'CONTAINER_RUNNING', 'metadata': {'name': 'kube-apiserver'}},
+                                           'info': {'config': {'linux': {'security_context': cri_sc}}}}))
+            return subprocess.run([sys.executable, str(helper), 'crictl-health', str(inspect), 'kube-apiserver', 'old', str(expected)],
+                                  capture_output=True, text=True).returncode
+        good = {'no_new_privs': True, 'seccomp': {'profile_type': 'RuntimeDefault'},
+                'capabilities': {'drop_capabilities': ['ALL'], 'add_capabilities': ['NET_BIND_SERVICE']}}
+        assert run(good) == 0, 'CRI-only healthy apiserver must pass'
+        assert run({k: v for k, v in good.items() if k != 'seccomp'}) != 0, 'CRI-only inspect without seccomp must fail closed'
+        assert run({**good, 'capabilities': {'drop_capabilities': ['ALL'], 'add_capabilities': []}}) != 0, 'missing NET_BIND_SERVICE must fail'
+        assert run({**good, 'capabilities': {'drop_capabilities': ['ALL'], 'add_capabilities': ['NET_BIND_SERVICE', 'SYS_ADMIN']}}) != 0, 'extra capability must fail'
+        assert run({**good, 'no_new_privs': False}) != 0, 'no_new_privs false must fail'
+
+
 def main():
     files = {name: (ROOT / name).read_text() for name in FILES}
     check_static(files)
+    check_health_fail_closed(files)
     check_ops_cp(files, 'all')
     check_ops_kd(files, 'all')
 
@@ -868,6 +903,8 @@ def main():
         mutations = [
             ('drop capabilities.drop in apiserver patch', PATCH_FILES[2], '- ALL', '- NET_RAW', check_static),
             ('drop NET_BIND_SERVICE from apiserver patch', PATCH_FILES[2], '            - NET_BIND_SERVICE', '', check_static),
+            ('crictl health trusts CRI-only data without seccomp', HELPER_CP, '            if not isinstance(runtime_spec, dict):\n                assert isinstance(cri_seccomp, dict)', '            if False:\n                assert isinstance(cri_seccomp, dict)', check_health_fail_closed),
+            ('crictl health ignores CRI add_capabilities', HELPER_CP, "assert 'ALL' in dropped and added == want", "assert 'ALL' in dropped", check_health_fail_closed),
             ('drop NET_BIND_SERVICE from renderer', HELPER_CP, "ADD_CAPS = {'kube-apiserver': ['NET_BIND_SERVICE']}", 'ADD_CAPS = {}', check_static),
             ('add DAC_OVERRIDE to apiserver patch', PATCH_FILES[2], '            - NET_BIND_SERVICE', '            - NET_BIND_SERVICE\n            - DAC_OVERRIDE', check_static),
             ('drop seccompProfile in scheduler patch', PATCH_FILES[0], 'type: RuntimeDefault', 'type: Unconfined', check_static),

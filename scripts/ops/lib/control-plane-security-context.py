@@ -150,6 +150,11 @@ def crictl_health(inspect_path, component, old_cid, expected_path):
             )
         if isinstance(cri_sc, dict):
             cri_seccomp = cri_sc.get('seccomp')
+            # Fail closed when the CRI view is the only evidence (no runtimeSpec).
+            if not isinstance(runtime_spec, dict):
+                assert isinstance(cri_seccomp, dict) and 'profile_type' in cri_seccomp, (
+                    f'{component} CRI seccomp missing and no runtimeSpec to prove RuntimeDefault'
+                )
             if isinstance(cri_seccomp, dict) and 'profile_type' in cri_seccomp:
                 assert cri_seccomp['profile_type'] in (0, 'RuntimeDefault', 'RUNTIME_DEFAULT'), (
                     f'{component} CRI seccomp profile_type mismatch: {cri_seccomp}'
@@ -171,10 +176,17 @@ def crictl_health(inspect_path, component, old_cid, expected_path):
         if isinstance(runtime_spec, dict):
             proc_caps = (runtime_spec.get('process') or {}).get('capabilities')
             assert isinstance(proc_caps, dict), f'{component} runtimeSpec.process.capabilities missing'
-            for cap_set in ('bounding', 'permitted'):
+            for cap_set in ('bounding', 'effective', 'permitted'):
                 vals = sorted(proc_caps.get(cap_set) or [])
                 assert vals == want, f'{component} runtimeSpec {cap_set} {vals} != {want}'
             assert not (proc_caps.get('ambient') or []), f'{component} runtimeSpec retained ambient capabilities'
+        if isinstance(cri_sc, dict):
+            cri_caps = cri_sc.get('capabilities') or {}
+            dropped = [str(c).upper() for c in (cri_caps.get('drop_capabilities') or [])]
+            added = sorted('CAP_' + str(c).upper().replace('CAP_', '') for c in (cri_caps.get('add_capabilities') or []))
+            assert 'ALL' in dropped and added == want, (
+                f'{component} CRI capabilities mismatch: drop={dropped} add={added} want={want}'
+            )
     if exp_caps.get('drop') == ['ALL'] and not exp_caps.get('add'):
         if isinstance(runtime_spec, dict):
             proc_caps = (runtime_spec.get('process') or {}).get('capabilities')

@@ -53,7 +53,13 @@ export function ExpandedInfraPanel({ node }: { node: string }) {
         <>
           {top5Failed.length === 0 ? (
             <div className="rounded-md border border-slate-200 bg-slate-50/60 dark:bg-slate-900/20 dark:border-slate-800 p-3 text-xs">
-              <p className="font-medium text-foreground">{t("compliance.check.allPassed")}</p>
+              <p className="font-medium text-foreground">
+                {detail.checks.length === 0
+                  ? sumCheckSummary(detail.summary) === 0
+                    ? t("compliance.infra.notEvaluated")
+                    : t("compliance.infra.summaryFailuresNoDetail")
+                  : t("compliance.check.allPassed")}
+              </p>
               <p className="text-muted-foreground mt-1">{t("compliance.infra.emptyChecksCaveat")}</p>
             </div>
           ) : (
@@ -164,6 +170,7 @@ export function InfraAuditList() {
             : Math.max(0, rawFailures - actionableFailures)
           const hasActionable = actionableFailures > 0
           const isAcceptedOnly = Boolean(row.accepted) && !hasActionable && rawFailures > 0
+          const hasChecks = (row.checksCount ?? 0) > 0
           const isExpanded = expandedNode === row.node
 
           return (
@@ -174,7 +181,9 @@ export function InfraAuditList() {
                   ? "border-orange-200 bg-orange-50/50 dark:bg-orange-950/10 dark:border-orange-900"
                   : isAcceptedOnly
                     ? "border-slate-200 bg-slate-50/50 dark:bg-slate-900/20 dark:border-slate-800"
-                    : "border-green-200 bg-green-50/50 dark:bg-green-950/10 dark:border-green-900"
+                    : !hasChecks && rawFailures === 0
+                      ? "border-slate-200 bg-slate-50/50 dark:bg-slate-900/20 dark:border-slate-800"
+                      : "border-green-200 bg-green-50/50 dark:bg-green-950/10 dark:border-green-900"
               }`}
             >
               <button
@@ -210,14 +219,18 @@ export function InfraAuditList() {
                           ? "text-orange-600"
                           : isAcceptedOnly
                             ? "text-muted-foreground"
-                            : "text-green-600"
+                            : !hasChecks && rawFailures === 0
+                              ? "text-muted-foreground"
+                              : "text-green-600"
                       }`}
                     >
-                      {hasActionable
-                        ? `${actionableFailures} issues`
-                        : isAcceptedOnly
-                          ? `${rawFailures} ${t("compliance.framework.acceptedShort")}`
-                          : t("compliance.framework.noFailureRecordedShort")}
+                      {!hasChecks && rawFailures === 0
+                        ? t("compliance.infra.notEvaluated")
+                        : hasActionable
+                          ? `${actionableFailures} issues`
+                          : isAcceptedOnly
+                            ? `${rawFailures} ${t("compliance.framework.acceptedShort")}`
+                            : t("compliance.framework.noFailureRecordedShort")}
                     </span>
                     <span
                       className="text-muted-foreground text-sm inline-block transition-transform duration-200"

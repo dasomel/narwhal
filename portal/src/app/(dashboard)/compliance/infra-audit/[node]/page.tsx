@@ -109,9 +109,13 @@ export default async function InfraAuditDetailPage({ params }: Props) {
           <h2 className="text-sm font-semibold">{t(locale, "compliance.detail.checks")} ({sorted.length})</h2>
         </div>
         <div className="divide-y">
-          {failCount === 0 && sorted.length === 0 && (
+          {failCount === 0 && (
             <div className="p-4 text-xs text-muted-foreground space-y-1">
-              <p className="font-medium text-foreground">{t(locale, "compliance.check.allPassed")}</p>
+              <p className="font-medium text-foreground">
+                {sorted.length === 0
+                  ? t(locale, "compliance.infra.notEvaluated")
+                  : t(locale, "compliance.check.allPassed")}
+              </p>
               <p>{t(locale, "compliance.infra.emptyChecksCaveat")}</p>
             </div>
           )}

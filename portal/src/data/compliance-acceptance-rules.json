@@ -1112,12 +1112,13 @@
       "checks": [
         "KSV041",
         "KSV049",
-        "KSV114"
+        "KSV114",
+        "KSV046"
       ],
       "class": "accept",
       "reasonKey": "compliance.acceptedReason.verifiedistiod-clusterrole-istio-system",
       "owner": "istiod 1.30.1 (gitops/charts/narwhal-apps/templates/istiod.yaml)",
-      "reviewedAt": "2026-11-23"
+      "reviewedAt": "2026-11-28"
     },
     {
       "id": "rbac:cluster:ClusterRole:istiod-gateway-controller-istio-system:verified",
@@ -1559,6 +1560,77 @@
       "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
       "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
       "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:trivy-operator:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "trivy-operator",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.trivyOperatorClusterSecrets",
+      "owner": "gitops/charts/narwhal-apps/templates/trivy-operator.yaml",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:apisix-ingress-controller-clusterrole:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "apisix-ingress-controller-clusterrole",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.apisixIngressClusterSecrets",
+      "owner": "gitops/charts/narwhal-apps/templates/apisix.yaml",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:cnpg-cloudnative-pg:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "cnpg-cloudnative-pg",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.cnpgOperatorClusterSecrets",
+      "owner": "scripts/cluster/07-cnpg.sh",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:nfs-external-provisioner-role:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "nfs-external-provisioner-role",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.nfsProvisionerClusterSecrets",
+      "owner": "scripts/cluster/04-addons.sh",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:prometheus-stack-kube-prom-operator:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "prometheus-stack-kube-prom-operator",
+      "checks": [
+        "KSV041",
+        "KSV045"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.prometheusOperatorClusterSecrets",
+      "owner": "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml",
+      "reviewedAt": "2026-11-28"
     }
   ],
   "infra": [

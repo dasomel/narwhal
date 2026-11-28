@@ -3629,6 +3629,9 @@ PYEOF'
   # R423 (lane B): exact acceptance for pinned CNPG, kube-bench, and Chaos Mesh findings.
   check R423 "Lane-B workload exact acceptance for CNPG, kube-bench, and Chaos Mesh" \
     python3 scripts/test/lib/check-workload-exact-acceptance.py --mutation-verify
+  # 2026-11-28 (lane D): exact ClusterRole Secret/wildcard RBAC acceptances.
+  check R424 "Lane D six exact ClusterRole Secret and wildcard RBAC acceptances; 12 mutations rejected" \
+    python3 scripts/test/lib/check-lane-d-rbac-acceptance.py --mutation-verify
   # 2026-11-27: ArgoCD privilege split Stage 1 (D-OWN-ARGO-STAGED, D-ARGO-SERVER-RO, D-ARGO-PROJECT-WHITELIST)
   check R420 "ArgoCD privilege split Stage 1: read-only argocd-server (no secrets, no workload writes, no '*' resources), exact 12-kind AppProject/platform clusterResourceWhitelist with empty tenants, and exact argocd-application-controller KSV044/KSV046 acceptance; 16 mutations caught" \
     python3 scripts/test/lib/check-argocd-privilege-split-stage1.py --mutation-verify

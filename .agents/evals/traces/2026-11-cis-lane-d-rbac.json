@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cis-lane-d-rbac-20261128",
+  "task": "CIS 5.1.2/5.1.3: exact acceptance or narrowing for operator ClusterRoles with cluster-wide Secret or wildcard rules.",
+  "changeContext": {
+    "paths": [
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/i18n.ts",
+      "docs/common/compliance-hardening.md",
+      "scripts/test/lib/check-lane-d-rbac-acceptance.py",
+      "scripts/test/regression-check-kakao.sh",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-11-cis-lane-d-rbac.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Not changed: cilium-operator, k8s-monitoring-alloy-operator, keycloakcontroller-cluster-role and keycloakrealmimportcontroller-cluster-role stay actionable (a narrowing needs a live trial; Keycloak is the first candidate)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live ClusterRole rules and bindings dumped for the ten roles in the 2026-11-28 inventory; the 'empty name' rows were system:* roles already accepted.",
+      "evidence": [
+        "test:kubectl get clusterrole <role> -o json + clusterrolebindings -> .review/live-clusterroles.txt (2255 lines)"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Exact RBAC acceptances with reasons for trivy-operator, apisix-ingress-controller-clusterrole, cnpg-cloudnative-pg, nfs-external-provisioner-role, prometheus-stack-kube-prom-operator (KSV041/KSV045) and istiod-clusterrole-istio-system (KSV046); R424 check."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R424, R395, R383, portal compliance tests",
+      "summary": "RBAC acceptance checks pass together with lane B.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-lane-d-rbac-acceptance.py --mutation-verify -> PASS (12 mutations rejected)",
+        "test:portal vitest compliance-accepted/compliance/compliance-evidence -> 108 passed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Six operator roles exactly accepted with need-based reasons; four roles left actionable for narrowing (e1)."
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within scope: no RBAC change, acceptance data consistent and tested."
+    }
+  ]
+}

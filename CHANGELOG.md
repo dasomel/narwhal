@@ -11,6 +11,7 @@ English | [한국어](CHANGELOG-ko.md)
 
 - **CNPG token mount hardening and exact workload exceptions (R423 / lane B):** CNPG KSV036 stays accepted for the exact Pod because pinned v1.29.1 lacks the v1.31 token automount override. kube-bench stays root: every non-root variant tried live (UID 1000/10100, with or without DAC_READ_SEARCH, runAsGroup 10100) made the scan fail, so its exact CronJob exception covers KSV010/012/020/021/022/023. The Chaos Mesh controller-manager ReplicaSet keeps three exact checks because chart 2.8.3 exposes no container securityContext.
 
+- **Accept exact operator RBAC findings (Lane D, CIS 5.1.2/5.1.3, R424):** record measured Secret and wildcard rules for six supported exact ClusterRoles in the portal, bilingual reasons and the compliance table. Remove four roles whose former reasons did not justify cluster-wide access; they remain actionable pending version-pinned narrowing and a live reconciliation trial.
 
 - **Enable EventRateLimit admission (CIS 1.2.10 / AVD-KCV-0010, D-ERL):** configure server and namespace event budgets in kubeadm bootstrap and control-plane joins; add an existing-cluster rollout command. Event writes above budget return HTTP 429.
 

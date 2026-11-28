@@ -307,8 +307,8 @@ def mutation_verify(root: Path) -> int:
         ("keycloak_sh", '"readOnlyRootFilesystem": true', '"readOnlyRootFilesystem": false'),
         ("keycloak_sh", '"mountPath": "/tmp"', '"mountPath": "/var/tmp"'),
         ("keycloak_sh", '"name": "tmp"', '"name": "other"'),
-        ("keycloak_sh", "              runAsUser: 1000\n              capabilities:", "              runAsUser: 1000\n              readOnlyRootFilesystem: true\n              capabilities:"),
-        ("keycloak_cr", "              runAsUser: 1000\n              capabilities:", "              runAsUser: 1000\n              readOnlyRootFilesystem: true\n              capabilities:"),
+        ("keycloak_sh", "              runAsUser: 1000\n              runAsGroup: 10100\n              capabilities:", "              runAsUser: 1000\n              runAsGroup: 10100\n              readOnlyRootFilesystem: true\n              capabilities:"),
+        ("keycloak_cr", "              runAsUser: 1000\n              runAsGroup: 10100\n              capabilities:", "              runAsUser: 1000\n              runAsGroup: 10100\n              readOnlyRootFilesystem: true\n              capabilities:"),
     ]
     with tempfile.TemporaryDirectory() as tmp:
         fixture = Path(tmp)

@@ -120,6 +120,40 @@ AUDEOF
   sudo install -o vagrant -g vagrant -m 600 /etc/kubernetes/admission/admission-config.yaml /home/vagrant/admission-config.yaml
 )
 
+# D-CP-STATIC-POD-SC / D-CP-ETCD-DEFER: install kubeadm v1beta4 strategic patches for the three
+# API/controller/scheduler static Pods BEFORE kubeadm init; etcd is intentionally left untouched
+# (2026-11-28 live trial timed out on etcd with root cause unestablished).
+KUBEADM_PATCH_SRC="${STAGE_DIR:-/home/vagrant}/scripts/ops/lib/kubeadm-patches"
+if [[ ! -d "${KUBEADM_PATCH_SRC}" ]]; then
+  KUBEADM_PATCH_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../ops/lib/kubeadm-patches" 2>/dev/null && pwd || true)"
+fi
+sudo install -d -o root -g root -m 700 /etc/kubernetes/patches
+for patch_file in \
+  kube-apiserver+strategic.yaml \
+  kube-controller-manager+strategic.yaml \
+  kube-scheduler+strategic.yaml; do
+  if [[ ! -r "${KUBEADM_PATCH_SRC}/${patch_file}" ]]; then
+    echo "ERROR: missing kubeadm strategic patch: ${KUBEADM_PATCH_SRC}/${patch_file}" >&2
+    exit 1
+  fi
+  sudo install -o root -g root -m 600 "${KUBEADM_PATCH_SRC}/${patch_file}" "/etc/kubernetes/patches/${patch_file}"
+done
+
+# D-KUBELET-KERNEL-DEFAULTS (CIS 4.2.6): enforce and verify the 6 required sysctls BEFORE
+# kubeadm init starts kubelet with protectKernelDefaults=true (guards nodes whose base stage
+# ran an older 01-prerequisites.sh).
+KUBELET_KERNEL_LIB="${STAGE_DIR:-/home/vagrant}/scripts/common/lib-kubelet-kernel-defaults.sh"
+if [[ ! -r "${KUBELET_KERNEL_LIB}" ]]; then
+  KUBELET_KERNEL_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../common" 2>/dev/null && pwd || true)/lib-kubelet-kernel-defaults.sh"
+fi
+if [[ ! -r "${KUBELET_KERNEL_LIB}" ]]; then
+  echo "ERROR: lib-kubelet-kernel-defaults.sh not readable at ${KUBELET_KERNEL_LIB}" >&2
+  exit 1
+fi
+# shellcheck source=scripts/common/lib-kubelet-kernel-defaults.sh
+source "${KUBELET_KERNEL_LIB}"
+ensure_kubelet_kernel_defaults
+
 # Generate kubeadm config for HA setup
 cat <<EOF > /tmp/kubeadm-config.yaml
 apiVersion: kubeadm.k8s.io/v1beta4
@@ -239,6 +273,13 @@ localAPIEndpoint:
   bindPort: 6443
 nodeRegistration:
   criSocket: "unix:///run/containerd/containerd.sock"
+# D-CP-STATIC-POD-SC / D-CP-ETCD-DEFER: apply strategic patches for allowPrivilegeEscalation: false,
+# capabilities.drop: [ALL], and RuntimeDefault seccomp to kube-apiserver, kube-controller-manager,
+# and kube-scheduler. etcd is deferred and rendered unmodified by kubeadm.
+# Cost: KSV012/020/021 stay accepted until kubeadm RootlessControlPlane is GA; etcd KSV001/003/004 remain actionable.
+# Escape: remove patches.directory or patch files.
+patches:
+  directory: /etc/kubernetes/patches
 ---
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
@@ -251,6 +292,10 @@ authentication:
 authorization:
   mode: Webhook
 readOnlyPort: 0
+# D-KUBELET-KERNEL-DEFAULTS (CIS 4.2.6): enforce kernel sysctl defaults verified before
+# kubeadm init/join via 95-kubelet-kernel-defaults.conf. Cost: kubelet refuses startup if
+# any of the 6 sysctls drifts. Escape: apply-kubelet-kernel-defaults.sh --rollback.
+protectKernelDefaults: true
 serverTLSBootstrap: true
 EOF
 

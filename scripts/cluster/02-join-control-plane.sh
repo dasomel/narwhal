@@ -247,9 +247,48 @@ if [ -z "${LOCAL_IP}" ]; then
 fi
 echo "Local advertise address: ${LOCAL_IP}"
 
+#=========================================
+# D-CP-STATIC-POD-SC / D-CP-ETCD-DEFER + D-KUBELET-KERNEL-DEFAULTS: stage kubeadm strategic patches
+# (kube-apiserver, kube-controller-manager, kube-scheduler; etcd untouched) and enforce CIS 4.2.6
+# kernel sysctls BEFORE kubeadm join starts kubelet and renders static Pods.
+#=========================================
+KUBEADM_PATCH_SRC="${STAGE_DIR:-/home/vagrant}/scripts/ops/lib/kubeadm-patches"
+if [[ ! -d "${KUBEADM_PATCH_SRC}" ]]; then
+  KUBEADM_PATCH_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../ops/lib/kubeadm-patches" 2>/dev/null && pwd || true)"
+fi
+sudo install -d -o root -g root -m 700 /etc/kubernetes/patches
+for patch_file in \
+  kube-apiserver+strategic.yaml \
+  kube-controller-manager+strategic.yaml \
+  kube-scheduler+strategic.yaml; do
+  if [[ ! -r "${KUBEADM_PATCH_SRC}/${patch_file}" ]]; then
+    echo "ERROR: missing kubeadm strategic patch: ${KUBEADM_PATCH_SRC}/${patch_file}" >&2
+    exit 1
+  fi
+  sudo install -o root -g root -m 600 "${KUBEADM_PATCH_SRC}/${patch_file}" "/etc/kubernetes/patches/${patch_file}"
+done
+
+KUBELET_KERNEL_LIB="${STAGE_DIR:-/home/vagrant}/scripts/common/lib-kubelet-kernel-defaults.sh"
+if [[ ! -r "${KUBELET_KERNEL_LIB}" ]]; then
+  KUBELET_KERNEL_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/../common" 2>/dev/null && pwd || true)/lib-kubelet-kernel-defaults.sh"
+fi
+if [[ ! -r "${KUBELET_KERNEL_LIB}" ]]; then
+  echo "ERROR: lib-kubelet-kernel-defaults.sh not readable at ${KUBELET_KERNEL_LIB}" >&2
+  exit 1
+fi
+# shellcheck source=scripts/common/lib-kubelet-kernel-defaults.sh
+source "${KUBELET_KERNEL_LIB}"
+ensure_kubelet_kernel_defaults
+
 echo "Executing control plane join..."
-# Append --apiserver-advertise-address to use correct network interface
-sudo bash -c "$(cat /tmp/join-control-plane.sh) --apiserver-advertise-address=${LOCAL_IP}"
+# Append --apiserver-advertise-address to use correct network interface and --patches for
+# control-plane static Pod securityContext hardening (D-CP-STATIC-POD-SC).
+# LOCAL_IP is interpolated into a root shell command: accept only a dotted IPv4 address.
+if [[ ! "${LOCAL_IP}" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+  echo "ERROR: refusing non-IPv4 LOCAL_IP for kubeadm join: ${LOCAL_IP}" >&2
+  exit 1
+fi
+sudo bash -c "$(cat /tmp/join-control-plane.sh) --apiserver-advertise-address=${LOCAL_IP} --patches=/etc/kubernetes/patches"
 
 # Same heap bound master-1 applies in 02-init-cluster.sh: this node renders its apiserver
 # from the shared ClusterConfiguration, which carries no memory request or ceiling.

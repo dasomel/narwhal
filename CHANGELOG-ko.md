@@ -9,6 +9,10 @@
 
 ## [Unreleased]
 
+- **워크로드 정확 수용과 kube-bench 비루트 실행 (R423 / lane B):** 고정된 CNPG v1.29.1에는 v1.31에서 추가된 토큰 자동 마운트 설정이 없어 정확한 DB 파드에 KSV036을 수용한다. kube-bench는 root로 유지한다. 라이브에서 시도한 비root 실행(UID 1000/10100, DAC_READ_SEARCH 유무, runAsGroup 10100)은 모두 스캔을 실패시켜, 정확한 CronJob 수용이 KSV010/012/020/021/022/023을 다룬다. 2.8.3 차트가 컨테이너 보안 설정을 노출하지 않는 Chaos Mesh controller-manager ReplicaSet의 세 체크도 수용한다.
+
+- **Lane D operator RBAC 수용 (CIS 5.1.2/5.1.3, R424):** 기술 근거가 확인된 ClusterRole 6개의 Secret·와일드카드 규칙만 portal, 이중 언어 사유와 컴플라이언스 표에 기록했다. 검토에서 사유가 불충분하다고 판정한 4개 역할은 acceptance에서 제거해 actionable 상태로 남겼다. 네임스페이스 축소는 라이브 조정 검증이 필요하다.
+
 - **EventRateLimit admission 활성화 (CIS 1.2.10 / AVD-KCV-0010, D-ERL):** kubeadm 초기화와 control-plane 조인에 서버/네임스페이스 이벤트 한도를 설정하고 기존 클러스터 적용 명령을 추가했습니다. 한도를 넘는 Event 쓰기는 HTTP 429를 반환합니다.
 
 - **부트스트랩 CSI NFS sidecar 강화 (R417):** 4.13.2 Helm 설치 전에 저장소 스크립트의 Helm 4 `postrenderer/v1` 플러그인을 멱등 설치하고 `--post-renderer`에는 플러그인 이름을 전달한다. 플러그인은 sidecar 권한 상승 방지·지정한 읽기 전용 루트 파일 시스템을 fail-closed로 적용하고 모든 컨테이너 CPU limit을 기존 10m 요청의 10배인 100m로 설정한다. controller/node의 정확한 수용 근거는 실측한 root:root 0755 공유 CSI 소켓과 privileged SYS_ADMIN 마운트 플러그인이다. 레지스트리 신뢰 별도 결정 전까지 KSV125는 조치 대상으로 남기며, 기존 클러스터는 master-1에서 플러그인 설치와 같은 Helm upgrade를 실행해 반영한다.

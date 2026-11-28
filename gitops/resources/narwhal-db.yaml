@@ -21,6 +21,9 @@ metadata:
 spec:
   instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18
+  # D-CNPG-TOKEN-ACCEPT (R423): CNPG 1.29.1 needs the Pod token for instance-manager API calls
+  # and lacks the 1.31 automount override. Cost: retain token exposure; escape: on supported
+  # CNPG upgrade, disable automount and verify projected-token API calls before removing acceptance.
 
   # D-pvb-exclude (#431): exclude the volume from Velero fs-backup. NFS root_squash maps kopia (uid 0) to
   # nobody, which cannot read owner-only files, so the PodVolumeBackup is Canceled and leaves the whole Backup

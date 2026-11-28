@@ -787,6 +787,20 @@
       "reviewedAt": "2026-11-26"
     },
     {
+      "id": "cfg:database:Pod:narwhal-db-1:ksv036-accept",
+      "scope": "namespace",
+      "namespace": "database",
+      "kind": "Pod",
+      "name": "narwhal-db-1",
+      "checks": [
+        "KSV036"
+      ],
+      "class": "upstream",
+      "reasonKey": "compliance.acceptedReason.cnpgServiceAccountToken",
+      "owner": "CloudNativePG 1.29.1 (gitops/resources/narwhal-db.yaml)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
       "id": "cfg:database:ReplicaSet:narwhal-db-pooler-rw:accept",
       "scope": "namespace",
       "namespace": "database",
@@ -818,6 +832,41 @@
       "reasonKey": "compliance.acceptedReason.metallbSpeakerHost",
       "owner": "metallb 0.16.1 (gitops/charts/narwhal-apps/templates/metallb.yaml)",
       "reviewedAt": "2026-11-26"
+    },
+    {
+      "id": "cfg:security-system:CronJob:cis-bench-974178c0082e:accept",
+      "scope": "namespace",
+      "namespace": "security-system",
+      "kind": "CronJob",
+      "name": "cis-bench-974178c0082e",
+      "checks": [
+        "KSV010",
+        "KSV012",
+        "KSV020",
+        "KSV021",
+        "KSV022",
+        "KSV023"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.kubeBenchHostAudit",
+      "owner": "kube-bench v0.16.0 (scripts/ops/render-cis-benchmark.py)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:chaos-testing:ReplicaSet:chaos-controller-manager:accept",
+      "scope": "namespace",
+      "namespace": "chaos-testing",
+      "kind": "ReplicaSet",
+      "name": "chaos-controller-manager",
+      "checks": [
+        "KSV001",
+        "KSV003",
+        "KSV004"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.chaosManagerChartLimits",
+      "owner": "chaos-mesh 2.8.3 (gitops/charts/narwhal-apps/templates/chaos-mesh.yaml)",
+      "reviewedAt": "2026-11-28"
     }
   ],
   "rbac": [
@@ -1063,12 +1112,13 @@
       "checks": [
         "KSV041",
         "KSV049",
-        "KSV114"
+        "KSV114",
+        "KSV046"
       ],
       "class": "accept",
       "reasonKey": "compliance.acceptedReason.verifiedistiod-clusterrole-istio-system",
       "owner": "istiod 1.30.1 (gitops/charts/narwhal-apps/templates/istiod.yaml)",
-      "reviewedAt": "2026-11-23"
+      "reviewedAt": "2026-11-28"
     },
     {
       "id": "rbac:cluster:ClusterRole:istiod-gateway-controller-istio-system:verified",
@@ -1510,6 +1560,77 @@
       "reasonKey": "compliance.acceptedReason.verifiedBootstrap",
       "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh)",
       "reviewedAt": "2026-11-23"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:trivy-operator:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "trivy-operator",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.trivyOperatorClusterSecrets",
+      "owner": "gitops/charts/narwhal-apps/templates/trivy-operator.yaml",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:apisix-ingress-controller-clusterrole:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "apisix-ingress-controller-clusterrole",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.apisixIngressClusterSecrets",
+      "owner": "gitops/charts/narwhal-apps/templates/apisix.yaml",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:cnpg-cloudnative-pg:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "cnpg-cloudnative-pg",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.cnpgOperatorClusterSecrets",
+      "owner": "scripts/cluster/07-cnpg.sh",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:nfs-external-provisioner-role:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "nfs-external-provisioner-role",
+      "checks": [
+        "KSV041"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.nfsProvisionerClusterSecrets",
+      "owner": "scripts/cluster/04-addons.sh",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "rbac:cluster:ClusterRole:prometheus-stack-kube-prom-operator:accept",
+      "scope": "cluster",
+      "namespace": "",
+      "kind": "ClusterRole",
+      "name": "prometheus-stack-kube-prom-operator",
+      "checks": [
+        "KSV041",
+        "KSV045"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.prometheusOperatorClusterSecrets",
+      "owner": "gitops/charts/narwhal-apps/templates/prometheus-stack.yaml",
+      "reviewedAt": "2026-11-28"
     }
   ],
   "infra": [

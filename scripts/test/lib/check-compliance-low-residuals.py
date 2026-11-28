@@ -71,9 +71,13 @@ def _check_pod_uid_100(label: str, pod_spec: dict, errors: list[str]) -> None:
     _check_container_overrides(label, pod_spec, errors)
 
 
-def _parse_config_rules(src: str) -> list[tuple[tuple[str, str, str, str], set[str]]]:
-    return [((r["namespace"], r["kind"], r["name"], r["class"]), set(r["checks"]))
+def _parse_config_rules(src: str) -> list[tuple[tuple[str, str, str, str, str], set[str]]]:
+    return [((r["namespace"], r["kind"], r["name"], r["class"], r["id"]), set(r["checks"]))
             for r in json.loads(src)["configAudit"]]
+
+
+# D-LANE-B-R2-CNPG: Keep KSV036 separate from the previously reviewed UID checks.
+# Cost: one additional exact rule and bilingual reason; escape hatch: remove it if CNPG 1.31+ supports disabling the mount safely.
 
 
 def check(texts: dict[str, str]) -> list[str]:
@@ -124,11 +128,12 @@ def check(texts: dict[str, str]) -> list[str]:
     # pooler's exact Deployment identity so a new ReplicaSet hash needs no rule update.
     # Revoke the rule if the operator's UID/GID requirement changes.
     expected_rules = {
-        ("database", "Pod", "narwhal-db-1", "accept"): {"KSV020", "KSV021"},
-        ("database", "ReplicaSet", "narwhal-db-pooler-rw", "accept"): {"KSV020", "KSV021"},
-        ("storage", "CronJob", "openbao-snapshot", "accept"): {"KSV020", "KSV021"},
-        ("storage", "ReplicaSet", "openbao-snapshot-holder", "accept"): {"KSV020", "KSV021"},
-        ("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", "accept"): {
+        ("database", "Pod", "narwhal-db-1", "accept", "cfg:database:Pod:narwhal-db-1:accept"): {"KSV020", "KSV021"},
+        ("database", "Pod", "narwhal-db-1", "upstream", "cfg:database:Pod:narwhal-db-1:ksv036-accept"): {"KSV036"},
+        ("database", "ReplicaSet", "narwhal-db-pooler-rw", "accept", "cfg:database:ReplicaSet:narwhal-db-pooler-rw:accept"): {"KSV020", "KSV021"},
+        ("storage", "CronJob", "openbao-snapshot", "accept", "cfg:storage:CronJob:openbao-snapshot:accept"): {"KSV020", "KSV021"},
+        ("storage", "ReplicaSet", "openbao-snapshot-holder", "accept", "cfg:storage:ReplicaSet:openbao-snapshot-holder:accept"): {"KSV020", "KSV021"},
+        ("nfs-quota-agent", "DaemonSet", "nfs-quota-agent", "accept", "cfg:nfs-quota-agent:DaemonSet:nfs-quota-agent:accept"): {
             "KSV001", "KSV003", "KSV004", "KSV012", "KSV017", "KSV020", "KSV021", "KSV023", "KSV121",
         },
     }
@@ -173,7 +178,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop i18n cnpgPostgresUid26", "i18n", '"compliance.acceptedReason.cnpgPostgresUid26"', '"compliance.acceptedReason.removed"'),
     ("drop i18n cnpgPoolerUid", "i18n", '"compliance.acceptedReason.cnpgPoolerUid"', '"compliance.acceptedReason.removed"'),
     ("drop i18n openbaoSnapshotUid", "i18n", '"compliance.acceptedReason.openbaoSnapshotUid"', '"compliance.acceptedReason.removed"'),
-    ("stale doc count", "doc", "49 Config Audit rules across 49 workloads", "45 Config Audit rules across 45 workloads"),
+    ("stale doc count", "doc", "52 Config Audit rules across 51 workloads", "45 Config Audit rules across 45 workloads"),
     ("false /etc/pgbouncer claim", "doc", "### Config Audit allowlist", "### Config Audit allowlist /etc/pgbouncer"),
     ("drop exact-match doc note", "doc", "Matching is exact: `database/Pod/narwhal-db-1`", "Matching is loose: `database/Pod/narwhal-db-1`"),
     ("drop R383 wiring", "reg", "check R383 ", "check R9999 "),

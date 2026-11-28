@@ -3525,7 +3525,7 @@ PYEOF'
   check R382 "parseComplianceTarget uses Object.hasOwn, UI preserves raw failCount whenever failCount !== actionableFail (including acceptedFail===0), empty ReplicaSet list warns consistently with getConfigAuditList, kisa.ts comment updated, and edge/UI tests cover RS 403/500, empty RS, unaccountedFail, checks:[], and hashed StatefulSet restore; 11 mutations caught" \
     python3 scripts/test/lib/check-portal-framework-accepted-fixes.py --mutation-verify
   # 2026-11-19: remaining low-severity compliance findings (OpenBao auto-unseal 10100:10100; snapshot/holder stay uid 100 and are allowlisted; verified CNPG/nfs-quota-agent allowlist entries)
-  check R383 "OpenBao auto-unseal runs as 10100:10100 (not allowlisted), snapshot/holder keep uid 100 with exact KSV020/021 allowlist entries; CNPG narwhal-db-1/pooler accept only the reviewed KSV020/021 checks; nfs-quota-agent and snapshots retain exact check sets across rule JSON, i18n, and docs; 25 mutations caught" \
+  check R383 "OpenBao auto-unseal runs as 10100:10100 (not allowlisted), snapshot/holder keep uid 100 with exact KSV020/021 allowlist entries; CNPG narwhal-db-1/pooler accept only the reviewed KSV020/021 checks, with narwhal-db-1 KSV036 isolated to its own rule; nfs-quota-agent and snapshots retain exact check sets across rule JSON, i18n, and docs; 25 mutations caught" \
     python3 scripts/test/lib/check-compliance-low-residuals.py --mutation-verify
   # 2026-11-20 (#757): OpenBao snapshot backup missing/mismatched recipient ConfigMap surfaced at Phase 2 (06/provision-kakao) / verify-cluster / verify-backup + promtool-verified OpenBaoSnapshotBackupStale alert
   check R384 "OpenBao snapshot backup activation check (D-OPENBAO-BACKUP-ACTIVATION) surfaces missing/invalid/non-RSA/weak/mismatched recipient ConfigMap, absent CronJob, lookup errors, and missing helper in Phase 2 (06-phase2-start.sh via /home/vagrant guest path + provision-kakao.sh without failing install), verify-cluster, and verify-backup (portable python3 UTC age); OpenBaoSnapshotBackupStale preserves namespace/cronjob labels and handles never-succeeded/zero/ksm-down/suspended (11 promtool cases); runbook 3.7/4 updated; 17 mutations caught (#757)" \
@@ -3626,6 +3626,12 @@ PYEOF'
   # 2026-11-27 (D-ERL): CIS 1.2.10 / AVD-KCV-0010 EventRateLimit admission plugin, config staging, and existing-cluster rollout
   check R422 "EventRateLimit API server admission (CIS 1.2.10 / AVD-KCV-0010, D-ERL)" \
     python3 scripts/test/lib/check-apiserver-eventratelimit.py --mutation-verify
+  # R423 (lane B): exact acceptance for pinned CNPG, kube-bench, and Chaos Mesh findings.
+  check R423 "Lane-B workload exact acceptance for CNPG, kube-bench, and Chaos Mesh" \
+    python3 scripts/test/lib/check-workload-exact-acceptance.py --mutation-verify
+  # 2026-11-28 (lane D): exact ClusterRole Secret/wildcard RBAC acceptances.
+  check R424 "Lane D six exact ClusterRole Secret and wildcard RBAC acceptances; 12 mutations rejected" \
+    python3 scripts/test/lib/check-lane-d-rbac-acceptance.py --mutation-verify
   # 2026-11-27: ArgoCD privilege split Stage 1 (D-OWN-ARGO-STAGED, D-ARGO-SERVER-RO, D-ARGO-PROJECT-WHITELIST)
   check R420 "ArgoCD privilege split Stage 1: read-only argocd-server (no secrets, no workload writes, no '*' resources), exact 12-kind AppProject/platform clusterResourceWhitelist with empty tenants, and exact argocd-application-controller KSV044/KSV046 acceptance; 16 mutations caught" \
     python3 scripts/test/lib/check-argocd-privilege-split-stage1.py --mutation-verify

@@ -9,6 +9,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Lane D 정확 ClusterRole 수용 추가 (CIS 5.1.2/5.1.3):** 역할 6개와 istiod의 KSV046을 기술 근거의 이중 언어 사유로 추가하고 RBAC 표 요약을 52개로 갱신했다.
+
+### 변경
+
+- 측정된 kube-bench CronJob과 관측된 Chaos Mesh ReplicaSet의 Config Audit 정확 수용을 추가하고, 고정된 CNPG 1.29.1 DB 파드가 API 토큰 마운트를 유지해야 하는 이유를 기록했다(R423). 다른 생성 워크로드 이름은 계속 조치 대상으로 남는다.
+
 ### 변경
 
 - **EventRateLimit 활성화(CIS 1.2.10)에 맞춘 KCV0012 수용 사유 갱신:** AlwaysPullImages 사유에서 "활성화된 어드미션 플러그인은 NodeRestriction뿐"이라는 문장을 NodeRestriction과 EventRateLimit으로 고치고, Harbor 자신의 재기동과 격리 클러스터에 대한 RKE2·GKE CIS 안내를 근거로 덧붙였다.

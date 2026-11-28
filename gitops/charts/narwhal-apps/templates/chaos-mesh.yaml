@@ -43,6 +43,9 @@ spec:
             enableFilterNamespace: false
             # The chart sets pod-level securityContext. The controller uses
             # unprivileged ports and reads its certificates from mounted files.
+            # D-CHAOS-MGR-CHART (R423): chart 2.8.3 only renders Pod securityContext;
+            # container privilege/capability controls are unavailable, so the controller-manager
+            # KSV001/KSV003/KSV004 findings stay accepted; escape: revisit after chart support.
             securityContext:
               runAsNonRoot: true
               runAsUser: 65532

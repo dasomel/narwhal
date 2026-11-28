@@ -40,10 +40,15 @@ def check(texts):
         if f'ClusterRole/{name}' not in texts['doc']:
             errors.append(f'{name}: docs row missing')
     if len(by_name) != len(TARGETS): errors.append('unexpected duplicate target role')
-    if '**52 RBAC rules**' not in texts['doc']: errors.append('RBAC summary count mismatch')
+    if '**53 RBAC rules**' not in texts['doc']: errors.append('RBAC summary count mismatch')
+    # k8s-monitoring-alloy-operator is accepted later (R430) only with the measured live-failure
+    # reason; its round-2 "no restriction configured" reason must still be absent.
+    alloy = [r for r in data['rbac'] if r['name'] == 'k8s-monitoring-alloy-operator']
+    if alloy and (len(alloy) != 1 or alloy[0]['checks'] != ['KSV041'] or alloy[0].get('reasonKey') != 'compliance.acceptedReason.alloyOperatorClusterRoleFailure'):
+        errors.append('k8s-monitoring-alloy-operator: only the exact R430 live-failure acceptance is allowed')
     for name in ('cilium-operator','k8s-monitoring-alloy-operator','keycloakcontroller-cluster-role','keycloakrealmimportcontroller-cluster-role'):
-        if any(r['name']==name for r in data['rbac']): errors.append(f'{name}: rejected acceptance remains')
-        if f'ClusterRole/{name}' in texts['doc']: errors.append(f'{name}: rejected docs row remains')
+        if name != 'k8s-monitoring-alloy-operator' and any(r['name']==name for r in data['rbac']): errors.append(f'{name}: rejected acceptance remains')
+        if name != 'k8s-monitoring-alloy-operator' and f'ClusterRole/{name}' in texts['doc']: errors.append(f'{name}: rejected docs row remains')
         reason_keys={
             'cilium-operator':'compliance.acceptedReason.ciliumOperatorClusterSecrets',
             'k8s-monitoring-alloy-operator':'compliance.acceptedReason.alloyOperatorClusterSecrets',

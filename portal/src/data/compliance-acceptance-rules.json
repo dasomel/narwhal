@@ -683,17 +683,18 @@
       "kind": "Pod",
       "name": "etcd-narwhal-master-1",
       "checks": [
+        "KSV001",
+        "KSV003",
+        "KSV004",
         "KSV009",
         "KSV012",
         "KSV020",
         "KSV021",
-        "KSV022",
         "KSV023",
-        "KSV024",
-        "KSV106"
+        "KSV024"
       ],
       "class": "accept",
-      "reasonKey": "compliance.acceptedReason.verifiedkubeadmEtcdHost",
+      "reasonKey": "compliance.acceptedReason.etcdStaticPodTrialFailed",
       "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh, scripts/cluster/02-init-cluster.sh)",
       "reviewedAt": "2026-11-28"
     },
@@ -713,6 +714,20 @@
       ],
       "class": "accept",
       "reasonKey": "compliance.acceptedReason.verifiedkubeadmHost",
+      "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh, scripts/cluster/02-init-cluster.sh)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "configAudit:kube-system:Pod:kube-apiserver-narwhal-master-1:net-bind-filecap",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "Pod",
+      "name": "kube-apiserver-narwhal-master-1",
+      "checks": [
+        "KSV022"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.apiserverNetBindFileCap",
       "owner": "Kubernetes 1.35.7 (scripts/common/03-k8s-install.sh, scripts/cluster/02-init-cluster.sh)",
       "reviewedAt": "2026-11-28"
     },

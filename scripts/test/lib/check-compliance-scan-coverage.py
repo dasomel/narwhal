@@ -628,7 +628,7 @@ def check(texts: dict[str, str], run_behavioral: bool = False) -> list[str]:
         errors.append(f"KISA-NET-01 name must not claim default-deny when only KSV038 selector check runs: {net1_name!r}")
 
     # 5. D1: tlsCipherSuites stays deferred. R412 owns serving TLS bootstrap order;
-    #    R423 (Lane C) owns CIS 4.2.6 protectKernelDefaults + 95-kubelet-kernel-defaults.conf.
+    #    R426 (Lane C) owns CIS 4.2.6 protectKernelDefaults + 95-kubelet-kernel-defaults.conf.
     #    verify_node_file_hardening must still emit WARN (not PASS, not FAIL) for CIS 4.2.6/4.2.12/4.2.13.
     kubeadm_m = re.search(r"(?ms)^cat <<EOF > /tmp/kubeadm-config\.yaml\s*\n(.*?)^EOF\s*$", texts["init"])
     if not kubeadm_m:

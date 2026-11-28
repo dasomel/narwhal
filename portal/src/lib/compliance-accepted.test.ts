@@ -336,11 +336,11 @@ describe("matchBenchmarkException", () => {
 })
 
 describe("allowlist integrity and docs parity", () => {
-  it("contains no duplicate (namespace, kind, name, class) or overlapping check IDs", () => {
+  it("contains no duplicate rule IDs or overlapping check IDs", () => {
     const seenClass = new Set<string>()
     const seenChecks = new Set<string>()
     for (const rule of ACCEPTED_CONFIG_AUDIT_RULES) {
-      const classKey = `${rule.namespace}|${rule.kind}|${rule.name}|${rule.class}`
+      const classKey = rule.id
       expect(seenClass.has(classKey), `Duplicate class entry: ${classKey}`).toBe(false)
       seenClass.add(classKey)
       for (const id of rule.checks) {
@@ -639,40 +639,49 @@ describe("node-agent acceptances (pod-security Batch C, measured 2026-11-26)", (
   })
 })
 
-describe("control-plane static Pod acceptances (D-CP-STATIC-POD-SC / D-CP-ETCD-DAC)", () => {
-  const dropAllPods = [
+describe("control-plane static Pod acceptances (D-CP-STATIC-POD-SC / D-CP-ETCD-DEFER)", () => {
+  const controlPlanePods = [
+    "etcd-narwhal-master-1",
     "kube-apiserver-narwhal-master-1",
     "kube-controller-manager-narwhal-master-1",
     "kube-scheduler-narwhal-master-1",
   ] as const
 
-  it.each(dropAllPods)("accepts exact root-runtime checks KSV012/KSV020/KSV021 for %s and keeps KSV001/KSV003/KSV004/KSV022/KSV106 actionable", (pod) => {
+  it.each(controlPlanePods)("accepts only exact static Pod checks for %s", (pod) => {
     for (const checkId of ["KSV009", "KSV012", "KSV020", "KSV021", "KSV023", "KSV024"]) {
       const rule = matchConfigAuditException("kube-system", "Pod", pod, checkId, [])
       expect(rule, `${pod} ${checkId}`).not.toBeNull()
       expect(rule?.reviewedAt).toBe("2026-11-28")
+      expect(rule?.reasonKey).toBe(pod === "etcd-narwhal-master-1"
+        ? "compliance.acceptedReason.etcdStaticPodTrialFailed"
+        : "compliance.acceptedReason.verifiedkubeadmHost")
       expect(rule?.reason).toContain("RootlessControlPlane")
+      if (pod === "etcd-narwhal-master-1") {
+        expect(rule?.reasonKey).toBe("compliance.acceptedReason.etcdStaticPodTrialFailed")
+        expect(rule?.reason).toContain("etcd hardening patch prevented etcd from starting in the 2026-11-28 live trial; root cause under investigation")
+      }
     }
-    for (const fixedOrUnaccepted of ["KSV001", "KSV003", "KSV004", "KSV022", "KSV105", "KSV106"]) {
-      expect(matchConfigAuditException("kube-system", "Pod", pod, fixedOrUnaccepted, []), `${pod} ${fixedOrUnaccepted}`).toBeNull()
+    for (const fixedOrUnaccepted of ["KSV001", "KSV003", "KSV004", "KSV105", "KSV106"]) {
+      const expectedEtcdTrialAcceptance = pod === "etcd-narwhal-master-1" && ["KSV001", "KSV003", "KSV004"].includes(fixedOrUnaccepted)
+      const rule = matchConfigAuditException("kube-system", "Pod", pod, fixedOrUnaccepted, [])
+      if (expectedEtcdTrialAcceptance) {
+        expect(rule?.reasonKey).toBe("compliance.acceptedReason.etcdStaticPodTrialFailed")
+        expect(rule?.reason).toContain("root cause under investigation")
+      } else {
+        expect(rule, `${pod} ${fixedOrUnaccepted}`).toBeNull()
+      }
+    }
+    const fileCapabilityRule = matchConfigAuditException("kube-system", "Pod", pod, "KSV022", [])
+    if (pod === "kube-apiserver-narwhal-master-1") {
+      expect(fileCapabilityRule?.ruleId).toBe("configAudit:kube-system:Pod:kube-apiserver-narwhal-master-1:net-bind-filecap")
+      expect(fileCapabilityRule?.reasonKey).toBe("compliance.acceptedReason.apiserverNetBindFileCap")
+      expect(fileCapabilityRule?.reason).toContain("cap_net_bind_service=ep")
+      expect(fileCapabilityRule?.reason).toContain("exec with EPERM")
+      expect(fileCapabilityRule?.reason).toContain("CapEff measured 0x400")
+    } else {
+      expect(fileCapabilityRule).toBeNull()
     }
     expect(matchConfigAuditException("kube-system", "Pod", pod.replace("master-1", "master-2"), "KSV012", [])).toBeNull()
     expect(matchConfigAuditException("default", "Pod", pod, "KSV012", [])).toBeNull()
-  })
-
-  it("accepts KSV012/KSV020/KSV021 and DAC_OVERRIDE KSV022/KSV106 for etcd-narwhal-master-1 while keeping KSV001/KSV003/KSV004/KSV105 actionable", () => {
-    const pod = "etcd-narwhal-master-1"
-    for (const checkId of ["KSV009", "KSV012", "KSV020", "KSV021", "KSV022", "KSV023", "KSV024", "KSV106"]) {
-      const rule = matchConfigAuditException("kube-system", "Pod", pod, checkId, [])
-      expect(rule, `${pod} ${checkId}`).not.toBeNull()
-      expect(rule?.reviewedAt).toBe("2026-11-28")
-      expect(rule?.reason).toContain("DAC_OVERRIDE")
-      expect(rule?.reason).toContain("etcd:etcd 0700")
-    }
-    for (const fixedOrUnaccepted of ["KSV001", "KSV003", "KSV004", "KSV105"]) {
-      expect(matchConfigAuditException("kube-system", "Pod", pod, fixedOrUnaccepted, []), `${pod} ${fixedOrUnaccepted}`).toBeNull()
-    }
-    expect(matchConfigAuditException("kube-system", "Pod", "etcd-narwhal-master-2", "KSV022", [])).toBeNull()
-    expect(matchConfigAuditException("default", "Pod", pod, "KSV022", [])).toBeNull()
   })
 })

@@ -120,15 +120,15 @@ AUDEOF
   sudo install -o vagrant -g vagrant -m 600 /etc/kubernetes/admission/admission-config.yaml /home/vagrant/admission-config.yaml
 )
 
-# D-CP-STATIC-POD-SC: install kubeadm v1beta4 strategic patches for the four control-plane
-# static Pods (etcd, kube-apiserver, kube-controller-manager, kube-scheduler) BEFORE kubeadm init.
+# D-CP-STATIC-POD-SC / D-CP-ETCD-DEFER: install kubeadm v1beta4 strategic patches for the three
+# API/controller/scheduler static Pods BEFORE kubeadm init; etcd is intentionally left untouched
+# (2026-11-28 live trial timed out on etcd with root cause unestablished).
 KUBEADM_PATCH_SRC="${STAGE_DIR:-/home/vagrant}/scripts/ops/lib/kubeadm-patches"
 if [[ ! -d "${KUBEADM_PATCH_SRC}" ]]; then
   KUBEADM_PATCH_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../ops/lib/kubeadm-patches" 2>/dev/null && pwd || true)"
 fi
 sudo install -d -o root -g root -m 700 /etc/kubernetes/patches
 for patch_file in \
-  etcd+strategic.yaml \
   kube-apiserver+strategic.yaml \
   kube-controller-manager+strategic.yaml \
   kube-scheduler+strategic.yaml; do
@@ -273,10 +273,10 @@ localAPIEndpoint:
   bindPort: 6443
 nodeRegistration:
   criSocket: "unix:///run/containerd/containerd.sock"
-# D-CP-STATIC-POD-SC / D-CP-ETCD-DAC: apply strategic patches for allowPrivilegeEscalation: false,
-# capabilities.drop: [ALL] (with add: [DAC_OVERRIDE] on etcd so UID 0 can access etcd:etcd 0700
-# /var/lib/etcd for CIS 1.1.12 / KCV0059), and RuntimeDefault seccomp to all 4 control-plane static Pods.
-# Cost: KSV012/020/021 (and KSV022/106 on etcd) stay accepted until kubeadm RootlessControlPlane is GA.
+# D-CP-STATIC-POD-SC / D-CP-ETCD-DEFER: apply strategic patches for allowPrivilegeEscalation: false,
+# capabilities.drop: [ALL], and RuntimeDefault seccomp to kube-apiserver, kube-controller-manager,
+# and kube-scheduler. etcd is deferred and rendered unmodified by kubeadm.
+# Cost: KSV012/020/021 stay accepted until kubeadm RootlessControlPlane is GA; etcd KSV001/003/004 remain actionable.
 # Escape: remove patches.directory or patch files.
 patches:
   directory: /etc/kubernetes/patches

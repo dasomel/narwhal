@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""R423 (lane-c): Control-plane static Pod securityContext patches + CIS 4.2.6 protectKernelDefaults."""
+"""R426 (lane-c): Control-plane static Pod securityContext patches (etcd deferred) + CIS 4.2.6 protectKernelDefaults."""
 import json
 import os
 from pathlib import Path
@@ -21,13 +21,15 @@ HELPER_CP = 'scripts/ops/lib/control-plane-security-context.py'
 OPS_KD = 'scripts/ops/apply-kubelet-kernel-defaults.sh'
 NODE_KD = 'scripts/ops/lib/kubelet-kernel-defaults-node.sh'
 RULES = 'portal/src/data/compliance-acceptance-rules.json'
+I18N = 'portal/src/lib/i18n.ts'
 REGRESSION = 'scripts/test/regression-check-kakao.sh'
 
-COMPONENTS = ('kube-scheduler', 'kube-controller-manager', 'etcd', 'kube-apiserver')
+COMPONENTS = ('kube-scheduler', 'kube-controller-manager', 'kube-apiserver')
+ALL_STATIC_PODS = ('etcd', *COMPONENTS)
 PATCH_FILES = tuple(f'scripts/ops/lib/kubeadm-patches/{c}+strategic.yaml' for c in COMPONENTS)
 FILES = (
     PREREQ, SYSCTL_LIB, SYSCTL_CONF, INIT, JOIN_CP, JOIN_W, HARDEN,
-    OPS_CP, HELPER_CP, OPS_KD, NODE_KD, RULES, REGRESSION, *PATCH_FILES,
+    OPS_CP, HELPER_CP, OPS_KD, NODE_KD, RULES, I18N, REGRESSION, *PATCH_FILES,
 )
 
 EXPECTED_SYSCTLS = {
@@ -62,21 +64,33 @@ spec:
 
 
 def check_static(files):
-    # 1. Canonical 4 kubeadm strategic patch files (D-CP-ETCD-DAC: etcd adds DAC_OVERRIDE only)
+    # 1. Canonical 3 kubeadm strategic patch files only; etcd patch must NOT exist (D-CP-ETCD-DEFER)
+    assert not (ROOT / 'scripts/ops/lib/kubeadm-patches/etcd+strategic.yaml').exists(), (
+        'etcd+strategic.yaml must not exist under D-CP-ETCD-DEFER'
+    )
     for comp in COMPONENTS:
         doc = yq_json(files[f'scripts/ops/lib/kubeadm-patches/{comp}+strategic.yaml'])
         assert doc['apiVersion'] == 'v1' and doc['kind'] == 'Pod'
         assert doc['metadata'] == {'name': comp, 'namespace': 'kube-system'}
         assert doc['spec']['securityContext'] == {'seccompProfile': {'type': 'RuntimeDefault'}}
-        expected_caps = {'drop': ['ALL'], 'add': ['DAC_OVERRIDE']} if comp == 'etcd' else {'drop': ['ALL']}
         containers = doc['spec']['containers']
         assert containers == [{
             'name': comp,
             'securityContext': {
                 'allowPrivilegeEscalation': False,
-                'capabilities': expected_caps,
+                'capabilities': {
+                    'drop': ['ALL'],
+                    **({'add': ['NET_BIND_SERVICE']} if comp == 'kube-apiserver' else {}),
+                },
             },
         }], f'unexpected strategic patch for {comp}: {doc}'
+
+    rules = json.loads(files[RULES])['configAudit']
+    etcd_rule = next(r for r in rules if r.get('name') == 'etcd-narwhal-master-1' and r.get('kind') == 'Pod')
+    assert {'KSV001', 'KSV003', 'KSV004'} <= set(etcd_rule['checks'])
+    assert etcd_rule['reasonKey'] == 'compliance.acceptedReason.etcdStaticPodTrialFailed'
+    assert 'etcd hardening patch prevented etcd from starting in the 2026-11-28 live trial; root cause under investigation' in files[I18N]
+    assert 'D-CP-APISERVER-FILECAP' in files[PATCH_FILES[2]]
 
     # 2. Canonical sysctl file + shared lib
     parsed_sysctls = {}
@@ -100,6 +114,7 @@ def check_static(files):
         assert 'ensure_kubelet_kernel_defaults' in txt, f'{script_path} missing ensure_kubelet_kernel_defaults'
 
     init = files[INIT]
+    assert 'etcd+strategic.yaml' not in init, '02-init-cluster.sh must not stage etcd+strategic.yaml'
     assert init.index('/etc/kubernetes/patches/${patch_file}') < init.index('sudo kubeadm init ')
     assert init.index('ensure_kubelet_kernel_defaults') < init.index('sudo kubeadm init ')
     raw_cfg = init.split('cat <<EOF > /tmp/kubeadm-config.yaml\n', 1)[1].split('\nEOF\n', 1)[0]
@@ -110,6 +125,7 @@ def check_static(files):
     assert kubelet_doc.get('protectKernelDefaults') is True, f'KubeletConfiguration missing protectKernelDefaults: {kubelet_doc}'
 
     join_cp = files[JOIN_CP]
+    assert 'etcd+strategic.yaml' not in join_cp, '02-join-control-plane.sh must not stage etcd+strategic.yaml'
     assert join_cp.index('/etc/kubernetes/patches/${patch_file}') < join_cp.index('$(cat /tmp/join-control-plane.sh)')
     assert join_cp.index('ensure_kubelet_kernel_defaults') < join_cp.index('$(cat /tmp/join-control-plane.sh)')
     assert '--patches=/etc/kubernetes/patches' in join_cp
@@ -117,32 +133,62 @@ def check_static(files):
     join_w = files[JOIN_W]
     assert join_w.index('ensure_kubelet_kernel_defaults') < join_w.index('sudo bash /tmp/join-command.sh')
 
-    # 4. harden-node-files.sh keeps etcd:etcd ownership for CIS 1.1.12 / KCV0059 (D-CP-ETCD-DAC)
+    # 4. harden-node-files.sh keeps etcd:etcd ownership for CIS 1.1.12 / KCV0059; ops-cp excludes etcd
     harden_active = '\n'.join(l for l in files[HARDEN].splitlines() if l.strip() and not l.lstrip().startswith('#'))
     assert 'chown -R etcd:etcd "${prefix}/var/lib/etcd"' in harden_active
     assert 'ETCD_DIR_OWNER' not in harden_active
     assert 'chown -R root:root "${prefix}/var/lib/etcd"' not in harden_active
-    # ops script must not refuse non-root /var/lib/etcd ownership
-    assert 'check_etcd_owner' not in files[OPS_CP] and 'check-etcd' not in files[OPS_CP]
 
-    # 5. Portal exact acceptance rules: KSV012/020/021 accepted on all 4, KSV022/106 on etcd only, KSV001/003/004 unaccepted
+    ops_cp_active = '\n'.join(l for l in files[OPS_CP].splitlines() if l.strip() and not l.lstrip().startswith('#'))
+    assert 'ALL_COMPONENTS=(kube-scheduler kube-controller-manager kube-apiserver)' in ops_cp_active
+    assert 'etcd' not in ops_cp_active, 'apply-control-plane-security-context.sh active code must not touch etcd'
+    helper_cp_active = '\n'.join(l for l in files[HELPER_CP].splitlines() if l.strip() and not l.lstrip().startswith('#'))
+    assert 'DAC_OVERRIDE' not in helper_cp_active, 'control-plane-security-context.py active code must not add DAC_OVERRIDE'
+    assert "COMPONENTS = ('kube-scheduler', 'kube-controller-manager', 'kube-apiserver')" in helper_cp_active
+    # D-CP-APISERVER-FILECAP parity: renderer ADD_CAPS must equal the patch files' capabilities.add.
+    assert "ADD_CAPS = {'kube-apiserver': ['NET_BIND_SERVICE']}" in helper_cp_active, 'renderer ADD_CAPS must keep NET_BIND_SERVICE for kube-apiserver only'
+
+    # 5. Portal exact acceptance rules: only etcd accepts KSV001/003/004 while its live failure is investigated.
     rules = json.loads(files[RULES])['configAudit']
-    for comp in COMPONENTS:
+    assert 'verifiedkubeadmEtcdHost' not in files[RULES], 'dropped verifiedkubeadmEtcdHost still in rules JSON'
+    assert 'verifiedkubeadmEtcdHost' not in files[I18N], 'dropped verifiedkubeadmEtcdHost still in i18n.ts'
+    for comp in ALL_STATIC_PODS:
         pod_name = f'{comp}-narwhal-master-1'
         matched = [r for r in rules if r['namespace'] == 'kube-system' and r['kind'] == 'Pod' and r['name'] == pod_name]
+        if comp == 'kube-apiserver':
+            matched = [r for r in matched if r.get('id', '').endswith(':verified')]
         assert len(matched) == 1, f'missing exact rule for {pod_name}'
         checks = set(matched[0]['checks'])
+        expected_checks = {'KSV009', 'KSV012', 'KSV020', 'KSV021', 'KSV023', 'KSV024'}
         if comp == 'etcd':
-            assert {'KSV009', 'KSV012', 'KSV020', 'KSV021', 'KSV022', 'KSV023', 'KSV024', 'KSV106'} == checks, f'{pod_name} checks={checks}'
-            assert matched[0]['reasonKey'] == 'compliance.acceptedReason.verifiedkubeadmEtcdHost'
-            assert not (checks & {'KSV001', 'KSV003', 'KSV004', 'KSV105'}), f'{pod_name} accepted fixed/forbidden check'
+            expected_checks |= {'KSV001', 'KSV003', 'KSV004'}
+            expected_reason = 'compliance.acceptedReason.etcdStaticPodTrialFailed'
         else:
-            assert {'KSV009', 'KSV012', 'KSV020', 'KSV021', 'KSV023', 'KSV024'} == checks, f'{pod_name} checks={checks}'
-            assert matched[0]['reasonKey'] == 'compliance.acceptedReason.verifiedkubeadmHost'
-            assert not (checks & {'KSV001', 'KSV003', 'KSV004', 'KSV022', 'KSV105', 'KSV106'}), f'{pod_name} accepted fixed/forbidden check'
+            expected_reason = 'compliance.acceptedReason.verifiedkubeadmHost'
+        assert expected_checks == checks, f'{pod_name} checks={checks}'
+        assert matched[0]['reasonKey'] == expected_reason
+        forbidden = {'KSV105', 'KSV106'} | (set() if comp == 'etcd' else {'KSV001', 'KSV003', 'KSV004'})
+        if comp != 'kube-apiserver':
+            forbidden.add('KSV022')
+        assert not (checks & forbidden), (
+            f'{pod_name} accepted fixed/deferred/forbidden check'
+        )
+
+    # D-CP-APISERVER-FILECAP: KSV022 is isolated from the broader verified rule.
+    apiserver_filecap = [r for r in rules if r.get('id') ==
+                         'configAudit:kube-system:Pod:kube-apiserver-narwhal-master-1:net-bind-filecap']
+    assert len(apiserver_filecap) == 1, 'missing dedicated kube-apiserver NET_BIND_SERVICE KSV022 rule'
+    filecap_rule = apiserver_filecap[0]
+    assert (filecap_rule['scope'], filecap_rule['namespace'], filecap_rule['kind'], filecap_rule['name'],
+            filecap_rule['checks'], filecap_rule['class'], filecap_rule['reasonKey']) == (
+                'namespace', 'kube-system', 'Pod', 'kube-apiserver-narwhal-master-1', ['KSV022'],
+                'accept', 'compliance.acceptedReason.apiserverNetBindFileCap')
+    assert 'cap_net_bind_service=ep' in files[I18N]
+    assert 'exec with EPERM' in files[I18N]
+    assert 'CapEff measured 0x400' in files[I18N]
 
     # 6. Regression registration
-    assert 'check R423 ' in files[REGRESSION]
+    assert 'check R426 ' in files[REGRESSION]
     assert 'check-control-plane-static-pods-and-kubelet-defaults.py --mutation-verify' in files[REGRESSION]
 
 
@@ -187,7 +233,7 @@ else:
 
 
 def check_ops_cp(files, scenario='all'):
-    with tempfile.TemporaryDirectory(prefix='r423-cp-') as td:
+    with tempfile.TemporaryDirectory(prefix='r426-cp-') as td:
         root = Path(td)
         bindir = root / 'bin'
         bindir.mkdir()
@@ -201,6 +247,7 @@ a = sys.argv
 assert 'BatchMode=yes' in a and 'StrictHostKeyChecking=yes' in a and 'sudo' in a
 host = next(v for v in a if '@' in v).split('@')[1]
 nroot = Path(os.environ['NODE_ROOT']) / host
+events = Path(os.environ['NODE_ROOT']) / 'events.log'
 def rw(s):
     return (
         s.replace('/etc/kubernetes', str(nroot / 'etc/kubernetes'))
@@ -211,6 +258,9 @@ if 'cat' in a:
     sys.exit(0)
 script_text = rw(sys.stdin.read())
 args = [rw(v) for v in a[a.index('--') + 1:]]
+if args and args[0] == 'restore':
+    with events.open('a') as ef:
+        ef.write(f'restore:{host}:{args[1]}\n')
 res = subprocess.run(['bash', '-s', '--'] + args, input=script_text, text=True, capture_output=True,
                      env={**os.environ, 'CUR_HOST': host})
 sys.stdout.write(res.stdout.replace(str(nroot / 'backups'), '/var/lib/narwhal/control-plane-security-context'))
@@ -220,15 +270,193 @@ if res.returncode == 0 and args and args[0] == 'apply' and os.environ.get('CORRU
     p.write_text(p.read_text().replace('--profiling=false', '--profiling=true'))
 sys.exit(res.returncode)
 ''')
+        crictl_stub = bindir / 'crictl'
+        crictl_stub.write_text(r'''#!/usr/bin/env python3
+import datetime, hashlib, json, os, subprocess, sys
+from pathlib import Path
+
+host = os.environ['CUR_HOST']
+nroot = Path(os.environ['NODE_ROOT']) / host
+events = Path(os.environ['NODE_ROOT']) / 'events.log'
+a = sys.argv[1:]
+
+def manifest_info(comp):
+    m = nroot / f'etc/kubernetes/manifests/{comp}.yaml'
+    raw = m.read_text()
+    doc = json.loads(subprocess.check_output(['yq', '-o=json', '.', str(m)], text=True))
+    cid = f'{comp}-{hashlib.sha256(raw.encode()).hexdigest()[:12]}'
+    hfile = nroot / f'.cid-hist-{comp}.json'
+    hist = json.loads(hfile.read_text()) if hfile.is_file() else []
+    if not hist or hist[0] != cid:
+        hist.insert(0, cid)
+        hfile.write_text(json.dumps(hist))
+    return cid, hist, doc
+
+def find_by_cid(cid):
+    for comp in ('kube-scheduler', 'kube-controller-manager', 'kube-apiserver', 'etcd'):
+        hfile = nroot / f'.cid-hist-{comp}.json'
+        if hfile.is_file() and cid in json.loads(hfile.read_text()):
+            cur_cid, _, doc = manifest_info(comp)
+            return comp, cur_cid, doc
+    sys.exit(f'unknown cid: {cid}')
+
+if a[0] == 'ps':
+    name_arg = a[a.index('--name') + 1]
+    assert name_arg.startswith('^') and name_arg.endswith('$'), f'non-exact --name: {name_arg}'
+    comp = name_arg[1:-1]
+    cid, hist, doc = manifest_info(comp)
+    sc = doc['spec']['containers'][0].get('securityContext') or {}
+    has_drop = (sc.get('capabilities') or {}).get('drop') == ['ALL']
+    is_all = '-a' in a
+    is_quiet = '-q' in a
+    running_only = '--state' in a and a[a.index('--state') + 1] == 'running'
+    not_running = (
+        (has_drop and os.environ.get('CRICTL_NOT_RUNNING') == f'{host}/{comp}')
+        or ((not has_drop) and os.environ.get('ROLLBACK_NOT_READY') == f'{host}/{comp}')
+    )
+    if running_only:
+        if not not_running:
+            print(cid)
+    elif is_all:
+        if is_quiet:
+            for h in hist:
+                print(h)
+        else:
+            for idx, h in enumerate(hist):
+                st = 'Exited' if (idx > 0 or not_running) else 'Running'
+                print(f'{h} {comp} {st}')
+    sys.exit(0)
+
+if a[0] == 'inspect':
+    cid = a[1]
+    comp, cur_cid, doc = find_by_cid(cid)
+    with events.open('a') as ef:
+        ef.write(f'crictl-inspect:{host}:{comp}:{cid}\n')
+    c = doc['spec']['containers'][0]
+    sc = c.get('securityContext') or {}
+    pod_sc = doc['spec'].get('securityContext') or {}
+    has_drop = (sc.get('capabilities') or {}).get('drop') == ['ALL']
+    bad_sc = has_drop and os.environ.get('BAD_RUNTIME_SC') == f'{host}/{comp}'
+    not_running = (
+        (has_drop and os.environ.get('CRICTL_NOT_RUNNING') == f'{host}/{comp}')
+        or ((not has_drop) and os.environ.get('ROLLBACK_NOT_READY') == f'{host}/{comp}')
+    )
+    state = 'CONTAINER_RUNNING' if (cid == cur_cid and not not_running) else 'CONTAINER_EXITED'
+    if has_drop and not bad_sc:
+        kept = ['CAP_' + str(x).upper() for x in ((sc.get('capabilities') or {}).get('add') or [])]
+        runtime_spec = {
+            'process': {
+                'args': list(c.get('command') or []) + list(c.get('args') or []),
+                'noNewPrivileges': True,
+                'capabilities': {'bounding': list(kept), 'effective': list(kept), 'inheritable': [], 'permitted': list(kept), 'ambient': []},
+            },
+            'linux': {'seccomp': {'defaultAction': 'SCMP_ACT_ERRNO', 'syscalls': []}},
+        }
+        cri_sc = {
+            'no_new_privs': True,
+            'capabilities': {'drop_capabilities': ['ALL'], 'add_capabilities': [x[4:] for x in kept]},
+            'seccomp': {'profile_type': 'RuntimeDefault'},
+        }
+    else:
+        runtime_spec = {
+            'process': {
+                'args': list(c.get('command') or []) + list(c.get('args') or []),
+                'noNewPrivileges': False,
+                'capabilities': {'bounding': ['CAP_CHOWN', 'CAP_NET_RAW'], 'effective': ['CAP_CHOWN']},
+            },
+            'linux': {},
+        }
+        cri_sc = {
+            'no_new_privs': False,
+            'capabilities': {'drop_capabilities': [], 'add_capabilities': []},
+            'seccomp': {'profile_type': 'Unconfined'},
+        }
+    out = {
+        'status': {'id': cid, 'state': state, 'metadata': {'name': comp}},
+        'info': {'runtimeSpec': runtime_spec, 'config': {'linux': {'security_context': cri_sc}}},
+    }
+    print(json.dumps(out))
+    sys.exit(0)
+
+if a[0] == 'logs':
+    assert '--tail' in a and a[a.index('--tail') + 1] == '300', f'expected --tail 300: {a}'
+    cid = a[-1]
+    comp, _, _ = find_by_cid(cid)
+    with events.open('a') as ef:
+        ef.write(f'crictl-logs:{host}:{comp}:{cid}\n')
+    print(f'stub-log host={host} comp={comp} cid={cid}')
+    sys.exit(0)
+
+sys.exit('unexpected crictl: ' + ' '.join(a))
+''')
+        ctr_stub = bindir / 'ctr'
+        ctr_stub.write_text(r'''#!/usr/bin/env python3
+import datetime, hashlib, json, os, subprocess, sys
+from pathlib import Path
+host=os.environ['CUR_HOST']; root=Path(os.environ['NODE_ROOT'])/host; a=sys.argv[1:]
+assert a[:2] == ['-n','k8s.io'], a
+if a[2:4] == ['task','ls']:
+    for p in sorted((root/'etc/kubernetes/manifests').glob('kube-*.yaml')):
+        comp=p.stem; raw=p.read_text(); cid=f'{comp}-{hashlib.sha256(raw.encode()).hexdigest()[:12]}'
+        print(f'{cid} 123 RUNNING')
+elif a[2:4] == ['containers','ls']:
+    comp=a[-1].split('==')[-1]
+    p=root/f'etc/kubernetes/manifests/{comp}.yaml'; raw=p.read_text()
+    print(f'{comp}-{hashlib.sha256(raw.encode()).hexdigest()[:12]}')
+elif a[2:4] == ['containers','info']:
+    cid=a[4]; comp=cid.rsplit('-',1)[0]; p=root/f'etc/kubernetes/manifests/{comp}.yaml'
+    doc=json.loads(subprocess.check_output(['yq','-o=json','.',str(p)],text=True)); c=doc['spec']['containers'][0]
+    created=(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(seconds=10)).isoformat().replace('+00:00','123Z')  # containerd nanosecond RFC 3339
+    sc=c.get('securityContext') or {}; caps=sc.get('capabilities') or {}
+    if caps.get('drop') == ['ALL']:
+        kept=['CAP_'+str(x).upper() for x in (caps.get('add') or [])]
+    else:
+        kept=['CAP_CHOWN','CAP_NET_BIND_SERVICE','CAP_NET_RAW']  # runtime default set (unhardened original)
+    nnp = sc.get('allowPrivilegeEscalation') is False
+    print(json.dumps({'CreatedAt':created,'Spec':{'process':{'noNewPrivileges':nnp,'capabilities':{'bounding':kept,'effective':kept,'permitted':kept}},'linux':{'seccomp':{'defaultAction':'SCMP_ACT_ERRNO'}}}}))
+else: sys.exit('unexpected ctr: '+' '.join(a))
+''')
+        curl_stub = bindir / 'curl'
+        curl_stub.write_text(r'''#!/usr/bin/env python3
+import json, os, subprocess, sys
+from pathlib import Path
+
+host = os.environ['CUR_HOST']
+nroot = Path(os.environ['NODE_ROOT']) / host
+a = sys.argv[1:]
+url = next((v for v in a if v.startswith('https://')), '')
+assert any('k' in v and v.startswith('-') for v in a), f'curl must pass -k: {a}'
+url_map = {
+    'https://127.0.0.1:6443/readyz': 'kube-apiserver',
+    'https://127.0.0.1:10257/healthz': 'kube-controller-manager',
+    'https://127.0.0.1:10259/healthz': 'kube-scheduler',
+}
+assert url in url_map, f'unexpected local health url: {url}'
+comp = url_map[url]
+m = nroot / f'etc/kubernetes/manifests/{comp}.yaml'
+doc = json.loads(subprocess.check_output(['yq', '-o=json', '.', str(m)], text=True))
+sc = doc['spec']['containers'][0].get('securityContext') or {}
+has_drop = (sc.get('capabilities') or {}).get('drop') == ['ALL']
+if has_drop and os.environ.get('HEALTHZ_FAIL') == f'{host}/{comp}':
+    sys.exit(22)
+if (not has_drop) and os.environ.get('ROLLBACK_NOT_READY') == f'{host}/{comp}':
+    sys.exit(22)
+print('ok')
+sys.exit(0)
+''')
         kubectl_stub = bindir / 'kubectl'
         kubectl_stub.write_text(r'''#!/usr/bin/env python3
 import hashlib, json, os, subprocess, sys
 from pathlib import Path
+if os.environ.get('API_DOWN') == '1':
+    sys.exit(1)
 root = Path(os.environ['NODE_ROOT'])
 a = sys.argv
 if 'node' in a:
     print(json.dumps({'metadata': {'labels': {'node-role.kubernetes.io/control-plane': ''}}}))
     sys.exit(0)
+if os.environ.get('API_MIRROR_FAIL') == '1':
+    sys.exit(1)
 if '/readyz' in a:
     print('ok'); sys.exit(0)
 if 'pod' in a:
@@ -240,20 +468,13 @@ if 'pod' in a:
     uid = hashlib.sha256(raw.encode()).hexdigest()
     if any('jsonpath' in v for v in a):
         print(uid); sys.exit(0)
-    sc = doc['spec']['containers'][0].get('securityContext') or {}
-    has_drop = (sc.get('capabilities') or {}).get('drop') == ['ALL']
-    ready = 'True'
-    if has_drop and os.environ.get('NOT_READY') == f'{host}/{comp}':
-        ready = 'False'
-    if (not has_drop) and os.environ.get('ROLLBACK_NOT_READY') == f'{host}/{comp}':
-        ready = 'False'
     doc['metadata'] = {'name': pod_name, 'uid': uid}
-    doc['status'] = {'conditions': [{'type': 'Ready', 'status': ready}]}
+    doc['status'] = {'conditions': [{'type': 'Ready', 'status': 'True'}]}
     print(json.dumps(doc))
     sys.exit(0)
 sys.exit('unexpected kubectl: ' + ' '.join(a))
 ''')
-        for p in (ssh_stub, kubectl_stub):
+        for p in (ssh_stub, crictl_stub, ctr_stub, curl_stub, kubectl_stub):
             p.chmod(0o755)
 
         ops_dir = root / 'ops'
@@ -266,12 +487,24 @@ sys.exit('unexpected kubectl: ' + ' '.join(a))
                 files[f'scripts/ops/lib/kubeadm-patches/{comp}+strategic.yaml']
             )
 
-        for host in ('one', 'two'):
-            mdir = root / host / 'etc/kubernetes/manifests'
-            mdir.mkdir(parents=True)
-            for comp in COMPONENTS:
-                (mdir / f'{comp}.yaml').write_text(sample_manifest(comp))
+        def reset_nodes():
+            for host in ('one', 'two'):
+                hroot = root / host
+                mdir = hroot / 'etc/kubernetes/manifests'
+                mdir.mkdir(parents=True, exist_ok=True)
+                for p in list((hroot / 'etc/kubernetes/patches').glob('*')) if (hroot / 'etc/kubernetes/patches').exists() else []:
+                    p.unlink()
+                if (hroot / 'etc/kubernetes/patches').exists():
+                    (hroot / 'etc/kubernetes/patches').rmdir()
+                for f in hroot.glob('.cid-hist-*.json'):
+                    f.unlink()
+                for comp in ALL_STATIC_PODS:
+                    (mdir / f'{comp}.yaml').write_text(sample_manifest(comp))
+            ev = root / 'events.log'
+            if ev.exists():
+                ev.unlink()
 
+        reset_nodes()
         kc = root / 'admin.conf'
         kc.touch()
         env = {**os.environ, 'PATH': f"{bindir}:{os.environ['PATH']}", 'NODE_ROOT': td}
@@ -287,12 +520,106 @@ sys.exit('unexpected kubectl: ' + ' '.join(a))
 
         if scenario in ('all', 'dry'):
             r = run()
-            assert 'dry-run complete' in r.stdout and 'allowPrivilegeEscalation: false' in r.stdout and 'DAC_OVERRIDE' in r.stdout, r.stdout
+            assert 'dry-run complete' in r.stdout and 'allowPrivilegeEscalation: false' in r.stdout, r.stdout
+            assert 'etcd' not in r.stdout, f'dry-run must not diff etcd:\n{r.stdout}'
             for h in ('one', 'two'):
                 assert not (root / h / 'backups').exists()
                 assert not (root / h / 'etc/kubernetes/patches').exists()
                 assert (root / h / 'etc/kubernetes/manifests/etcd.yaml').read_text() == sample_manifest('etcd')
             if scenario == 'dry':
+                return
+
+        if scenario in ('all', 'etcd_untouched'):
+            r_bad = run(nodes=('one=u@one',), extra=('--component', 'etcd'), fail=True)
+            assert 'unsupported --component: etcd' in r_bad.stderr, r_bad.stderr
+            run(nodes=('one=u@one',), extra=('--apply',))
+            assert (root / 'one/etc/kubernetes/manifests/etcd.yaml').read_text() == sample_manifest('etcd')
+            assert not (root / 'one/etc/kubernetes/patches/etcd+strategic.yaml').exists()
+            bdirs = list((root / 'one/backups').glob('run.*'))
+            assert bdirs and not (bdirs[0] / 'etcd.yaml').exists()
+            reset_nodes()
+            if scenario == 'etcd_untouched':
+                return
+
+        if scenario in ('all', 'component_select'):
+            # Invalid component rejected
+            run(nodes=('one=u@one',), extra=('--component', 'coredns'), fail=True)
+            # Single component (with duplicate flag) updates ONLY kube-scheduler
+            run(nodes=('one=u@one',), extra=('--component', 'kube-scheduler', '--component', 'kube-scheduler', '--apply'))
+            assert 'allowPrivilegeEscalation: false' in (root / 'one/etc/kubernetes/manifests/kube-scheduler.yaml').read_text()
+            assert (root / 'one/etc/kubernetes/manifests/kube-controller-manager.yaml').read_text() == sample_manifest('kube-controller-manager')
+            assert (root / 'one/etc/kubernetes/manifests/kube-apiserver.yaml').read_text() == sample_manifest('kube-apiserver')
+            assert (root / 'one/etc/kubernetes/manifests/etcd.yaml').read_text() == sample_manifest('etcd')
+            assert sorted(p.name for p in (root / 'one/etc/kubernetes/patches').iterdir()) == ['kube-scheduler+strategic.yaml']
+            # Repeatable --component updates controller-manager and apiserver, leaves etcd untouched
+            run(nodes=('one=u@one',), extra=('--component', 'kube-controller-manager', '--component', 'kube-apiserver', '--apply'))
+            for comp in COMPONENTS:
+                assert 'allowPrivilegeEscalation: false' in (root / f'one/etc/kubernetes/manifests/{comp}.yaml').read_text()
+            assert (root / 'one/etc/kubernetes/manifests/etcd.yaml').read_text() == sample_manifest('etcd')
+            reset_nodes()
+            if scenario == 'component_select':
+                return
+
+        if scenario in ('all', 'node_health'):
+            # A. Mirror pod API fails, yet node-side crictl + local health endpoint pass -> apply SUCCEEDS
+            r_ok = run(nodes=('one=u@one',), extra=('--component', 'kube-apiserver', '--apply'), ov={'API_MIRROR_FAIL': '1'})
+            assert 'healthy one/kube-apiserver' in r_ok.stdout, r_ok.stdout
+            assert 'mirror-pod report (non-blocking): pending or API unreachable' in r_ok.stderr, r_ok.stderr
+            reset_nodes()
+
+            # ctr fallback: crictl is absent, ctr reports a RUNNING hardened container.
+            crictl_stub.rename(bindir / 'crictl.disabled')
+            try:
+                r_ctr = run(nodes=('one=u@one',), extra=('--component', 'kube-scheduler', '--apply'))
+                assert 'healthy one/kube-scheduler' in r_ctr.stdout, r_ctr.stdout
+            finally:
+                (bindir / 'crictl.disabled').rename(crictl_stub)
+            reset_nodes()
+
+            # B. Mirror pod would claim Ready, yet crictl inspect shows unhardened securityContext -> MUST FAIL and rollback
+            r_sc = run(nodes=('one=u@one',), extra=('--component', 'kube-scheduler', '--apply'), fail=True,
+                       ov={'BAD_RUNTIME_SC': 'one/kube-scheduler'})
+            assert 'health timeout: one/kube-scheduler' in r_sc.stderr, r_sc.stderr
+            assert (root / 'one/etc/kubernetes/manifests/kube-scheduler.yaml').read_text() == sample_manifest('kube-scheduler')
+            reset_nodes()
+
+            # C. crictl inspect shows hardened Running container, yet local HTTPS healthz fails -> MUST FAIL and rollback
+            r_hz = run(nodes=('one=u@one',), extra=('--component', 'kube-scheduler', '--apply'), fail=True,
+                       ov={'HEALTHZ_FAIL': 'one/kube-scheduler'})
+            assert 'health timeout: one/kube-scheduler' in r_hz.stderr, r_hz.stderr
+            assert (root / 'one/etc/kubernetes/manifests/kube-scheduler.yaml').read_text() == sample_manifest('kube-scheduler')
+            reset_nodes()
+            if scenario == 'node_health':
+                return
+
+        if scenario in ('all', 'logs_before_restore'):
+            # Scheduler succeeds; controller-manager fails healthz -> diagnostics captured BEFORE restore
+            r_diag = run(nodes=('one=u@one',), extra=('--apply',), fail=True,
+                         ov={'HEALTHZ_FAIL': 'one/kube-controller-manager'})
+            m = re.search(
+                r'saved diagnostics before restore: one/kube-controller-manager path=(/var/lib/narwhal/control-plane-security-context/(run\.\S+)/diagnostics/kube-controller-manager)',
+                r_diag.stderr,
+            )
+            assert m, f'missing saved diagnostics path in stderr:\n{r_diag.stderr}'
+            run_name = m.group(2)
+            diag_dir = root / 'one/backups' / run_name / 'diagnostics/kube-controller-manager'
+            assert (diag_dir / 'current.log').is_file() and 'comp=kube-controller-manager' in (diag_dir / 'current.log').read_text()
+            assert (diag_dir / 'previous.log').is_file() and 'comp=kube-controller-manager' in (diag_dir / 'previous.log').read_text()
+            assert (diag_dir / 'current-inspect.json').is_file() and json.loads((diag_dir / 'current-inspect.json').read_text())['status']['metadata']['name'] == 'kube-controller-manager'
+            assert (diag_dir / 'previous-inspect.json').is_file() and json.loads((diag_dir / 'previous-inspect.json').read_text())['status']['metadata']['name'] == 'kube-controller-manager'
+
+            # Ordering proof: crictl logs + crictl inspect for failing component happened BEFORE restore
+            ev_lines = (root / 'events.log').read_text().splitlines()
+            log_idx = next((i for i, l in enumerate(ev_lines) if l.startswith('crictl-logs:one:kube-controller-manager:')), -1)
+            restore_idx = next((i for i, l in enumerate(ev_lines) if l == 'restore:one:kube-controller-manager'), -1)
+            assert log_idx >= 0 and restore_idx >= 0 and log_idx < restore_idx, (
+                f'expected crictl-logs before restore, got events={ev_lines}'
+            )
+            # Both changed manifests restored; etcd untouched
+            for comp in ALL_STATIC_PODS:
+                assert (root / f'one/etc/kubernetes/manifests/{comp}.yaml').read_text() == sample_manifest(comp)
+            reset_nodes()
+            if scenario == 'logs_before_restore':
                 return
 
         if scenario in ('all', 'refuse'):
@@ -302,10 +629,6 @@ sys.exit('unexpected kubectl: ' + ' '.join(a))
             bad_p.write_text(sample_manifest('kube-apiserver', '    securityContext:\n      capabilities:\n        add:\n        - DAC_OVERRIDE\n'))
             run(nodes=('one=u@one',), extra=('--apply',), fail=True)
             bad_p.write_text(sample_manifest('kube-apiserver'))
-            bad_etcd = root / 'one/etc/kubernetes/manifests/etcd.yaml'
-            bad_etcd.write_text(sample_manifest('etcd', '    securityContext:\n      capabilities:\n        add:\n        - SYS_ADMIN\n'))
-            run(nodes=('one=u@one',), extra=('--apply',), fail=True)
-            bad_etcd.write_text(sample_manifest('etcd'))
             if scenario == 'refuse':
                 return
 
@@ -318,53 +641,59 @@ sys.exit('unexpected kubectl: ' + ' '.join(a))
                 return
 
         if scenario in ('all', 'corrupt'):
-            r = run(nodes=('one=u@one',), extra=('--apply',), fail=True, ov={'CORRUPT_WRITE': 'etcd'})
+            r = run(nodes=('one=u@one',), extra=('--apply',), fail=True, ov={'CORRUPT_WRITE': 'kube-controller-manager'})
             assert 'changes fields outside securityContext hardening' in r.stderr
-            for comp in COMPONENTS:
+            for comp in ALL_STATIC_PODS:
                 assert (root / f'one/etc/kubernetes/manifests/{comp}.yaml').read_text() == sample_manifest(comp)
+            reset_nodes()
             if scenario == 'corrupt':
                 return
 
         if scenario in ('all', 'rollback_partial'):
-            r = run(extra=('--apply',), fail=True, ov={'NOT_READY': 'two/etcd'})
-            assert 'restored and healthy: two/etcd' in r.stderr
+            r = run(extra=('--apply',), fail=True, ov={'HEALTHZ_FAIL': 'two/kube-controller-manager'})
+            assert 'restored and healthy: two/kube-controller-manager' in r.stderr
             assert 'EARLIER NODE STILL APPLIED: one=u@one' in r.stderr
-            for comp in COMPONENTS:
+            for comp in ALL_STATIC_PODS:
                 assert (root / f'two/etc/kubernetes/manifests/{comp}.yaml').read_text() == sample_manifest(comp)
             m = re.search(r'EARLIER NODE STILL APPLIED: one=u@one backup=(/var/lib/narwhal/control-plane-security-context/run\.\S+)', r.stderr)
             assert m, r.stderr
-            run(nodes=('one=u@one',), extra=('--rollback', m.group(1)))
-            for comp in COMPONENTS:
+            # Manual --rollback must succeed even when API server is completely down!
+            run(nodes=('one=u@one',), extra=('--rollback', m.group(1)), ov={'API_DOWN': '1'})
+            for comp in ALL_STATIC_PODS:
                 assert (root / f'one/etc/kubernetes/manifests/{comp}.yaml').read_text() == sample_manifest(comp)
+            reset_nodes()
             if scenario == 'rollback_partial':
                 return
 
         if scenario in ('all', 'rollback_health'):
-            r = run(nodes=('one=u@one',), extra=('--apply',), fail=True, ov={'NOT_READY': 'one/etcd', 'ROLLBACK_NOT_READY': 'one/etcd'})
-            assert 'ROLLBACK FAILED: one/etcd' in r.stderr
+            r = run(nodes=('one=u@one',), extra=('--apply',), fail=True,
+                    ov={'CRICTL_NOT_RUNNING': 'one/kube-controller-manager', 'ROLLBACK_NOT_READY': 'one/kube-controller-manager'})
+            assert 'ROLLBACK FAILED: one/kube-controller-manager' in r.stderr
+            reset_nodes()
             if scenario == 'rollback_health':
                 return
 
         if scenario in ('all', 'apply'):
             run(extra=('--apply',))
             for h in ('one', 'two'):
-                # No backup/temp files leaked inside watched manifests dir.
-                assert sorted(p.name for p in (root / h / 'etc/kubernetes/manifests').iterdir()) == sorted(f'{c}.yaml' for c in COMPONENTS)
+                # No backup/temp files leaked inside watched manifests dir; etcd untouched.
+                assert sorted(p.name for p in (root / h / 'etc/kubernetes/manifests').iterdir()) == sorted(f'{c}.yaml' for c in ALL_STATIC_PODS)
+                assert (root / h / 'etc/kubernetes/manifests/etcd.yaml').read_text() == sample_manifest('etcd')
+                assert not (root / h / 'etc/kubernetes/patches/etcd+strategic.yaml').exists()
                 for comp in COMPONENTS:
                     doc = yq_json((root / h / f'etc/kubernetes/manifests/{comp}.yaml').read_text())
                     assert doc['spec']['securityContext']['seccompProfile'] == {'type': 'RuntimeDefault'}
-                    expected_caps = {'drop': ['ALL'], 'add': ['DAC_OVERRIDE']} if comp == 'etcd' else {'drop': ['ALL']}
                     assert doc['spec']['containers'][0]['securityContext'] == {
                         'allowPrivilegeEscalation': False,
-                        'capabilities': expected_caps,
+                        'capabilities': {'drop': ['ALL'], **({'add': ['NET_BIND_SERVICE']} if comp == 'kube-apiserver' else {})},
                     }
                     assert (root / h / f'etc/kubernetes/patches/{comp}+strategic.yaml').is_file()
             r_idem = run(extra=('--apply',))
-            assert r_idem.stdout.count('backup=none') == 8
+            assert r_idem.stdout.count('backup=none') == 6
 
 
 def check_ops_kd(files, scenario='all'):
-    with tempfile.TemporaryDirectory(prefix='r423-kd-') as td:
+    with tempfile.TemporaryDirectory(prefix='r426-kd-') as td:
         root = Path(td)
         bindir = root / 'bin'
         bindir.mkdir()
@@ -537,11 +866,14 @@ def main():
 
     if '--mutation-verify' in sys.argv:
         mutations = [
-            ('drop allowPrivilegeEscalation in etcd patch', PATCH_FILES[2], 'allowPrivilegeEscalation: false', 'allowPrivilegeEscalation: true', check_static),
-            ('drop DAC_OVERRIDE in etcd patch', PATCH_FILES[2], '          add:\n            - DAC_OVERRIDE', '', check_static),
-            ('drop capabilities.drop in apiserver patch', PATCH_FILES[3], '- ALL', '- NET_RAW', check_static),
-            ('add DAC_OVERRIDE to apiserver patch', PATCH_FILES[3], '          drop:\n            - ALL', '          drop:\n            - ALL\n          add:\n            - DAC_OVERRIDE', check_static),
+            ('drop capabilities.drop in apiserver patch', PATCH_FILES[2], '- ALL', '- NET_RAW', check_static),
+            ('drop NET_BIND_SERVICE from apiserver patch', PATCH_FILES[2], '            - NET_BIND_SERVICE', '', check_static),
+            ('drop NET_BIND_SERVICE from renderer', HELPER_CP, "ADD_CAPS = {'kube-apiserver': ['NET_BIND_SERVICE']}", 'ADD_CAPS = {}', check_static),
+            ('add DAC_OVERRIDE to apiserver patch', PATCH_FILES[2], '            - NET_BIND_SERVICE', '            - NET_BIND_SERVICE\n            - DAC_OVERRIDE', check_static),
             ('drop seccompProfile in scheduler patch', PATCH_FILES[0], 'type: RuntimeDefault', 'type: Unconfined', check_static),
+            ('re-add etcd+strategic.yaml in 02-init-cluster.sh', INIT, '  kube-apiserver+strategic.yaml \\', '  etcd+strategic.yaml \\\n  kube-apiserver+strategic.yaml \\', check_static),
+            ('re-add etcd+strategic.yaml in 02-join-control-plane.sh', JOIN_CP, '  kube-apiserver+strategic.yaml \\', '  etcd+strategic.yaml \\\n  kube-apiserver+strategic.yaml \\', check_static),
+            ('re-add etcd to ALL_COMPONENTS in ops-cp', OPS_CP, 'ALL_COMPONENTS=(kube-scheduler kube-controller-manager kube-apiserver)', 'ALL_COMPONENTS=(kube-scheduler kube-controller-manager etcd kube-apiserver)', check_static),
             ('drop patches.directory in 02-init-cluster.sh', INIT, 'directory: /etc/kubernetes/patches', 'directory: /tmp/disabled', check_static),
             ('drop protectKernelDefaults in 02-init-cluster.sh', INIT, 'protectKernelDefaults: true', 'protectKernelDefaults: false', check_static),
             ('drop --patches in 02-join-control-plane.sh', JOIN_CP, ' --patches=/etc/kubernetes/patches', '', check_static),
@@ -549,16 +881,67 @@ def main():
             ('drop sysctl guard in 01-prerequisites.sh', PREREQ, 'ensure_kubelet_kernel_defaults', 'true', check_static),
             ('drift kernel.panic in 95-kubelet-kernel-defaults.conf', SYSCTL_CONF, 'kernel.panic = 10', 'kernel.panic = 0', check_static),
             ('change etcd:etcd to root:root in harden-node-files.sh', HARDEN, 'chown -R etcd:etcd', 'chown -R root:root', check_static),
-            ('re-introduce non-root etcd refusal in ops-cp', OPS_CP, 'case "$action" in', 'check_etcd_owner() { return 3; }\ncase "$action" in', check_static),
-            ('accept KSV001 on kube-apiserver in portal rules', RULES, '"KSV009",\n        "KSV012",\n        "KSV020",\n        "KSV021",\n        "KSV023",\n        "KSV024"', '"KSV001",\n        "KSV009",\n        "KSV012",\n        "KSV020",\n        "KSV021",\n        "KSV023",\n        "KSV024"', check_static),
-            ('accept KSV022 on kube-apiserver in portal rules', RULES, '"KSV009",\n        "KSV012",\n        "KSV020",\n        "KSV021",\n        "KSV023",\n        "KSV024"', '"KSV009",\n        "KSV012",\n        "KSV020",\n        "KSV021",\n        "KSV022",\n        "KSV023",\n        "KSV024"', check_static),
-            ('drop R423 registration', REGRESSION, 'check R423 ', 'echo R423 ', check_static),
-            ('drop DAC_OVERRIDE from helper-cp etcd render', HELPER_CP, "'etcd': ['DAC_OVERRIDE'],", "'etcd': [],", lambda fs: check_ops_cp(fs, 'apply')),
+            ('drop etcd KSV003 exact acceptance', RULES, '"name": "etcd-narwhal-master-1",\n      "checks": [\n        "KSV001",\n        "KSV003",\n        "KSV004",', '"name": "etcd-narwhal-master-1",\n      "checks": [\n        "KSV001",\n        "KSV004",', check_static),
+            ('accept KSV022 on etcd in portal rules', RULES, '"KSV023",\n        "KSV024"\n      ],\n      "class": "accept",\n      "reasonKey": "compliance.acceptedReason.etcdStaticPodTrialFailed"', '"KSV022",\n        "KSV023",\n        "KSV024"\n      ],\n      "class": "accept",\n      "reasonKey": "compliance.acceptedReason.etcdStaticPodTrialFailed"', check_static),
+            ('accept KSV001 on kube-apiserver in portal rules', RULES, '"name": "kube-apiserver-narwhal-master-1",\n      "checks": [\n        "KSV009",', '"name": "kube-apiserver-narwhal-master-1",\n      "checks": [\n        "KSV001",\n        "KSV009",', check_static),
+            ('widen apiserver file-capability KSV022 rule', RULES,
+             '"checks": [\n        "KSV022"\n      ],\n      "class": "accept",\n      "reasonKey": "compliance.acceptedReason.apiserverNetBindFileCap"',
+             '"checks": [\n        "KSV022",\n        "KSV106"\n      ],\n      "class": "accept",\n      "reasonKey": "compliance.acceptedReason.apiserverNetBindFileCap"', check_static),
+            ('drop R426 registration', REGRESSION, 'check R426 ', 'echo R426 ', check_static),
+            ('allow --component etcd in ops-cp', OPS_CP, 'kube-scheduler|kube-controller-manager|kube-apiserver) ;;', 'kube-scheduler|kube-controller-manager|kube-apiserver|etcd) ;;', lambda fs: check_ops_cp(fs, 'etcd_untouched')),
+            ('ignore --component selection in ops-cp', OPS_CP, 'if ((${#SELECTED_COMPONENTS[@]} == 0)); then', 'if true; then', lambda fs: check_ops_cp(fs, 'component_select')),
+            ('skip local curl health endpoint check in ops-cp', OPS_CP, 'curl -skf --connect-timeout 5 --max-time 10 "$url" >/dev/null 2>&1 || exit 1', ':', lambda fs: check_ops_cp(fs, 'node_health')),
+            ('skip crictl securityContext verification in helper-cp', HELPER_CP, 'if not needs_sc_check:\n        return', 'return', lambda fs: check_ops_cp(fs, 'node_health')),
+            ('remove ctr fallback from node-health', OPS_CP, '      ctr_bin=$(find_ctr) || exit 1\n      cid=$(ctr_running_cid "$comp") || exit 1', '      exit 1', lambda fs: check_ops_cp(fs, 'node_health')),
+            ('make mirror-pod report blocking in ops-cp', OPS_CP, 'echo "mirror-pod report (non-blocking): pending or API unreachable for $NODE/$comp" >&2', 'return 1', lambda fs: check_ops_cp(fs, 'node_health')),
+            ('skip saving diagnostics before restore in ops-cp', OPS_CP, 'if diag_path=$(remote save-diagnostics "$failing_comp" "$NODE_BACKUP_DIR"); then', 'if false; then', lambda fs: check_ops_cp(fs, 'logs_before_restore')),
+            ('save diagnostics AFTER restore instead of before in ops-cp', OPS_CP,
+             '      local failing_comp="${NODE_CHANGED[${#NODE_CHANGED[@]}-1]}"\n'
+             '      local diag_path=""\n'
+             '      if diag_path=$(remote save-diagnostics "$failing_comp" "$NODE_BACKUP_DIR"); then\n'
+             '        echo "saved diagnostics before restore: $NODE/$failing_comp path=$diag_path" >&2\n'
+             '      else\n'
+             '        echo "WARNING: failed to save diagnostics for $NODE/$failing_comp into $NODE_BACKUP_DIR" >&2\n'
+             '      fi\n'
+             '      echo "restoring $NODE from $NODE_BACKUP_DIR" >&2\n'
+             '      local failed_restore=0 pre_restore_cid=""\n'
+             '      for ((i=${#NODE_CHANGED[@]}-1; i>=0; i--)); do\n'
+             '        comp="${NODE_CHANGED[i]}"\n'
+             '        fetch "$NODE_BACKUP_DIR/$comp.yaml" > "$WORK/restore-$comp.yaml" || { failed_restore=1; continue; }\n'
+             '        pre_restore_cid=$(remote current-cid "$comp" 2>/dev/null || true)\n'
+             '        if remote restore "$comp" "$NODE_BACKUP_DIR" && wait_health "$comp" "$pre_restore_cid" "$WORK/restore-$comp.yaml"; then\n'
+             '          echo "restored and healthy: $NODE/$comp" >&2\n'
+             '          report_mirror_pod "$comp" "" "$WORK/restore-$comp.yaml"\n'
+             '        else\n'
+             '          echo "ROLLBACK FAILED: $NODE/$comp" >&2\n'
+             '          failed_restore=1\n'
+             '        fi\n'
+             '      done',
+             '      echo "restoring $NODE from $NODE_BACKUP_DIR" >&2\n'
+             '      local failed_restore=0 pre_restore_cid=""\n'
+             '      for ((i=${#NODE_CHANGED[@]}-1; i>=0; i--)); do\n'
+             '        comp="${NODE_CHANGED[i]}"\n'
+             '        fetch "$NODE_BACKUP_DIR/$comp.yaml" > "$WORK/restore-$comp.yaml" || { failed_restore=1; continue; }\n'
+             '        pre_restore_cid=$(remote current-cid "$comp" 2>/dev/null || true)\n'
+             '        if remote restore "$comp" "$NODE_BACKUP_DIR" && wait_health "$comp" "$pre_restore_cid" "$WORK/restore-$comp.yaml"; then\n'
+             '          echo "restored and healthy: $NODE/$comp" >&2\n'
+             '          report_mirror_pod "$comp" "" "$WORK/restore-$comp.yaml"\n'
+             '        else\n'
+             '          echo "ROLLBACK FAILED: $NODE/$comp" >&2\n'
+             '          failed_restore=1\n'
+             '        fi\n'
+             '      done\n'
+             '      local failing_comp="${NODE_CHANGED[${#NODE_CHANGED[@]}-1]}"\n'
+             '      local diag_path=""\n'
+             '      if diag_path=$(remote save-diagnostics "$failing_comp" "$NODE_BACKUP_DIR"); then\n'
+             '        echo "saved diagnostics before restore: $NODE/$failing_comp path=$diag_path" >&2\n'
+             '      fi',
+             lambda fs: check_ops_cp(fs, 'logs_before_restore')),
             ('skip st_dev check in ops-cp', OPS_CP, '[[ -n "$tmp_dev" && "$tmp_dev" == "$man_dev" ]]', ':', lambda fs: check_ops_cp(fs, 'stdev')),
             ('stage temp inside watched manifests dir in ops-cp', OPS_CP, 'tmpdir=/etc/kubernetes/.narwhal-tmp', 'tmpdir=/etc/kubernetes/manifests/.narwhal-tmp', lambda fs: check_ops_cp(fs, 'apply')),
             ('dry-run mutates in ops-cp', OPS_CP, 'if ((APPLY == 0)); then\n  echo "dry-run complete', 'if ((APPLY == 99)); then\n  echo "dry-run complete', lambda fs: check_ops_cp(fs, 'dry')),
             ('skip post-write verify in ops-cp', OPS_CP, 'python3 "$HELPER" verify "$old" "$WORK/$NODE/$comp.written" "$comp"', ':', lambda fs: check_ops_cp(fs, 'corrupt')),
-            ('skip rollback health check in ops-cp', OPS_CP, 'if remote restore "$comp" "$NODE_BACKUP_DIR" && wait_health "$comp" "" "$WORK/restore-$comp.yaml"; then', 'if remote restore "$comp" "$NODE_BACKUP_DIR"; then', lambda fs: check_ops_cp(fs, 'rollback_health')),
+            ('skip rollback health check in ops-cp', OPS_CP, 'if remote restore "$comp" "$NODE_BACKUP_DIR" && wait_health "$comp" "$pre_restore_cid" "$WORK/restore-$comp.yaml"; then', 'if remote restore "$comp" "$NODE_BACKUP_DIR"; then', lambda fs: check_ops_cp(fs, 'rollback_health')),
             ('accept conflicting allowPrivilegeEscalation in helper-cp', HELPER_CP, "assert ape is False, f'conflicting allowPrivilegeEscalation on {component}: {ape}'", "sc['allowPrivilegeEscalation'] = False", lambda fs: check_ops_cp(fs, 'refuse')),
             ('skip sysctl --system check in node-kd', NODE_KD, 'sysctl --system >/dev/null', ':', lambda fs: check_ops_kd(fs, 'sysctl_override')),
             ('dry-run mutates in ops-kd', OPS_KD, '[[ "$apply" == true ]] || { echo "dry-run complete (no remote or cluster writes)"; exit 0; }', ':', lambda fs: check_ops_kd(fs, 'dry')),
@@ -572,9 +955,20 @@ def main():
             except (AssertionError, KeyError, IndexError, ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
                 continue
             raise AssertionError(f'mutation survived: {name}')
-        print(f'R423 PASS: {len(mutations)} mutations rejected')
+        mutated = dict(files)
+        mutated_rules = json.loads(mutated[RULES])
+        mutated_rules['configAudit'] = [r for r in mutated_rules['configAudit']
+                                        if r.get('id') != 'configAudit:kube-system:Pod:kube-apiserver-narwhal-master-1:net-bind-filecap']
+        mutated[RULES] = json.dumps(mutated_rules)
+        try:
+            check_static(mutated)
+        except (AssertionError, KeyError, IndexError, ValueError):
+            pass
+        else:
+            raise AssertionError('mutation survived: remove apiserver file-capability KSV022 rule')
+        print(f'R426 PASS: {len(mutations) + 1} mutations rejected')
 
-    print('R423 PASS: control-plane static Pod kubeadm patches (D-CP-ETCD-DAC), etcd:etcd preserved, CIS 4.2.6 protectKernelDefaults + sysctl ordering')
+    print('R426 PASS: control-plane static Pod kubeadm patches (D-CP-ETCD-DEFER, --component, node-side crictl+healthz, pre-restore logs), etcd:etcd preserved, CIS 4.2.6 protectKernelDefaults + sysctl ordering')
 
 
 if __name__ == '__main__':

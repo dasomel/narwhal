@@ -248,8 +248,9 @@ fi
 echo "Local advertise address: ${LOCAL_IP}"
 
 #=========================================
-# D-CP-STATIC-POD-SC + D-KUBELET-KERNEL-DEFAULTS: stage kubeadm strategic patches and enforce
-# CIS 4.2.6 kernel sysctls BEFORE kubeadm join starts kubelet and renders static Pods.
+# D-CP-STATIC-POD-SC / D-CP-ETCD-DEFER + D-KUBELET-KERNEL-DEFAULTS: stage kubeadm strategic patches
+# (kube-apiserver, kube-controller-manager, kube-scheduler; etcd untouched) and enforce CIS 4.2.6
+# kernel sysctls BEFORE kubeadm join starts kubelet and renders static Pods.
 #=========================================
 KUBEADM_PATCH_SRC="${STAGE_DIR:-/home/vagrant}/scripts/ops/lib/kubeadm-patches"
 if [[ ! -d "${KUBEADM_PATCH_SRC}" ]]; then
@@ -257,7 +258,6 @@ if [[ ! -d "${KUBEADM_PATCH_SRC}" ]]; then
 fi
 sudo install -d -o root -g root -m 700 /etc/kubernetes/patches
 for patch_file in \
-  etcd+strategic.yaml \
   kube-apiserver+strategic.yaml \
   kube-controller-manager+strategic.yaml \
   kube-scheduler+strategic.yaml; do

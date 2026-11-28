@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "narwhal-cis-lane-c-20261128",
+  "task": "Harden kube-apiserver, kube-controller-manager and kube-scheduler static pods (CIS 5.2.6/5.2.9/5.2.10) via kubeadm patches and an existing-cluster ops script, and enable kubelet protectKernelDefaults (CIS 4.2.6); etcd excluded.",
+  "changeContext": {
+    "paths": [
+      ".agents/evals/traces/2026-11-cis-lane-c-control-plane.json",
+      ".agents/evals/traces/2026-11-portal-infra-evidence-wording.json",
+      "CHANGELOG-ko.md",
+      "CHANGELOG.md",
+      "docs/common/compliance-hardening.md",
+      "docs/common/lessons-log.md",
+      "portal/CHANGELOG-ko.md",
+      "portal/CHANGELOG.md",
+      "portal/src/app/(dashboard)/compliance/infra-audit/[node]/page.tsx",
+      "portal/src/components/compliance/compliance-ui.test.tsx",
+      "portal/src/components/compliance/infra-audit-list.tsx",
+      "portal/src/data/compliance-acceptance-rules.json",
+      "portal/src/lib/compliance-accepted.test.ts",
+      "portal/src/lib/compliance.ts",
+      "portal/src/lib/i18n.ts",
+      "portal/src/types/compliance.ts",
+      "scripts/cluster/02-init-cluster.sh",
+      "scripts/cluster/02-join-control-plane.sh",
+      "scripts/cluster/02-join-worker.sh",
+      "scripts/common/01-prerequisites.sh",
+      "scripts/common/lib-kubelet-kernel-defaults.sh",
+      "scripts/ops/apply-control-plane-security-context.sh",
+      "scripts/ops/apply-kubelet-kernel-defaults.sh",
+      "scripts/ops/lib/95-kubelet-kernel-defaults.conf",
+      "scripts/ops/lib/control-plane-security-context.py",
+      "scripts/ops/lib/kubeadm-patches/kube-apiserver+strategic.yaml",
+      "scripts/ops/lib/kubeadm-patches/kube-controller-manager+strategic.yaml",
+      "scripts/ops/lib/kubeadm-patches/kube-scheduler+strategic.yaml",
+      "scripts/ops/lib/kubelet-kernel-defaults-node.sh",
+      "scripts/test/lib/check-compliance-low-residuals.py",
+      "scripts/test/lib/check-compliance-scan-coverage.py",
+      "scripts/test/lib/check-control-plane-static-pods-and-kubelet-defaults.py",
+      "scripts/test/regression-check-kakao.sh"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Not verified: fresh install and control-plane join with the kubeadm patches, HA/Kakao, node reboot with protectKernelDefaults. etcd is excluded: its patched manifest never started live (root cause open)."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Live inventory 2026-11-28 listed the four static pods with KSV001/003/004 and kube-bench CIS 4.2.6 FAIL.",
+      "evidence": [
+        "test:kube-bench record cis-bench-974178c0082e before -> 4.2.6 FAIL",
+        "test:getcap on the kube-apiserver image binary -> cap_net_bind_service=ep"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "kubeadm strategic patches for the three components (drop ALL, no privilege escalation, RuntimeDefault; kube-apiserver keeps NET_BIND_SERVICE, D-CP-APISERVER-FILECAP), wired into init/join; scripts/ops/apply-control-plane-security-context.sh (per --component, backups outside manifests, health from the expected manifest D-CP-HEALTH-EXPECTED, restore on timeout); protectKernelDefaults with sysctls before kubelet and scripts/ops/apply-kubelet-kernel-defaults.sh; exact acceptances for etcd (trial failed) and kube-apiserver KSV022; R426."
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Live single-node cluster (2026-11-28)",
+      "summary": "Applied per component on narwhal-master-1.",
+      "evidence": [
+        "test:kube-scheduler and kube-controller-manager /proc status -> CapEff 0000000000000000, NoNewPrivs 1",
+        "test:kube-apiserver after apply -> CapEff 0000000000000400, CapBnd 0000000000000400, NoNewPrivs 1, Seccomp 2; /readyz ok",
+        "test:kube-apiserver with drop ALL only (earlier attempt) -> exec /usr/local/bin/kube-apiserver: operation not permitted, restored from backup",
+        "test:apply-kubelet-kernel-defaults.sh --apply -> protectKernelDefaults true in /var/lib/kubelet/config.yaml and kube-system/kubelet-config; node Ready",
+        "test:kube-bench manual run 06:59Z -> 4.2.6 PASS (pass 78 fail 3 warn 44)",
+        "test:Trivy configauditreports -> kube-scheduler and kube-controller-manager no KSV001/003/004; kube-apiserver only KSV022 (accepted)",
+        "test:scripts/test/test-sso.sh -> PASS: 144 FAIL: 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "R426, R395, R383, portal compliance tests",
+      "summary": "Checks pass.",
+      "evidence": [
+        "test:python3 scripts/test/lib/check-control-plane-static-pods-and-kubelet-defaults.py --mutation-verify -> R426 PASS: 38 mutations rejected",
+        "test:portal vitest compliance-accepted/compliance/compliance-evidence -> 115 passed"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Three control-plane components hardened live with a manifest-aware ops path and kubeadm patches; CIS 4.2.6 passes live; etcd excluded and accepted with the trial failure as reason (e1)."
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within scope: live hardening verified, checks pass."
+    }
+  ]
+}

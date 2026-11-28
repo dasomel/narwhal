@@ -3,6 +3,8 @@
 # kube-apiserver binds port 6443 (>1024) and reads root-owned PKI/enc/audit/admission files as UID 0.
 # Cost: KSV012/020/021 stay accepted until kubeadm RootlessControlPlane is GA.
 # Escape hatch: remove /etc/kubernetes/patches/kube-apiserver+strategic.yaml and re-run kubeadm/ops rollback.
+# D-CP-APISERVER-FILECAP: keep NET_BIND_SERVICE because the 1.35.7 image binary has cap_net_bind_service=ep.
+# Cost: one default capability remains; escape hatch: remove this add if upstream drops the file capability.
 apiVersion: v1
 kind: Pod
 metadata:
@@ -19,3 +21,5 @@ spec:
         capabilities:
           drop:
             - ALL
+          add:
+            - NET_BIND_SERVICE

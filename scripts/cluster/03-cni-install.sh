@@ -59,7 +59,13 @@ case "${CNI_PLUGIN}" in
 
     # Install Cilium with kube-proxy replacement, Hubble, and Gateway API CRD awareness
     # Note: APISIX is the actual Gateway Controller (GatewayClass: apisix)
-    # Cilium's gatewayAPI.enabled allows network-level integration with Gateway API resources
+    # D-CA-CILIUM-GW-OFF (owner decision 2026-11-28, CIS 5.1.2 KSV041): chart 1.19.4
+    # templates/cilium-operator/clusterrole.yaml grants cluster-wide Secret read whenever
+    # gatewayAPI.enabled is true. Cilium's Gateway API controller is unused (measured: 0
+    # HTTPRoutes/GRPCRoutes, only istio-waypoint Gateways, no cilium-gateway Service), so it
+    # is off; the Gateway API CRDs above stay installed. tls.secretSync (defaults on for >=1.17)
+    # renders the same rule and is unused too (no CNP with TLS/secret refs, cilium-secrets empty).
+    # Escape hatch: gatewayAPI.enabled=true / tls.secretSync.enabled=true.
     echo "Installing Cilium ${CILIUM_VERSION} with Hubble and kube-proxy replacement..."
     # useDigest=false on every Cilium image: the chart pins images by digest, and a
     # digest can never resolve from the airgap mirror. 02-save-images.sh saves one
@@ -139,7 +145,8 @@ case "${CNI_PLUGIN}" in
       --set "hubble.ui.backend.securityContext.capabilities.drop[0]=ALL" \
       --set "ipam.operator.clusterPoolIPv4PodCIDRList[0]=${POD_NETWORK_CIDR}" \
       --set ipam.operator.clusterPoolIPv4MaskSize=24 \
-      --set gatewayAPI.enabled=true \
+      --set gatewayAPI.enabled=false \
+      --set tls.secretSync.enabled=false \
       --set cni.exclusive=false \
       --set socketLB.hostNamespaceOnly=true \
       --set operator.resources.requests.cpu=50m \

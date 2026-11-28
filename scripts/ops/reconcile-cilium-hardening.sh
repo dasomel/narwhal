@@ -124,6 +124,13 @@ operator:
     runAsNonRoot: true
     runAsUser: 10100
     runAsGroup: 10100
+# D-CA-CILIUM-GW-OFF: match fresh bootstrap — Cilium's Gateway API controller is unused and
+# its operator Secret rule renders whenever it is enabled. Escape hatch: enabled: true.
+gatewayAPI:
+  enabled: false
+tls:
+  secretSync:
+    enabled: false
 EOF
 
 "${YQ}" eval-all '. as $item ireduce ({}; . * $item)' "${WORK}/live-values.yaml" "${WORK}/hardening-overlay.yaml" > "${WORK}/merged-values.yaml"

@@ -3650,6 +3650,9 @@ PYEOF'
   # R429 (lane E2): CIS 5.7.3 KSV020/KSV021 stateful UID/GID hardening (Prometheus/Alertmanager 10100:10100, Keycloak runAsGroup 10100), NFS PV ownership migration helper, and exact Harbor/OpenBao/Keycloak acceptances (R428 pending in another lane).
   check R429 "CIS 5.7.3 stateful UID/GID hardening (Prometheus/Alertmanager 10100:10100, Keycloak runAsGroup 10100), migrate-pv-ownership.sh dry-run/apply/guards, and exact Harbor/OpenBao/Keycloak acceptances; 16 mutations rejected (lane E2)" \
     python3 scripts/test/lib/check-cis-e2-stateful-uid.py --mutation-verify
+  # R430 (lane CA): disable unused Cilium Gateway API; pin measured Alloy ClusterRole failure acceptance.
+  check R430 "Cilium Gateway API and TLS Secret sync disabled in bootstrap/overlay; exact Alloy operator KSV041 ClusterRole acceptance; 6 mutations (lane CA)" \
+    python3 scripts/test/lib/check-rbac-cilium-alloy-secrets.py --mutation-verify
 }
 
 #=========================================

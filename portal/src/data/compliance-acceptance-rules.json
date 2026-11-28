@@ -538,9 +538,12 @@
       "kind": "DaemonSet",
       "name": "cilium",
       "checks": [
+        "KSV001",
         "KSV005",
         "KSV009",
-        "KSV017",
+        "KSV012",
+        "KSV020",
+        "KSV021",
         "KSV022",
         "KSV023",
         "KSV024",
@@ -552,7 +555,7 @@
       "class": "accept",
       "reasonKey": "compliance.acceptedReason.verifiedciliumHost",
       "owner": "cilium 1.19.4 (scripts/cluster/03-cni-install.sh)",
-      "reviewedAt": "2026-11-26"
+      "reviewedAt": "2026-11-28"
     },
     {
       "id": "configAudit:kube-system:DaemonSet:cilium-envoy:verified",
@@ -569,12 +572,62 @@
         "KSV022",
         "KSV023",
         "KSV024",
+        "KSV105",
         "KSV106"
       ],
       "class": "accept",
       "reasonKey": "compliance.acceptedReason.verifiedciliumEnvoyHost",
       "owner": "cilium 1.19.4 (scripts/cluster/03-cni-install.sh)",
-      "reviewedAt": "2026-11-26"
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:kube-system:ReplicaSet:cilium-operator:accept",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "ReplicaSet",
+      "name": "cilium-operator",
+      "checks": [
+        "KSV009",
+        "KSV024"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.ciliumOperatorHost",
+      "owner": "cilium 1.19.4 (scripts/cluster/03-cni-install.sh)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:kube-system:ReplicaSet:hubble-ui:accept",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "ReplicaSet",
+      "name": "hubble-ui",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.hubbleUiUid1001",
+      "owner": "cilium 1.19.4 (scripts/cluster/03-cni-install.sh)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:kube-system:ReplicaSet:coredns:accept",
+      "scope": "namespace",
+      "namespace": "kube-system",
+      "kind": "ReplicaSet",
+      "name": "coredns",
+      "checks": [
+        "KSV012",
+        "KSV020",
+        "KSV021",
+        "KSV022",
+        "KSV030",
+        "KSV104"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.corednsKubeadm",
+      "owner": "Kubernetes 1.35.7 kubeadm addon (scripts/cluster/02-init-cluster.sh)",
+      "reviewedAt": "2026-11-28"
     },
     {
       "id": "configAudit:istio-system:DaemonSet:istio-cni-node:verified",

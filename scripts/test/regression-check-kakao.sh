@@ -3635,6 +3635,9 @@ PYEOF'
   # 2026-11-27: ArgoCD privilege split Stage 1 (D-OWN-ARGO-STAGED, D-ARGO-SERVER-RO, D-ARGO-PROJECT-WHITELIST)
   check R420 "ArgoCD privilege split Stage 1: read-only argocd-server (no secrets, no workload writes, no '*' resources), exact 12-kind AppProject/platform clusterResourceWhitelist with empty tenants, and exact argocd-application-controller KSV044/KSV046 acceptance; 16 mutations caught" \
     python3 scripts/test/lib/check-argocd-privilege-split-stage1.py --mutation-verify
+  # 2026-11-28 (D-CILIUM-BPFFS-SELINUX, D-CILIUM-HARDENING): Cilium 1.19.4 bpffs/seLinux/seccomp/UID hardening and CoreDNS kubeadm acceptance # Lane A
+  check R423 "Cilium 1.19.4 hardening (bpffs systemd mount + bpf.autoMount=false, envoy bpf-maps/RuntimeDefault/runAsGroup 10100, operator 10100:10100, hubble-ui drop ALL/seccomp/runAsNonRoot) and exact Cilium/CoreDNS acceptance" \
+    python3 scripts/test/lib/check-cilium-coredns-hardening.py --mutation-verify
 }
 
 #=========================================

@@ -16,6 +16,7 @@ English | [한국어](CHANGELOG-ko.md)
 
 ### Changed
 
+- **Update Config Audit acceptances for Cilium 1.19.4 hardening and CoreDNS kubeadm addon (R423):** remove `KSV017` and add `KSV001`/`KSV012`/`KSV020`/`KSV021` for `kube-system/DaemonSet/cilium` (chart `1.19.4` templates omit those fields and UID/GID 0 is required for host cgroup/sysctl/bpffs/CNI operations); add `KSV105` for `kube-system/DaemonSet/cilium-envoy` alongside `runAsGroup: 10100` (containerd requires explicit `runAsUser: 0`); add exact rules for `kube-system/ReplicaSet/cilium-operator` (`KSV009`/`KSV024`, `cluster-pool` IPAM hostNetwork + linked hostPort 9234), `kube-system/ReplicaSet/hubble-ui` (`KSV020`/`KSV021`, chart `1001:1001`), and `kube-system/ReplicaSet/coredns` (`KSV012`/`KSV020`/`KSV021`/`KSV022`/`KSV030`/`KSV104`, kubeadm-reconciled addon and port 53 `NET_BIND_SERVICE`).
 - **KCV0012 acceptance reason updated for EventRateLimit (CIS 1.2.10):** the AlwaysPullImages reason no longer says NodeRestriction is the only enabled admission plugin; it now names NodeRestriction and EventRateLimit and cites Harbor's own restart and the RKE2/GKE CIS guidance for isolated clusters.
 
 ## [1.1.34] - 2026-11-27

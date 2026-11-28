@@ -180,14 +180,14 @@ describe("compliance accepted exceptions", () => {
       "/apis/apps/v1/replicasets": { items: [makeRs({ namespace: "devtools", name: "harbor-core-99b8c7d6f", ownerDeployment: "harbor-core", replicas: 1 }),makeRs({ namespace: "devtools", name: "narwhal-portal-74b459c658", ownerDeployment: "narwhal-portal", replicas: 1 })] },
       "/apis/aquasecurity.github.io/v1alpha1/configauditreports": {
         items: [
-          // 1. An unreviewed system workload stays actionable
+          // 1. Accepted system workload (cilium accepted KSV009; KSV030 is unaccepted LOW)
           makeCar({
             namespace: "kube-system",
             kind: "DaemonSet",
             name: "cilium",
             checks: [
-              { checkID: "KSV017", severity: "HIGH", success: false },
-              { checkID: "KSV020", severity: "LOW", success: false },
+              { checkID: "KSV009", severity: "HIGH", success: false },
+              { checkID: "KSV030", severity: "LOW", success: false },
             ],
           }),
           // 2. Non-system workload with ALL non-LOW checks allowlisted (ReplicaSet with rotated hash)
@@ -295,8 +295,8 @@ describe("compliance accepted exceptions", () => {
             kind: "DaemonSet",
             name: "cilium",
             checks: [
-              { checkID: "KSV017", severity: "HIGH", success: false },
-              { checkID: "KSV020", severity: "LOW", success: false },
+              { checkID: "KSV009", severity: "HIGH", success: false },
+              { checkID: "KSV030", severity: "LOW", success: false },
             ],
           }),
           makeCar({
@@ -415,7 +415,7 @@ describe("compliance accepted exceptions", () => {
     // Config audit:
     // - actionable: harbor-core and narwhal-portal KSV014 (High: 2)
     // - low hygiene: harbor-core KSV011 (1) + narwhal-portal UID/GID (2) = 3.
-    // - accepted: cilium KSV017 (High: 1); cilium KSV020 remains unaccepted LOW.
+    // - accepted: cilium KSV009 (High: 1); cilium KSV030 remains unaccepted LOW.
     expect(summary.totalConfigAuditFailures).toEqual({ Critical: 0, High: 2, Medium: 0, Low: 0 })
     expect(summary.lowSeverityConfigAuditFailures).toEqual({ Critical: 0, High: 0, Medium: 0, Low: 3 })
     expect(summary.acceptedSystemConfigAuditFailures).toEqual({ Critical: 0, High: 1, Medium: 0, Low: 0 })

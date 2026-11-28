@@ -176,7 +176,8 @@ describe("exact acceptance (D-P2-1/2/3)", () => {
 
   it("accepts verified host integration and bootstrap defaults without extending to lookalikes", () => {
     expect(matchConfigAuditException("istio-system", "DaemonSet", "ztunnel", "KSV005", [])?.reason).toContain("network namespaces")
-    expect(matchConfigAuditException("kube-system", "DaemonSet", "cilium", "KSV017", [])?.owner).toContain("1.19.4")
+    expect(matchConfigAuditException("kube-system", "DaemonSet", "cilium", "KSV017", [])).toBeNull()
+    expect(matchConfigAuditException("kube-system", "DaemonSet", "cilium", "KSV024", [])?.owner).toContain("1.19.4")
     expect(matchConfigAuditException("kube-system", "DaemonSet", "cilium", "KSV014", [])).toBeNull()
     expect(matchRbacException("system:controller:deployment-controller", "KSV048", "", "ClusterRole")?.reason).toContain("reconciled by kube-apiserver")
     expect(matchRbacException("system:controller:deployment-controller-evil", "KSV048", "", "ClusterRole")).toBeNull()
@@ -541,22 +542,27 @@ describe("node-agent acceptances (pod-security Batch C, measured 2026-11-26)", (
     ["nfs-quota-agent", "DaemonSet", "nfs-quota-agent", ["KSV004"], "KSV030"],
     ["istio-system", "DaemonSet", "istio-cni-node", ["KSV001"], "KSV030"],
     ["istio-system", "DaemonSet", "ztunnel", ["KSV001"], "KSV030"],
-    ["kube-system", "DaemonSet", "cilium", ["KSV024"], "KSV012"],
-    ["kube-system", "DaemonSet", "cilium-envoy", ["KSV001", "KSV012", "KSV020", "KSV024"], "KSV030"],
+    ["kube-system", "DaemonSet", "cilium", ["KSV001", "KSV012", "KSV020", "KSV021", "KSV024"], "KSV017"],
+    ["kube-system", "DaemonSet", "cilium-envoy", ["KSV001", "KSV012", "KSV020", "KSV024", "KSV105"], "KSV030"],
+    ["kube-system", "ReplicaSet", "cilium-operator", ["KSV009", "KSV024"], "KSV012"],
+    ["kube-system", "ReplicaSet", "hubble-ui", ["KSV020", "KSV021"], "KSV012"],
+    ["kube-system", "ReplicaSet", "coredns", ["KSV012", "KSV020", "KSV021", "KSV022", "KSV030", "KSV104"], "KSV014"],
     ["kube-system", "DaemonSet", "csi-nfs-node", ["KSV001", "KSV012", "KSV020"], "KSV021"],
     ["kube-system", "ReplicaSet", "csi-nfs-controller", ["KSV001", "KSV012", "KSV020"], "KSV021"],
     ["kube-system", "Pod", "kube-vip-narwhal-master-1", ["KSV012", "KSV020", "KSV105"], "KSV001"],
   ] as const
 
   it.each(cases)("accepts exactly the verified checks for %s/%s/%s", (ns, kind, name, checks, stillActionable) => {
+    const owners = kind === "ReplicaSet" ? [name] : []
+    const targetName = kind === "ReplicaSet" ? `${name}-5b44f8765f` : name
     for (const check of checks) {
-      const rule = matchConfigAuditException(ns, kind, name, check, [])
+      const rule = matchConfigAuditException(ns, kind, targetName, check, owners)
       expect(rule, `${name} ${check}`).not.toBeNull()
-      expect(rule?.reviewedAt).toBe("2026-11-26")
+      expect(rule?.reviewedAt).toMatch(/^2026-11-2[68]$/)
     }
-    expect(matchConfigAuditException(ns, kind, name, stillActionable, [])).toBeNull()
-    expect(matchConfigAuditException(ns, kind, `${name}-evil`, checks[0], [])).toBeNull()
-    expect(matchConfigAuditException("dev", kind, name, checks[0], [])).toBeNull()
+    expect(matchConfigAuditException(ns, kind, targetName, stillActionable, owners)).toBeNull()
+    expect(matchConfigAuditException(ns, kind, `${name}-evil`, checks[0], owners)).toBeNull()
+    expect(matchConfigAuditException("dev", kind, targetName, checks[0], owners)).toBeNull()
   })
 
   it("keeps the fixed and unverified node-agent checks actionable", () => {
@@ -564,10 +570,12 @@ describe("node-agent acceptances (pod-security Batch C, measured 2026-11-26)", (
       ["istio-system", "DaemonSet", "istio-cni-node", "KSV104"],
       ["kube-system", "Pod", "kube-vip-narwhal-master-1", "KSV003"],
       ["kube-system", "Pod", "kube-vip-narwhal-master-1", "KSV104"],
-      ["kube-system", "DaemonSet", "cilium", "KSV001"],
       ["kube-system", "DaemonSet", "cilium", "KSV003"],
       ["kube-system", "DaemonSet", "cilium", "KSV004"],
+      ["kube-system", "DaemonSet", "cilium", "KSV017"],
+      ["kube-system", "DaemonSet", "cilium", "KSV030"],
       ["kube-system", "DaemonSet", "cilium", "KSV104"],
+      ["kube-system", "DaemonSet", "cilium-envoy", "KSV030"],
       ["kube-system", "DaemonSet", "cilium-envoy", "KSV104"],
       ["istio-system", "DaemonSet", "ztunnel", "KSV104"],
       ["storage", "DaemonSet", "node-agent", "KSV003"],

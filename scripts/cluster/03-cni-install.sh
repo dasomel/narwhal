@@ -96,20 +96,47 @@ case "${CNI_PLUGIN}" in
       local_chart=$(chart cilium) || return 1
       rm -rf /tmp/cilium-chart && mkdir -p /tmp/cilium-chart
       tar xzf "${local_chart}" -C /tmp/cilium-chart
+      # D-CILIUM-BPFFS-SELINUX: fail closed if host bpffs is missing before disabling mount-bpf-fs.
+      # Cost: depends on the systemd-mounted /sys/fs/bpf API file system; escape: set bpf.autoMount.enabled=true.
+      if ! findmnt -rn -t bpf -T /sys/fs/bpf >/dev/null 2>&1; then
+        echo "ERROR: /sys/fs/bpf is not mounted as type bpf; cannot install Cilium with bpf.autoMount.enabled=false" >&2
+        return 1
+      fi
       # D-SINGLE-NODE: Cilium operators require distinct hosts; one replica on one node.
       # Cost: no operator redundancy; escape hatch: HA keeps the chart defaults.
       local topology_args=()
       if [ "${NARWHAL_TOPOLOGY:-ha}" = "single" ]; then
         topology_args=(--set operator.replicas=1)
       fi
+      # D-CILIUM-HARDENING: harden cilium, cilium-envoy, cilium-operator, and hubble-ui via chart 1.19.4 values.
+      # Cost: envoy keeps explicit /sys/fs/bpf hostPath mount because upstream cilium-envoy/daemonset.yaml
+      # gates bpf-maps on bpf.autoMount.enabled; envoy sets runAsUser=0 alongside runAsGroup=10100 because
+      # containerd rejects runAsGroup without runAsUser. Escape: revert the securityContext/autoMount flags.
       cilium install --version "${CILIUM_VERSION}" \
       --chart-directory /tmp/cilium-chart/cilium \
       "${topology_args[@]+"${topology_args[@]}"}" \
       --set kubeProxyReplacement=true \
       --set k8sServiceHost="${K8S_API_SERVER}" \
       --set k8sServicePort=6443 \
+      --set bpf.autoMount.enabled=false \
+      --set podSecurityContext.seccompProfile.type=RuntimeDefault \
+      --set securityContext.seLinuxOptions=null \
+      --set envoy.podSecurityContext.seccompProfile.type=RuntimeDefault \
+      --set envoy.podSecurityContext.runAsUser=0 \
+      --set envoy.podSecurityContext.runAsGroup=10100 \
+      --set envoy.securityContext.seLinuxOptions=null \
+      --set "envoy.extraHostPathMounts[0].name=bpf-maps" \
+      --set "envoy.extraHostPathMounts[0].mountPath=/sys/fs/bpf" \
+      --set "envoy.extraHostPathMounts[0].hostPath=/sys/fs/bpf" \
+      --set "envoy.extraHostPathMounts[0].hostPathType=DirectoryOrCreate" \
+      --set "envoy.extraHostPathMounts[0].readOnly=false" \
+      --set "envoy.extraHostPathMounts[0].mountPropagation=HostToContainer" \
       --set hubble.relay.enabled=true \
       --set hubble.ui.enabled=true \
+      --set hubble.ui.securityContext.runAsNonRoot=true \
+      --set hubble.ui.securityContext.seccompProfile.type=RuntimeDefault \
+      --set "hubble.ui.frontend.securityContext.capabilities.drop[0]=ALL" \
+      --set "hubble.ui.backend.securityContext.capabilities.drop[0]=ALL" \
       --set "ipam.operator.clusterPoolIPv4PodCIDRList[0]=${POD_NETWORK_CIDR}" \
       --set ipam.operator.clusterPoolIPv4MaskSize=24 \
       --set gatewayAPI.enabled=true \
@@ -118,6 +145,9 @@ case "${CNI_PLUGIN}" in
       --set operator.resources.requests.cpu=50m \
       --set operator.resources.requests.memory=128Mi \
       --set operator.resources.limits.memory=512Mi \
+      --set operator.podSecurityContext.runAsNonRoot=true \
+      --set operator.podSecurityContext.runAsUser=10100 \
+      --set operator.podSecurityContext.runAsGroup=10100 \
       --set image.useDigest=false \
       --set operator.image.useDigest=false \
       --set envoy.image.useDigest=false \

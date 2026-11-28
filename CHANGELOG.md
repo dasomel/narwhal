@@ -67,7 +67,7 @@ English | [한국어](CHANGELOG-ko.md)
 
 - **Scope Kyverno signature Audit to the signed portal repository (#683).** Include `devtools`, exclude unsigned third-party/Narwhal images, and accept tag references without digest mutation; CycloneDX checks remain. Live check: third-party violations stopped, and Kyverno now reports the portal signature as not found — Cosign v3 stores it as an OCI referrer that Kyverno 1.18.1 does not verify (#684); Audit only.
 
-- **Portal is pinned to `narwhal-portal:1.1.34` (was 1.1.15 in released v1.5.0; 1.1.16, 1.1.17, 1.1.18, 1.1.19, 1.1.20, 1.1.21, 1.1.22, 1.1.23, 1.1.24, 1.1.25, 1.1.26, 1.1.27, 1.1.28, 1.1.29, 1.1.30, 1.1.31, 1.1.32 and 1.1.33 were intermediate pins).** SeaweedFS UID 10100 acceptance changes (#845) and 1.1.34 release preparation (#846). The image was published for amd64 and arm64, and Cosign v3.1.4 verification with the repository public key and transparency log passed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684); no live rollout is claimed.
+- **Portal is pinned to `narwhal-portal:1.1.35` (was 1.1.15 in released v1.5.0; 1.1.16, 1.1.17, 1.1.18, 1.1.19, 1.1.20, 1.1.21, 1.1.22, 1.1.23, 1.1.24, 1.1.25, 1.1.26, 1.1.27, 1.1.28, 1.1.29, 1.1.30, 1.1.31, 1.1.32, 1.1.33 and 1.1.34 were intermediate pins).** CIS acceptance and evidence changes (#848-#852) and 1.1.35 release preparation (#853). The image was published for amd64 and arm64, and Cosign v3.1.4 verification with the repository public key and transparency log passed. In-cluster Kyverno verification is known to fail for Portal images (narwhal#684); no live rollout is claimed.
 
 ## [1.5.0] - 2026-11-14
 

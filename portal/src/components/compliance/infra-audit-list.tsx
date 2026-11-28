@@ -55,7 +55,9 @@ export function ExpandedInfraPanel({ node }: { node: string }) {
             <div className="rounded-md border border-slate-200 bg-slate-50/60 dark:bg-slate-900/20 dark:border-slate-800 p-3 text-xs">
               <p className="font-medium text-foreground">
                 {detail.checks.length === 0
-                  ? t("compliance.infra.notEvaluated")
+                  ? sumCheckSummary(detail.summary) === 0
+                    ? t("compliance.infra.notEvaluated")
+                    : t("compliance.infra.summaryFailuresNoDetail")
                   : t("compliance.check.allPassed")}
               </p>
               <p className="text-muted-foreground mt-1">{t("compliance.infra.emptyChecksCaveat")}</p>

@@ -13,8 +13,6 @@
 
 - **Infra Audit 증거 문구 명확화:** 검사 수가 0인 보고서는 “미평가”로 표시하고, 실패 기록이 없는 보고서에는 미설정·비적용 검사의 한계와 kube-bench 및 `verify-cluster.sh` 증거 안내를 표시한다.
 
-### Changed
-
 - **Lane D 정확 ClusterRole 수용 추가 (CIS 5.1.2/5.1.3):** 역할 6개와 istiod의 KSV046을 기술 근거의 이중 언어 사유로 추가하고 RBAC 표 요약을 52개로 갱신했다.
 
 ### 변경

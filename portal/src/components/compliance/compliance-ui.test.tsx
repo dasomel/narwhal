@@ -1160,6 +1160,10 @@ it("H5/H1: empty failure lists never say All checks passed or 모든 검사 통�
     ...passedInfraRow,
     checks: [{ id: "KCV0092", title: "Cipher suites", severity: "Medium", success: true, accepted: false }],
   }
+  const inconsistentInfraDetail: InfraAuditDetail = {
+    ...cleanInfraDetail,
+    summary: { Critical: 0, High: 1, Medium: 0, Low: 0 },
+  }
   const cleanConfigDetail: ConfigAuditDetail = { namespace: "dev", kind: "Deployment", name: "app", summary: zero, accepted: false, checks: [] }
   const cleanRbacDetail: RbacAuditDetail = { namespace: "dev", kind: "Role", name: "reader", summary: zero, accepted: false, checks: [] }
 
@@ -1180,6 +1184,12 @@ it("H5/H1: empty failure lists never say All checks passed or 모든 검사 통�
     expect(infraPanelHtml).not.toContain(expectedNoFail)
     expect(infraPanelHtml).toContain("scripts/test/verify-cluster.sh")
     expect(infraPanelHtml).not.toContain(forbidden)
+
+    vi.mocked(useQuery).mockReturnValue({ data: inconsistentInfraDetail, isLoading: false, isError: false, refetch: vi.fn() } as never)
+    const inconsistentPanelHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><ExpandedInfraPanel node="narwhal-master-1" /></LocaleProvider>)
+    expect(inconsistentPanelHtml).toContain(locale === "ko" ? "요약에 실패가 기록됐지만 체크 상세가 없습니다" : "Failures are recorded in the summary, but no check details are available")
+    expect(inconsistentPanelHtml).not.toContain(locale === "ko" ? "실패 기록 없음" : "no failure recorded")
+    expect(inconsistentPanelHtml).not.toContain(locale === "ko" ? "미평가" : "Not evaluated")
 
     vi.mocked(useQuery).mockReturnValue({ data: cleanConfigDetail, isLoading: false, isError: false, refetch: vi.fn() } as never)
     const cfgPanelHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><ExpandedConfigPanel scope="namespace" namespace="dev" kind="Deployment" name="app" /></LocaleProvider>)

@@ -1204,7 +1204,7 @@ it("H5/H1: empty failure lists never say All checks passed or 모든 검사 통�
 
     vi.mocked(useQuery).mockReturnValue({ data: [passedInfraRow], isLoading: false, isError: false, refetch: vi.fn() } as never)
     const passedListHtml = renderToStaticMarkup(<LocaleProvider locale={locale}><InfraAuditList /></LocaleProvider>)
-    expect(passedListHtml).toContain(expectedNoFail)
+    expect(passedListHtml).toContain(locale === "ko" ? "실패 기록 없음" : "no failure recorded")
     expect(passedListHtml).not.toContain(locale === "ko" ? "미평가" : "Not evaluated")
 
     vi.mocked(useQuery).mockReturnValue({ data: passedInfraDetail, isLoading: false, isError: false, refetch: vi.fn() } as never)

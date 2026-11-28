@@ -228,7 +228,7 @@ export function InfraAuditList() {
                           ? `${actionableFailures} issues`
                           : isAcceptedOnly
                             ? `${rawFailures} ${t("compliance.framework.acceptedShort")}`
-                            : t("compliance.check.allPassed")}
+                            : t("compliance.framework.noFailureRecordedShort")}
                     </span>
                     <span
                       className="text-muted-foreground text-sm inline-block transition-transform duration-200"

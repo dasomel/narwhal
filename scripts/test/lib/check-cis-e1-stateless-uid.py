@@ -74,6 +74,10 @@ def _check_argocd(text: str, errs: list[str]) -> None:
             pat += rf"\s+{re.escape(init)}"
         if not re.search(pat, text):
             errs.append(f"13-argocd.sh missing patch_uid_gid call for {kind}/{name}")
+    # Review MINOR (#856): the init-container (copyutil) must get the same identity, not only be named.
+    init_line = next((l for l in text.splitlines() if l.strip().startswith('init_json=",') and "initContainers" in l), "")
+    if not ('\\"runAsUser\\":10100' in init_line and '\\"runAsGroup\\":10100' in init_line and "${init_container}" in init_line):
+        errs.append("13-argocd.sh patch_uid_gid must set runAsUser/runAsGroup 10100 on the named init container")
     if re.search(r"patch_uid_gid\s+\S+\s+argocd-redis\b", text):
         errs.append("13-argocd.sh must not patch argocd-redis UID/GID (valkey 999:999)")
 
@@ -278,8 +282,9 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("metrics-server runAsGroup dropped", "addons", '  {"op": "add",     "path": "/spec/template/spec/containers/0/securityContext/runAsGroup", "value": 10100},\n', ""),
     ("keycloak-operator runAsUser reverted to 1000", "keycloak", '"runAsUser": 10100,\n              "runAsGroup": 10100,', '"runAsUser": 1000,\n              "runAsGroup": 10100,'),
     ("keycloak-operator runAsGroup dropped", "keycloak", '              "runAsGroup": 10100,\n', ""),
-    ("grafana GitOps runAsGroup reverted to 472", "prom", "            runAsGroup: 10100\n", "            runAsGroup: 472\n"),
-    ("grafana bootstrap runAsGroup reverted to 472", "mon_boot", '"runAsGroup":10100', '"runAsGroup":472'),
+    ("argocd init-container UID dropped", "argocd", '\\"initContainers\\":[{\\"name\\":\\"${init_container}\\",\\"securityContext\\":{\\"runAsNonRoot\\":true,\\"runAsUser\\":10100,\\"runAsGroup\\":10100}}]', '\\"initContainers\\":[{\\"name\\":\\"${init_container}\\"}]'),
+    ("grafana GitOps runAsGroup reverted to 472", "prom", "            runAsUser: 472\n            runAsGroup: 10100\n", "            runAsUser: 472\n            runAsGroup: 472\n"),
+    ("grafana bootstrap runAsGroup reverted to 472", "mon_boot", '"runAsUser":472,"runAsGroup":10100', '"runAsUser":472,"runAsGroup":472'),
     ("waypoint parametersRef dropped", "istio_boot", "  infrastructure:\n    parametersRef:\n      group: \"\"\n      kind: ConfigMap\n      name: waypoint-options\n", ""),
     ("waypoint istio-proxy UID reverted to 1337", "istio_boot", "                runAsUser: 10100\n                runAsGroup: 10100\n", "                runAsUser: 1337\n                runAsGroup: 1337\n"),
     ("csi-nfs-postrender runAsGroup dropped", "csi_pr", " | .spec.template.spec.securityContext.runAsGroup = 10100", ""),

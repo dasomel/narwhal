@@ -1007,6 +1007,125 @@
       "reasonKey": "compliance.acceptedReason.csiNfsControllerRunAsUser0",
       "owner": "csi-driver-nfs 4.13.2 (scripts/cluster/04-addons.sh, scripts/cluster/lib/helm-plugins/csi-nfs-postrender/csi-nfs-postrender.sh)",
       "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:harbor-core:uid-accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "harbor-core",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "upstream",
+      "reasonKey": "compliance.acceptedReason.harborChartUid10000",
+      "owner": "harbor 1.19.1 / v2.15.1 (gitops/charts/narwhal-apps/templates/harbor.yaml)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:harbor-jobservice:uid-accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "harbor-jobservice",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "upstream",
+      "reasonKey": "compliance.acceptedReason.harborJobserviceUid10000",
+      "owner": "harbor 1.19.1 / v2.15.1 (gitops/charts/narwhal-apps/templates/harbor.yaml)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:harbor-registry:uid-accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "harbor-registry",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "upstream",
+      "reasonKey": "compliance.acceptedReason.harborRegistryUid10000",
+      "owner": "harbor 1.19.1 / v2.15.1 (gitops/charts/narwhal-apps/templates/harbor.yaml)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:harbor-nginx:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "harbor-nginx",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "upstream",
+      "reasonKey": "compliance.acceptedReason.harborChartUid10000",
+      "owner": "harbor 1.19.1 / v2.15.1 (gitops/charts/narwhal-apps/templates/harbor.yaml)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:devtools:ReplicaSet:harbor-portal:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "ReplicaSet",
+      "name": "harbor-portal",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "upstream",
+      "reasonKey": "compliance.acceptedReason.harborChartUid10000",
+      "owner": "harbor 1.19.1 / v2.15.1 (gitops/charts/narwhal-apps/templates/harbor.yaml)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:devtools:StatefulSet:harbor-redis:accept",
+      "scope": "namespace",
+      "namespace": "devtools",
+      "kind": "StatefulSet",
+      "name": "harbor-redis",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "upstream",
+      "reasonKey": "compliance.acceptedReason.harborRedisUid999",
+      "owner": "harbor 1.19.1 / v2.15.1 (gitops/charts/narwhal-apps/templates/harbor.yaml)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:iam:StatefulSet:keycloak:accept",
+      "scope": "namespace",
+      "namespace": "iam",
+      "kind": "StatefulSet",
+      "name": "keycloak",
+      "checks": [
+        "KSV020"
+      ],
+      "class": "upstream",
+      "reasonKey": "compliance.acceptedReason.keycloakUid1000",
+      "owner": "keycloak 26.5.7 (gitops/charts/narwhal-platform/templates/keycloak-cr.yaml, scripts/cluster/11-keycloak.sh)",
+      "reviewedAt": "2026-11-28"
+    },
+    {
+      "id": "cfg:storage:StatefulSet:openbao:accept",
+      "scope": "namespace",
+      "namespace": "storage",
+      "kind": "StatefulSet",
+      "name": "openbao",
+      "checks": [
+        "KSV020",
+        "KSV021"
+      ],
+      "class": "accept",
+      "reasonKey": "compliance.acceptedReason.openbaoServerUid100",
+      "owner": "openbao 0.28.3 / 2.5.4 (gitops/charts/narwhal-apps/templates/openbao.yaml, scripts/cluster/08-4-storage.sh)",
+      "reviewedAt": "2026-11-28"
     }
   ],
   "rbac": [

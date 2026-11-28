@@ -265,10 +265,14 @@ spec:
       spec:
         containers:
           - name: keycloak
+            # D-E2-KC-GID (CIS 5.7.3 KSV021): parity with keycloak-cr.yaml; drops image default GID 0
+            # while keeping runAsUser 1000 (KSV020 accepted: stock image owns /opt/keycloak 1000:0).
+            # Cost: one stateless pod rollout. Escape hatch: remove runAsGroup.
             securityContext:
               allowPrivilegeEscalation: false
               runAsNonRoot: true
               runAsUser: 1000
+              runAsGroup: 10100
               capabilities:
                 drop:
                   - ALL

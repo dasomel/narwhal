@@ -262,8 +262,16 @@ exit 0
         )
         stub_kubectl.chmod(0o755)
 
+        stub_findmnt_ok = tmp / "findmnt-ok"
+        stub_findmnt_ok.write_text("#!/bin/bash\nexit 0\n", encoding="utf-8")
+        stub_findmnt_ok.chmod(0o755)
+        stub_findmnt_missing = tmp / "findmnt-missing"
+        stub_findmnt_missing.write_text("#!/bin/bash\nexit 1\n", encoding="utf-8")
+        stub_findmnt_missing.chmod(0o755)
+
         base_env = {
             **os.environ,
+            "FINDMNT": str(stub_findmnt_ok),
             "HELM": str(stub_helm),
             "KUBECTL": str(stub_kubectl),
             "CILIUM_CLI": str(tmp / "no-cilium-cli"),
@@ -272,8 +280,16 @@ exit 0
 
         errs: list[str] = []
 
+        # D-CILIUM-BPFFS-UNIT: --apply must fail closed when bpffs is not mounted.
+        no_bpf = subprocess.run(["bash", str(ops_path), "--apply"], capture_output=True, text=True,
+                                env={**base_env, "FINDMNT": str(stub_findmnt_missing)})
+        if no_bpf.returncode == 0 or "not mounted as type bpf" not in no_bpf.stderr:
+            errs.append("reconcile-cilium-hardening.sh --apply must abort when /sys/fs/bpf is not mounted")
+        if "--skip-host-bpf" in ops_text_for_option_check(ops_path):
+            errs.append("reconcile-cilium-hardening.sh must not offer --skip-host-bpf")
+
         dry = subprocess.run(
-            ["bash", str(ops_path), "--dry-run", "--skip-host-bpf"],
+            ["bash", str(ops_path), "--dry-run"],
             capture_output=True,
             text=True,
             env=base_env,
@@ -349,7 +365,7 @@ exit 0
         helm_calls.unlink(missing_ok=True)
         kubectl_calls.unlink(missing_ok=True)
         apply_ok = subprocess.run(
-            ["bash", str(ops_path), "--apply", "--skip-host-bpf"],
+            ["bash", str(ops_path), "--apply"],
             capture_output=True,
             text=True,
             env=base_env,
@@ -367,7 +383,7 @@ exit 0
 
         fail_env = {**base_env, "STUB_FAIL_TARGET": "deploy/cilium-operator"}
         apply_fail = subprocess.run(
-            ["bash", str(ops_path), "--apply", "--skip-host-bpf"],
+            ["bash", str(ops_path), "--apply"],
             capture_output=True,
             text=True,
             env=fail_env,
@@ -380,6 +396,10 @@ exit 0
             errs.append("reconcile-cilium-hardening.sh must NOT auto-execute helm rollback")
 
         return errs
+
+
+def ops_text_for_option_check(path) -> str:
+    return Path(path).read_text(encoding="utf-8")
 
 
 def check(texts: dict[str, str], *, render_helm: bool = False, run_ops_behavior: bool = False) -> list[str]:
@@ -410,7 +430,7 @@ def check(texts: dict[str, str], *, render_helm: bool = False, run_ops_behavior:
         "seLinuxOptions: null",
         "runAsUser: 10100",
         "runAsGroup: 10100",
-        "findmnt -rn -t bpf -T /sys/fs/bpf",
+        '-rn -t bpf -T /sys/fs/bpf',
         "rollout status",
         "helm rollback cilium",
     ):
@@ -473,6 +493,7 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
     ("drop operator runAsUser=10100", "cni", "--set operator.podSecurityContext.runAsUser=10100", "--set operator.podSecurityContext.runAsUser=0"),
     ("drop operator runAsGroup=10100", "cni", "--set operator.podSecurityContext.runAsGroup=10100", "--set operator.podSecurityContext.runAsGroup=0"),
     ("ops helper uses heredoc-only values instead of yq merge", "ops", '"${YQ}" eval-all \'. as $item ireduce ({}; . * $item)\' "${WORK}/live-values.yaml" "${WORK}/hardening-overlay.yaml" > "${WORK}/merged-values.yaml"', 'cp "${WORK}/hardening-overlay.yaml" "${WORK}/merged-values.yaml"'),
+    ("ops helper apply ignores missing bpffs", "ops", 'aborting before disabling bpf.autoMount" >&2\n    exit 1', 'aborting before disabling bpf.autoMount" >&2\n    true'),
     ("ops helper uses --reuse-values", "ops", ' -f "${WORK}/merged-values.yaml"', ' --reuse-values -f "${WORK}/merged-values.yaml"'),
     ("ops helper skips unified diff in dry-run", "ops", 'diff -u "${WORK}/live-values.yaml" "${WORK}/merged-values.yaml"', 'true'),
     ("ops helper drops hubble-ui rollout wait", "ops", 'ds/cilium ds/cilium-envoy deploy/cilium-operator deploy/hubble-ui', 'ds/cilium ds/cilium-envoy deploy/cilium-operator'),

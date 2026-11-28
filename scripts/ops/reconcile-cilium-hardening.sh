@@ -11,7 +11,7 @@ set -euo pipefail
 export PATH="${PATH}:/usr/local/bin"
 
 MODE="dry-run"
-SKIP_HOST_BPF=false
+FINDMNT="${FINDMNT:-findmnt}"
 KUBECTL="${KUBECTL:-kubectl}"
 HELM="${HELM:-helm}"
 YQ="${YQ:-yq}"
@@ -23,9 +23,8 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --dry-run) MODE="dry-run" ;;
     --apply) MODE="apply" ;;
-    --skip-host-bpf) SKIP_HOST_BPF=true ;;
     *)
-      echo "Usage: $0 [--dry-run|--apply] [--skip-host-bpf]" >&2
+      echo "Usage: $0 [--dry-run|--apply]" >&2
       exit 1
       ;;
   esac
@@ -49,16 +48,15 @@ fi
   exit 1
 }
 
-if [ "${SKIP_HOST_BPF}" = "false" ]; then
-  # D-CILIUM-BPFFS-UNIT: no mount unit — systemd mounts /sys/fs/bpf as an API file system
-  # and refuses a sys-fs-bpf.mount for it (systemd 259, 2026-11-28); only verify below.
-  if ! findmnt -rn -t bpf -T /sys/fs/bpf >/dev/null 2>&1; then
-    if [ "${MODE}" = "dry-run" ]; then
-      echo "WARN: /sys/fs/bpf is not currently mounted as type bpf (systemd normally mounts it at boot)" >&2
-    else
-      echo "ERROR: /sys/fs/bpf is not mounted as type bpf; aborting before disabling bpf.autoMount" >&2
-      exit 1
-    fi
+# D-CILIUM-BPFFS-UNIT: no mount unit — systemd mounts /sys/fs/bpf as an API file system
+# and refuses a sys-fs-bpf.mount for it (systemd 259, 2026-11-28). The check is never
+# skippable on --apply (fail closed); tests override FINDMNT with a stub.
+if ! "${FINDMNT}" -rn -t bpf -T /sys/fs/bpf >/dev/null 2>&1; then
+  if [ "${MODE}" = "dry-run" ]; then
+    echo "WARN: /sys/fs/bpf is not currently mounted as type bpf (systemd normally mounts it at boot)" >&2
+  else
+    echo "ERROR: /sys/fs/bpf is not mounted as type bpf; aborting before disabling bpf.autoMount" >&2
+    exit 1
   fi
 fi
 
